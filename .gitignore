@@ -1,0 +1,12 @@
+node_modules/
+.next/
+dist/
+coverage/
+data/
+var/
+.DS_Store
+*.log
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.tsbuildinfo
