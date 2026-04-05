@@ -14,25 +14,40 @@ import {
 
 interface MeterAddOptions {
   host: string | null;
+  siteId: string;
+}
+
+interface MeterCommandOptions {
+  siteId: string;
+}
+
+interface ResolvedDiscoveredDevice {
+  device: DiscoveredDevice | null;
+  errorMessage: string | null;
 }
 
 export function formatMeterHelpText(): string {
   return [
     "Usage:",
-    "  meter list",
-    "  meter add <discovery-id> [--host <ipv4>]",
-    "  meter remove <meter-id>",
-    "  meter enable <meter-id>",
-    "  meter disable <meter-id>",
+    "  meter list --site-id <site-id>",
+    "  meter ls --site-id <site-id>",
+    "  meter add <discovery-id> --site-id <site-id> [--host <ipv4>]",
+    "  meter create <discovery-id> --site-id <site-id> [--host <ipv4>]",
+    "  meter remove <discovery-id> --site-id <site-id>",
+    "  meter delete <discovery-id> --site-id <site-id>",
+    "  meter rm <discovery-id> --site-id <site-id>",
+    "  meter enable <discovery-id> --site-id <site-id>",
+    "  meter disable <discovery-id> --site-id <site-id>",
   ].join("\n");
 }
 
 export function formatMeterList(meters: MeterRecord[]): string {
   if (meters.length === 0) {
-    return "No meters configured for the active site.";
+    return "No meters configured for the selected site.";
   }
 
   const header = [
+    "DISCOVERY ID",
     "NAME",
     "ENABLED",
     "CONNECTED",
@@ -44,6 +59,7 @@ export function formatMeterList(meters: MeterRecord[]): string {
   const separator = "-".repeat(header.length);
   const rows = meters.map((meter) =>
     [
+      meter.id,
       meter.name,
       meter.enabled ? "yes" : "no",
       meter.connected ? "yes" : "no",
@@ -69,12 +85,13 @@ export async function runMeterCommand(args: string[] = []): Promise<number> {
       return 0;
     }
 
-    if (args[0] === "list") {
-      console.log(formatMeterList(listMeters()));
+    if (args[0] === "list" || args[0] === "ls") {
+      const options = parseMeterCommandOptions(args.slice(1));
+      console.log(formatMeterList(listMeters(options.siteId)));
       return 0;
     }
 
-    if (args[0] === "add") {
+    if (args[0] === "add" || args[0] === "create") {
       const discoveryId = args[1];
 
       if (!discoveryId) {
@@ -82,28 +99,35 @@ export async function runMeterCommand(args: string[] = []): Promise<number> {
       }
 
       const options = parseMeterAddOptions(args.slice(2));
-      const discovered = await resolveDiscoveredDevice(
+      const resolved = await resolveDiscoveredDevice(
         discoveryId,
         "meter",
         options,
       );
 
-      if (!discovered) {
+      if (!resolved.device) {
         throw new Error(
-          `Discovered meter not available right now: ${discoveryId}`,
+          resolved.errorMessage ??
+            `Discovered meter not found or not reachable right now: ${discoveryId}`,
         );
       }
 
+      const discovered = resolved.device;
+
       console.log(
         JSON.stringify(
-          createMeter({
-            name: discovered.name,
-            model: discovered.model,
-            ipAddress: discovered.ipAddress,
-            connected: true,
-            enabled: true,
-            details: discovered.details,
-          }),
+          createMeter(
+            {
+              id: discoveryId,
+              name: discovered.name,
+              model: discovered.model,
+              ipAddress: discovered.ipAddress,
+              connected: true,
+              enabled: true,
+              details: discovered.details,
+            },
+            options.siteId,
+          ),
           null,
           2,
         ),
@@ -115,10 +139,11 @@ export async function runMeterCommand(args: string[] = []): Promise<number> {
       const id = args[1];
 
       if (!id) {
-        throw new Error(`Missing meter id for ${args[0]}`);
+        throw new Error(`Missing discovery id for ${args[0]}`);
       }
 
-      const meter = setMeterEnabled(id, args[0] === "enable");
+      const options = parseMeterCommandOptions(args.slice(2));
+      const meter = setMeterEnabled(id, args[0] === "enable", options.siteId);
 
       if (!meter) {
         throw new Error(`Managed meter not found: ${id}`);
@@ -128,14 +153,15 @@ export async function runMeterCommand(args: string[] = []): Promise<number> {
       return 0;
     }
 
-    if (args[0] === "remove") {
+    if (args[0] === "remove" || args[0] === "delete" || args[0] === "rm") {
       const id = args[1];
 
       if (!id) {
-        throw new Error("Missing meter id for remove");
+        throw new Error("Missing discovery id for remove");
       }
 
-      const meter = deleteMeter(id);
+      const options = parseMeterCommandOptions(args.slice(2));
+      const meter = deleteMeter(id, options.siteId);
 
       if (!meter) {
         throw new Error(`Managed meter not found: ${id}`);
@@ -156,6 +182,7 @@ export async function runMeterCommand(args: string[] = []): Promise<number> {
 function parseMeterAddOptions(args: string[]): MeterAddOptions {
   const options: MeterAddOptions = {
     host: null,
+    siteId: parseRequiredSiteId(args),
   };
 
   for (let index = 0; index < args.length; index += 1) {
@@ -177,17 +204,46 @@ function parseMeterAddOptions(args: string[]): MeterAddOptions {
       continue;
     }
 
+    if (arg === "--site-id") {
+      index += 1;
+      continue;
+    }
+
     throw new Error(`Unknown meter option: ${arg}`);
   }
 
   return options;
 }
 
+function parseMeterCommandOptions(args: string[]): MeterCommandOptions {
+  return {
+    siteId: parseRequiredSiteId(args),
+  };
+}
+
+function parseRequiredSiteId(args: string[]): string {
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] !== "--site-id") {
+      continue;
+    }
+
+    const siteId = args[index + 1];
+
+    if (!siteId) {
+      throw new Error("Missing value for --site-id");
+    }
+
+    return siteId;
+  }
+
+  throw new Error("Missing required option: --site-id <site-id>");
+}
+
 async function resolveDiscoveredDevice(
   discoveryId: string,
   category: DiscoveredDevice["category"],
   options: MeterAddOptions,
-): Promise<DiscoveredDevice | null> {
+): Promise<ResolvedDiscoveredDevice> {
   const devices = options.host
     ? await discoverHostDevices(options.host, {
         verbose: false,
@@ -195,12 +251,30 @@ async function resolveDiscoveredDevice(
       })
     : await discoverCurrentSubnet();
 
-  return (
-    devices.find(
-      (device) =>
-        device.discoveryId === discoveryId && device.category === category,
-    ) ?? null
+  const exactMatch = devices.find(
+    (device) => device.discoveryId === discoveryId,
   );
+
+  if (!exactMatch) {
+    return {
+      device: null,
+      errorMessage: `Discovered ${category} not found or not reachable right now: ${discoveryId}`,
+    };
+  }
+
+  if (exactMatch.category !== category) {
+    const suggestedCommand = `${exactMatch.category} add ${discoveryId}`;
+
+    return {
+      device: null,
+      errorMessage: `Discovery id ${discoveryId} is a ${exactMatch.category}, not a ${category}; use '${suggestedCommand}' instead`,
+    };
+  }
+
+  return {
+    device: exactMatch,
+    errorMessage: null,
+  };
 }
 
 async function discoverCurrentSubnet(): Promise<DiscoveredDevice[]> {

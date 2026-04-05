@@ -4,6 +4,7 @@ import type {
   DiscoverReport,
   DiscoverReportDevice,
   DiscoveryCategory,
+  ManagedDeviceState,
 } from "@emsd/core";
 import discoverySignaturesJson from "./discovery-signatures.json";
 
@@ -24,6 +25,18 @@ export interface DiscoveryScanTarget {
 export interface DiscoverCommandOptions {
   verbose: boolean;
   host: string | null;
+}
+
+export interface BatteryTelemetrySample {
+  powerW: number | null;
+  socPercent: number | null;
+  state: ManagedDeviceState;
+}
+
+export interface MeterTelemetrySample {
+  gasM3: number | null;
+  powerW: number | null;
+  state: Extract<ManagedDeviceState, "connected" | "offline">;
 }
 
 interface DiscoveryRequestDefinition {
@@ -113,6 +126,59 @@ export function parseDiscoverCommandOptions(
 
 export function getDiscoverySignatures(): DiscoverySignatureDefinition[] {
   return [...discoverySignatures];
+}
+
+export async function fetchBatteryTelemetry(
+  ipAddress: string,
+): Promise<BatteryTelemetrySample> {
+  const signature = requireSignature("indevolt-battery");
+  const response = await fetchDiscoveryResponse(
+    ipAddress,
+    signature,
+    signature.request.path,
+    { host: ipAddress, verbose: false },
+  );
+
+  if (!response) {
+    return {
+      powerW: null,
+      socPercent: null,
+      state: "offline",
+    };
+  }
+
+  return parseBatteryTelemetry(response.responseText);
+}
+
+export async function fetchMeterTelemetry(
+  ipAddress: string,
+): Promise<MeterTelemetrySample> {
+  const signature = requireSignature("homewizard-p1");
+  const response = await fetchDiscoveryResponse(
+    ipAddress,
+    {
+      ...signature,
+      request: {
+        path: "/api/v1/data",
+        method: "GET",
+        headers: {
+          accept: "application/json",
+        },
+      },
+    },
+    "/api/v1/data",
+    { host: ipAddress, verbose: false },
+  );
+
+  if (!response) {
+    return {
+      gasM3: null,
+      powerW: null,
+      state: "offline",
+    };
+  }
+
+  return parseMeterTelemetry(response.responseText);
 }
 
 export function getLocalIpv4Subnets(
@@ -469,7 +535,9 @@ async function fetchDiscoveryResponse(
 
     const responseResult = await fetch(requestUrl, {
       method: signature.request.method,
-      headers: signature.request.headers,
+      ...(signature.request.headers
+        ? { headers: signature.request.headers }
+        : {}),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     })
       .then((response) => ({ response, error: null }))
@@ -570,6 +638,18 @@ function formatUnknownError(error: unknown): string {
   }
 
   return String(error);
+}
+
+function requireSignature(model: string): DiscoverySignatureDefinition {
+  const signature = discoverySignatures.find(
+    (candidate) => candidate.model === model,
+  );
+
+  if (!signature) {
+    throw new Error(`Discovery signature not found for model: ${model}`);
+  }
+
+  return signature;
 }
 
 function matchesSignatureResponse(
@@ -690,6 +770,25 @@ function buildIndevoltDiscoveredDevice(
   };
 }
 
+function parseBatteryTelemetry(responseText: string): BatteryTelemetrySample {
+  const payload = parseJsonObject(responseText);
+
+  return {
+    powerW: parseNullableNumber(payload?.["6000"]),
+    socPercent: parseNullableNumber(payload?.["6002"]),
+    state: parseIndevoltBatteryState(payload?.["6001"]),
+  };
+}
+
+function parseMeterTelemetry(responseText: string): MeterTelemetrySample {
+  const payload = parseJsonObject(responseText);
+  return {
+    gasM3: parseNullableNumber(payload?.total_gas_m3),
+    powerW: parseNullableNumber(payload?.active_power_w),
+    state: payload ? "connected" : "offline",
+  };
+}
+
 function parseJsonObject(responseText: string): Record<string, unknown> | null {
   let parsed: unknown;
 
@@ -720,6 +819,29 @@ function getStringOrNumber(value: unknown): string | null {
   }
 
   return null;
+}
+
+function parseNullableNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
+function parseIndevoltBatteryState(value: unknown): ManagedDeviceState {
+  const state = formatIndevoltBatteryState(value);
+
+  if (state === "idle" || state === "charging" || state === "discharging") {
+    return state;
+  }
+
+  return "offline";
 }
 
 function formatIndevoltBatteryState(value: unknown): string | null {

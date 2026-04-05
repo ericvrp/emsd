@@ -5,6 +5,9 @@ import {
   runDiscoverCommand,
 } from "./discover";
 import { formatMeterHelpText, runMeterCommand } from "./meter";
+import { formatPriceHelpText, runPriceCommand } from "./price";
+import { formatSiteHelpText, runSiteCommand } from "./site";
+import { formatWeatherHelpText, runWeatherCommand } from "./weather";
 
 export function formatHelpText(): string {
   return [
@@ -12,13 +15,19 @@ export function formatHelpText(): string {
     "",
     "Usage:",
     "  help                  Show this help output",
-    "  battery <subcommand>  Manage batteries in the active site",
-    "  meter <subcommand>    Manage meters in the active site",
+    "  site <subcommand>     Manage sites",
+    "  battery <subcommand>  Manage batteries for a site",
+    "  meter <subcommand>    Manage meters for a site",
+    "  weather <subcommand>  Manage weather forecast sources",
+    "  price <subcommand>    Manage dynamic price sources",
     "  discover [--verbose] [--host <ipv4>]  Scan for supported devices",
     "",
     "Tip:",
+    "  site --help           Show site management help",
     "  battery --help        Show battery management help",
     "  meter --help          Show meter management help",
+    "  weather --help        Show weather source help",
+    "  price --help          Show dynamic price source help",
     "  discover --help       Show discovery-specific help",
   ].join("\n");
 }
@@ -32,6 +41,15 @@ export async function runEms(args = process.argv.slice(2)): Promise<number> {
   ) {
     console.log(formatHelpText());
     return 0;
+  }
+
+  if (args[0] === "site") {
+    if (args[1] === "--help" || args[1] === "-h" || args[1] === "help") {
+      console.log(formatSiteHelpText());
+      return 0;
+    }
+
+    return runSiteCommand(args.slice(1));
   }
 
   if (args[0] === "battery") {
@@ -59,6 +77,24 @@ export async function runEms(args = process.argv.slice(2)): Promise<number> {
     }
 
     return runMeterCommand(args.slice(1));
+  }
+
+  if (args[0] === "weather") {
+    if (args[1] === "--help" || args[1] === "-h" || args[1] === "help") {
+      console.log(formatWeatherHelpText());
+      return 0;
+    }
+
+    return runWeatherCommand(args.slice(1));
+  }
+
+  if (args[0] === "price") {
+    if (args[1] === "--help" || args[1] === "-h" || args[1] === "help") {
+      console.log(formatPriceHelpText());
+      return 0;
+    }
+
+    return runPriceCommand(args.slice(1));
   }
 
   console.log(formatHelpText());

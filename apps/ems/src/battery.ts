@@ -14,25 +14,40 @@ import {
 
 interface BatteryAddOptions {
   host: string | null;
+  siteId: string;
+}
+
+interface BatteryCommandOptions {
+  siteId: string;
+}
+
+interface ResolvedDiscoveredDevice {
+  device: DiscoveredDevice | null;
+  errorMessage: string | null;
 }
 
 export function formatBatteryHelpText(): string {
   return [
     "Usage:",
-    "  battery list",
-    "  battery add <discovery-id> [--host <ipv4>]",
-    "  battery remove <battery-id>",
-    "  battery enable <battery-id>",
-    "  battery disable <battery-id>",
+    "  battery list --site-id <site-id>",
+    "  battery ls --site-id <site-id>",
+    "  battery add <discovery-id> --site-id <site-id> [--host <ipv4>]",
+    "  battery create <discovery-id> --site-id <site-id> [--host <ipv4>]",
+    "  battery remove <discovery-id> --site-id <site-id>",
+    "  battery delete <discovery-id> --site-id <site-id>",
+    "  battery rm <discovery-id> --site-id <site-id>",
+    "  battery enable <discovery-id> --site-id <site-id>",
+    "  battery disable <discovery-id> --site-id <site-id>",
   ].join("\n");
 }
 
 export function formatBatteryList(batteries: BatteryRecord[]): string {
   if (batteries.length === 0) {
-    return "No batteries configured for the active site.";
+    return "No batteries configured for the selected site.";
   }
 
   const header = [
+    "DISCOVERY ID",
     "NAME",
     "STATUS",
     "ENABLED",
@@ -44,6 +59,7 @@ export function formatBatteryList(batteries: BatteryRecord[]): string {
   const separator = "-".repeat(header.length);
   const rows = batteries.map((battery) =>
     [
+      battery.id,
       battery.name,
       battery.status,
       battery.enabled ? "yes" : "no",
@@ -69,12 +85,13 @@ export async function runBatteryCommand(args: string[] = []): Promise<number> {
       return 0;
     }
 
-    if (args[0] === "list") {
-      console.log(formatBatteryList(listBatteries()));
+    if (args[0] === "list" || args[0] === "ls") {
+      const options = parseBatteryCommandOptions(args.slice(1));
+      console.log(formatBatteryList(listBatteries(options.siteId)));
       return 0;
     }
 
-    if (args[0] === "add") {
+    if (args[0] === "add" || args[0] === "create") {
       const discoveryId = args[1];
 
       if (!discoveryId) {
@@ -82,29 +99,36 @@ export async function runBatteryCommand(args: string[] = []): Promise<number> {
       }
 
       const options = parseBatteryAddOptions(args.slice(2));
-      const discovered = await resolveDiscoveredDevice(
+      const resolved = await resolveDiscoveredDevice(
         discoveryId,
         "battery",
         options,
       );
 
-      if (!discovered) {
+      if (!resolved.device) {
         throw new Error(
-          `Discovered battery not available right now: ${discoveryId}`,
+          resolved.errorMessage ??
+            `Discovered battery not found or not reachable right now: ${discoveryId}`,
         );
       }
 
+      const discovered = resolved.device;
+
       console.log(
         JSON.stringify(
-          createBattery({
-            name: discovered.name,
-            adapter: discovered.model,
-            model: discovered.model,
-            ipAddress: discovered.ipAddress,
-            connected: true,
-            enabled: true,
-            status: inferBatteryStatus(discovered.details),
-          }),
+          createBattery(
+            {
+              id: discoveryId,
+              name: discovered.name,
+              adapter: discovered.model,
+              model: discovered.model,
+              ipAddress: discovered.ipAddress,
+              connected: true,
+              enabled: true,
+              status: inferBatteryStatus(discovered.details),
+            },
+            options.siteId,
+          ),
           null,
           2,
         ),
@@ -116,10 +140,15 @@ export async function runBatteryCommand(args: string[] = []): Promise<number> {
       const id = args[1];
 
       if (!id) {
-        throw new Error(`Missing battery id for ${args[0]}`);
+        throw new Error(`Missing discovery id for ${args[0]}`);
       }
 
-      const battery = setBatteryEnabled(id, args[0] === "enable");
+      const options = parseBatteryCommandOptions(args.slice(2));
+      const battery = setBatteryEnabled(
+        id,
+        args[0] === "enable",
+        options.siteId,
+      );
 
       if (!battery) {
         throw new Error(`Managed battery not found: ${id}`);
@@ -129,14 +158,15 @@ export async function runBatteryCommand(args: string[] = []): Promise<number> {
       return 0;
     }
 
-    if (args[0] === "remove") {
+    if (args[0] === "remove" || args[0] === "delete" || args[0] === "rm") {
       const id = args[1];
 
       if (!id) {
-        throw new Error("Missing battery id for remove");
+        throw new Error("Missing discovery id for remove");
       }
 
-      const battery = deleteBattery(id);
+      const options = parseBatteryCommandOptions(args.slice(2));
+      const battery = deleteBattery(id, options.siteId);
 
       if (!battery) {
         throw new Error(`Managed battery not found: ${id}`);
@@ -157,6 +187,7 @@ export async function runBatteryCommand(args: string[] = []): Promise<number> {
 function parseBatteryAddOptions(args: string[]): BatteryAddOptions {
   const options: BatteryAddOptions = {
     host: null,
+    siteId: parseRequiredSiteId(args),
   };
 
   for (let index = 0; index < args.length; index += 1) {
@@ -178,17 +209,46 @@ function parseBatteryAddOptions(args: string[]): BatteryAddOptions {
       continue;
     }
 
+    if (arg === "--site-id") {
+      index += 1;
+      continue;
+    }
+
     throw new Error(`Unknown battery option: ${arg}`);
   }
 
   return options;
 }
 
+function parseBatteryCommandOptions(args: string[]): BatteryCommandOptions {
+  return {
+    siteId: parseRequiredSiteId(args),
+  };
+}
+
+function parseRequiredSiteId(args: string[]): string {
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] !== "--site-id") {
+      continue;
+    }
+
+    const siteId = args[index + 1];
+
+    if (!siteId) {
+      throw new Error("Missing value for --site-id");
+    }
+
+    return siteId;
+  }
+
+  throw new Error("Missing required option: --site-id <site-id>");
+}
+
 async function resolveDiscoveredDevice(
   discoveryId: string,
   category: DiscoveredDevice["category"],
   options: BatteryAddOptions,
-): Promise<DiscoveredDevice | null> {
+): Promise<ResolvedDiscoveredDevice> {
   const devices = options.host
     ? await discoverHostDevices(options.host, {
         verbose: false,
@@ -196,12 +256,30 @@ async function resolveDiscoveredDevice(
       })
     : await discoverCurrentSubnet();
 
-  return (
-    devices.find(
-      (device) =>
-        device.discoveryId === discoveryId && device.category === category,
-    ) ?? null
+  const exactMatch = devices.find(
+    (device) => device.discoveryId === discoveryId,
   );
+
+  if (!exactMatch) {
+    return {
+      device: null,
+      errorMessage: `Discovered ${category} not found or not reachable right now: ${discoveryId}`,
+    };
+  }
+
+  if (exactMatch.category !== category) {
+    const suggestedCommand = `${exactMatch.category} add ${discoveryId}`;
+
+    return {
+      device: null,
+      errorMessage: `Discovery id ${discoveryId} is a ${exactMatch.category}, not a ${category}; use '${suggestedCommand}' instead`,
+    };
+  }
+
+  return {
+    device: exactMatch,
+    errorMessage: null,
+  };
 }
 
 async function discoverCurrentSubnet(): Promise<DiscoveredDevice[]> {

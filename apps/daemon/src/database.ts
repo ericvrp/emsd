@@ -1,14 +1,12 @@
 import { Database } from "bun:sqlite";
 import {
   type BatteryRecord,
+  type ManagedDeviceTelemetryRecord,
   type MeterRecord,
   type SiteRecord,
   ensureParentDirectory,
   getDatabasePath,
 } from "@emsd/core";
-
-const DEFAULT_SITE_ID = "default-site";
-const DEFAULT_SITE_NAME = "Default Site";
 
 interface SiteRow {
   id: string;
@@ -40,6 +38,17 @@ interface MeterRow {
   connected: number;
   details: string;
   updated_at: string;
+}
+
+interface DeviceTelemetryRow {
+  device_id: string;
+  site_id: string;
+  kind: ManagedDeviceTelemetryRecord["kind"];
+  power_w: number | null;
+  soc_percent: number | null;
+  gas_m3: number | null;
+  state: ManagedDeviceTelemetryRecord["state"];
+  observed_at: string;
 }
 
 export function openDaemonDatabase(databasePath = getDatabasePath()): Database {
@@ -92,14 +101,32 @@ export function openDaemonDatabase(databasePath = getDatabasePath()): Database {
       id TEXT PRIMARY KEY,
       site_id TEXT NOT NULL,
       name TEXT NOT NULL,
-      provider TEXT NOT NULL,
-      enabled INTEGER NOT NULL,
       updated_at TEXT NOT NULL,
       FOREIGN KEY(site_id) REFERENCES sites(id)
     );
   `);
-
-  ensureDefaultSite(db);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS dynamic_price_sources (
+      id TEXT PRIMARY KEY,
+      site_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY(site_id) REFERENCES sites(id)
+    );
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS device_telemetry (
+      device_id TEXT PRIMARY KEY,
+      site_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      power_w REAL,
+      soc_percent REAL,
+      gas_m3 REAL,
+      state TEXT,
+      observed_at TEXT NOT NULL,
+      FOREIGN KEY(site_id) REFERENCES sites(id)
+    );
+  `);
 
   return db;
 }
@@ -191,26 +218,72 @@ export function readMeters(db: Database): MeterRecord[] {
   }));
 }
 
-function ensureDefaultSite(db: Database): void {
-  const existing = db
-    .query<{ id: string }, [string]>(
+export function readManagedDeviceTelemetry(
+  db: Database,
+): ManagedDeviceTelemetryRecord[] {
+  const rows = db
+    .query<DeviceTelemetryRow, []>(
       `
-        SELECT id
-        FROM sites
-        WHERE id = ?1
+        SELECT
+          device_id,
+          site_id,
+          kind,
+          power_w,
+          soc_percent,
+          gas_m3,
+          state,
+          observed_at
+        FROM device_telemetry
+        ORDER BY observed_at DESC
       `,
     )
-    .get(DEFAULT_SITE_ID);
+    .all();
 
-  if (existing) {
-    return;
-  }
+  return rows.map((row) => ({
+    deviceId: row.device_id,
+    siteId: row.site_id,
+    kind: row.kind,
+    powerW: row.power_w,
+    socPercent: row.soc_percent,
+    gasM3: row.gas_m3,
+    state: row.state,
+    observedAt: row.observed_at,
+  }));
+}
 
-  const now = new Date().toISOString();
+export function upsertManagedDeviceTelemetry(
+  db: Database,
+  telemetry: ManagedDeviceTelemetryRecord,
+): void {
   db.query(
     `
-      INSERT INTO sites (id, name, created_at, updated_at)
-      VALUES (?1, ?2, ?3, ?4)
+      INSERT INTO device_telemetry (
+        device_id,
+        site_id,
+        kind,
+        power_w,
+        soc_percent,
+        gas_m3,
+        state,
+        observed_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(device_id) DO UPDATE SET
+        site_id = excluded.site_id,
+        kind = excluded.kind,
+        power_w = excluded.power_w,
+        soc_percent = excluded.soc_percent,
+        gas_m3 = excluded.gas_m3,
+        state = excluded.state,
+        observed_at = excluded.observed_at
     `,
-  ).run(DEFAULT_SITE_ID, DEFAULT_SITE_NAME, now, now);
+  ).run(
+    telemetry.deviceId,
+    telemetry.siteId,
+    telemetry.kind,
+    telemetry.powerW,
+    telemetry.socPercent,
+    telemetry.gasM3,
+    telemetry.state,
+    telemetry.observedAt,
+  );
 }

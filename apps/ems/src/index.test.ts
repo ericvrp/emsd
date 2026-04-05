@@ -5,8 +5,11 @@ test("formatHelpText includes help and discover usage", () => {
   const output = formatHelpText();
 
   expect(output).toContain("help");
+  expect(output).toContain("site <subcommand>");
   expect(output).toContain("battery <subcommand>");
   expect(output).toContain("meter <subcommand>");
+  expect(output).toContain("weather <subcommand>");
+  expect(output).toContain("price <subcommand>");
   expect(output).toContain("discover [--verbose] [--host <ipv4>]");
 });
 

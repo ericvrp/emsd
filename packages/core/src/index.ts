@@ -24,6 +24,20 @@ export interface SiteRecord {
   updatedAt: string;
 }
 
+export interface WeatherForecastSourceRecord {
+  id: string;
+  siteId: string;
+  name: string;
+  updatedAt: string;
+}
+
+export interface DynamicPriceSourceRecord {
+  id: string;
+  siteId: string;
+  name: string;
+  updatedAt: string;
+}
+
 export interface DiscoverReport {
   schema: "emsd.discover.report.v1";
   reportedAt: string;
@@ -131,6 +145,48 @@ export interface MeterRecord {
   connected: boolean;
   details: string;
   updatedAt: string;
+}
+
+export type ManagedDeviceKind = "battery" | "meter";
+
+export type ManagedDeviceState =
+  | "idle"
+  | "charging"
+  | "discharging"
+  | "connected"
+  | "offline";
+
+export interface ManagedDeviceRecord {
+  id: string;
+  siteId: string;
+  kind: ManagedDeviceKind;
+  name: string;
+  model: string;
+  address: string;
+  enabled: boolean;
+  connected: boolean;
+  state: ManagedDeviceState;
+  note: string | null;
+  updatedAt: string;
+}
+
+export function formatManagedDeviceState(state: ManagedDeviceState): string {
+  return state.replace(/-/g, " ");
+}
+
+export interface ManagedDeviceTelemetryRecord {
+  deviceId: string;
+  siteId: string;
+  kind: ManagedDeviceKind;
+  powerW: number | null;
+  socPercent: number | null;
+  gasM3: number | null;
+  state: ManagedDeviceState | null;
+  observedAt: string;
+}
+
+export interface ManagedDeviceStatusRecord extends ManagedDeviceRecord {
+  telemetry: ManagedDeviceTelemetryRecord | null;
 }
 
 export function getRepoRoot(): string {
