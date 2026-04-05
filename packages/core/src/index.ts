@@ -8,25 +8,25 @@ export type BatteryStatus = "idle" | "charging" | "discharging" | "offline";
 
 export type DiscoveryCategory = "battery" | "meter";
 
-export interface DiscoveredDeviceRecord {
-  id: string;
+export interface DiscoverReportDevice {
+  discoveryId: string;
   category: DiscoveryCategory;
   model: string;
   name: string;
   ipAddress: string;
   details: string;
-  firstSeenAt: string;
-  lastSeenAt: string;
 }
 
-export interface DiscoverReportDevice extends DiscoveredDeviceRecord {
-  isNew: boolean;
+export interface SiteRecord {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface DiscoverReport {
   schema: "emsd.discover.report.v1";
   reportedAt: string;
-  filter: "new" | "all";
   host: string | null;
   subnet: string | null;
   interfaceName: string | null;
@@ -41,7 +41,6 @@ export const discoverReportJsonSchema = {
   required: [
     "schema",
     "reportedAt",
-    "filter",
     "host",
     "subnet",
     "interfaceName",
@@ -55,10 +54,6 @@ export const discoverReportJsonSchema = {
     reportedAt: {
       type: "string",
       format: "date-time",
-    },
-    filter: {
-      type: "string",
-      enum: ["new", "all"],
     },
     host: {
       type: ["string", "null"],
@@ -76,18 +71,15 @@ export const discoverReportJsonSchema = {
         type: "object",
         additionalProperties: false,
         required: [
-          "id",
+          "discoveryId",
           "category",
           "model",
           "name",
           "ipAddress",
           "details",
-          "firstSeenAt",
-          "lastSeenAt",
-          "isNew",
         ],
         properties: {
-          id: {
+          discoveryId: {
             type: "string",
             minLength: 1,
           },
@@ -110,17 +102,6 @@ export const discoverReportJsonSchema = {
           details: {
             type: "string",
           },
-          firstSeenAt: {
-            type: "string",
-            format: "date-time",
-          },
-          lastSeenAt: {
-            type: "string",
-            format: "date-time",
-          },
-          isNew: {
-            type: "boolean",
-          },
         },
       },
     },
@@ -129,10 +110,26 @@ export const discoverReportJsonSchema = {
 
 export interface BatteryRecord {
   id: string;
+  siteId: string;
   name: string;
   adapter: string;
+  model: string;
+  ipAddress: string;
+  enabled: boolean;
   status: BatteryStatus;
   connected: boolean;
+  updatedAt: string;
+}
+
+export interface MeterRecord {
+  id: string;
+  siteId: string;
+  name: string;
+  model: string;
+  ipAddress: string;
+  enabled: boolean;
+  connected: boolean;
+  details: string;
   updatedAt: string;
 }
 

@@ -9,7 +9,7 @@ Build a personal energy management system for one household per installation. It
 ### 1. Daemon
 
 - Bun + TypeScript service
-- Runs continuously and manages scheduling, polling, discovery, and persistence
+- Runs continuously and manages scheduling, polling, persistence, and runtime connectivity checks
 - Managed by PM2 for end-user startup and restart behavior
 - Owns SQLite access and core business logic
 - Project name: `EMSD`
@@ -81,6 +81,14 @@ The system should support these strategy modes:
 
 The system should support both manual configuration and assisted setup.
 
+### Core Model
+
+- A `site` represents the one household installation that `EMSD` manages
+- The daemon reasons about the configured entities that belong to the active site
+- Discovery is transient and shows what is reachable now; it is not a long-term registry of everything ever seen
+- Adding an item to the active site is an explicit user action
+- Managed records should track whether they are enabled and whether they are currently connected
+
 ### Manual Mode
 
 - User provides house settings, credentials, battery metadata, and pricing configuration
@@ -88,18 +96,71 @@ The system should support both manual configuration and assisted setup.
 
 ### Discovery Mode
 
-- An EMS command scans for supported batteries, meters, and devices on the local network or through known vendor APIs
-- The result is turned into a config draft that the user can confirm and save
+- An EMS command scans for supported batteries, meters, and other supported inputs on the local network or through known vendor APIs
+- Discovery output should only show what is reachable during that command run
 - Discovery should produce normalized records regardless of brand
 - Discovery should include HomeWizard P1 meters when available
+- Discovery should default to concise human-readable output
+- Discovery should support verbose JSON output for scripting and debugging
+- Discovery results should expose a stable identifier that the user can use immediately to add the item to the active site
 
 Example flow:
 
 1. `ems discover`
-2. Detect supported batteries, gateways, and P1 meters
-3. Show proposed config
-4. Save config to disk and register devices in SQLite
-5. Restart or notify `EMSD`
+2. Detect supported batteries, gateways, P1 meters, and other supported inputs that are currently reachable
+3. Show concise one-line summaries by default, or full JSON with `--verbose`
+4. Add a selected discovery result to the active site
+5. Persist the managed record in SQLite
+6. Restart or notify `EMSD` if required
+
+### Managed Site Records
+
+- The current scaffold should move away from persisting `discovered_devices` as a history table
+- The source of truth should be the managed records attached to the active site
+- Use separate managed tables for distinct domains instead of one large generic entity table
+- The first managed tables should be:
+  - `sites`
+  - `batteries`
+  - `meters`
+  - `weather_sources`
+- Each managed table should keep a small shared shape where it makes sense:
+  - `id`
+  - `site_id`
+  - `name`
+  - `enabled`
+  - `connected` when runtime reachability applies
+  - `created_at`
+  - `updated_at`
+- Type-specific fields should remain in the type-specific table
+- Weather forecast inputs should be managed alongside batteries and meters at the site level, but stored separately because they are provider-backed inputs rather than LAN devices
+
+### CLI Direction
+
+- `ems discover`
+  - Shows currently reachable supported devices and inputs
+  - Does not create persistent records by itself
+- `ems discover --verbose`
+  - Emits complete JSON output for the current scan
+- Prefer typed management commands over a generic catch-all command surface during the scaffold phase
+- Initial managed command areas should evolve toward:
+  - `battery list`
+  - `battery add <discovery-id>`
+  - `battery remove <battery-id>`
+  - `battery enable <battery-id>`
+  - `battery disable <battery-id>`
+  - `meter list`
+  - `meter add <discovery-id>`
+  - `weather list`
+  - `weather add <provider>`
+- A broader cross-type inventory command can be added later if it becomes useful, but the first implementation should preserve explicit domain types
+
+### Runtime Semantics
+
+- `enabled` means the site configuration allows `EMSD` to use the managed record in planning and control logic
+- `connected` means the daemon can currently reach or validate the managed record
+- `discover` answers "what is available right now?"
+- `list` commands answer "what belongs to this site?"
+- Battery status remains a battery-specific runtime concern and should not define the general inventory model
 
 ## Suggested Architecture
 
@@ -107,6 +168,7 @@ Example flow:
 
 - `battery-adapters`
 - `meter-adapters`
+- `weather-providers`
 - `price-providers`
 - `strategy-engine`
 - `simulator`
@@ -118,11 +180,12 @@ Example flow:
 
 ### Common Domain Model
 
-- `House`
+- `Site`
 - `Battery`
 - `BatteryAdapter`
 - `Meter`
 - `MeterAdapter`
+- `WeatherSource`
 - `TariffProvider`
 - `PricePoint`
 - `Strategy`
@@ -151,13 +214,16 @@ Example flow:
 
 - Implement config loading and persistence
 - Implement discovery framework
-- Add EMS commands for status, config, meter inspection, and strategy control
+- Replace persistent discovery history with transient discovery output
+- Add site-scoped persistence for managed batteries, meters, and weather sources
+- Add EMS commands for status, config, meter inspection, managed inventory, and strategy control
 
 ### Phase 3
 
 - Implement simulator and strategy engine
 - Add strategy support for disabled, self-consumption, time-based, dynamic-pricing, and manual modes
 - Add HomeWizard P1 meter integration
+- Add weather forecast provider integration for solar-aware planning
 - Add Nordpool and Tibber integrations
 - Expand EMS coverage until it fully covers the intended product surface
 
@@ -167,3 +233,43 @@ Example flow:
 - Route Next.js backend operations through the EMS command app only
 - Add real battery brand adapters, starting with Sonnen
 - Improve resilience, logs, retries, and long-running stability
+
+## Near-Term Implementation Plan
+
+### Step 1: Normalize Discovery Output
+
+- Change `ems discover` to stop writing into SQLite as a persistent discovery history
+- Return concise one-line summaries by default
+- Keep `--verbose` as the machine-friendly JSON output mode
+- Include a stable discovery identifier in both concise and verbose output
+
+### Step 2: Introduce Site Persistence
+
+- Add a `sites` table owned by the daemon database
+- Create a default site for the current one-household-per-install assumption
+- Prepare the schema so future multi-site support remains possible without changing the conceptual model
+
+### Step 3: Split Managed Tables By Domain
+
+- Refactor the current `batteries` table into a managed battery table with explicit configuration and runtime fields
+- Add a `meters` table for managed meter records
+- Add a `weather_sources` table for configured forecast providers
+- Remove the current `discovered_devices` table from the intended architecture
+
+### Step 4: Add Explicit Management Commands
+
+- Replace the current discovery-backed `device` CRUD flow with typed add and list commands
+- Start with battery and meter flows because they are the first supported discovered types
+- Keep weather source management explicit and provider-oriented instead of forcing it through network discovery
+
+### Step 5: Align Daemon Runtime State
+
+- Make the daemon treat managed site records as the source of truth
+- Have the daemon update `connected` and type-specific runtime state for managed records
+- Keep discovery separate from runtime polling and scheduling
+
+### Step 6: Update Tests And Documentation
+
+- Update EMS command tests to cover discover, add, list, enable, disable, and remove flows
+- Update daemon database tests to match the new schema
+- Update README examples so the setup flow reflects discovery plus explicit add

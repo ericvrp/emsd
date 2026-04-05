@@ -5,8 +5,9 @@ test("formatHelpText includes help and discover usage", () => {
   const output = formatHelpText();
 
   expect(output).toContain("help");
-  expect(output).toContain("device <subcommand>");
-  expect(output).toContain("discover [--all] [--verbose] [--host <ipv4>]");
+  expect(output).toContain("battery <subcommand>");
+  expect(output).toContain("meter <subcommand>");
+  expect(output).toContain("discover [--verbose] [--host <ipv4>]");
 });
 
 test("runEms returns success for help command", async () => {

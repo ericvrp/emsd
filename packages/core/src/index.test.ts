@@ -22,11 +22,7 @@ test("discoverReportJsonSchema exposes the discover report contract", () => {
   expect(discoverReportJsonSchema.properties.schema.const).toBe(
     "emsd.discover.report.v1",
   );
-  expect(discoverReportJsonSchema.properties.filter.enum).toEqual([
-    "new",
-    "all",
-  ]);
   expect(discoverReportJsonSchema.properties.devices.items.required).toContain(
-    "isNew",
+    "discoveryId",
   );
 });

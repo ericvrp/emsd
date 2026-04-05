@@ -1,29 +1,45 @@
 import { Database } from "bun:sqlite";
 import {
   type BatteryRecord,
-  type DiscoveredDeviceRecord,
+  type MeterRecord,
+  type SiteRecord,
   ensureParentDirectory,
   getDatabasePath,
 } from "@emsd/core";
 
-interface BatteryRow {
+const DEFAULT_SITE_ID = "default-site";
+const DEFAULT_SITE_NAME = "Default Site";
+
+interface SiteRow {
   id: string;
   name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface BatteryRow {
+  id: string;
+  site_id: string;
+  name: string;
   adapter: string;
+  model: string;
+  ip_address: string;
+  enabled: number;
   status: BatteryRecord["status"];
   connected: number;
   updated_at: string;
 }
 
-interface DiscoveredDeviceRow {
+interface MeterRow {
   id: string;
-  category: DiscoveredDeviceRecord["category"];
+  site_id: string;
   model: string;
   name: string;
   ip_address: string;
+  enabled: number;
+  connected: number;
   details: string;
-  first_seen_at: string;
-  last_seen_at: string;
+  updated_at: string;
 }
 
 export function openDaemonDatabase(databasePath = getDatabasePath()): Database {
@@ -33,38 +49,67 @@ export function openDaemonDatabase(databasePath = getDatabasePath()): Database {
 
   db.exec("PRAGMA journal_mode = WAL;");
   db.exec(`
-    CREATE TABLE IF NOT EXISTS batteries (
+    CREATE TABLE IF NOT EXISTS sites (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
-      adapter TEXT NOT NULL,
-      status TEXT NOT NULL,
-      connected INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
   `);
   db.exec(`
-    CREATE TABLE IF NOT EXISTS discovered_devices (
+    CREATE TABLE IF NOT EXISTS batteries (
       id TEXT PRIMARY KEY,
-      category TEXT NOT NULL,
+      site_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      adapter TEXT NOT NULL,
+      model TEXT NOT NULL,
+      ip_address TEXT NOT NULL,
+      enabled INTEGER NOT NULL,
+      status TEXT NOT NULL,
+      connected INTEGER NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY(site_id) REFERENCES sites(id),
+      UNIQUE(site_id, model, ip_address)
+    );
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS meters (
+      id TEXT PRIMARY KEY,
+      site_id TEXT NOT NULL,
       model TEXT NOT NULL,
       name TEXT NOT NULL,
       ip_address TEXT NOT NULL,
+      enabled INTEGER NOT NULL,
+      connected INTEGER NOT NULL,
       details TEXT NOT NULL,
-      first_seen_at TEXT NOT NULL,
-      last_seen_at TEXT NOT NULL,
-      UNIQUE(category, model, ip_address)
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY(site_id) REFERENCES sites(id),
+      UNIQUE(site_id, model, ip_address)
     );
   `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS weather_sources (
+      id TEXT PRIMARY KEY,
+      site_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      enabled INTEGER NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY(site_id) REFERENCES sites(id)
+    );
+  `);
+
+  ensureDefaultSite(db);
 
   return db;
 }
 
-export function readBatteries(db: Database): BatteryRecord[] {
+export function readSites(db: Database): SiteRecord[] {
   const rows = db
-    .query<BatteryRow, []>(
+    .query<SiteRow, []>(
       `
-        SELECT id, name, adapter, status, connected, updated_at
-        FROM batteries
+        SELECT id, name, created_at, updated_at
+        FROM sites
         ORDER BY name ASC
       `,
     )
@@ -73,27 +118,61 @@ export function readBatteries(db: Database): BatteryRecord[] {
   return rows.map((row) => ({
     id: row.id,
     name: row.name,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }));
+}
+
+export function readBatteries(db: Database): BatteryRecord[] {
+  const rows = db
+    .query<BatteryRow, []>(
+      `
+        SELECT
+          id,
+          site_id,
+          name,
+          adapter,
+          model,
+          ip_address,
+          enabled,
+          status,
+          connected,
+          updated_at
+        FROM batteries
+        ORDER BY name ASC
+      `,
+    )
+    .all();
+
+  return rows.map((row) => ({
+    id: row.id,
+    siteId: row.site_id,
+    name: row.name,
     adapter: row.adapter,
+    model: row.model,
+    ipAddress: row.ip_address,
+    enabled: row.enabled === 1,
     status: row.status,
     connected: row.connected === 1,
     updatedAt: row.updated_at,
   }));
 }
 
-export function readDiscoveredDevices(db: Database): DiscoveredDeviceRecord[] {
+export function readMeters(db: Database): MeterRecord[] {
   const rows = db
-    .query<DiscoveredDeviceRow, []>(
+    .query<MeterRow, []>(
       `
         SELECT
           id,
-          category,
+          site_id,
           model,
           name,
           ip_address,
+          enabled,
+          connected,
           details,
-          first_seen_at,
-          last_seen_at
-        FROM discovered_devices
+          updated_at
+        FROM meters
         ORDER BY name ASC, ip_address ASC
       `,
     )
@@ -101,12 +180,37 @@ export function readDiscoveredDevices(db: Database): DiscoveredDeviceRecord[] {
 
   return rows.map((row) => ({
     id: row.id,
-    category: row.category,
+    siteId: row.site_id,
     model: row.model,
     name: row.name,
     ipAddress: row.ip_address,
+    enabled: row.enabled === 1,
+    connected: row.connected === 1,
     details: row.details,
-    firstSeenAt: row.first_seen_at,
-    lastSeenAt: row.last_seen_at,
+    updatedAt: row.updated_at,
   }));
+}
+
+function ensureDefaultSite(db: Database): void {
+  const existing = db
+    .query<{ id: string }, [string]>(
+      `
+        SELECT id
+        FROM sites
+        WHERE id = ?1
+      `,
+    )
+    .get(DEFAULT_SITE_ID);
+
+  if (existing) {
+    return;
+  }
+
+  const now = new Date().toISOString();
+  db.query(
+    `
+      INSERT INTO sites (id, name, created_at, updated_at)
+      VALUES (?1, ?2, ?3, ?4)
+    `,
+  ).run(DEFAULT_SITE_ID, DEFAULT_SITE_NAME, now, now);
 }

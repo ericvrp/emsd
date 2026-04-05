@@ -49,6 +49,7 @@
 - Run the EMS entrypoint: `bun run ems --`
 - List batteries: `bun run battery:list`
 - Equivalent direct command: `bun run ems -- battery list`
+- Discover supported devices on the network: `bun run discover`
 
 ### Web Commands
 - Run Next.js in development: `bun run web:dev`
@@ -79,7 +80,8 @@
 
 ## Current Behavior
 - The daemon creates the SQLite schema but does not seed mock battery data.
-- The EMS command app currently supports one scaffold command: `battery list`.
+- `ems discover` reports devices that are reachable during the current scan without persisting a discovery history.
+- The EMS command app currently supports managed battery and meter commands for the default site.
 - The web app currently renders a single under-construction page.
 
 ## Package-Specific Scripts

@@ -85,18 +85,19 @@ bun test --test-name-pattern "test name"
 
 ## Example Flow
 
-Start the daemon, inspect the current battery list, then stop the daemon:
+Start the daemon, inspect the current battery list, optionally scan for reachable devices, then stop the daemon:
 
 ```bash
 bun run daemon:start
 bun run battery:list
+bun run discover
 bun run daemon:stop
 ```
 
 Expected EMS output on a fresh install is:
 
 ```text
-No batteries found in the daemon database.
+No batteries configured for the active site.
 ```
 
 ## Development Workflow
@@ -107,12 +108,14 @@ For the current scaffold, a simple local workflow is:
 bun install
 bun run daemon:start
 bun run battery:list
+bun run discover
 bun run web:dev
 ```
 
 - `bun install` installs workspace dependencies.
 - `bun run daemon:start` starts the daemon in the background and initializes the SQLite database.
-- `bun run battery:list` confirms the EMS command app can read the daemon-owned battery data.
+- `bun run battery:list` confirms the EMS command app can read the daemon-owned managed battery data.
+- `bun run discover` shows the devices that are reachable right now without storing discovery history.
 - `bun run web:dev` starts the placeholder Next.js app for UI iteration.
 
 When you are done, stop the background daemon with:

@@ -1,10 +1,10 @@
 import { EMSD_NAME } from "@emsd/core";
-import { runBatteryListCommand } from "./battery-list";
-import { formatDeviceHelpText, runDeviceCommand } from "./device";
+import { formatBatteryHelpText, runBatteryCommand } from "./battery";
 import {
   formatHelpText as formatDiscoverHelpText,
   runDiscoverCommand,
 } from "./discover";
+import { formatMeterHelpText, runMeterCommand } from "./meter";
 
 export function formatHelpText(): string {
   return [
@@ -12,12 +12,13 @@ export function formatHelpText(): string {
     "",
     "Usage:",
     "  help                  Show this help output",
-    "  battery list          List connected batteries and their current status",
-    "  device <subcommand>   Manage discovered devices",
-    "  discover [--all] [--verbose] [--host <ipv4>]  Scan for supported devices",
+    "  battery <subcommand>  Manage batteries in the active site",
+    "  meter <subcommand>    Manage meters in the active site",
+    "  discover [--verbose] [--host <ipv4>]  Scan for supported devices",
     "",
     "Tip:",
-    "  device --help         Show discovered-device CRUD help",
+    "  battery --help        Show battery management help",
+    "  meter --help          Show meter management help",
     "  discover --help       Show discovery-specific help",
   ].join("\n");
 }
@@ -33,8 +34,13 @@ export async function runEms(args = process.argv.slice(2)): Promise<number> {
     return 0;
   }
 
-  if (args[0] === "battery" && args[1] === "list") {
-    return runBatteryListCommand();
+  if (args[0] === "battery") {
+    if (args[1] === "--help" || args[1] === "-h" || args[1] === "help") {
+      console.log(formatBatteryHelpText());
+      return 0;
+    }
+
+    return runBatteryCommand(args.slice(1));
   }
 
   if (args[0] === "discover") {
@@ -46,13 +52,13 @@ export async function runEms(args = process.argv.slice(2)): Promise<number> {
     return runDiscoverCommand(args.slice(1));
   }
 
-  if (args[0] === "device") {
+  if (args[0] === "meter") {
     if (args[1] === "--help" || args[1] === "-h" || args[1] === "help") {
-      console.log(formatDeviceHelpText());
+      console.log(formatMeterHelpText());
       return 0;
     }
 
-    return runDeviceCommand(args.slice(1));
+    return runMeterCommand(args.slice(1));
   }
 
   console.log(formatHelpText());

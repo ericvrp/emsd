@@ -1,13 +1,14 @@
+import { createHash } from "node:crypto";
 import { type NetworkInterfaceInfo, networkInterfaces } from "node:os";
 import type {
   DiscoverReport,
   DiscoverReportDevice,
   DiscoveryCategory,
 } from "@emsd/core";
-import { saveDiscoveryResults } from "./discovered-device-store";
 import discoverySignaturesJson from "./discovery-signatures.json";
 
 export interface DiscoveredDevice {
+  discoveryId: string;
   category: DiscoveryCategory;
   model: string;
   name: string;
@@ -23,7 +24,6 @@ export interface DiscoveryScanTarget {
 export interface DiscoverCommandOptions {
   verbose: boolean;
   host: string | null;
-  all: boolean;
 }
 
 interface DiscoveryRequestDefinition {
@@ -61,11 +61,10 @@ const discoverySignatures =
 export function formatHelpText(): string {
   return [
     "Usage:",
-    "  discover [--all] [--verbose] [--host <ipv4>]  Scan for supported devices",
+    "  discover [--verbose] [--host <ipv4>]  Scan for supported devices",
     "",
     "Options:",
-    "  --all                 Report all matched devices, not just new ones",
-    "  --verbose             Show probe progress and match details",
+    "  --verbose             Emit full JSON output for the current scan",
     "  --host <ipv4>         Probe a single host instead of scanning /24",
   ].join("\n");
 }
@@ -76,7 +75,6 @@ export function parseDiscoverCommandOptions(
   const options: DiscoverCommandOptions = {
     verbose: false,
     host: null,
-    all: false,
   };
 
   for (let index = 0; index < args.length; index += 1) {
@@ -84,11 +82,6 @@ export function parseDiscoverCommandOptions(
 
     if (arg === "--verbose") {
       options.verbose = true;
-      continue;
-    }
-
-    if (arg === "--all") {
-      options.all = true;
       continue;
     }
 
@@ -212,25 +205,41 @@ export function buildSubnetTargets(subnets: string[]): string[] {
 
 export function formatDiscoveredDevices(devices: DiscoveredDevice[]): string {
   if (devices.length === 0) {
-    return "No supported devices found.";
+    return "No supported devices are reachable right now.";
   }
 
-  const header = ["TYPE", "NAME", "IP ADDRESS", "DETAILS"].join(" | ");
-  const separator = "-".repeat(header.length);
-  const rows = [...devices]
+  return [...devices]
     .sort(compareDiscoveredDevices)
-    .map((device) =>
-      [device.category, device.name, device.ipAddress, device.details].join(
-        " | ",
-      ),
-    );
+    .map(
+      (device) =>
+        `${device.name} [${device.discoveryId}] ${device.ipAddress}${formatConciseDetails(device)}`,
+    )
+    .join("\n");
+}
 
-  return [header, separator, ...rows].join("\n");
+function formatConciseDetails(device: DiscoveredDevice): string {
+  if (!device.details) {
+    return "";
+  }
+
+  const detailParts = device.details.split(", ");
+  const preferredPrefixes =
+    device.category === "battery"
+      ? ["SOC ", "power ", "state "]
+      : ["SMR ", "power ", "gas "];
+  const conciseParts = preferredPrefixes
+    .map((prefix) => detailParts.find((part) => part.startsWith(prefix)))
+    .filter((part): part is string => part !== undefined);
+  const summary = (
+    conciseParts.length > 0 ? conciseParts : detailParts.slice(0, 3)
+  ).join(", ");
+
+  return summary ? `: ${summary}` : "";
 }
 
 export async function discoverDevices(
   subnets = getDefaultDiscoverySubnets(),
-  options: DiscoverCommandOptions = { verbose: false, host: null, all: false },
+  options: DiscoverCommandOptions = { verbose: false, host: null },
 ): Promise<DiscoveredDevice[]> {
   const targets = buildSubnetTargets(subnets);
   const results = await Promise.all(
@@ -265,36 +274,23 @@ export async function runDiscoverCommand(args: string[] = []): Promise<number> {
       );
     }
 
-    const device = await probeTarget(options.host, options);
-    const storedDevices = saveDiscoveryResults(device ? [device] : []);
-    console.log(
-      JSON.stringify(
-        buildDiscoverReport(storedDevices, options, {
-          host: options.host,
-          subnet: null,
-          interfaceName: null,
-        }),
-        null,
-        2,
-      ),
-    );
+    const devices = await discoverHostDevices(options.host, options);
+    emitDiscoverOutput(devices, options, {
+      host: options.host,
+      subnet: null,
+      interfaceName: null,
+    });
     return 0;
   }
 
   const target = getPreferredDiscoveryTarget();
 
   if (target === null) {
-    console.log(
-      JSON.stringify(
-        buildDiscoverReport([], options, {
-          host: null,
-          subnet: null,
-          interfaceName: null,
-        }),
-        null,
-        2,
-      ),
-    );
+    emitDiscoverOutput([], options, {
+      host: null,
+      subnet: null,
+      interfaceName: null,
+    });
     return 0;
   }
 
@@ -304,22 +300,48 @@ export async function runDiscoverCommand(args: string[] = []): Promise<number> {
     );
   }
 
-  const storedDevices = saveDiscoveryResults(
-    await discoverDevices([target.subnet], options),
-  );
+  const devices = await discoverDevices([target.subnet], options);
 
-  console.log(
-    JSON.stringify(
-      buildDiscoverReport(storedDevices, options, {
-        host: null,
-        subnet: target.subnet,
-        interfaceName: target.interfaceName,
-      }),
-      null,
-      2,
-    ),
-  );
+  emitDiscoverOutput(devices, options, {
+    host: null,
+    subnet: target.subnet,
+    interfaceName: target.interfaceName,
+  });
   return 0;
+}
+
+export async function discoverHostDevices(
+  host: string,
+  options: DiscoverCommandOptions = { verbose: false, host: null },
+): Promise<DiscoveredDevice[]> {
+  const device = await probeTarget(host, options);
+  return device ? [device] : [];
+}
+
+export function getDiscoveryId(
+  device: Omit<DiscoveredDevice, "discoveryId">,
+): string {
+  return createHash("sha1")
+    .update(`${device.category}:${device.model}:${device.ipAddress}`)
+    .digest("hex")
+    .slice(0, 12);
+}
+
+function emitDiscoverOutput(
+  devices: DiscoveredDevice[],
+  options: DiscoverCommandOptions,
+  target: {
+    host: string | null;
+    subnet: string | null;
+    interfaceName: string | null;
+  },
+): void {
+  if (options.verbose) {
+    console.log(JSON.stringify(buildDiscoverReport(devices, target), null, 2));
+    return;
+  }
+
+  console.log(formatDiscoveredDevices(devices));
 }
 
 export function formatDiscoveryTarget(target: DiscoveryScanTarget): string {
@@ -604,12 +626,17 @@ function buildDiscoveredDevice(
     detailsParts.push(`serial ${serial}`);
   }
 
-  return {
+  const device = {
     category: signature.category,
     model: signature.model,
     name: signature.name,
     ipAddress,
     details: detailsParts.join(", "),
+  };
+
+  return {
+    ...device,
+    discoveryId: getDiscoveryId(device),
   };
 }
 
@@ -649,12 +676,17 @@ function buildIndevoltDiscoveredDevice(
     detailsParts.push(`serial ${serial}`);
   }
 
-  return {
+  const device = {
     category: signature.category,
     model: signature.model,
     name: signature.name,
     ipAddress,
     details: detailsParts.join(", "),
+  };
+
+  return {
+    ...device,
+    discoveryId: getDiscoveryId(device),
   };
 }
 
@@ -743,8 +775,7 @@ function compareIpv4Addresses(left: string, right: string): number {
 }
 
 function buildDiscoverReport(
-  devices: DiscoverReportDevice[],
-  options: DiscoverCommandOptions,
+  devices: DiscoveredDevice[],
   target: {
     host: string | null;
     subnet: string | null;
@@ -754,10 +785,18 @@ function buildDiscoverReport(
   return {
     schema: "emsd.discover.report.v1",
     reportedAt: new Date().toISOString(),
-    filter: options.all ? "all" : "new",
     host: target.host,
     subnet: target.subnet,
     interfaceName: target.interfaceName,
-    devices: options.all ? devices : devices.filter((device) => device.isNew),
+    devices: devices.map(
+      (device): DiscoverReportDevice => ({
+        discoveryId: device.discoveryId,
+        category: device.category,
+        model: device.model,
+        name: device.name,
+        ipAddress: device.ipAddress,
+        details: device.details,
+      }),
+    ),
   };
 }
