@@ -4,17 +4,17 @@
 - This repository now contains a minimal runnable scaffold for `EMSD`.
 - Main folders:
   - `apps/daemon`: Bun + TypeScript daemon
-  - `apps/cli`: Bun + TypeScript CLI
+  - `apps/ems`: Bun + TypeScript EMS command app
   - `apps/web`: Next.js app
   - `packages/core`: shared paths and domain types
   - `scripts`: root helper scripts for starting and stopping the daemon
 - The daemon owns the SQLite database and initializes it at `data/emsd.sqlite`.
-- The CLI currently reads battery state from that database.
-- The web app is intentionally a placeholder and should remain lower priority than the daemon and CLI.
+- The EMS command app currently reads battery state from that database.
+- The web app is intentionally a placeholder and should remain lower priority than the daemon and EMS command app.
 
 ## Product Constraints
-- Preserve the CLI-first rule from `plans/EMSD-plan.md`.
-- Do not add user-facing capabilities to the web app before the CLI exposes them.
+- Preserve the EMS-first rule from `plans/EMSD-plan.md`.
+- Do not add user-facing capabilities to the web app before the EMS command app exposes them.
 - Keep the one-household-per-install assumption unless requirements change.
 - Treat the daemon as the owner of persistence, scheduling, polling, and long-running orchestration.
 
@@ -45,10 +45,10 @@
 - Stop daemon with PM2: `bun run daemon:stop:pm2`
 - View PM2 daemon logs: `bun run daemon:logs:pm2`
 
-### CLI Commands
-- Run the CLI entrypoint: `bun run cli --`
+### EMS Commands
+- Run the EMS entrypoint: `bun run ems --`
 - List batteries: `bun run battery:list`
-- Equivalent direct command: `bun run cli -- battery list`
+- Equivalent direct command: `bun run ems -- battery list`
 
 ### Web Commands
 - Run Next.js in development: `bun run web:dev`
@@ -58,12 +58,12 @@
 ## Single-Test Commands
 - Run one core test file: `bun test packages/core/src/index.test.ts`
 - Run one daemon test file: `bun test apps/daemon/src/database.test.ts`
-- Run one CLI test file: `bun test apps/cli/src/battery-list.test.ts`
+- Run one EMS test file: `bun test apps/ems/src/battery-list.test.ts`
 - Run one test by name: `bun test --test-name-pattern "test name"`
 - While iterating, prefer the narrowest single test before `bun run test`.
 
 ## Build And Runtime Notes
-- `bun run build` builds `packages/core`, `apps/daemon`, `apps/cli`, and the Next.js app.
+- `bun run build` builds `packages/core`, `apps/daemon`, `apps/ems`, and the Next.js app.
 - The Next.js build may adjust `apps/web/tsconfig.json` to satisfy Next.js requirements.
 - The direct daemon start script writes logs under `var/log/` and a PID file under `var/run/`.
 - The daemon itself also enforces a single running instance with a runtime lock at `var/run/emsd.lock`.
@@ -75,11 +75,11 @@
 - Current default database path: `data/emsd.sqlite`.
 - Do not move write ownership for the database into the web app.
 - Prefer keeping schema creation and write-side persistence logic inside `apps/daemon`.
-- The CLI may read from the daemon-owned database for local commands.
+- The EMS command app may read from the daemon-owned database for local commands.
 
 ## Current Behavior
 - The daemon creates the SQLite schema but does not seed mock battery data.
-- The CLI currently supports one scaffold command: `battery list`.
+- The EMS command app currently supports one scaffold command: `battery list`.
 - The web app currently renders a single under-construction page.
 
 ## Package-Specific Scripts
@@ -96,11 +96,11 @@
 - Typecheck: `bun run --cwd apps/daemon typecheck`
 - Test: `bun run --cwd apps/daemon test`
 
-### `apps/cli`
-- CLI entrypoint: `bun run --cwd apps/cli cli --`
-- Build: `bun run --cwd apps/cli build`
-- Typecheck: `bun run --cwd apps/cli typecheck`
-- Test: `bun run --cwd apps/cli test`
+### `apps/ems`
+- EMS entrypoint: `bun run --cwd apps/ems ems --`
+- Build: `bun run --cwd apps/ems build`
+- Typecheck: `bun run --cwd apps/ems typecheck`
+- Test: `bun run --cwd apps/ems test`
 
 ### `apps/web`
 - Dev: `bun run --cwd apps/web dev`
@@ -133,11 +133,11 @@
 - Use `PascalCase` for types, interfaces, classes, and React components.
 - Use `camelCase` for variables, functions, methods, and object properties.
 - Use `SCREAMING_SNAKE_CASE` for environment variables and true constants.
-- Prefer descriptive names over abbreviations except standard terms like `CLI`, `PM2`, and `P1`.
+- Prefer descriptive names over abbreviations except standard terms like `EMS`, `PM2`, and `P1`.
 
 ## Architecture And Modules
 - Keep business logic out of UI layers.
-- Keep daemon orchestration, CLI command handling, storage, and web UI concerns separate.
+- Keep daemon orchestration, EMS command handling, storage, and web UI concerns separate.
 - Prefer pure functions for calculations and formatting where practical.
 - Make side effects explicit at module boundaries.
 - Avoid premature abstraction; add helpers when duplication becomes meaningful.
@@ -147,20 +147,20 @@
 - Fail with actionable messages.
 - Include useful identifiers in errors, such as battery ID, config path, or database path.
 - Do not swallow errors silently.
-- For CLI code, return non-zero exit codes on failure.
+- For EMS command code, return non-zero exit codes on failure.
 - For daemon code, log enough context to debug long-running issues.
 
 ## Testing Guidance
-- Add tests for daemon persistence behavior, CLI command behavior, and shared domain helpers.
+- Add tests for daemon persistence behavior, EMS command behavior, and shared domain helpers.
 - Prefer small fast unit tests first.
 - When fixing a bug, add or update a test that reproduces it.
 - Run the narrowest relevant test before broader verification.
 
 ## Web App Guidance
-- The web app should consume capabilities that already exist in the CLI or a shared backend contract.
+- The web app should consume capabilities that already exist in the EMS command app or a shared backend contract.
 - Do not introduce web-only business rules.
-- Keep web terminology aligned with the CLI and plan docs.
-- Preserve the existing placeholder page until there is a concrete CLI-backed feature to expose.
+- Keep web terminology aligned with the EMS command app and plan docs.
+- Preserve the existing placeholder page until there is a concrete EMS-backed feature to expose.
 
 ## Documentation Guidance
 - Update `plans/EMSD-plan.md` when architecture changes meaningfully.
@@ -171,5 +171,5 @@
 - Confirm whether root scripts or package scripts changed before running commands.
 - Prefer checked-in scripts over guessed commands.
 - Run the narrowest relevant validation available.
-- Keep changes aligned with the CLI-first architecture.
+- Keep changes aligned with the EMS-first architecture.
 - Do not invent unsupported product capabilities.

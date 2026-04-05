@@ -2,7 +2,9 @@ import { expect, test } from "bun:test";
 import { formatBatteryList } from "./battery-list";
 
 test("formatBatteryList renders the empty-state message", () => {
-  expect(formatBatteryList([])).toBe("No batteries found in the daemon database.");
+  expect(formatBatteryList([])).toBe(
+    "No batteries found in the daemon database.",
+  );
 });
 
 test("formatBatteryList renders a table row for a battery", () => {

@@ -1,10 +1,10 @@
 {
-  "name": "@emsd/cli",
+  "name": "@emsd/ems",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "cli": "bun run src/index.ts",
+    "ems": "bun run src/index.ts",
     "build": "bun build src/index.ts --outdir dist --target bun",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "bun test"

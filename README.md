@@ -1,10 +1,10 @@
 # EMSD
 
-EMSD is a local energy management system for a single household. The long-term plan is a Bun + TypeScript daemon with a CLI-first control surface, SQLite persistence, and a lower-priority Next.js web UI.
+EMSD is a local energy management system for a single household. The long-term plan is a Bun + TypeScript daemon with an EMS-first command surface, SQLite persistence, and a lower-priority Next.js web UI.
 
 This repository currently contains an initial runnable scaffold:
 - `apps/daemon`: daemon that owns and initializes the SQLite database
-- `apps/cli`: CLI that currently exposes `battery list`
+- `apps/ems`: EMS command app that currently exposes `battery list`
 - `apps/web`: Next.js app with an under-construction page
 - `packages/core`: shared paths and battery types
 
@@ -12,7 +12,7 @@ This repository currently contains an initial runnable scaffold:
 
 - The daemon creates and owns `data/emsd.sqlite`.
 - On first start, the daemon creates the SQLite schema but does not seed mock battery data.
-- The CLI reads battery state from the daemon-owned database.
+- The EMS command app reads battery state from the daemon-owned database.
 - The web app is placeholder-only for now.
 - The daemon enforces a single running instance by taking a runtime lock in `var/run/emsd.lock`.
 
@@ -54,10 +54,10 @@ bun run daemon:logs:pm2
 The direct start script writes logs to `var/log/` and stores a PID file in `var/run/`.
 It also refuses to start if another daemon instance already owns the runtime lock.
 
-### CLI
+### EMS
 
 ```bash
-bun run cli -- battery list
+bun run ems -- battery list
 ```
 
 Shortcut:
@@ -79,7 +79,7 @@ bun run web:start
 ```bash
 bun test packages/core/src/index.test.ts
 bun test apps/daemon/src/database.test.ts
-bun test apps/cli/src/battery-list.test.ts
+bun test apps/ems/src/battery-list.test.ts
 bun test --test-name-pattern "test name"
 ```
 
@@ -93,7 +93,7 @@ bun run battery:list
 bun run daemon:stop
 ```
 
-Expected CLI output on a fresh install is:
+Expected EMS output on a fresh install is:
 
 ```text
 No batteries found in the daemon database.
@@ -112,7 +112,7 @@ bun run web:dev
 
 - `bun install` installs workspace dependencies.
 - `bun run daemon:start` starts the daemon in the background and initializes the SQLite database.
-- `bun run battery:list` confirms the CLI can read the daemon-owned battery data.
+- `bun run battery:list` confirms the EMS command app can read the daemon-owned battery data.
 - `bun run web:dev` starts the placeholder Next.js app for UI iteration.
 
 When you are done, stop the background daemon with:
@@ -124,8 +124,8 @@ bun run daemon:stop
 ## Architecture Notes
 
 - The daemon is the owner of persistence and long-running orchestration.
-- The CLI is the primary user-facing interface.
-- The web app should not gain capabilities before the CLI exposes them.
+- The EMS command app is the primary user-facing interface.
+- The web app should not gain capabilities before the EMS command app exposes them.
 - Shared reusable domain types belong in `packages/core`.
 
 See `plans/EMSD-plan.md` for the broader product direction and intended delivery phases.

@@ -2,8 +2,8 @@ import { openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import {
   EMSD_NAME,
   ensureParentDirectory,
-  getDatabasePath,
   getDaemonLockPath,
+  getDatabasePath,
 } from "@emsd/core";
 import { openDaemonDatabase, readBatteries } from "./database";
 

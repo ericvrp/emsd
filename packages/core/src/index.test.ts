@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { getDatabasePath } from "./index";
+import { discoverReportJsonSchema, getDatabasePath } from "./index";
 
 const originalPath = process.env.EMSD_DB_PATH;
 
@@ -16,4 +16,17 @@ test("getDatabasePath resolves repo-relative paths", () => {
   process.env.EMSD_DB_PATH = "data/test.sqlite";
 
   expect(getDatabasePath()).toEndWith("data/test.sqlite");
+});
+
+test("discoverReportJsonSchema exposes the discover report contract", () => {
+  expect(discoverReportJsonSchema.properties.schema.const).toBe(
+    "emsd.discover.report.v1",
+  );
+  expect(discoverReportJsonSchema.properties.filter.enum).toEqual([
+    "new",
+    "all",
+  ]);
+  expect(discoverReportJsonSchema.properties.devices.items.required).toContain(
+    "isNew",
+  );
 });

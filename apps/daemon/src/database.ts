@@ -1,6 +1,7 @@
 import { Database } from "bun:sqlite";
 import {
   type BatteryRecord,
+  type DiscoveredDeviceRecord,
   ensureParentDirectory,
   getDatabasePath,
 } from "@emsd/core";
@@ -12,6 +13,17 @@ interface BatteryRow {
   status: BatteryRecord["status"];
   connected: number;
   updated_at: string;
+}
+
+interface DiscoveredDeviceRow {
+  id: string;
+  category: DiscoveredDeviceRecord["category"];
+  model: string;
+  name: string;
+  ip_address: string;
+  details: string;
+  first_seen_at: string;
+  last_seen_at: string;
 }
 
 export function openDaemonDatabase(databasePath = getDatabasePath()): Database {
@@ -28,6 +40,19 @@ export function openDaemonDatabase(databasePath = getDatabasePath()): Database {
       status TEXT NOT NULL,
       connected INTEGER NOT NULL,
       updated_at TEXT NOT NULL
+    );
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS discovered_devices (
+      id TEXT PRIMARY KEY,
+      category TEXT NOT NULL,
+      model TEXT NOT NULL,
+      name TEXT NOT NULL,
+      ip_address TEXT NOT NULL,
+      details TEXT NOT NULL,
+      first_seen_at TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL,
+      UNIQUE(category, model, ip_address)
     );
   `);
 
@@ -52,5 +77,36 @@ export function readBatteries(db: Database): BatteryRecord[] {
     status: row.status,
     connected: row.connected === 1,
     updatedAt: row.updated_at,
+  }));
+}
+
+export function readDiscoveredDevices(db: Database): DiscoveredDeviceRecord[] {
+  const rows = db
+    .query<DiscoveredDeviceRow, []>(
+      `
+        SELECT
+          id,
+          category,
+          model,
+          name,
+          ip_address,
+          details,
+          first_seen_at,
+          last_seen_at
+        FROM discovered_devices
+        ORDER BY name ASC, ip_address ASC
+      `,
+    )
+    .all();
+
+  return rows.map((row) => ({
+    id: row.id,
+    category: row.category,
+    model: row.model,
+    name: row.name,
+    ipAddress: row.ip_address,
+    details: row.details,
+    firstSeenAt: row.first_seen_at,
+    lastSeenAt: row.last_seen_at,
   }));
 }

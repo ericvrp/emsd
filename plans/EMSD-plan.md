@@ -2,7 +2,7 @@
 
 ## Goal
 
-Build a personal energy management system for one household per installation. It runs as a long-lived local service, supports multiple batteries, integrates dynamic pricing, and exposes its full control surface through a CLI, with the web UI as a lower-priority layer on top.
+Build a personal energy management system for one household per installation. It runs as a long-lived local service, supports multiple batteries, integrates dynamic pricing, and exposes its full control surface through the EMS command app, with the web UI as a lower-priority layer on top.
 
 ## Main Components
 
@@ -13,9 +13,9 @@ Build a personal energy management system for one household per installation. It
 - Managed by PM2 for end-user startup and restart behavior
 - Owns SQLite access and core business logic
 - Project name: `EMSD`
-- Provides the primary system behavior consumed through the CLI
+- Provides the primary system behavior consumed through the EMS command app
 
-### 2. CLI Tool
+### 2. EMS Tool
 
 - Used to query status, inspect prices, manage strategies, trigger discovery, and generate config
 - Must support everything the Next.js app can do
@@ -36,9 +36,9 @@ Example command areas:
 ### 3. Web App
 
 - Next.js frontend plus its own backend layer
-- Lower priority than the daemon and CLI
-- The Next.js backend should use only the CLI tool
-- The web app should not gain capabilities that are unavailable in the CLI
+- Lower priority than the daemon and EMS command app
+- The Next.js backend should use only the EMS command app
+- The web app should not gain capabilities that are unavailable in the EMS command app
 - Focus on monitoring, configuration, simulation, and strategy review
 
 ## Core Requirements
@@ -50,7 +50,7 @@ Example command areas:
 - Include a simulator for testing strategies before applying them
 - Integrate dynamic pricing sources such as Nordpool and Tibber
 - Keep configuration explicit, but support discovery-driven setup
-- Ensure every user-facing action is available through the CLI first
+- Ensure every user-facing action is available through the EMS command app first
 
 ## Supported Strategies
 
@@ -88,7 +88,7 @@ The system should support both manual configuration and assisted setup.
 
 ### Discovery Mode
 
-- A CLI command scans for supported batteries, meters, and devices on the local network or through known vendor APIs
+- An EMS command scans for supported batteries, meters, and devices on the local network or through known vendor APIs
 - The result is turned into a config draft that the user can confirm and save
 - Discovery should produce normalized records regardless of brand
 - Discovery should include HomeWizard P1 meters when available
@@ -114,7 +114,7 @@ Example flow:
 - `config`
 - `scheduler`
 - `storage`
-- `cli-interface`
+- `ems-interface`
 
 ### Common Domain Model
 
@@ -141,8 +141,8 @@ Example flow:
 
 ### Phase 1
 
-- Set up Bun service, CLI, and SQLite schema
-- Define the daemon-to-CLI contract
+- Set up Bun service, EMS command app, and SQLite schema
+- Define the daemon-to-EMS contract
 - Add PM2 startup docs
 - Add a mock battery adapter
 - Add a mock meter adapter
@@ -151,7 +151,7 @@ Example flow:
 
 - Implement config loading and persistence
 - Implement discovery framework
-- Add CLI commands for status, config, meter inspection, and strategy control
+- Add EMS commands for status, config, meter inspection, and strategy control
 
 ### Phase 3
 
@@ -159,11 +159,11 @@ Example flow:
 - Add strategy support for disabled, self-consumption, time-based, dynamic-pricing, and manual modes
 - Add HomeWizard P1 meter integration
 - Add Nordpool and Tibber integrations
-- Expand CLI coverage until it fully covers the intended product surface
+- Expand EMS coverage until it fully covers the intended product surface
 
 ### Phase 4
 
-- Add the Next.js app on top of the CLI once the CLI surface is stable
-- Route Next.js backend operations through the CLI only
+- Add the Next.js app on top of the EMS command app once the EMS surface is stable
+- Route Next.js backend operations through the EMS command app only
 - Add real battery brand adapters, starting with Sonnen
 - Improve resilience, logs, retries, and long-running stability

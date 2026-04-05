@@ -5,7 +5,7 @@ export default function HomePage() {
         <p className="eyebrow">EMSD Web UI</p>
         <h1>Under construction</h1>
         <p>
-          The daemon and CLI are the primary interfaces for now. This Next.js
+          The daemon and EMS are the primary interfaces for now. This Next.js
           app is scaffolded and ready for later monitoring and configuration
           work.
         </p>

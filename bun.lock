@@ -14,15 +14,15 @@
         "typescript": "^5.8.3",
       },
     },
-    "apps/cli": {
-      "name": "@emsd/cli",
+    "apps/daemon": {
+      "name": "@emsd/daemon",
       "version": "0.1.0",
       "dependencies": {
         "@emsd/core": "workspace:*",
       },
     },
-    "apps/daemon": {
-      "name": "@emsd/daemon",
+    "apps/ems": {
+      "name": "@emsd/ems",
       "version": "0.1.0",
       "dependencies": {
         "@emsd/core": "workspace:*",
@@ -63,11 +63,11 @@
 
     "@emnapi/runtime": ["@emnapi/runtime@1.9.2", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-3U4+MIWHImeyu1wnmVygh5WlgfYDtyf0k8AbLhMFxOipihf6nrWC4syIm/SwEeec0mNSafiiNnMJwbza/Is6Lw=="],
 
-    "@emsd/cli": ["@emsd/cli@workspace:apps/cli"],
-
     "@emsd/core": ["@emsd/core@workspace:packages/core"],
 
     "@emsd/daemon": ["@emsd/daemon@workspace:apps/daemon"],
+
+    "@emsd/ems": ["@emsd/ems@workspace:apps/ems"],
 
     "@emsd/web": ["@emsd/web@workspace:apps/web"],
 
