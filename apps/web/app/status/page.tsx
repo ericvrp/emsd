@@ -78,33 +78,40 @@ export default async function StatusPage() {
                   {site.devices.some((device) => device.kind === "battery") ? (
                     site.devices
                       .filter((device) => device.kind === "battery")
-                      .map((battery) => (
-                        <StatusRow
-                          key={battery.id}
-                          label={battery.name}
-                          meta={`${battery.model} · ${battery.address}`}
-                          badge={
-                            <StatusBadge tone={battery.state}>
-                              {formatManagedDeviceState(battery.state)}
-                            </StatusBadge>
-                          }
-                          details={[
-                            ...(battery.telemetry?.socPercent !== null &&
-                            battery.telemetry?.socPercent !== undefined
-                              ? [
-                                  `SoC ${formatSocPercent(battery.telemetry.socPercent)}`,
-                                ]
-                              : ["SoC unavailable"]),
-                            ...(battery.telemetry?.powerW !== null &&
-                            battery.telemetry?.powerW !== undefined
-                              ? [formatPower(battery.telemetry.powerW)]
-                              : []),
-                            battery.connected ? "Connected" : "Offline",
-                            battery.enabled ? "Enabled" : "Disabled",
-                            `Seen ${formatObservedAt(battery.telemetry?.observedAt ?? battery.updatedAt)}`,
-                          ]}
-                        />
-                      ))
+                      .map((battery) =>
+                        (() => {
+                          const currentState =
+                            battery.telemetry?.state ?? battery.state;
+
+                          return (
+                            <StatusRow
+                              key={battery.id}
+                              label={battery.name}
+                              meta={`${battery.model} · ${battery.address}`}
+                              badge={
+                                <StatusBadge tone={currentState}>
+                                  {formatManagedDeviceState(currentState)}
+                                </StatusBadge>
+                              }
+                              details={[
+                                ...(battery.telemetry?.socPercent !== null &&
+                                battery.telemetry?.socPercent !== undefined
+                                  ? [
+                                      `SoC ${formatSocPercent(battery.telemetry.socPercent)}`,
+                                    ]
+                                  : ["SoC unavailable"]),
+                                ...(battery.telemetry?.powerW !== null &&
+                                battery.telemetry?.powerW !== undefined
+                                  ? [formatPower(battery.telemetry.powerW)]
+                                  : []),
+                                battery.connected ? "Connected" : "Offline",
+                                battery.enabled ? "Enabled" : "Disabled",
+                                `Seen ${formatObservedAt(battery.telemetry?.observedAt ?? battery.updatedAt)}`,
+                              ]}
+                            />
+                          );
+                        })(),
+                      )
                   ) : (
                     <EmptyState>No batteries configured.</EmptyState>
                   )}
@@ -114,26 +121,33 @@ export default async function StatusPage() {
                   {site.devices.some((device) => device.kind === "meter") ? (
                     site.devices
                       .filter((device) => device.kind === "meter")
-                      .map((meter) => (
-                        <StatusRow
-                          key={meter.id}
-                          label={meter.name}
-                          meta={`${meter.model} · ${meter.address}`}
-                          badge={
-                            <StatusBadge tone={meter.state}>
-                              {formatManagedDeviceState(meter.state)}
-                            </StatusBadge>
-                          }
-                          details={[
-                            ...(meter.telemetry?.powerW !== null &&
-                            meter.telemetry?.powerW !== undefined
-                              ? [formatPower(meter.telemetry.powerW)]
-                              : ["Power unavailable"]),
-                            meter.enabled ? "Enabled" : "Disabled",
-                            `Seen ${formatObservedAt(meter.telemetry?.observedAt ?? meter.updatedAt)}`,
-                          ]}
-                        />
-                      ))
+                      .map((meter) =>
+                        (() => {
+                          const currentState =
+                            meter.telemetry?.state ?? meter.state;
+
+                          return (
+                            <StatusRow
+                              key={meter.id}
+                              label={meter.name}
+                              meta={`${meter.model} · ${meter.address}`}
+                              badge={
+                                <StatusBadge tone={currentState}>
+                                  {formatManagedDeviceState(currentState)}
+                                </StatusBadge>
+                              }
+                              details={[
+                                ...(meter.telemetry?.powerW !== null &&
+                                meter.telemetry?.powerW !== undefined
+                                  ? [formatPower(meter.telemetry.powerW)]
+                                  : ["Power unavailable"]),
+                                meter.enabled ? "Enabled" : "Disabled",
+                                `Seen ${formatObservedAt(meter.telemetry?.observedAt ?? meter.updatedAt)}`,
+                              ]}
+                            />
+                          );
+                        })(),
+                      )
                   ) : (
                     <EmptyState>No meters configured.</EmptyState>
                   )}

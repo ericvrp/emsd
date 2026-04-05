@@ -183,6 +183,9 @@ test("formatDiscoveredDevices renders concise one-line summaries", () => {
       name: "HomeWizard P1",
       ipAddress: "192.168.1.27",
       details: "SMR 50",
+      powerW: -16,
+      socPercent: null,
+      state: "connected",
     },
     {
       discoveryId: "aaa111",
@@ -191,6 +194,9 @@ test("formatDiscoveredDevices renders concise one-line summaries", () => {
       name: "Indevolt Battery",
       ipAddress: "192.168.1.15",
       details: "SOC 48%",
+      powerW: 900,
+      socPercent: 48,
+      state: "charging",
     },
   ]);
 

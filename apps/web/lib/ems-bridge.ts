@@ -28,7 +28,7 @@ export interface DashboardSnapshot {
   generatedAt: string;
   sites: Array<
     SiteRecord & {
-      devices: ManagedDeviceRecord[];
+      devices: ManagedDeviceStatusRecord[];
       dynamicPriceSources: DynamicPriceSourceRecord[];
       weatherSources: WeatherForecastSourceRecord[];
     }
@@ -57,6 +57,9 @@ export interface DiscoveredDevice {
   ipAddress: string;
   model: string;
   name: string;
+  powerW: number | null;
+  socPercent: number | null;
+  state: "idle" | "charging" | "discharging" | "connected" | "offline" | null;
 }
 
 export interface BulkDiscoveryAddResult {

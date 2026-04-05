@@ -15,6 +15,9 @@ export interface DiscoveredDevice {
   name: string;
   ipAddress: string;
   details: string;
+  powerW: number | null;
+  socPercent: number | null;
+  state: ManagedDeviceState | null;
 }
 
 export interface DiscoveryScanTarget {
@@ -712,6 +715,9 @@ function buildDiscoveredDevice(
     name: signature.name,
     ipAddress,
     details: detailsParts.join(", "),
+    powerW: parseNullableNumber(supplemental?.active_power_w),
+    socPercent: null,
+    state: supplemental ? ("connected" as const) : null,
   };
 
   return {
@@ -762,6 +768,9 @@ function buildIndevoltDiscoveredDevice(
     name: signature.name,
     ipAddress,
     details: detailsParts.join(", "),
+    powerW: parseNullableNumber(payload?.["6000"]),
+    socPercent: parseNullableNumber(payload?.["6002"]),
+    state: parseIndevoltBatteryState(payload?.["6001"]),
   };
 
   return {

@@ -16,14 +16,19 @@ interface DiscoveredDevice {
   ipAddress: string;
   model: string;
   name: string;
+  powerW: number | null;
+  socPercent: number | null;
+  state: "idle" | "charging" | "discharging" | "connected" | "offline" | null;
 }
 
 interface DiscoveryCachePayload {
+  version: number;
   devices: DiscoveredDevice[];
   host: string;
 }
 
 const DISCOVERY_CACHE_PREFIX = "emsd-discovery:";
+const DISCOVERY_CACHE_VERSION = 2;
 
 const primaryButtonClass =
   "inline-flex items-center justify-center rounded-2xl bg-gradient-to-r from-indigo-500 via-cyan-500 to-emerald-400 px-4 py-2.5 text-sm font-semibold text-slate-950 shadow-[0_18px_50px_rgba(6,182,212,0.18)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60";
@@ -71,6 +76,14 @@ export function DiscoveryPanel({
 
     try {
       const payload = JSON.parse(rawValue) as DiscoveryCachePayload;
+
+      if (payload.version !== DISCOVERY_CACHE_VERSION) {
+        window.sessionStorage.removeItem(
+          `${DISCOVERY_CACHE_PREFIX}${selectedSiteId}`,
+        );
+        return;
+      }
+
       setDevices(Array.isArray(payload.devices) ? payload.devices : []);
       setHost(typeof payload.host === "string" ? payload.host : "");
     } catch {
@@ -88,6 +101,7 @@ export function DiscoveryPanel({
     window.sessionStorage.setItem(
       `${DISCOVERY_CACHE_PREFIX}${selectedSiteId}`,
       JSON.stringify({
+        version: DISCOVERY_CACHE_VERSION,
         devices: nextDevices,
         host: nextHost,
       } satisfies DiscoveryCachePayload),
@@ -283,12 +297,26 @@ function DiscoveryDeviceCard({
           <span className="text-slate-500">Model:</span> {device.model}
         </p>
         <p>
-          <span className="text-slate-500">IP:</span> {device.ipAddress}
+          <span className="text-slate-500">Address:</span> {device.ipAddress}
         </p>
-        <p>
-          <span className="text-slate-500">Details:</span>{" "}
-          {device.details || "n/a"}
-        </p>
+        {device.state ? (
+          <p>
+            <span className="text-slate-500">State:</span>{" "}
+            {formatDiscoveryState(device.state)}
+          </p>
+        ) : null}
+        {device.category === "battery" && isFiniteNumber(device.socPercent) ? (
+          <p>
+            <span className="text-slate-500">SoC:</span>{" "}
+            {Math.round(device.socPercent)}%
+          </p>
+        ) : null}
+        {isFiniteNumber(device.powerW) ? (
+          <p>
+            <span className="text-slate-500">Power:</span>{" "}
+            {Math.round(device.powerW)} W
+          </p>
+        ) : null}
       </div>
 
       <div className="mt-4">
@@ -323,4 +351,14 @@ function DiscoveryDeviceCard({
       </div>
     </article>
   );
+}
+
+function isFiniteNumber(value: number | null): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function formatDiscoveryState(
+  state: "idle" | "charging" | "discharging" | "connected" | "offline" | null,
+): string {
+  return state ? state.replace(/-/g, " ") : "";
 }

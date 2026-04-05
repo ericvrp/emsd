@@ -1,11 +1,11 @@
 import type {
   DynamicPriceSourceRecord,
-  ManagedDeviceRecord,
+  ManagedDeviceStatusRecord,
   SiteRecord,
   WeatherForecastSourceRecord,
 } from "@emsd/core";
 import { formatManagedDeviceState } from "@emsd/core";
-import { ScanSearch } from "lucide-react";
+import { HardDrive, Home, ScanSearch } from "lucide-react";
 import { getServerSession } from "next-auth";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -106,13 +106,20 @@ export default async function ConfigPage({
           {(["devices", "site", "discover"] as ConfigTab[]).map((tab) => (
             <Link
               key={tab}
-              className={`inline-flex items-center justify-center rounded-2xl px-4 py-3 text-sm font-semibold transition ${
+              className={`inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold transition ${
                 activeTab === tab
-                  ? "bg-gradient-to-r from-white to-slate-200 text-slate-950 shadow-[0_12px_40px_rgba(255,255,255,0.14)]"
-                  : "border border-white/8 bg-white/5 text-slate-300 hover:bg-white/8"
+                  ? "border border-cyan-300/30 bg-gradient-to-r from-cyan-300 via-white to-emerald-200 text-slate-950 shadow-[0_12px_40px_rgba(125,211,252,0.22)]"
+                  : "border border-white/8 bg-white/5 text-slate-200 hover:bg-white/8"
               }`}
               href={getTabHref(tab)}
             >
+              {tab === "devices" ? (
+                <HardDrive size={15} />
+              ) : tab === "site" ? (
+                <Home size={15} />
+              ) : (
+                <ScanSearch size={15} />
+              )}
               {tab === "devices"
                 ? "Current Devices"
                 : tab === "site"
@@ -344,72 +351,109 @@ function DeviceList({
 
   return (
     <div className="space-y-3">
-      {devices.map((device) => (
-        <article
-          key={device.id}
-          className={`rounded-[1.4rem] border border-white/10 bg-white/5 p-4 ${kind === "battery" ? "ring-1 ring-cyan-300/5" : "ring-1 ring-violet-300/5"}`}
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h4 className="truncate text-base font-semibold text-white">
-                {device.name}
-              </h4>
-              <p className="mt-1 truncate text-xs text-slate-400">
-                {device.id}
-              </p>
-            </div>
-            <StatusBadge tone={device.state}>
-              {formatManagedDeviceState(device.state)}
-            </StatusBadge>
-          </div>
-          <dl className="mt-4 grid gap-3 text-sm text-slate-300 sm:grid-cols-2">
-            <MetaItem label="Model" value={device.model} />
-            <MetaItem label="Address" value={device.address} />
-            <MetaItem
-              label="State"
-              value={formatManagedDeviceState(device.state)}
-            />
-            <MetaItem label="Enabled" value={device.enabled ? "yes" : "no"} />
-          </dl>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <form
-              action={
-                kind === "battery"
-                  ? setBatteryEnabledAction
-                  : setMeterEnabledAction
-              }
+      {devices.map((device) =>
+        (() => {
+          const currentState = device.telemetry?.state ?? device.state;
+          const currentObservedAt =
+            device.telemetry?.observedAt ?? device.updatedAt;
+
+          return (
+            <article
+              key={device.id}
+              className={`rounded-[1.4rem] border border-white/10 bg-white/5 p-4 ${kind === "battery" ? "ring-1 ring-cyan-300/5" : "ring-1 ring-violet-300/5"}`}
             >
-              <input type="hidden" name="siteId" value={site.id} />
-              <input
-                type="hidden"
-                name={kind === "battery" ? "batteryId" : "meterId"}
-                value={device.id}
-              />
-              <input
-                type="hidden"
-                name="enabled"
-                value={device.enabled ? "false" : "true"}
-              />
-              <SubmitButton className={secondaryButtonClass}>
-                {device.enabled ? "Disable" : "Enable"}
-              </SubmitButton>
-            </form>
-            <form
-              action={
-                kind === "battery" ? deleteBatteryAction : deleteMeterAction
-              }
-            >
-              <input type="hidden" name="siteId" value={site.id} />
-              <input
-                type="hidden"
-                name={kind === "battery" ? "batteryId" : "meterId"}
-                value={device.id}
-              />
-              <SubmitButton className={dangerButtonClass}>Delete</SubmitButton>
-            </form>
-          </div>
-        </article>
-      ))}
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h4 className="truncate text-base font-semibold text-white">
+                    {device.name}
+                  </h4>
+                  <p className="mt-1 truncate text-xs text-slate-400">
+                    {device.id}
+                  </p>
+                </div>
+                <StatusBadge tone={currentState}>
+                  {formatManagedDeviceState(currentState)}
+                </StatusBadge>
+              </div>
+              <dl className="mt-4 grid gap-3 text-sm text-slate-300 sm:grid-cols-2">
+                <MetaItem label="Model" value={device.model} />
+                <MetaItem label="Address" value={device.address} />
+                <MetaItem
+                  label="State"
+                  value={formatManagedDeviceState(currentState)}
+                />
+                <MetaItem
+                  label="Enabled"
+                  value={device.enabled ? "yes" : "no"}
+                />
+                {kind === "battery" ? (
+                  <MetaItem
+                    label="SoC"
+                    value={
+                      device.telemetry?.socPercent !== null &&
+                      device.telemetry?.socPercent !== undefined
+                        ? `${Math.round(device.telemetry.socPercent)}%`
+                        : "Unavailable"
+                    }
+                  />
+                ) : null}
+                <MetaItem
+                  label="Power"
+                  value={
+                    device.telemetry?.powerW !== null &&
+                    device.telemetry?.powerW !== undefined
+                      ? `${Math.round(device.telemetry.powerW)} W`
+                      : "Unavailable"
+                  }
+                />
+                <MetaItem
+                  label="Seen"
+                  value={formatObservedAt(currentObservedAt)}
+                />
+              </dl>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <form
+                  action={
+                    kind === "battery"
+                      ? setBatteryEnabledAction
+                      : setMeterEnabledAction
+                  }
+                >
+                  <input type="hidden" name="siteId" value={site.id} />
+                  <input
+                    type="hidden"
+                    name={kind === "battery" ? "batteryId" : "meterId"}
+                    value={device.id}
+                  />
+                  <input
+                    type="hidden"
+                    name="enabled"
+                    value={device.enabled ? "false" : "true"}
+                  />
+                  <SubmitButton className={secondaryButtonClass}>
+                    {device.enabled ? "Disable" : "Enable"}
+                  </SubmitButton>
+                </form>
+                <form
+                  action={
+                    kind === "battery" ? deleteBatteryAction : deleteMeterAction
+                  }
+                >
+                  <input type="hidden" name="siteId" value={site.id} />
+                  <input
+                    type="hidden"
+                    name={kind === "battery" ? "batteryId" : "meterId"}
+                    value={device.id}
+                  />
+                  <SubmitButton className={dangerButtonClass}>
+                    Delete
+                  </SubmitButton>
+                </form>
+              </div>
+            </article>
+          );
+        })(),
+      )}
     </div>
   );
 }
@@ -579,8 +623,16 @@ function formatTimestamp(value: string): string {
   }).format(new Date(value));
 }
 
+function formatObservedAt(value: string): string {
+  return new Intl.DateTimeFormat("en", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(new Date(value));
+}
+
 type SiteSnapshot = SiteRecord & {
-  devices: ManagedDeviceRecord[];
+  devices: ManagedDeviceStatusRecord[];
   weatherSources: WeatherForecastSourceRecord[];
   dynamicPriceSources: DynamicPriceSourceRecord[];
 };

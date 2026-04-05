@@ -223,17 +223,28 @@ async function resolveDiscoveredDevice(input: {
   return exactMatch;
 }
 
+function loadTelemetryByDeviceId(): Map<string, ManagedDeviceTelemetryRecord> {
+  const db = openDaemonDatabase();
+  const telemetry = readManagedDeviceTelemetry(db);
+  db.close();
+
+  return new Map<string, ManagedDeviceTelemetryRecord>(
+    telemetry.map((entry) => [entry.deviceId, entry]),
+  );
+}
+
 function buildSnapshot(): {
   generatedAt: string;
   sites: Array<
     SiteRecord & {
-      devices: ManagedDeviceRecord[];
+      devices: ManagedDeviceStatusRecord[];
       dynamicPriceSources: DynamicPriceSourceRecord[];
       weatherSources: WeatherForecastSourceRecord[];
     }
   >;
 } {
   const sites = listSites();
+  const telemetryByDeviceId = loadTelemetryByDeviceId();
 
   return {
     generatedAt: new Date().toISOString(),
@@ -242,7 +253,12 @@ function buildSnapshot(): {
       devices: [
         ...listBatteries(site.id).map(toManagedDeviceRecord),
         ...listMeters(site.id).map(toManagedDeviceRecord),
-      ],
+      ].map(
+        (device): ManagedDeviceStatusRecord => ({
+          ...device,
+          telemetry: telemetryByDeviceId.get(device.id) ?? null,
+        }),
+      ),
       dynamicPriceSources: listDynamicPriceSources(site.id),
       weatherSources: listWeatherForecastSources(site.id),
     })),
@@ -272,26 +288,12 @@ function readDaemonState(): { pid: number | null; running: boolean } {
 }
 
 function buildLiveStatus() {
-  const db = openDaemonDatabase();
-  const telemetry = readManagedDeviceTelemetry(db);
-  db.close();
-  const telemetryByDeviceId = new Map<string, ManagedDeviceTelemetryRecord>(
-    telemetry.map((entry) => [entry.deviceId, entry]),
-  );
   const snapshot = buildSnapshot();
 
   return {
     daemon: readDaemonState(),
     generatedAt: snapshot.generatedAt,
-    sites: snapshot.sites.map((site) => ({
-      ...site,
-      devices: site.devices.map(
-        (device): ManagedDeviceStatusRecord => ({
-          ...device,
-          telemetry: telemetryByDeviceId.get(device.id) ?? null,
-        }),
-      ),
-    })),
+    sites: snapshot.sites,
   };
 }
 

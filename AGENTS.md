@@ -109,6 +109,8 @@
 - Build: `bun run --cwd apps/web build`
 - Start: `bun run --cwd apps/web start`
 - Typecheck: `bun run --cwd apps/web typecheck`
+- Avoid routinely running `apps/web` build/typecheck during normal iteration unless the user explicitly asks for it or the change specifically requires it.
+- Prefer minimal validation for the Next.js app because repeated build/typecheck runs can disturb the local `.next` state during active development.
 
 ## Formatting
 - Use Biome via the checked-in root scripts.
@@ -157,12 +159,14 @@
 - Prefer small fast unit tests first.
 - When fixing a bug, add or update a test that reproduces it.
 - Run the narrowest relevant test before broader verification.
+- For `apps/web`, prefer targeted validation and avoid repeated `next build` / web typecheck loops unless required by the user or necessary to verify a risky integration change.
 
 ## Web App Guidance
 - The web app should consume capabilities that already exist in the EMS command app or a shared backend contract.
 - Do not introduce web-only business rules.
 - Keep web terminology aligned with the EMS command app and plan docs.
 - Preserve the existing placeholder page until there is a concrete EMS-backed feature to expose.
+- Keep `apps/web` iteration lightweight during active development; avoid unnecessary build/typecheck runs that churn `.next` artifacts.
 
 ## Documentation Guidance
 - Update `plans/EMSD-plan.md` when architecture changes meaningfully.
