@@ -75,11 +75,40 @@ export interface SiteRecord {
   updatedAt: string;
 }
 
+export type WeatherProvider = "open-meteo";
+
+export type WeatherForecastSurface = "open-meteo-shortwave-radiation";
+
 export interface WeatherForecastSourceRecord {
   id: string;
   siteId: string;
   name: string;
+  provider: WeatherProvider;
+  surface: WeatherForecastSurface;
   updatedAt: string;
+}
+
+export interface WeatherForecastPointRecord {
+  airTempC: number | null;
+  cloudOpacityPercent: number | null;
+  ghiWm2: number | null;
+  period: string;
+  periodEnd: string;
+  value: number | null;
+}
+
+export interface WeatherForecastRecord {
+  generatedAt: string;
+  hours: number;
+  location: string;
+  metricLabel: string;
+  periodMinutes: number;
+  points: WeatherForecastPointRecord[];
+  provider: WeatherProvider;
+  providerLabel: string;
+  sourceId: string | null;
+  sourceName: string;
+  unitLabel: string;
 }
 
 export interface DynamicPriceSourceRecord {
@@ -591,6 +620,37 @@ function clampPercent(value: number, minimum: number): number {
 
 export function formatManagedDeviceState(state: ManagedDeviceState): string {
   return state.replace(/-/g, " ");
+}
+
+export function parseGpsCoordinate(
+  value: string,
+): { latitude: number; longitude: number } | null {
+  const matched = value
+    .trim()
+    .match(/^([+-]?\d+(?:\.\d+)?)\s*,\s*([+-]?\d+(?:\.\d+)?)$/);
+
+  if (!matched) {
+    return null;
+  }
+
+  const latitude = Number(matched[1]);
+  const longitude = Number(matched[2]);
+
+  if (
+    !Number.isFinite(latitude) ||
+    !Number.isFinite(longitude) ||
+    latitude < -90 ||
+    latitude > 90 ||
+    longitude < -180 ||
+    longitude > 180
+  ) {
+    return null;
+  }
+
+  return {
+    latitude: Number(latitude.toFixed(6)),
+    longitude: Number(longitude.toFixed(6)),
+  };
 }
 
 export interface ManagedDeviceTelemetryRecord {

@@ -1,7 +1,7 @@
 import { batteryPlugins } from "./battery";
 import { meterPlugins } from "./meter";
 import { pricePlugins } from "./price";
-import { weatherPlugins } from "./weather";
+import { weatherPlugins } from "./solar-forecast";
 
 export const pluginTypes = ["battery", "meter", "weather", "price"] as const;
 

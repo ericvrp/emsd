@@ -2,6 +2,9 @@ import { openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import {
   type BatteryRecord,
   type BatteryStrategyPlanItem,
+  type SiteRecord,
+  type WeatherForecastRecord,
+  type WeatherForecastSourceRecord,
   EMSD_NAME,
   type ManagedDeviceTelemetryRecord,
   type NormalizedBatteryInfo,
@@ -13,19 +16,27 @@ import {
 } from "@emsd/core";
 import { createBatteryPlugin } from "../../ems/src/battery-plugins";
 import { fetchMeterTelemetry } from "../../ems/src/discover";
+import { getWeatherForecast } from "../../ems/src/plugins/solar-forecast";
 import { formatDaemonHelpText, parseDaemonOptions } from "./daemon-options";
 import {
   openDaemonDatabase,
   readBatteries,
+  readSites,
+  readWeatherForecast,
+  readWeatherForecastSources,
   readMeters,
   updateBatteryNowModeStarted,
   updateBatteryStrategyRuntime,
   updateBatteryStrategyState,
+  upsertWeatherForecast,
   upsertManagedDeviceTelemetry,
 } from "./database";
 
 const lockPath = getDaemonLockPath();
 const POLL_INTERVAL_MS = 5_000;
+const FORECAST_REFRESH_INTERVAL_MS = 10 * 60 * 1_000;
+const FORECAST_HOURS = 48;
+const FORECAST_PERIOD_MINUTES = 15;
 
 class DaemonStartupError extends Error {}
 
@@ -82,6 +93,9 @@ function main(): void {
   console.log(
     `Polling managed devices every ${POLL_INTERVAL_MS / 1000} seconds.`,
   );
+  console.log(
+    `Refreshing solar forecasts at most every ${FORECAST_REFRESH_INTERVAL_MS / 60_000} minutes.`,
+  );
   if (options.verbose) {
     console.log("Verbose strategy logging enabled.");
   }
@@ -98,6 +112,10 @@ function main(): void {
     try {
       const polledBatteries = readBatteries(db);
       const polledMeters = readMeters(db);
+      const sites = readSites(db);
+      const weatherSources = readWeatherForecastSources(db);
+
+      await refreshWeatherForecasts(db, sites, weatherSources);
 
       await Promise.all([
         ...polledBatteries.map(async (battery) => {
@@ -232,6 +250,54 @@ function main(): void {
 
   process.on("SIGINT", () => shutdown("SIGINT"));
   process.on("SIGTERM", () => shutdown("SIGTERM"));
+}
+
+async function refreshWeatherForecasts(
+  db: ReturnType<typeof openDaemonDatabase>,
+  sites: SiteRecord[],
+  weatherSources: WeatherForecastSourceRecord[],
+): Promise<void> {
+  for (const site of sites) {
+    const cachedForecast = readWeatherForecast(db, site.id);
+
+    if (!shouldRefreshWeatherForecast(cachedForecast, new Date())) {
+      continue;
+    }
+
+    const source = weatherSources.find((entry) => entry.siteId === site.id) ?? null;
+
+    try {
+      const forecast = await getWeatherForecast({
+        hours: FORECAST_HOURS,
+        periodMinutes: FORECAST_PERIOD_MINUTES,
+        site,
+        source,
+      });
+
+      upsertWeatherForecast(db, site.id, forecast);
+    } catch (error) {
+      console.error(
+        `[${new Date().toISOString()}] solar forecast refresh failed for ${site.id}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+}
+
+function shouldRefreshWeatherForecast(
+  forecast: WeatherForecastRecord | null,
+  now: Date,
+): boolean {
+  if (forecast === null) {
+    return true;
+  }
+
+  const generatedAt = new Date(forecast.generatedAt).getTime();
+
+  if (Number.isNaN(generatedAt)) {
+    return true;
+  }
+
+  return now.getTime() - generatedAt >= FORECAST_REFRESH_INTERVAL_MS;
 }
 
 function shouldMarkNowModeStarted(

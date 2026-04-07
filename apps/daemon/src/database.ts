@@ -6,6 +6,8 @@ import {
   type ManagedDeviceTelemetryRecord,
   type MeterRecord,
   type SiteRecord,
+  type WeatherForecastRecord,
+  type WeatherForecastSourceRecord,
   createBatteryStrategyRuntime,
   ensureParentDirectory,
   getDatabasePath,
@@ -67,6 +69,21 @@ interface DeviceTelemetryRow {
   gas_m3: number | null;
   state: ManagedDeviceTelemetryRecord["state"];
   observed_at: string;
+}
+
+interface WeatherSourceRow {
+  id: string;
+  site_id: string;
+  name: string;
+  provider: WeatherForecastSourceRecord["provider"];
+  surface: WeatherForecastSourceRecord["surface"];
+  updated_at: string;
+}
+
+interface WeatherForecastRow {
+  site_id: string;
+  generated_at: string;
+  forecast_json: string;
 }
 
 export function openDaemonDatabase(databasePath = getDatabasePath()): Database {
@@ -133,10 +150,13 @@ export function openDaemonDatabase(databasePath = getDatabasePath()): Database {
       id TEXT PRIMARY KEY,
       site_id TEXT NOT NULL,
       name TEXT NOT NULL,
+      provider TEXT NOT NULL DEFAULT 'open-meteo',
+      surface TEXT NOT NULL DEFAULT 'open-meteo-shortwave-radiation',
       updated_at TEXT NOT NULL,
       FOREIGN KEY(site_id) REFERENCES sites(id)
     );
   `);
+  ensureWeatherSourceColumns(db);
   db.exec(`
     CREATE TABLE IF NOT EXISTS dynamic_price_sources (
       id TEXT PRIMARY KEY,
@@ -156,6 +176,14 @@ export function openDaemonDatabase(databasePath = getDatabasePath()): Database {
       gas_m3 REAL,
       state TEXT,
       observed_at TEXT NOT NULL,
+      FOREIGN KEY(site_id) REFERENCES sites(id)
+    );
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS weather_forecasts (
+      site_id TEXT PRIMARY KEY,
+      generated_at TEXT NOT NULL,
+      forecast_json TEXT NOT NULL,
       FOREIGN KEY(site_id) REFERENCES sites(id)
     );
   `);
@@ -183,6 +211,76 @@ export function readSites(db: Database): SiteRecord[] {
   }));
 }
 
+export function readWeatherForecastSources(
+  db: Database,
+): WeatherForecastSourceRecord[] {
+  const rows = db
+    .query<WeatherSourceRow, []>(
+      `
+        SELECT id, site_id, name, provider, surface, updated_at
+        FROM weather_sources
+        ORDER BY name ASC, id ASC
+      `,
+    )
+    .all();
+
+  return rows.map((row) => ({
+    id: row.id,
+    siteId: row.site_id,
+    name: row.name,
+    provider: row.provider,
+    surface: row.surface,
+    updatedAt: row.updated_at,
+  }));
+}
+
+export function readWeatherForecast(
+  db: Database,
+  siteId: string,
+): WeatherForecastRecord | null {
+  const row = db
+    .query<WeatherForecastRow, [string]>(
+      `
+        SELECT site_id, generated_at, forecast_json
+        FROM weather_forecasts
+        WHERE site_id = ?1
+      `,
+    )
+    .get(siteId);
+
+  if (!row) {
+    return null;
+  }
+
+  const parsed = JSON.parse(row.forecast_json) as WeatherForecastRecord;
+  return { ...parsed, generatedAt: row.generated_at };
+}
+
+export function upsertWeatherForecast(
+  db: Database,
+  siteId: string,
+  forecast: WeatherForecastRecord,
+): void {
+  db.query(
+    `
+      INSERT INTO weather_forecasts (site_id, generated_at, forecast_json)
+      VALUES (?1, ?2, ?3)
+      ON CONFLICT(site_id) DO UPDATE SET
+        generated_at = excluded.generated_at,
+        forecast_json = excluded.forecast_json
+    `,
+  ).run(siteId, forecast.generatedAt, JSON.stringify(forecast));
+}
+
+export function deleteWeatherForecast(db: Database, siteId: string): void {
+  db.query(
+    `
+      DELETE FROM weather_forecasts
+      WHERE site_id = ?1
+    `,
+  ).run(siteId);
+}
+
 function ensureSiteColumns(db: Database): void {
   const columns = db
     .query<{ name: string }, []>("PRAGMA table_info(sites)")
@@ -192,6 +290,40 @@ function ensureSiteColumns(db: Database): void {
   if (!columns.includes("location")) {
     db.exec("ALTER TABLE sites ADD COLUMN location TEXT NOT NULL DEFAULT '';");
   }
+}
+
+function ensureWeatherSourceColumns(db: Database): void {
+  const columns = db
+    .query<{ name: string }, []>("PRAGMA table_info(weather_sources)")
+    .all()
+    .map((column) => column.name);
+
+  if (!columns.includes("provider")) {
+    db.exec(
+      "ALTER TABLE weather_sources ADD COLUMN provider TEXT NOT NULL DEFAULT 'open-meteo';",
+    );
+  }
+
+  if (!columns.includes("surface")) {
+    db.exec(
+      "ALTER TABLE weather_sources ADD COLUMN surface TEXT NOT NULL DEFAULT 'open-meteo-shortwave-radiation';",
+    );
+  }
+
+  db.exec(`
+    UPDATE weather_sources
+    SET provider = CASE provider
+      WHEN 'open-meteo' THEN 'open-meteo'
+      ELSE 'open-meteo'
+    END
+  `);
+  db.exec(`
+    UPDATE weather_sources
+    SET surface = CASE surface
+      WHEN 'open-meteo-shortwave-radiation' THEN 'open-meteo-shortwave-radiation'
+      ELSE 'open-meteo-shortwave-radiation'
+    END
+  `);
 }
 
 export function readBatteries(db: Database): BatteryRecord[] {

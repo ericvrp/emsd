@@ -18,7 +18,7 @@ export function formatHelpText(): string {
     "  site <subcommand>     Manage sites",
     "  battery <subcommand>  Manage batteries for a site",
     "  meter <subcommand>    Manage meters for a site",
-    "  weather <subcommand>  Manage weather forecast sources",
+    "  weather <subcommand>  Manage solar forecast sources",
     "  price <subcommand>    Manage dynamic price sources",
     "  discover [--verbose] [--host <ipv4>]  Scan for supported devices",
     "",
@@ -26,7 +26,7 @@ export function formatHelpText(): string {
     "  site --help           Show site management help",
     "  battery --help        Show battery management help",
     "  meter --help          Show meter management help",
-    "  weather --help        Show weather source help",
+    "  weather --help        Show solar forecast source help",
     "  price --help          Show dynamic price source help",
     "  discover --help       Show discovery-specific help",
   ].join("\n");

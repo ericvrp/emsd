@@ -1,5 +1,9 @@
 import { afterEach, expect, test } from "bun:test";
-import { discoverReportJsonSchema, getDatabasePath } from "./index";
+import {
+  discoverReportJsonSchema,
+  getDatabasePath,
+  parseGpsCoordinate,
+} from "./index";
 
 const originalPath = process.env.EMSD_DB_PATH;
 
@@ -25,4 +29,13 @@ test("discoverReportJsonSchema exposes the discover report contract", () => {
   expect(discoverReportJsonSchema.properties.devices.items.required).toContain(
     "discoveryId",
   );
+});
+
+test("parseGpsCoordinate parses normalized latitude longitude pairs", () => {
+  expect(parseGpsCoordinate("52.367600, 4.904100")).toEqual({
+    latitude: 52.3676,
+    longitude: 4.9041,
+  });
+  expect(parseGpsCoordinate("invalid")).toBeNull();
+  expect(parseGpsCoordinate("91, 4.9")).toBeNull();
 });

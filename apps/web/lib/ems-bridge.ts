@@ -8,6 +8,7 @@ import type {
   ManagedDeviceStatusRecord,
   NormalizedBatteryInfo,
   SiteRecord,
+  WeatherForecastRecord,
   WeatherForecastSourceRecord,
 } from "@emsd/core";
 
@@ -225,6 +226,8 @@ export function deleteMeter(input: { id: string; siteId: string }) {
 export function createWeatherForecastSource(input: {
   id: string;
   name: string;
+  provider?: "open-meteo";
+  surface?: "open-meteo-shortwave-radiation";
   siteId: string;
 }) {
   return runBridge<WeatherForecastSourceRecord>("weather-create", input);
@@ -233,6 +236,8 @@ export function createWeatherForecastSource(input: {
 export function updateWeatherForecastSource(input: {
   id: string;
   name: string;
+  provider?: "open-meteo";
+  surface?: "open-meteo-shortwave-radiation";
   siteId: string;
 }) {
   return runBridge<WeatherForecastSourceRecord>("weather-update", input);
@@ -243,6 +248,18 @@ export function deleteWeatherForecastSource(input: {
   siteId: string;
 }) {
   return runBridge<WeatherForecastSourceRecord>("weather-delete", input);
+}
+
+export function getWeatherForecast(input: {
+  hours: number;
+  periodMinutes: number;
+  siteId: string;
+}) {
+  return runBridge<WeatherForecastRecord>("weather-get-forecast", input);
+}
+
+export function refreshWeatherForecast(input: { siteId: string }) {
+  return runBridge<WeatherForecastRecord>("weather-refresh-forecast", input);
 }
 
 export function createDynamicPriceSource(input: {

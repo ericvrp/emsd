@@ -4,6 +4,8 @@ import type {
   DynamicPriceSourceRecord,
   ManagedDeviceStatusRecord,
   SiteRecord,
+  WeatherForecastRecord,
+  WeatherForecastPointRecord,
   WeatherForecastSourceRecord,
 } from "@emsd/core";
 import { HardDrive, Home, LocateFixed, Save, ScanSearch, Search, Trash2 } from "lucide-react";
@@ -29,7 +31,7 @@ import { SubmitButton } from "./submit-button";
 import { ToastOnSearchParams } from "./toast-on-search-params";
 import { Button } from "./ui/button";
 
-type SettingsTab = "devices" | "site" | "discover";
+type SettingsTab = "devices" | "forecast" | "pricing" | "site" | "discover";
 
 function formatManagedDeviceState(state: string): string {
   return state.replace(/-/g, " ");
@@ -47,11 +49,15 @@ export function SettingsPanel({
   initialTab,
   notice,
   tone,
+  weatherForecast,
+  weatherForecastError,
 }: {
   currentSite: SiteSnapshot | null;
   initialTab: string | null;
   notice: string | null;
   tone: "error" | "success";
+  weatherForecast: WeatherForecastRecord | null;
+  weatherForecastError: string | null;
 }) {
   const [activeTab, setActiveTab] = useState<SettingsTab>(
     resolveTab(initialTab, Boolean(currentSite)),
@@ -62,8 +68,14 @@ export function SettingsPanel({
       <ToastOnSearchParams notice={notice} tone={tone} />
 
       <section className="rounded-[1.6rem] border border-white/10 bg-slate-950/55 p-3 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
-        <div className="grid gap-2 sm:grid-cols-3">
-          {(["devices", "site", "discover"] as SettingsTab[]).map((tab) => (
+        <div className="grid gap-2 sm:grid-cols-5">
+          {([
+            "site",
+            "devices",
+            "forecast",
+            "pricing",
+            "discover",
+          ] as SettingsTab[]).map((tab) => (
             <button
               key={tab}
               className={`inline-flex h-9 items-center justify-center gap-2 rounded-md px-4 text-sm font-medium transition ${
@@ -78,11 +90,19 @@ export function SettingsPanel({
                 <HardDrive size={15} />
               ) : tab === "site" ? (
                 <Home size={15} />
+              ) : tab === "forecast" ? (
+                <Search size={15} />
+              ) : tab === "pricing" ? (
+                <Save size={15} />
               ) : (
                 <ScanSearch size={15} />
               )}
               {tab === "devices"
                 ? "Devices"
+                : tab === "forecast"
+                  ? "Forecast"
+                  : tab === "pricing"
+                    ? "Pricing"
                 : tab === "site"
                   ? "Site"
                   : "Discover"}
@@ -102,38 +122,44 @@ export function SettingsPanel({
             </section>
 
             <section className="grid gap-4 xl:grid-cols-2">
-              <ResourceSection
-                title="Batteries"
-              >
+              <ResourceSection title="Batteries">
                 <DeviceList kind="battery" site={currentSite} />
               </ResourceSection>
-              <ResourceSection
-                title="Meters"
-              >
+              <ResourceSection title="Meters">
                 <DeviceList kind="meter" site={currentSite} />
-              </ResourceSection>
-              <ResourceSection
-                title="Weather Sources"
-              >
-                <SourceList
-                  kind="weather"
-                  records={currentSite.weatherSources}
-                  site={currentSite}
-                  titleLabel="Weather source"
-                />
-              </ResourceSection>
-              <ResourceSection
-                title="Dynamic Price Sources"
-              >
-                <SourceList
-                  kind="price"
-                  records={currentSite.dynamicPriceSources}
-                  site={currentSite}
-                  titleLabel="Dynamic price source"
-                />
               </ResourceSection>
             </section>
           </>
+        ) : (
+          <SiteSetupPanel />
+        )
+      ) : null}
+
+      {activeTab === "forecast" ? (
+        currentSite ? (
+          <WeatherForecastSection
+            error={weatherForecastError}
+            forecast={weatherForecast}
+            site={currentSite}
+            source={currentSite.weatherSources[0] ?? null}
+          />
+        ) : (
+          <SiteSetupPanel />
+        )
+      ) : null}
+
+      {activeTab === "pricing" ? (
+        currentSite ? (
+          <section className="grid gap-4 xl:grid-cols-1">
+            <ResourceSection title="Dynamic Price Sources">
+              <SourceList
+                kind="price"
+                records={currentSite.dynamicPriceSources}
+                site={currentSite}
+                titleLabel="Dynamic price source"
+              />
+            </ResourceSection>
+          </section>
         ) : (
           <SiteSetupPanel />
         )
@@ -175,7 +201,9 @@ function resolveTab(tab: string | null, hasSite: boolean): SettingsTab {
     return "site";
   }
 
-  return tab === "site" || tab === "discover" ? tab : "devices";
+  return tab === "site" || tab === "discover" || tab === "forecast" || tab === "pricing"
+    ? tab
+    : "devices";
 }
 
 function formatGpsCoordinate(latitude: number, longitude: number): string {
@@ -232,10 +260,6 @@ function SitePanel({ site }: { site: SiteSnapshot | null }) {
   const deletionBlockers = [
     formatNamedBlocker("battery", batteries.map((device) => device.name)),
     formatNamedBlocker("meter", meters.map((device) => device.name)),
-    formatNamedBlocker(
-      "weather source",
-      site.weatherSources.map((source) => source.name),
-    ),
     formatNamedBlocker(
       "dynamic price source",
       site.dynamicPriceSources.map((source) => source.name),
@@ -437,6 +461,227 @@ function SiteLocationFields({ defaultLocation }: { defaultLocation: string }) {
   );
 }
 
+function WeatherForecastSection({
+  site,
+  forecast,
+  error,
+  source,
+}: {
+  site: SiteSnapshot;
+  forecast: WeatherForecastRecord | null;
+  error: string | null;
+  source: WeatherForecastSourceRecord | null;
+}) {
+  const visiblePoints = forecast
+    ? selectForecastPoints({
+        generatedAt: forecast.generatedAt,
+        horizonHours: 48,
+        points: forecast.points,
+        sampleRateMinutes: 15,
+        sourcePeriodMinutes: forecast.periodMinutes,
+      })
+    : [];
+
+  return (
+    <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-sky-300/40 to-transparent" />
+      <div>
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-300/90">
+            Forecast
+          </p>
+          <h3 className="mt-2 text-xl font-semibold text-white">
+            Solar forecast for {site.name}
+          </h3>
+          <p className="mt-2 text-sm leading-6 text-slate-400">
+            Open-Meteo provides the built-in ground sunlight forecast for this site.
+          </p>
+        </div>
+      </div>
+
+      {site.location.trim().length === 0 ? (
+        <p className="mt-4 rounded-[1.25rem] border border-amber-400/20 bg-amber-500/10 p-4 text-sm text-amber-100">
+          Add a GPS location on the Site tab to load a solar forecast.
+        </p>
+      ) : source === null ? (
+        <p className="mt-4 text-sm leading-6 text-slate-400">
+          Save the site once to create the built-in forecast source.
+        </p>
+      ) : error ? (
+        <p className="mt-4 rounded-[1.25rem] border border-amber-400/20 bg-amber-500/10 p-4 text-sm text-amber-100">
+          {error}
+        </p>
+      ) : forecast === null ? (
+        <p className="mt-4 text-sm leading-6 text-slate-400">
+          Forecast data is not available yet.
+        </p>
+      ) : visiblePoints.length === 0 ? (
+        <p className="mt-4 text-sm leading-6 text-slate-400">
+          No forecast points were returned for this time range.
+        </p>
+      ) : (
+        <div className="mt-5 space-y-4 rounded-[1.4rem] border border-white/10 bg-white/5 p-4">
+          <ForecastChart
+            metricLabel={forecast.metricLabel}
+            points={visiblePoints}
+            unitLabel={forecast.unitLabel}
+          />
+          <p className="text-xs text-slate-500">
+            {`Showing the latest forecast snapshot for ${forecast.location}.`}
+          </p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ForecastChart({
+  metricLabel,
+  points,
+  unitLabel,
+}: {
+  metricLabel: string;
+  points: WeatherForecastPointRecord[];
+  unitLabel: string;
+}) {
+  const width = 960;
+  const height = 260;
+  const paddingTop = 16;
+  const paddingBottom = 34;
+  const paddingLeft = 8;
+  const paddingRight = 8;
+  const values = points.map((point) => point.value ?? 0);
+  const maxValue = Math.max(100, ...values);
+  const plotWidth = width - paddingLeft - paddingRight;
+  const plotHeight = height - paddingTop - paddingBottom;
+
+  const chartPoints = points.map((point, index) => {
+    const x =
+      points.length === 1
+        ? width / 2
+        : paddingLeft + (index / (points.length - 1)) * plotWidth;
+    const y =
+      paddingTop + plotHeight - ((point.value ?? 0) / maxValue) * plotHeight;
+
+    return {
+      ...point,
+      x,
+      y,
+    };
+  });
+
+  const linePath = chartPoints
+    .map((point, index) => `${index === 0 ? "M" : "L"}${point.x} ${point.y}`)
+    .join(" ");
+  const areaPath = `${linePath} L ${paddingLeft + plotWidth} ${paddingTop + plotHeight} L ${paddingLeft} ${paddingTop + plotHeight} Z`;
+  const tickIndexes = buildTickIndexes(points.length, 6);
+
+  return (
+    <div className="space-y-3">
+      <div className="overflow-x-auto">
+        <svg
+          aria-label={`${metricLabel} forecast chart`}
+          className="min-w-full"
+          viewBox={`0 0 ${width} ${height}`}
+        >
+          <title>{metricLabel} forecast</title>
+          {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+            const y = paddingTop + plotHeight - ratio * plotHeight;
+
+            return (
+              <line
+                key={ratio}
+                stroke="rgba(148,163,184,0.16)"
+                strokeDasharray="4 6"
+                strokeWidth="1"
+                x1={paddingLeft}
+                x2={paddingLeft + plotWidth}
+                y1={y}
+                y2={y}
+              />
+            );
+          })}
+
+          <path d={areaPath} fill="rgba(56,189,248,0.14)" />
+          <path
+            d={linePath}
+            fill="none"
+            stroke="rgb(125,211,252)"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="3"
+          />
+
+          {chartPoints.map((point, index) =>
+            tickIndexes.includes(index) ? (
+              <g key={point.periodEnd}>
+                <circle
+                  cx={point.x}
+                  cy={point.y}
+                  fill="rgb(125,211,252)"
+                  r="3.5"
+                />
+                <text
+                  fill="rgba(226,232,240,0.72)"
+                  fontSize="12"
+                  textAnchor={index === 0 ? "start" : index === points.length - 1 ? "end" : "middle"}
+                  x={point.x}
+                  y={height - 10}
+                >
+                  {formatForecastTimeLabel(point.periodEnd)}
+                </text>
+              </g>
+            ) : null,
+          )}
+        </svg>
+      </div>
+      <div className="flex items-center justify-between text-xs text-slate-500">
+        <span>{`0 ${unitLabel}`}</span>
+        <span>{`${formatForecastValue(maxValue)} ${unitLabel}`}</span>
+      </div>
+    </div>
+  );
+}
+
+function formatForecastValue(value: number): string {
+  return value >= 10 ? String(Math.round(value)) : value.toFixed(2);
+}
+
+function selectForecastPoints(input: {
+  generatedAt: string;
+  horizonHours: 24 | 48;
+  points: WeatherForecastPointRecord[];
+  sampleRateMinutes: 15 | 60;
+  sourcePeriodMinutes: number;
+}): WeatherForecastPointRecord[] {
+  const generatedAt = new Date(input.generatedAt).getTime();
+  const cutoff = generatedAt + input.horizonHours * 60 * 60 * 1000;
+  const withinRange = input.points.filter(
+    (point) => new Date(point.periodEnd).getTime() <= cutoff,
+  );
+  const stride = Math.max(1, Math.round(input.sampleRateMinutes / input.sourcePeriodMinutes));
+
+  return withinRange.filter((_, index) => index % stride === 0);
+}
+
+function buildTickIndexes(length: number, count: number): number[] {
+  if (length <= count) {
+    return Array.from({ length }, (_, index) => index);
+  }
+
+  return Array.from({ length: count }, (_, index) =>
+    Math.min(length - 1, Math.round((index / (count - 1)) * (length - 1))),
+  );
+}
+
+function formatForecastTimeLabel(value: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
 function ResourceSection({
   title,
   children,
@@ -592,6 +837,16 @@ function SourceList({
         className="space-y-4 rounded-[1.4rem] border border-white/10 bg-white/5 p-4"
       >
         <input type="hidden" name="siteId" value={site.id} />
+        {kind === "weather" ? (
+          <>
+            <input type="hidden" name="provider" value="open-meteo" />
+            <input
+              type="hidden"
+              name="surface"
+              value="open-meteo-shortwave-radiation"
+            />
+          </>
+        ) : null}
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="block space-y-2">
             <span className="text-sm font-medium text-slate-300">
@@ -612,8 +867,13 @@ function SourceList({
             />
           </label>
         </div>
+        {kind === "weather" ? (
+          <p className="text-xs text-slate-500">
+            Weather sources default to `open-meteo` using the current site GPS location.
+          </p>
+        ) : null}
         <SubmitButton className={primaryButtonClass}>
-          {kind === "weather" ? "Add weather source" : "Add price source"}
+          {kind === "weather" ? "Add solar forecast source" : "Add price source"}
         </SubmitButton>
       </form>
 
@@ -631,6 +891,11 @@ function SourceList({
                 <p className="mt-1 truncate text-xs text-slate-400">
                   {record.id}
                 </p>
+                {kind === "weather" ? (
+                  <p className="mt-1 text-xs uppercase tracking-[0.14em] text-sky-300/80">
+                    {(record as WeatherForecastSourceRecord).provider}
+                  </p>
+                ) : null}
               </div>
               <form
                 action={
@@ -678,8 +943,9 @@ function SourceList({
         </div>
       ) : (
         <p className="mt-3 text-sm leading-6 text-slate-400">
-          No {kind === "weather" ? "weather" : "dynamic price"} sources
-          configured yet.
+          {kind === "weather"
+            ? "No named solar forecast sources configured yet. Open-Meteo is used as the default forecast provider for this site."
+            : "No dynamic price sources configured yet."}
         </p>
       )}
     </>

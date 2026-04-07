@@ -22,6 +22,7 @@ import {
   deleteSite,
   deleteWeatherForecastSource,
   getDashboardSnapshot,
+  refreshWeatherForecast,
   setBatteryEnabled,
   setBatteryMinimumDischargePercent,
   setBatteryStrategy,
@@ -38,6 +39,24 @@ async function requireSession(): Promise<void> {
   if (!session) {
     redirect("/login");
   }
+}
+
+async function ensureDefaultWeatherForecastSource(siteId: string): Promise<boolean> {
+  const snapshot = await getDashboardSnapshot();
+  const site = snapshot.sites.find((entry) => entry.id === siteId);
+
+  if (!site || site.weatherSources.length > 0) {
+    return false;
+  }
+
+  await createWeatherForecastSource({
+    id: `forecast-${siteId}`,
+    name: "Primary solar forecast",
+    provider: "open-meteo",
+    siteId,
+    surface: "open-meteo-shortwave-radiation",
+  });
+  return true;
 }
 
 function stringValue(formData: FormData, key: string): string {
@@ -146,6 +165,8 @@ export async function createSiteAction(formData: FormData): Promise<void> {
       location: stringValue(formData, "location"),
       name,
     });
+    await ensureDefaultWeatherForecastSource(siteId);
+    await refreshWeatherForecast({ siteId });
     return { notice: `Created site ${name}.`, tab: "discover" };
   }, "site");
 }
@@ -160,6 +181,11 @@ export async function updateSiteAction(formData: FormData): Promise<void> {
       location: stringValue(formData, "location"),
       name,
     });
+    const createdDefaultForecastSource = await ensureDefaultWeatherForecastSource(siteId);
+
+    if (createdDefaultForecastSource) {
+      await refreshWeatherForecast({ siteId });
+    }
     return { notice: `Updated site ${name}.`, tab: "site" };
   }, "site");
 }
@@ -432,9 +458,12 @@ export async function createWeatherForecastSourceAction(
       id: sourceId,
       name: stringValue(formData, "name"),
       siteId,
+      provider: "open-meteo",
+      surface: "open-meteo-shortwave-radiation",
     });
-    return { notice: `Added weather source ${sourceId}.`, tab: "devices" };
-  }, "devices");
+    await refreshWeatherForecast({ siteId });
+    return { notice: `Added solar forecast source ${sourceId}.`, tab: "forecast" };
+  }, "forecast");
 }
 
 export async function updateWeatherForecastSourceAction(
@@ -448,9 +477,12 @@ export async function updateWeatherForecastSourceAction(
       id: sourceId,
       name: stringValue(formData, "name"),
       siteId,
+      provider: "open-meteo",
+      surface: "open-meteo-shortwave-radiation",
     });
-    return { notice: `Updated weather source ${sourceId}.`, tab: "devices" };
-  }, "devices");
+    await refreshWeatherForecast({ siteId });
+    return { notice: `Updated solar forecast source ${sourceId}.`, tab: "forecast" };
+  }, "forecast");
 }
 
 export async function deleteWeatherForecastSourceAction(
@@ -461,8 +493,8 @@ export async function deleteWeatherForecastSourceAction(
   return runAction(async () => {
     const sourceId = stringValue(formData, "sourceId");
     await deleteWeatherForecastSource({ id: sourceId, siteId });
-    return { notice: `Deleted weather source ${sourceId}.`, tab: "devices" };
-  }, "devices");
+    return { notice: `Deleted solar forecast source ${sourceId}.`, tab: "forecast" };
+  }, "forecast");
 }
 
 export async function createDynamicPriceSourceAction(

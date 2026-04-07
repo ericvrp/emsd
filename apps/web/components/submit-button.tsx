@@ -6,10 +6,12 @@ import { Button } from "./ui/button";
 export function SubmitButton({
   children,
   className,
+  disabled,
   variant,
 }: {
   children: React.ReactNode;
   className?: string;
+  disabled?: boolean;
   variant?: "default" | "ghost" | "danger";
 }) {
   const { pending } = useFormStatus();
@@ -17,7 +19,7 @@ export function SubmitButton({
   return (
     <Button
       className={className}
-      disabled={pending}
+      disabled={pending || disabled}
       type="submit"
       variant={variant ?? "default"}
     >

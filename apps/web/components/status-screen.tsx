@@ -3,7 +3,11 @@ import { BatteryCharging, Zap } from "lucide-react";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "../auth";
-import { getBatteryNormalizedInfo, getLiveStatus } from "../lib/ems-bridge";
+import {
+  getBatteryNormalizedInfo,
+  getLiveStatus,
+  getWeatherForecast,
+} from "../lib/ems-bridge";
 import { AppShell } from "./app-shell";
 import { BatteryStrategyDialog } from "./battery-strategy-dialog";
 import { DaemonOfflineState } from "./daemon-offline-state";
@@ -35,6 +39,8 @@ export async function StatusScreen({
   }
 
   const currentSite = snapshot.sites[0] ?? null;
+  let weatherForecast = null;
+  let weatherForecastError: string | null = null;
 
   const batteries = currentSite
     ? currentSite.devices.filter((device) => device.kind === "battery")
@@ -61,6 +67,20 @@ export async function StatusScreen({
     ),
   );
 
+  if (currentSite) {
+    try {
+      if (currentSite.weatherSources[0]) {
+        weatherForecast = await getWeatherForecast({
+          hours: 48,
+          periodMinutes: 15,
+          siteId: currentSite.id,
+        });
+      }
+    } catch (error) {
+      weatherForecastError = error instanceof Error ? error.message : String(error);
+    }
+  }
+
   return (
     <AppShell
       generatedAt={snapshot.generatedAt}
@@ -71,6 +91,8 @@ export async function StatusScreen({
             initialTab={initialSettingsTab}
             notice={notice}
             tone={tone}
+            weatherForecast={weatherForecast}
+            weatherForecastError={weatherForecastError}
           />
         </SettingsDialog>
       }

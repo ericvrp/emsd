@@ -224,7 +224,7 @@ Example flow:
 - Bun service, EMS command app, and SQLite schema are in place
 - The daemon-to-EMS contract exists through the shared database and bridge layer
 - PM2 and direct daemon startup scripts are available
-- Discovery is transient and site-scoped managed records exist for batteries, meters, weather sources, and dynamic price sources
+- Discovery is transient and site-scoped managed records exist for batteries, meters, solar forecast sources, and dynamic price sources
 - The EMS command app already covers managed site CRUD, discovery, and inventory flows
 - The web app already sits on top of the EMS surface for live status, configuration, and control
 
@@ -233,7 +233,7 @@ Example flow:
 - Implement simulator and strategy engine
 - Expand strategy support beyond the currently prioritized `self-consumption` and `manual` modes
 - Add HomeWizard P1 meter integration
-- Add weather forecast provider integration for solar-aware planning
+- Add solar forecast provider integration for solar-aware planning
 - Add Nordpool and Tibber integrations
 - Expand EMS coverage until it fully covers the intended product surface
 

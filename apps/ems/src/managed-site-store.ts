@@ -9,9 +9,12 @@ import {
   type DynamicPriceSourceRecord,
   type MeterRecord,
   type SiteRecord,
+  type WeatherForecastSurface,
+  type WeatherProvider,
   type WeatherForecastSourceRecord,
   ensureParentDirectory,
   getDatabasePath,
+  parseGpsCoordinate,
   parseBatteryStrategyPlanJson,
   parseBatteryStrategyRuntimeJson,
   stringifyBatteryStrategyPlan,
@@ -59,7 +62,14 @@ const METER_REQUIRED_COLUMNS = [
   "details",
   "updated_at",
 ];
-const WEATHER_SOURCE_REQUIRED_COLUMNS = ["id", "site_id", "name", "updated_at"];
+const WEATHER_SOURCE_REQUIRED_COLUMNS = [
+  "id",
+  "site_id",
+  "name",
+  "provider",
+  "surface",
+  "updated_at",
+];
 const DYNAMIC_PRICE_SOURCE_REQUIRED_COLUMNS = [
   "id",
   "site_id",
@@ -113,6 +123,8 @@ interface MeterRow {
 
 interface SourceRow {
   id: string;
+  provider: WeatherProvider | null;
+  surface: WeatherForecastSurface | null;
   site_id: string;
   name: string;
   updated_at: string;
@@ -178,10 +190,14 @@ interface UpdateSiteInput {
 interface CreateSourceInput {
   id: string;
   name: string;
+  provider?: WeatherProvider;
+  surface?: WeatherForecastSurface;
 }
 
 interface UpdateSourceInput {
   name: string;
+  provider?: WeatherProvider;
+  surface?: WeatherForecastSurface;
 }
 
 export function listSites(databasePath = getDatabasePath()): SiteRecord[] {
@@ -809,7 +825,7 @@ export function listWeatherForecastSources(
     siteId,
     WEATHER_SOURCE_REQUIRED_COLUMNS,
     databasePath,
-  );
+  ) as WeatherForecastSourceRecord[];
 }
 
 export function createWeatherForecastSource(
@@ -823,7 +839,7 @@ export function createWeatherForecastSource(
     siteId,
     WEATHER_SOURCE_REQUIRED_COLUMNS,
     databasePath,
-  );
+  ) as WeatherForecastSourceRecord;
 }
 
 export function updateWeatherForecastSource(
@@ -839,7 +855,7 @@ export function updateWeatherForecastSource(
     siteId,
     WEATHER_SOURCE_REQUIRED_COLUMNS,
     databasePath,
-  );
+  ) as WeatherForecastSourceRecord | null;
 }
 
 export function deleteWeatherForecastSource(
@@ -853,7 +869,7 @@ export function deleteWeatherForecastSource(
     siteId,
     WEATHER_SOURCE_REQUIRED_COLUMNS,
     databasePath,
-  );
+  ) as WeatherForecastSourceRecord | null;
 }
 
 export function listDynamicPriceSources(
@@ -954,12 +970,28 @@ function createSource(
     assertWritableSchema(db, databasePath, tableName, requiredColumns);
     const now = new Date().toISOString();
 
-    db.query(
-      `
-        INSERT INTO ${tableName} (id, site_id, name, updated_at)
-        VALUES (?1, ?2, ?3, ?4)
-      `,
-    ).run(input.id, siteId, input.name, now);
+    if (tableName === "weather_sources") {
+      db.query(
+        `
+          INSERT INTO weather_sources (id, site_id, name, provider, surface, updated_at)
+          VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+        `,
+      ).run(
+        input.id,
+        siteId,
+        input.name,
+        normalizeWeatherProvider(input.provider),
+        normalizeWeatherSurface(input.surface, input.provider),
+        now,
+      );
+    } else {
+      db.query(
+        `
+          INSERT INTO dynamic_price_sources (id, site_id, name, updated_at)
+          VALUES (?1, ?2, ?3, ?4)
+        `,
+      ).run(input.id, siteId, input.name, now);
+    }
 
     return getSourceByIdOrThrow(db, tableName, input.id, siteId);
   } finally {
@@ -981,17 +1013,41 @@ function updateSource(
   try {
     assertWritableSchema(db, databasePath, tableName, requiredColumns);
 
-    if (!getSourceById(db, tableName, id, siteId)) {
+    const existing = getSourceById(db, tableName, id, siteId);
+
+    if (!existing) {
       return null;
     }
 
-    db.query(
-      `
-        UPDATE ${tableName}
-        SET name = ?2, updated_at = ?3
-        WHERE id = ?1 AND site_id = ?4
-      `,
-    ).run(id, input.name, new Date().toISOString(), siteId);
+    if (tableName === "weather_sources") {
+      const existingWeatherSource = existing as WeatherForecastSourceRecord;
+
+      db.query(
+        `
+          UPDATE weather_sources
+          SET name = ?2, provider = ?3, surface = ?4, updated_at = ?5
+          WHERE id = ?1 AND site_id = ?6
+        `,
+      ).run(
+        id,
+        input.name,
+        normalizeWeatherProvider(input.provider ?? existingWeatherSource.provider),
+        normalizeWeatherSurface(
+          input.surface ?? existingWeatherSource.surface,
+          input.provider ?? existingWeatherSource.provider,
+        ),
+        new Date().toISOString(),
+        siteId,
+      );
+    } else {
+      db.query(
+        `
+          UPDATE dynamic_price_sources
+          SET name = ?2, updated_at = ?3
+          WHERE id = ?1 AND site_id = ?4
+        `,
+      ).run(id, input.name, new Date().toISOString(), siteId);
+    }
 
     return getSourceByIdOrThrow(db, tableName, id, siteId);
   } finally {
@@ -1117,10 +1173,13 @@ function ensureSchema(db: Database): void {
       id TEXT PRIMARY KEY,
       site_id TEXT NOT NULL,
       name TEXT NOT NULL,
+      provider TEXT NOT NULL DEFAULT 'open-meteo',
+      surface TEXT NOT NULL DEFAULT 'open-meteo-shortwave-radiation',
       updated_at TEXT NOT NULL,
       FOREIGN KEY(site_id) REFERENCES sites(id)
     );
   `);
+  ensureWeatherSourceColumns(db);
   db.exec(`
     CREATE TABLE IF NOT EXISTS dynamic_price_sources (
       id TEXT PRIMARY KEY,
@@ -1223,6 +1282,56 @@ function ensureBatteryColumns(db: Database): void {
   }
 }
 
+function ensureWeatherSourceColumns(db: Database): void {
+  if (!hasTable(db, "weather_sources")) {
+    return;
+  }
+
+  const columns = getTableColumns(db, "weather_sources");
+
+  if (!columns.includes("provider")) {
+    db.exec(
+      "ALTER TABLE weather_sources ADD COLUMN provider TEXT NOT NULL DEFAULT 'open-meteo';",
+    );
+  }
+
+  if (!columns.includes("surface")) {
+    db.exec(
+      "ALTER TABLE weather_sources ADD COLUMN surface TEXT NOT NULL DEFAULT 'open-meteo-shortwave-radiation';",
+    );
+  }
+
+  db.exec(`
+    UPDATE weather_sources
+    SET provider = CASE provider
+      WHEN 'open-meteo' THEN 'open-meteo'
+      ELSE 'open-meteo'
+    END
+  `);
+  db.exec(`
+    UPDATE weather_sources
+    SET surface = CASE surface
+      WHEN 'open-meteo-shortwave-radiation' THEN 'open-meteo-shortwave-radiation'
+      ELSE 'open-meteo-shortwave-radiation'
+    END
+  `);
+}
+
+function normalizeWeatherProvider(
+  provider: WeatherProvider | null | undefined,
+): WeatherProvider {
+  return "open-meteo";
+}
+
+function normalizeWeatherSurface(
+  surface: WeatherForecastSurface | null | undefined,
+  provider: WeatherProvider | null | undefined,
+): WeatherForecastSurface {
+  void surface;
+  void provider;
+  return "open-meteo-shortwave-radiation";
+}
+
 function resolveManualTargetSoc(input: {
   manualState: BatteryManualState | null;
   manualChargeTargetSoc: number | null;
@@ -1276,31 +1385,15 @@ function normalizeSiteLocation(location: string | undefined): string {
     return "";
   }
 
-  const matched = location
-    .trim()
-    .match(/^([+-]?\d+(?:\.\d+)?)\s*,\s*([+-]?\d+(?:\.\d+)?)$/);
+  const coordinate = parseGpsCoordinate(location);
 
-  if (!matched) {
+  if (!coordinate) {
     throw new Error(
       "Site location must be a GPS coordinate in 'latitude, longitude' format.",
     );
   }
 
-  const latitude = Number(matched[1]);
-  const longitude = Number(matched[2]);
-
-  if (
-    !Number.isFinite(latitude) ||
-    !Number.isFinite(longitude) ||
-    latitude < -90 ||
-    latitude > 90 ||
-    longitude < -180 ||
-    longitude > 180
-  ) {
-    throw new Error("Site location is outside valid GPS bounds.");
-  }
-
-  return `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+  return `${coordinate.latitude.toFixed(6)}, ${coordinate.longitude.toFixed(6)}`;
 }
 
 function getLinkedSiteResources(
@@ -1310,7 +1403,7 @@ function getLinkedSiteResources(
   const linkedTables = [
     { tableName: "batteries", label: "battery plugin(s)" },
     { tableName: "meters", label: "meter(s)" },
-    { tableName: "weather_sources", label: "weather source(s)" },
+    { tableName: "weather_sources", label: "solar forecast source(s)" },
     { tableName: "dynamic_price_sources", label: "dynamic price source(s)" },
   ] as const;
   const resources: Array<{ count: number; label: string }> = [];
@@ -1438,15 +1531,22 @@ function readSources(
 ): SourceRecord[] {
   return db
     .query<SourceRow, [string]>(
-      `
-        SELECT id, site_id, name, updated_at
-        FROM ${tableName}
-        WHERE site_id = ?1
-        ORDER BY name ASC, id ASC
-      `,
+      tableName === "weather_sources"
+        ? `
+            SELECT id, site_id, name, provider, surface, updated_at
+            FROM weather_sources
+            WHERE site_id = ?1
+            ORDER BY name ASC, id ASC
+          `
+        : `
+            SELECT id, site_id, name, NULL as provider, NULL as surface, updated_at
+            FROM dynamic_price_sources
+            WHERE site_id = ?1
+            ORDER BY name ASC, id ASC
+          `,
     )
     .all(siteId)
-    .map(mapSourceRow);
+    .map((row) => mapSourceRow(tableName, row));
 }
 
 function getSiteById(db: Database, siteId: string): SiteRecord | null {
@@ -1528,15 +1628,21 @@ function getSourceById(
 ): SourceRecord | null {
   const row = db
     .query<SourceRow, [string, string]>(
-      `
-        SELECT id, site_id, name, updated_at
-        FROM ${tableName}
-        WHERE id = ?1 AND site_id = ?2
-      `,
+      tableName === "weather_sources"
+        ? `
+            SELECT id, site_id, name, provider, surface, updated_at
+            FROM weather_sources
+            WHERE id = ?1 AND site_id = ?2
+          `
+        : `
+            SELECT id, site_id, name, NULL as provider, NULL as surface, updated_at
+            FROM dynamic_price_sources
+            WHERE id = ?1 AND site_id = ?2
+          `,
     )
     .get(id, siteId);
 
-  return row ? mapSourceRow(row) : null;
+  return row ? mapSourceRow(tableName, row) : null;
 }
 
 function getSiteByIdOrThrow(db: Database, siteId: string): SiteRecord {
@@ -1653,11 +1759,25 @@ function mapMeterRow(row: MeterRow): MeterRecord {
   };
 }
 
-function mapSourceRow(row: SourceRow): SourceRecord {
+function mapSourceRow(
+  tableName: "weather_sources" | "dynamic_price_sources",
+  row: SourceRow,
+): SourceRecord {
+  if (tableName === "weather_sources") {
+    return {
+      id: row.id,
+      siteId: row.site_id,
+      name: row.name,
+      provider: normalizeWeatherProvider(row.provider),
+      surface: normalizeWeatherSurface(row.surface, row.provider),
+      updatedAt: row.updated_at,
+    } satisfies WeatherForecastSourceRecord;
+  }
+
   return {
     id: row.id,
     siteId: row.site_id,
     name: row.name,
     updatedAt: row.updated_at,
-  };
+  } satisfies DynamicPriceSourceRecord;
 }

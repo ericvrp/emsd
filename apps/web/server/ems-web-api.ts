@@ -10,12 +10,18 @@ import {
   type MeterRecord,
   type NormalizedBatteryInfo,
   type SiteRecord,
+  type WeatherForecastRecord,
   type WeatherForecastSourceRecord,
   getDaemonLockPath,
 } from "@emsd/core";
 import {
+  deleteWeatherForecast,
   openDaemonDatabase,
   readManagedDeviceTelemetry,
+  readSites,
+  readWeatherForecast,
+  readWeatherForecastSources,
+  upsertWeatherForecast,
 } from "../../daemon/src/database";
 import { createBatteryPlugin } from "../../ems/src/battery-plugins";
 import {
@@ -50,6 +56,7 @@ import {
   updateSite,
   updateWeatherForecastSource,
 } from "../../ems/src/managed-site-store";
+import { getWeatherForecast } from "../../ems/src/plugins/solar-forecast";
 
 interface BridgeSuccess<T> {
   ok: true;
@@ -766,6 +773,8 @@ async function run(): Promise<void> {
       const input = readInput<{
         id?: string;
         name?: string;
+        provider?: "open-meteo";
+        surface?: "open-meteo-shortwave-radiation";
         siteId?: string;
       }>();
       succeed(
@@ -773,6 +782,8 @@ async function run(): Promise<void> {
           {
             id: requireString(input.id, "id"),
             name: requireString(input.name, "name"),
+            provider: "open-meteo",
+            surface: "open-meteo-shortwave-radiation",
           },
           requireString(input.siteId, "siteId"),
         ),
@@ -784,17 +795,23 @@ async function run(): Promise<void> {
       const input = readInput<{
         id?: string;
         name?: string;
+        provider?: "open-meteo";
+        surface?: "open-meteo-shortwave-radiation";
         siteId?: string;
       }>();
       const source = updateWeatherForecastSource(
         requireString(input.id, "id"),
-        { name: requireString(input.name, "name") },
+        {
+          name: requireString(input.name, "name"),
+          provider: "open-meteo",
+          surface: "open-meteo-shortwave-radiation",
+        },
         requireString(input.siteId, "siteId"),
       );
 
       if (!source) {
         throw new Error(
-          `Managed weather source not found: ${requireString(input.id, "id")}`,
+          `Managed solar forecast source not found: ${requireString(input.id, "id")}`,
         );
       }
 
@@ -811,11 +828,80 @@ async function run(): Promise<void> {
 
       if (!source) {
         throw new Error(
-          `Managed weather source not found: ${requireString(input.id, "id")}`,
+          `Managed solar forecast source not found: ${requireString(input.id, "id")}`,
         );
       }
 
+      const db = openDaemonDatabase();
+
+      try {
+        deleteWeatherForecast(db, requireString(input.siteId, "siteId"));
+      } finally {
+        db.close();
+      }
+
       succeed(source);
+      return;
+    }
+
+    case "weather-get-forecast": {
+      const input = readInput<{
+        siteId?: string;
+      }>();
+      const siteId = requireString(input.siteId, "siteId");
+      const db = openDaemonDatabase();
+
+      try {
+        const forecast = readWeatherForecast(db, siteId);
+
+        if (forecast === null) {
+          throw new Error(
+            `No solar forecast snapshot is available yet for site ${siteId}. Wait for the daemon refresh cycle or check provider configuration.`,
+          );
+        }
+
+        succeed(forecast satisfies WeatherForecastRecord);
+      } finally {
+        db.close();
+      }
+      return;
+    }
+
+    case "weather-refresh-forecast": {
+      const input = readInput<{ siteId?: string }>();
+      const siteId = requireString(input.siteId, "siteId");
+      const db = openDaemonDatabase();
+
+      try {
+        const site = readSites(db).find((entry) => entry.id === siteId);
+
+        if (!site) {
+          throw new Error(`Managed site not found: ${siteId}`);
+        }
+
+        const source =
+          readWeatherForecastSources(db).find((entry) => entry.siteId === siteId) ??
+          null;
+
+        if (source === null) {
+          deleteWeatherForecast(db, siteId);
+          throw new Error(
+            `No forecast source is configured for site ${siteId}. Select a provider and save to fetch a forecast.`,
+          );
+        }
+
+        const forecast = await getWeatherForecast({
+          hours: 48,
+          periodMinutes: 15,
+          site,
+          source,
+        });
+
+        upsertWeatherForecast(db, siteId, forecast);
+        succeed(forecast satisfies WeatherForecastRecord);
+      } finally {
+        db.close();
+      }
       return;
     }
 

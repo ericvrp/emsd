@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runEms } from "./index";
 
-test("weather commands add, list, update, and remove site weather sources", async () => {
+test("weather commands add, list, update, and remove site solar forecast sources", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "emsd-ems-weather-test-"));
   const originalDatabasePath = process.env.EMSD_DB_PATH;
   const originalLog = console.log;
@@ -32,13 +32,25 @@ test("weather commands add, list, update, and remove site weather sources", asyn
 
     expect(JSON.parse(output[1] ?? "{}")).toMatchObject({
       id: "metno",
+      provider: "open-meteo",
+      surface: "open-meteo-shortwave-radiation",
       siteId: "home",
       name: "Met Norway",
     });
-    expect(output[2]).toContain("SOURCE ID | NAME | UPDATED AT");
-    expect(output[2]).toContain("metno | Met Norway");
-    expect(JSON.parse(output[3] ?? "{}")).toMatchObject({ name: "Met.no API" });
-    expect(JSON.parse(output[4] ?? "{}")).toMatchObject({ name: "Met.no API" });
+    expect(output[2]).toContain("SOURCE ID | NAME | PROVIDER | SURFACE | UPDATED AT");
+    expect(output[2]).toContain(
+      "metno | Met Norway | open-meteo | open-meteo-shortwave-radiation |",
+    );
+    expect(JSON.parse(output[3] ?? "{}")).toMatchObject({
+      name: "Met.no API",
+      provider: "open-meteo",
+      surface: "open-meteo-shortwave-radiation",
+    });
+    expect(JSON.parse(output[4] ?? "{}")).toMatchObject({
+      name: "Met.no API",
+      provider: "open-meteo",
+      surface: "open-meteo-shortwave-radiation",
+    });
   } finally {
     process.env.EMSD_DB_PATH = originalDatabasePath;
     console.log = originalLog;
