@@ -39,6 +39,30 @@ test("getDiscoverySignatures exposes the discovery plugin catalog", () => {
       },
     },
     {
+      pluginType: "battery",
+      category: "battery",
+      model: "sonnenbatterie",
+      name: "sonnenBatterie",
+      port: 80,
+      schemes: ["http"],
+      request: {
+        path: "/api/v2/status",
+        method: "GET",
+        headers: {
+          accept: "application/json",
+        },
+      },
+      response: {
+        match: [
+          '"BackupBuffer"\\s*:',
+          '"OperatingMode"\\s*:',
+          '"RSOC"\\s*:',
+          '"SystemStatus"\\s*:',
+          '"Uac"\\s*:',
+        ],
+      },
+    },
+    {
       pluginType: "meter",
       category: "meter",
       model: "homewizard-p1",
@@ -261,6 +285,71 @@ test("discoverHostDevices enriches HomeWizard P1 matches with measurement detail
     });
     expect(devices[0]?.discoveryId).toMatch(/^[a-f0-9]{12}$/);
     expect(devices[0]?.details).toContain("SMR 50");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("discoverHostDevices matches a sonnen battery from the status endpoint", async () => {
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+
+    if (url === "http://192.168.1.88:8080/rpc/Indevolt.GetData?config=%7B%22t%22%3A%5B0%2C1118%2C6000%2C6001%2C6002%2C7101%5D%7D") {
+      return new Response("not found", { status: 404 });
+    }
+
+    if (url === "http://192.168.1.88:80/api") {
+      return new Response("not found", { status: 404 });
+    }
+
+    if (url === "http://192.168.1.88:80/api/v2/status") {
+      return new Response(
+        JSON.stringify({
+          Apparent_output: 96,
+          BackupBuffer: "12",
+          BatteryCharging: false,
+          BatteryDischarging: true,
+          Consumption_W: 420,
+          IsSystemInstalled: 1,
+          OperatingMode: "1",
+          Pac_total_W: 1300,
+          RSOC: 61,
+          RemainingCapacity_W: 5490,
+          SystemStatus: "OnGrid",
+          Timestamp: "2020-03-26 17:10:06",
+          Uac: 238,
+          Ubat: 209,
+          USOC: 12,
+          dischargeNotAllowed: false,
+          generator_autostart: false,
+        }),
+        { status: 200 },
+      );
+    }
+
+    throw new Error(`Unexpected URL: ${url}`);
+  }) as typeof fetch;
+
+  try {
+    const discoveries = await discoverHostDevices("192.168.1.88", {
+      verbose: false,
+      host: "192.168.1.88",
+    });
+
+    expect(discoveries).toHaveLength(1);
+    expect(discoveries[0]).toMatchObject({
+      category: "battery",
+      model: "sonnenbatterie",
+      name: "sonnenBatterie",
+      ipAddress: "192.168.1.88",
+      powerW: 1300,
+      socPercent: 61,
+      state: "discharging",
+    });
+    expect(discoveries[0]?.details).toContain("SOC 61%");
+    expect(discoveries[0]?.details).toContain("mode manual");
   } finally {
     globalThis.fetch = originalFetch;
   }

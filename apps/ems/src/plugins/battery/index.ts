@@ -1,3 +1,4 @@
-import { defaultBatteryPlugin } from "./default-battery";
+import { indevoltBatteryPlugin } from "./indevolt-battery";
+import { sonnenBatteryPlugin } from "./sonnen-battery";
 
-export const batteryPlugins = [defaultBatteryPlugin];
+export const batteryPlugins = [indevoltBatteryPlugin, sonnenBatteryPlugin];

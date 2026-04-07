@@ -618,7 +618,7 @@ function inferBatteryStrategyMode(details: string): BatteryStrategyMode {
     return "self-consumption";
   }
 
-  if (matchedMode === "real-time control") {
+  if (matchedMode === "real-time control" || matchedMode === "manual") {
     return "manual";
   }
 

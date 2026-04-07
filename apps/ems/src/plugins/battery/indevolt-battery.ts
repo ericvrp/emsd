@@ -10,7 +10,7 @@ const responseMatch = [
   '"Indevolt"|"1118"\\s*:',
 ];
 
-export const defaultBatteryPlugin: DiscoveryPlugin = {
+export const indevoltBatteryPlugin: DiscoveryPlugin = {
   pluginType: "battery",
   category: "battery",
   model: "indevolt-battery",
@@ -81,7 +81,7 @@ export const defaultBatteryPlugin: DiscoveryPlugin = {
   },
 };
 
-export function matchesDefaultBatteryResponse(responseText: string): boolean {
+export function matchesIndevoltBatteryResponse(responseText: string): boolean {
   return matchesPatterns(responseMatch, responseText);
 }
 

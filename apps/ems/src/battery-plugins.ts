@@ -7,6 +7,7 @@ import type {
 
 const INDEVOLT_PORT = 8080;
 const INDEVOLT_MAX_POWER_W = 2400;
+const SONNEN_MAX_POWER_W = 3300;
 
 interface BatteryStrategyCommand {
   strategyMode: BatteryStrategyMode;
@@ -32,6 +33,10 @@ export abstract class BatteryPlugin {
 export function createBatteryPlugin(battery: BatteryRecord): BatteryPlugin {
   if (battery.plugin === "indevolt-battery") {
     return new IndevoltBatteryPlugin(battery);
+  }
+
+  if (battery.plugin === "sonnenbatterie") {
+    return new SonnenBatteryPlugin(battery);
   }
 
   throw new Error(`Unsupported battery plugin: ${battery.plugin}`);
@@ -95,6 +100,57 @@ class IndevoltBatteryPlugin extends BatteryPlugin {
   }
 }
 
+class SonnenBatteryPlugin extends BatteryPlugin {
+  async getNormalizedInfo(): Promise<NormalizedBatteryInfo> {
+    const payload = await fetchSonnenJson(
+      this.battery.ipAddress,
+      "/api/v2/status",
+      { authenticated: false },
+    );
+    const status = parseSonnenBatteryStatus(payload);
+    const socPercent = parseNullableNumber(payload?.RSOC);
+    const remainingCapacityWh = parseNullableNumber(payload?.RemainingCapacity_W);
+
+    return {
+      capacityWh: inferSonnenCapacityWh(remainingCapacityWh, socPercent),
+      currentW: parseNullableAbsoluteNumber(payload?.Pac_total_W),
+      manualChargeTargetSoc: this.battery.manualChargeTargetSoc,
+      manualDischargeTargetSoc: this.battery.manualDischargeTargetSoc,
+      manualPowerW: this.battery.manualPowerW,
+      manualState: this.battery.manualState,
+      manualTargetSoc: this.battery.manualTargetSoc,
+      model: this.battery.model,
+      name: this.battery.name,
+      socPercent,
+      status,
+      strategyMode: parseSonnenStrategyMode(payload?.OperatingMode),
+    };
+  }
+
+  async setStrategy(command: BatteryStrategyCommand): Promise<void> {
+    if (!this.supportsStrategy(command.strategyMode)) {
+      throw new Error(
+        `Battery strategy '${command.strategyMode}' is not supported by ${this.battery.plugin}`,
+      );
+    }
+
+    if (command.strategyMode === "self-consumption") {
+      await putSonnenConfiguration(this.battery.ipAddress, {
+        EM_OperatingMode: "2",
+      });
+      return;
+    }
+
+    const manualState = command.manualState ?? "idle";
+    const manualPowerW = clampSonnenManualPower(command.manualPowerW);
+
+    await putSonnenConfiguration(this.battery.ipAddress, {
+      EM_OperatingMode: "1",
+    });
+    await postSonnenSetpoint(this.battery.ipAddress, manualState, manualPowerW);
+  }
+}
+
 async function fetchIndevoltData(
   host: string,
   points: number[],
@@ -141,6 +197,97 @@ async function setIndevoltData(
   }
 }
 
+async function fetchSonnenJson(
+  host: string,
+  path: string,
+  options: { authenticated: boolean },
+): Promise<Record<string, unknown> | null> {
+  const token = options.authenticated ? getSonnenAuthToken(host) : null;
+  const response = await fetch(`http://${host}${path}`, {
+    method: "GET",
+    headers: buildSonnenHeaders(token),
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `Battery telemetry request failed with HTTP ${response.status}`,
+    );
+  }
+
+  return parseJsonObject(await response.text());
+}
+
+async function putSonnenConfiguration(
+  host: string,
+  values: Record<string, string>,
+): Promise<void> {
+  const response = await fetch(`http://${host}/api/v2/configurations`, {
+    method: "PUT",
+    headers: {
+      ...buildSonnenHeaders(getSonnenAuthToken(host)),
+      "content-type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams(values).toString(),
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `Battery control request failed with HTTP ${response.status}`,
+    );
+  }
+}
+
+async function postSonnenSetpoint(
+  host: string,
+  state: BatteryManualState,
+  powerW: number,
+): Promise<void> {
+  const direction = state === "discharging" ? "discharge" : "charge";
+  const response = await fetch(
+    `http://${host}/api/v2/setpoint/${direction}/${powerW}`,
+    {
+      method: "POST",
+      headers: buildSonnenHeaders(getSonnenAuthToken(host)),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Battery control request failed with HTTP ${response.status}`,
+    );
+  }
+
+  const payload = await response.text();
+
+  if (payload.trim() !== "true") {
+    throw new Error(`Battery control request was rejected by ${host}`);
+  }
+}
+
+function buildSonnenHeaders(token: string | null): Record<string, string> {
+  return token === null
+    ? { accept: "application/json" }
+    : {
+        accept: "application/json",
+        "Auth-Token": token,
+      };
+}
+
+function getSonnenAuthToken(host: string): string {
+  const hostKey = host.replaceAll(".", "_");
+  const token =
+    process.env[`SONNEN_BATTERY_AUTH_TOKEN_${hostKey}`] ??
+    process.env.SONNEN_BATTERY_AUTH_TOKEN;
+
+  if (!token || token.trim().length === 0) {
+    throw new Error(
+      `Missing sonnen auth token for ${host}. Set SONNEN_BATTERY_AUTH_TOKEN or SONNEN_BATTERY_AUTH_TOKEN_${hostKey}.`,
+    );
+  }
+
+  return token.trim();
+}
+
 function parseJsonObject(responseText: string): Record<string, unknown> | null {
   try {
     const parsed = JSON.parse(responseText) as unknown;
@@ -178,6 +325,16 @@ function parseNullableKiloWattHours(value: unknown): number | null {
   return Math.round(parsed * 1000);
 }
 
+function parseNullableAbsoluteNumber(value: unknown): number | null {
+  const parsed = parseNullableNumber(value);
+
+  if (parsed === null) {
+    return null;
+  }
+
+  return Math.abs(Math.round(parsed));
+}
+
 function parseIndevoltBatteryStatus(
   value: unknown,
 ): NormalizedBatteryInfo["status"] {
@@ -193,6 +350,24 @@ function parseIndevoltBatteryStatus(
   }
 }
 
+function parseSonnenBatteryStatus(
+  payload: Record<string, unknown> | null,
+): NormalizedBatteryInfo["status"] {
+  if (!payload) {
+    return "offline";
+  }
+
+  if (payload.BatteryCharging === true) {
+    return "charging";
+  }
+
+  if (payload.BatteryDischarging === true) {
+    return "discharging";
+  }
+
+  return getStringNumber(payload?.IsSystemInstalled) === 1 ? "idle" : "offline";
+}
+
 function parseIndevoltStrategyMode(value: unknown): BatteryStrategyMode {
   switch (String(value)) {
     case "1":
@@ -202,6 +377,46 @@ function parseIndevoltStrategyMode(value: unknown): BatteryStrategyMode {
     default:
       return "auto";
   }
+}
+
+function parseSonnenStrategyMode(value: unknown): BatteryStrategyMode {
+  switch (String(value)) {
+    case "1":
+      return "manual";
+    case "2":
+      return "self-consumption";
+    default:
+      return "auto";
+  }
+}
+
+function inferSonnenCapacityWh(
+  remainingCapacityWh: number | null,
+  socPercent: number | null,
+): number | null {
+  if (
+    remainingCapacityWh === null ||
+    socPercent === null ||
+    socPercent <= 0 ||
+    socPercent > 100
+  ) {
+    return null;
+  }
+
+  return Math.round(remainingCapacityWh / (socPercent / 100));
+}
+
+function clampSonnenManualPower(value: number | null): number {
+  if (value === null || !Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.min(SONNEN_MAX_POWER_W, Math.round(value)));
+}
+
+function getStringNumber(value: unknown): number | null {
+  const parsed = parseNullableNumber(value);
+  return parsed === null ? null : Math.round(parsed);
 }
 
 function encodeManualState(state: BatteryManualState): number {
