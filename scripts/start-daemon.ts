@@ -9,6 +9,10 @@ import {
 import { openSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  formatDaemonHelpText,
+  parseDaemonOptions,
+} from "../apps/daemon/src/daemon-options";
 
 const repoRoot = resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
 const daemonDir = resolve(repoRoot, "apps/daemon");
@@ -16,6 +20,12 @@ const runDir = resolve(repoRoot, "var/run");
 const logDir = resolve(repoRoot, "var/log");
 const pidPath = resolve(runDir, "emsd.pid");
 const lockPath = resolve(runDir, "emsd.lock");
+const options = parseDaemonOptions(process.argv.slice(2));
+
+if (options === null) {
+  console.log(formatDaemonHelpText("daemon:start"));
+  process.exit(0);
+}
 
 function isProcessRunning(pid: number): boolean {
   try {
@@ -72,19 +82,32 @@ if (runningLockPid !== null) {
 const stdout = openSync(resolve(logDir, "emsd.log"), "a");
 const stderr = openSync(resolve(logDir, "emsd.error.log"), "a");
 
-const child = spawn("bun", ["run", "src/index.ts"], {
-  cwd: daemonDir,
-  detached: true,
-  env: {
-    ...process.env,
-    EMSD_REPO_ROOT: repoRoot,
+const child = spawn(
+  "bun",
+  ["run", "src/index.ts", ...(options.verbose ? ["--verbose"] : [])],
+  {
+    cwd: daemonDir,
+    detached: true,
+    env: {
+      ...process.env,
+      EMSD_REPO_ROOT: repoRoot,
+    },
+    stdio: ["ignore", stdout, stderr],
   },
-  stdio: ["ignore", stdout, stderr],
-});
+);
+
+if (child.pid === undefined) {
+  console.error(
+    "EMSD daemon failed to start because no child PID was returned.",
+  );
+  process.exit(1);
+}
+
+const childPid = child.pid;
 
 await sleep(300);
 
-if (!isProcessRunning(child.pid)) {
+if (!isProcessRunning(childPid)) {
   rmSync(pidPath, { force: true });
 
   const lockPid = readRunningPid(lockPath);
@@ -101,7 +124,11 @@ if (!isProcessRunning(child.pid)) {
 }
 
 child.unref();
-writeFileSync(pidPath, `${child.pid}\n`);
+writeFileSync(pidPath, `${childPid}\n`);
 
-console.log(`Started EMSD daemon with PID ${child.pid}.`);
+console.log(`Started EMSD daemon with PID ${childPid}.`);
 console.log(`Logs: ${resolve(logDir, "emsd.log")}`);
+
+if (options.verbose) {
+  console.log("Verbose strategy logging enabled.");
+}

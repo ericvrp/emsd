@@ -13,6 +13,7 @@ import {
 } from "@emsd/core";
 import { createBatteryPlugin } from "../../ems/src/battery-plugins";
 import { fetchMeterTelemetry } from "../../ems/src/discover";
+import { formatDaemonHelpText, parseDaemonOptions } from "./daemon-options";
 import {
   openDaemonDatabase,
   readBatteries,
@@ -59,6 +60,15 @@ function acquireDaemonLock(): void {
 }
 
 function main(): void {
+  const parsedOptions = parseDaemonOptions(process.argv.slice(2));
+
+  if (parsedOptions === null) {
+    console.log(formatDaemonHelpText("daemon"));
+    return;
+  }
+
+  const options = parsedOptions;
+
   acquireDaemonLock();
 
   const db = openDaemonDatabase();
@@ -72,6 +82,9 @@ function main(): void {
   console.log(
     `Polling managed devices every ${POLL_INTERVAL_MS / 1000} seconds.`,
   );
+  if (options.verbose) {
+    console.log("Verbose strategy logging enabled.");
+  }
 
   let pollInFlight = false;
 
@@ -115,6 +128,11 @@ function main(): void {
               minimumDischargePercent: battery.minimumDischargePercent,
             });
 
+            logVerbose(
+              options.verbose,
+              `restoring default strategy for ${battery.id} after now mode completed: ${describeStrategyPlanItem(battery.strategyPlan[0])}`,
+            );
+
             await createBatteryPlugin(battery)
               .setStrategy(fallbackStrategy)
               .then(() => {
@@ -134,7 +152,18 @@ function main(): void {
           }
 
           if (!battery.nowModeActive) {
-            await runScheduledStrategy(db, battery, sample, new Date());
+            await runScheduledStrategy(
+              db,
+              battery,
+              sample,
+              new Date(),
+              options.verbose,
+            );
+          } else {
+            logVerbose(
+              options.verbose,
+              `skipping scheduled strategy for ${battery.id} because now mode is active`,
+            );
           }
 
           upsertManagedDeviceTelemetry(db, {
@@ -262,10 +291,15 @@ async function runScheduledStrategy(
   battery: BatteryRecord,
   sample: NormalizedBatteryInfo,
   now: Date,
+  verbose: boolean,
 ): Promise<void> {
   const activeItem = getActiveStrategyPlanItem(battery);
 
   if (battery.strategyRuntime.activeItemId && activeItem === null) {
+    logVerbose(
+      verbose,
+      `restoring default strategy for ${battery.id} because active item ${battery.strategyRuntime.activeItemId} is no longer in the plan`,
+    );
     await restoreFallbackStrategy(
       db,
       battery,
@@ -278,10 +312,18 @@ async function runScheduledStrategy(
     if (
       !shouldCompleteScheduledItem({ battery, item: activeItem, now, sample })
     ) {
+      logVerbose(
+        verbose,
+        `keeping active strategy item for ${battery.id}: ${describeStrategyPlanItem(activeItem)}`,
+      );
       return;
     }
 
-    await restoreFallbackStrategy(db, battery, activeItem.id);
+    logVerbose(
+      verbose,
+      `completed active strategy item for ${battery.id}: ${describeStrategyPlanItem(activeItem)}`,
+    );
+    await restoreFallbackStrategy(db, battery, activeItem.id, verbose);
     return;
   }
 
@@ -305,6 +347,10 @@ async function runScheduledStrategy(
     }
 
     if (shouldSkipScheduledItem(item, triggerAt, now)) {
+      logVerbose(
+        verbose,
+        `skipping expired strategy item for ${battery.id}: ${describeStrategyPlanItem(item)}`,
+      );
       runtime = {
         ...runtime,
         lastTriggeredAtByItemId: {
@@ -324,6 +370,11 @@ async function runScheduledStrategy(
       item,
       minimumDischargePercent: battery.minimumDischargePercent,
     });
+
+    logVerbose(
+      verbose,
+      `activating strategy item for ${battery.id}: ${describeStrategyPlanItem(item)}`,
+    );
 
     await createBatteryPlugin(battery).setStrategy(strategy);
 
@@ -496,11 +547,17 @@ async function restoreFallbackStrategy(
   db: ReturnType<typeof openDaemonDatabase>,
   battery: BatteryRecord,
   completedItemId: string,
+  verbose = false,
 ): Promise<void> {
   const fallbackStrategy = resolveBatteryStrategyFromPlanItem({
     item: battery.strategyPlan[0],
     minimumDischargePercent: battery.minimumDischargePercent,
   });
+
+  logVerbose(
+    verbose,
+    `applying fallback strategy for ${battery.id}: ${describeStrategyPlanItem(battery.strategyPlan[0])}`,
+  );
 
   await createBatteryPlugin(battery).setStrategy(fallbackStrategy);
 
@@ -526,6 +583,66 @@ async function restoreFallbackStrategy(
       },
     },
   });
+}
+
+function logVerbose(enabled: boolean, message: string): void {
+  if (!enabled) {
+    return;
+  }
+
+  console.log(`[${new Date().toISOString()}] ${message}`);
+}
+
+function describeStrategyPlanItem(
+  item: BatteryStrategyPlanItem | null | undefined,
+): string {
+  if (!item) {
+    return "<none>";
+  }
+
+  const parts = [
+    `id=${item.id}`,
+    `kind=${item.kind}`,
+    `mode=${item.strategyMode}`,
+  ];
+
+  if (item.triggerKind) {
+    parts.push(`trigger=${item.triggerKind}`);
+  }
+
+  if (item.startTime) {
+    parts.push(`start=${item.startTime}`);
+  }
+
+  if (item.manualState) {
+    parts.push(`state=${item.manualState}`);
+  }
+
+  if (item.targetMethod) {
+    parts.push(`target=${item.targetMethod}`);
+  }
+
+  if (item.targetDurationMinutes !== null) {
+    parts.push(`duration=${item.targetDurationMinutes}m`);
+  }
+
+  if (item.targetEndTime) {
+    parts.push(`end=${item.targetEndTime}`);
+  }
+
+  if (item.manualChargeTargetSoc !== null) {
+    parts.push(`chargeSoc=${item.manualChargeTargetSoc}`);
+  }
+
+  if (item.manualDischargeTargetSoc !== null) {
+    parts.push(`dischargeSoc=${item.manualDischargeTargetSoc}`);
+  }
+
+  if (item.manualPowerW !== null) {
+    parts.push(`powerW=${item.manualPowerW}`);
+  }
+
+  return parts.join(" ");
 }
 
 try {

@@ -54,6 +54,10 @@ Add support for another battery brand without breaking the existing normalized b
 - What are the safe limits for charge and discharge power?
 - Does control require authentication or session management?
 
+## Vendor Notes
+
+- HomeWizard Plug-In Battery is controller-based. Discovery and control go through the HomeWizard P1 Meter or kWh Meter ` /api/batteries ` endpoint rather than a battery-local endpoint. The current API exposes aggregate group state and control mode, but not per-battery SoC or direct power setpoints, so EMSD maps HomeWizard support to the closest normalized `self-consumption` and `manual` modes.
+
 ## Suggested Test Scope
 
 - `apps/ems/src/battery.test.ts`: CLI behavior and persistence defaults

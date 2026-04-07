@@ -5,13 +5,13 @@ import type {
   BatteryStrategyPlanItem,
   BatteryStrategyPlanRecord,
   BatteryStrategyTargetMethod,
+  BatteryStrategyTriggerKind,
 } from "@emsd/core";
 import { ArrowDown, ArrowUp, Plus, Save, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { setBatteryStrategyPlanAction } from "../app/actions";
 import { SubmitButton } from "./submit-button";
 import { Button } from "./ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import {
@@ -112,226 +112,311 @@ export function BatteryStrategyPlanForm({
         </p>
       </div>
 
-      <div className="space-y-4">
-        {items.map((item, index) => {
-          const action = getStrategyAction(item);
-          const isDefault = index === 0;
-          const targetMethod = getPersistedTargetMethod(item);
-          return (
-            <Card key={item.id} className="border-white/10 bg-slate-950/50">
-              <CardHeader className="border-b border-white/8 px-5 py-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <CardTitle className="text-lg">
-                    {isDefault ? "Default strategy" : `Daily item ${index}`}
-                  </CardTitle>
-                  {!isDefault ? (
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        onClick={() => moveItem(item.id, -1)}
-                        type="button"
-                        variant="ghost"
-                      >
-                        <ArrowUp size={14} />
-                        Up
-                      </Button>
-                      <Button
-                        onClick={() => moveItem(item.id, 1)}
-                        type="button"
-                        variant="ghost"
-                      >
-                        <ArrowDown size={14} />
-                        Down
-                      </Button>
-                      <Button
-                        onClick={() => removeItem(item.id)}
-                        type="button"
-                        variant="danger"
-                      >
-                        <Trash2 size={14} />
-                        Delete
-                      </Button>
-                    </div>
-                  ) : null}
-                </div>
-              </CardHeader>
-              <CardContent className="grid gap-4 px-5 py-5 md:grid-cols-2 xl:grid-cols-4">
-                {!isDefault ? (
-                  <div className="space-y-2">
-                    <Label htmlFor={`${item.id}-start-time`}>Start time</Label>
-                    <Input
-                      id={`${item.id}-start-time`}
-                      onChange={(event) =>
-                        updateItem(item.id, (currentItem) => ({
-                          ...currentItem,
-                          startTime: event.target.value,
-                        }))
-                      }
-                      type="time"
-                      value={item.startTime ?? "08:00"}
-                    />
-                  </div>
-                ) : null}
+      <div className="overflow-x-auto rounded-2xl border border-white/8 bg-slate-950/40">
+        <table className="min-w-[980px] w-full border-collapse text-sm">
+          <thead>
+            <tr className="border-b border-white/8 text-left text-xs uppercase tracking-[0.18em] text-slate-400">
+              <th className="px-4 py-3 font-medium">When</th>
+              <th className="px-4 py-3 font-medium">Set</th>
+              <th className="px-4 py-3 font-medium">Settings</th>
+              <th className="px-4 py-3 font-medium">Target</th>
+              <th className="px-4 py-3 text-right font-medium">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item, index) => {
+              const action = getStrategyAction(item);
+              const isDefault = index === 0;
+              const triggerKind = getPersistedTriggerKind(item);
+              const targetMethod = getPersistedTargetMethod(item);
 
-                <div className="space-y-2">
-                  <Label htmlFor={`${item.id}-action`}>
-                    {isDefault ? "Fallback action" : "Action"}
-                  </Label>
-                  <Select
-                    onValueChange={(value: string) =>
-                      updateItem(item.id, (currentItem) =>
-                        applyStrategyAction(
-                          currentItem,
-                          value as StrategyAction,
-                          minimumDischargePercent,
-                        ),
-                      )
-                    }
-                    value={action}
-                  >
-                    <SelectTrigger id={`${item.id}-action`}>
-                      <SelectValue placeholder="Select action" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="self-consumption">
-                        Self-consumption
-                      </SelectItem>
-                      <SelectItem value="idle">Idle</SelectItem>
-                      {!isDefault ? (
-                        <SelectItem value="charging">Charge</SelectItem>
-                      ) : null}
-                      {!isDefault ? (
-                        <SelectItem value="discharging">Discharge</SelectItem>
-                      ) : null}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {action === "charging" || action === "discharging" ? (
-                  <>
+              return (
+                <tr
+                  key={item.id}
+                  className="border-b border-white/8 align-top last:border-b-0"
+                >
+                  <td className="px-4 py-4">
+                    {isDefault ? null : (
+                      <div className="space-y-3">
+                        <div className="space-y-2">
+                          <Label
+                            className="sr-only"
+                            htmlFor={`${item.id}-trigger-kind`}
+                          >
+                            Start method
+                          </Label>
+                          <Select
+                            onValueChange={(value: string) =>
+                              updateItem(item.id, (currentItem) => ({
+                                ...currentItem,
+                                triggerKind:
+                                  value as BatteryStrategyTriggerKind,
+                              }))
+                            }
+                            value={triggerKind}
+                          >
+                            <SelectTrigger id={`${item.id}-trigger-kind`}>
+                              <SelectValue placeholder="Select start method" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="daily-time">
+                                Scheduled time
+                              </SelectItem>
+                              <SelectItem disabled value="dynamic-price">
+                                Dynamic price signal
+                              </SelectItem>
+                              <SelectItem disabled value="weather">
+                                Weather forecast
+                              </SelectItem>
+                              <SelectItem disabled value="expected-solar">
+                                Expected solar output
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        {triggerKind === "daily-time" ? (
+                          <div className="space-y-2">
+                            <Label
+                              className="sr-only"
+                              htmlFor={`${item.id}-start-time`}
+                            >
+                              Start time
+                            </Label>
+                            <Input
+                              id={`${item.id}-start-time`}
+                              onChange={(event) =>
+                                updateItem(item.id, (currentItem) => ({
+                                  ...currentItem,
+                                  startTime: event.target.value,
+                                }))
+                              }
+                              type="time"
+                              value={item.startTime ?? "08:00"}
+                            />
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-4 py-4">
                     <div className="space-y-2">
-                      <Label htmlFor={`${item.id}-power`}>Power (W)</Label>
-                      <Input
-                        id={`${item.id}-power`}
-                        max={2400}
-                        min={0}
-                        onChange={(event) =>
-                          updateItem(item.id, (currentItem) => ({
-                            ...currentItem,
-                            manualPowerW: parseNumber(event.target.value),
-                          }))
-                        }
-                        step={10}
-                        type="number"
-                        value={String(item.manualPowerW ?? 2400)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor={`${item.id}-target-method`}>
-                        Target method
+                      <Label className="sr-only" htmlFor={`${item.id}-action`}>
+                        {isDefault ? "Fallback action" : "Action"}
                       </Label>
                       <Select
                         onValueChange={(value: string) =>
                           updateItem(item.id, (currentItem) =>
-                            updateTargetMethod(
+                            applyStrategyAction(
                               currentItem,
-                              action,
-                              value as BatteryStrategyTargetMethod,
+                              value as StrategyAction,
                               minimumDischargePercent,
                             ),
                           )
                         }
-                        value={targetMethod}
+                        value={action}
                       >
-                        <SelectTrigger id={`${item.id}-target-method`}>
-                          <SelectValue placeholder="Select method" />
+                        <SelectTrigger id={`${item.id}-action`}>
+                          <SelectValue placeholder="Select action" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="soc">Percentage</SelectItem>
-                          <SelectItem value="duration">Duration</SelectItem>
-                          <SelectItem value="end-time">End time</SelectItem>
+                          <SelectItem value="self-consumption">
+                            Self-consumption
+                          </SelectItem>
+                          <SelectItem value="idle">Idle</SelectItem>
+                          {!isDefault ? (
+                            <SelectItem value="charging">Charge</SelectItem>
+                          ) : null}
+                          {!isDefault ? (
+                            <SelectItem value="discharging">
+                              Discharge
+                            </SelectItem>
+                          ) : null}
                         </SelectContent>
                       </Select>
                     </div>
-                    {targetMethod === "soc" ? (
-                      <div className="space-y-2">
-                        <Label htmlFor={`${item.id}-target-soc`}>
-                          Target percentage
-                        </Label>
-                        <Input
-                          id={`${item.id}-target-soc`}
-                          max={100}
-                          min={
-                            action === "discharging"
-                              ? minimumDischargePercent
-                              : 5
-                          }
-                          onChange={(event) =>
-                            updateItem(item.id, (currentItem) =>
-                              updateManualTarget(
-                                currentItem,
-                                action,
-                                parseNumber(event.target.value),
-                                minimumDischargePercent,
-                              ),
-                            )
-                          }
-                          step={1}
-                          type="number"
-                          value={String(
-                            getTargetSocValue(item, minimumDischargePercent),
-                          )}
-                        />
+                  </td>
+                  <td className="px-4 py-4">
+                    {action === "charging" || action === "discharging" ? (
+                      <div className="min-w-[180px] space-y-2">
+                        <div className="space-y-2">
+                          <Label htmlFor={`${item.id}-power`}>Power (W)</Label>
+                          <Input
+                            id={`${item.id}-power`}
+                            max={2400}
+                            min={0}
+                            onChange={(event) =>
+                              updateItem(item.id, (currentItem) => ({
+                                ...currentItem,
+                                manualPowerW: parseNumber(event.target.value),
+                              }))
+                            }
+                            step={10}
+                            type="number"
+                            value={String(item.manualPowerW ?? 2400)}
+                          />
+                        </div>
                       </div>
-                    ) : null}
-                    {targetMethod === "duration" ? (
-                      <div className="space-y-2">
-                        <Label htmlFor={`${item.id}-duration`}>
-                          Duration (minutes)
-                        </Label>
-                        <Input
-                          id={`${item.id}-duration`}
-                          min={1}
-                          onChange={(event) =>
-                            updateItem(item.id, (currentItem) => ({
-                              ...currentItem,
-                              targetDurationMinutes: parseNumber(
-                                event.target.value,
-                              ),
-                            }))
-                          }
-                          type="number"
-                          value={String(item.targetDurationMinutes ?? "")}
-                        />
+                    ) : (
+                      <div />
+                    )}
+                  </td>
+                  <td className="px-4 py-4">
+                    {action === "charging" || action === "discharging" ? (
+                      <div className="grid min-w-[320px] gap-3 md:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label htmlFor={`${item.id}-target-method`}>
+                            Target method
+                          </Label>
+                          <Select
+                            onValueChange={(value: string) =>
+                              updateItem(item.id, (currentItem) =>
+                                updateTargetMethod(
+                                  currentItem,
+                                  action,
+                                  value as BatteryStrategyTargetMethod,
+                                  minimumDischargePercent,
+                                ),
+                              )
+                            }
+                            value={targetMethod}
+                          >
+                            <SelectTrigger id={`${item.id}-target-method`}>
+                              <SelectValue placeholder="Select method" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="soc">Percentage</SelectItem>
+                              <SelectItem value="duration">Duration</SelectItem>
+                              <SelectItem value="end-time">End time</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        {targetMethod === "soc" ? (
+                          <div className="space-y-2">
+                            <Label htmlFor={`${item.id}-target-soc`}>
+                              Target percentage
+                            </Label>
+                            <Input
+                              id={`${item.id}-target-soc`}
+                              max={100}
+                              min={
+                                action === "discharging"
+                                  ? minimumDischargePercent
+                                  : 5
+                              }
+                              onChange={(event) =>
+                                updateItem(item.id, (currentItem) =>
+                                  updateManualTarget(
+                                    currentItem,
+                                    action,
+                                    parseNumber(event.target.value),
+                                    minimumDischargePercent,
+                                  ),
+                                )
+                              }
+                              step={1}
+                              type="number"
+                              value={String(
+                                getTargetSocValue(
+                                  item,
+                                  minimumDischargePercent,
+                                ),
+                              )}
+                            />
+                          </div>
+                        ) : null}
+                        {targetMethod === "duration" ? (
+                          <div className="space-y-2 xl:col-span-1">
+                            <Label htmlFor={`${item.id}-duration`}>
+                              Duration (minutes)
+                            </Label>
+                            <Input
+                              id={`${item.id}-duration`}
+                              min={1}
+                              onChange={(event) =>
+                                updateItem(item.id, (currentItem) => ({
+                                  ...currentItem,
+                                  targetDurationMinutes: parseNumber(
+                                    event.target.value,
+                                  ),
+                                }))
+                              }
+                              type="number"
+                              value={String(item.targetDurationMinutes ?? "")}
+                            />
+                          </div>
+                        ) : null}
+                        {targetMethod === "end-time" ? (
+                          <div className="space-y-2 xl:col-span-1">
+                            <Label htmlFor={`${item.id}-end-time`}>
+                              End time
+                            </Label>
+                            <Input
+                              id={`${item.id}-end-time`}
+                              onChange={(event) =>
+                                updateItem(item.id, (currentItem) => ({
+                                  ...currentItem,
+                                  targetEndTime: event.target.value,
+                                }))
+                              }
+                              type="time"
+                              value={item.targetEndTime ?? ""}
+                            />
+                          </div>
+                        ) : null}
                       </div>
-                    ) : null}
-                    {targetMethod === "end-time" ? (
-                      <div className="space-y-2">
-                        <Label htmlFor={`${item.id}-end-time`}>End time</Label>
-                        <Input
-                          id={`${item.id}-end-time`}
-                          onChange={(event) =>
-                            updateItem(item.id, (currentItem) => ({
-                              ...currentItem,
-                              targetEndTime: event.target.value,
-                            }))
-                          }
-                          type="time"
-                          value={item.targetEndTime ?? ""}
-                        />
+                    ) : (
+                      <div />
+                    )}
+                  </td>
+                  <td className="px-4 py-4">
+                    {isDefault ? null : (
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          aria-label={`Move daily item ${index} up`}
+                          className="h-9 w-9 px-0"
+                          disabled={index === 1}
+                          onClick={() => moveItem(item.id, -1)}
+                          title="Move up"
+                          type="button"
+                          variant="ghost"
+                        >
+                          <ArrowUp size={14} />
+                        </Button>
+                        <Button
+                          aria-label={`Move daily item ${index} down`}
+                          className="h-9 w-9 px-0"
+                          disabled={index === items.length - 1}
+                          onClick={() => moveItem(item.id, 1)}
+                          title="Move down"
+                          type="button"
+                          variant="ghost"
+                        >
+                          <ArrowDown size={14} />
+                        </Button>
+                        <Button
+                          aria-label={`Delete daily item ${index}`}
+                          className="h-9 w-9 px-0"
+                          onClick={() => removeItem(item.id)}
+                          title="Delete item"
+                          type="button"
+                          variant="danger"
+                        >
+                          <Trash2 size={14} />
+                        </Button>
                       </div>
-                    ) : null}
-                  </>
-                ) : null}
-              </CardContent>
-            </Card>
-          );
-        })}
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
         <Button onClick={addDailyItem} type="button" variant="ghost">
           <Plus size={14} />
-          Add daily item
+          Add item
         </Button>
         <SubmitButton>
           <Save size={14} />
@@ -422,6 +507,12 @@ function getPersistedTargetMethod(
   item: BatteryStrategyPlanItem,
 ): BatteryStrategyTargetMethod {
   return item.targetMethod ?? "soc";
+}
+
+function getPersistedTriggerKind(
+  item: BatteryStrategyPlanItem,
+): BatteryStrategyTriggerKind {
+  return item.triggerKind ?? "daily-time";
 }
 
 function updateTargetMethod(
