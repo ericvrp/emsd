@@ -17,10 +17,13 @@ import {
 import {
   deleteWeatherForecast,
   openDaemonDatabase,
+  readDynamicPriceSnapshot,
+  readDynamicPriceSources,
   readManagedDeviceTelemetry,
   readSites,
   readWeatherForecast,
   readWeatherForecastSources,
+  upsertDynamicPriceSnapshot,
   upsertWeatherForecast,
 } from "../../daemon/src/database";
 import { createBatteryPlugin } from "../../ems/src/battery-plugins";
@@ -56,6 +59,7 @@ import {
   updateSite,
   updateWeatherForecastSource,
 } from "../../ems/src/managed-site-store";
+import { getDynamicPriceSnapshot } from "../../ems/src/plugins/price";
 import { getWeatherForecast } from "../../ems/src/plugins/solar-forecast";
 
 interface BridgeSuccess<T> {
@@ -907,15 +911,19 @@ async function run(): Promise<void> {
 
     case "price-create": {
       const input = readInput<{
+        homeId?: string | null;
         id?: string;
         name?: string;
+        provider?: "tibber";
         siteId?: string;
       }>();
       succeed(
         createDynamicPriceSource(
           {
+            ...(typeof input.homeId === "string" ? { homeId: input.homeId } : {}),
             id: requireString(input.id, "id"),
             name: requireString(input.name, "name"),
+            provider: "tibber",
           },
           requireString(input.siteId, "siteId"),
         ),
@@ -925,13 +933,19 @@ async function run(): Promise<void> {
 
     case "price-update": {
       const input = readInput<{
+        homeId?: string | null;
         id?: string;
         name?: string;
+        provider?: "tibber";
         siteId?: string;
       }>();
       const source = updateDynamicPriceSource(
         requireString(input.id, "id"),
-        { name: requireString(input.name, "name") },
+        {
+          ...(typeof input.homeId === "string" ? { homeId: input.homeId } : {}),
+          name: requireString(input.name, "name"),
+          provider: "tibber",
+        },
         requireString(input.siteId, "siteId"),
       );
 
@@ -959,6 +973,57 @@ async function run(): Promise<void> {
       }
 
       succeed(source);
+      return;
+    }
+
+    case "price-get-snapshot": {
+      const input = readInput<{ siteId?: string }>();
+      const db = openDaemonDatabase();
+      const siteId = requireString(input.siteId, "siteId");
+
+      try {
+        const snapshot = readDynamicPriceSnapshot(db, siteId);
+
+        if (snapshot === null) {
+          throw new Error(
+            `No dynamic price snapshot is available yet for site ${siteId}. Wait for the daemon refresh cycle or check Tibber configuration.`,
+          );
+        }
+
+        succeed(snapshot);
+      } finally {
+        db.close();
+      }
+      return;
+    }
+
+    case "price-refresh-snapshot": {
+      const input = readInput<{ siteId?: string }>();
+      const siteId = requireString(input.siteId, "siteId");
+      const db = openDaemonDatabase();
+
+      try {
+        const site = readSites(db).find((entry) => entry.id === siteId);
+
+        if (!site) {
+          throw new Error(`Managed site not found: ${siteId}`);
+        }
+
+        const source =
+          readDynamicPriceSources(db).find((entry) => entry.siteId === siteId) ?? null;
+
+        if (source === null) {
+          throw new Error(
+            `No dynamic price source is configured for site ${siteId}.`,
+          );
+        }
+
+        const snapshot = await getDynamicPriceSnapshot({ site, source });
+        upsertDynamicPriceSnapshot(db, siteId, snapshot);
+        succeed(snapshot);
+      } finally {
+        db.close();
+      }
       return;
     }
 

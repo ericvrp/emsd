@@ -1,6 +1,8 @@
 "use client";
 
 import type {
+  DynamicPricePointRecord,
+  DynamicPriceSnapshotRecord,
   DynamicPriceSourceRecord,
   ManagedDeviceStatusRecord,
   SiteRecord,
@@ -11,6 +13,14 @@ import type {
 import { HardDrive, Home, LocateFixed, Save, ScanSearch, Search, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
+import {
+  Area,
+  AreaChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { toast } from "sonner";
 import {
   createDynamicPriceSourceAction,
@@ -46,6 +56,8 @@ const dangerButtonClass =
 
 export function SettingsPanel({
   currentSite,
+  dynamicPriceSnapshot,
+  dynamicPriceSnapshotError,
   initialTab,
   notice,
   tone,
@@ -53,6 +65,8 @@ export function SettingsPanel({
   weatherForecastError,
 }: {
   currentSite: SiteSnapshot | null;
+  dynamicPriceSnapshot: DynamicPriceSnapshotRecord | null;
+  dynamicPriceSnapshotError: string | null;
   initialTab: string | null;
   notice: string | null;
   tone: "error" | "success";
@@ -150,16 +164,12 @@ export function SettingsPanel({
 
       {activeTab === "pricing" ? (
         currentSite ? (
-          <section className="grid gap-4 xl:grid-cols-1">
-            <ResourceSection title="Dynamic Price Sources">
-              <SourceList
-                kind="price"
-                records={currentSite.dynamicPriceSources}
-                site={currentSite}
-                titleLabel="Dynamic price source"
-              />
-            </ResourceSection>
-          </section>
+          <PricingSection
+            error={dynamicPriceSnapshotError}
+            site={currentSite}
+            snapshot={dynamicPriceSnapshot}
+            source={currentSite.dynamicPriceSources[0] ?? null}
+          />
         ) : (
           <SiteSetupPanel />
         )
@@ -535,6 +545,136 @@ function WeatherForecastSection({
   );
 }
 
+function PricingSection({
+  site,
+  snapshot,
+  error,
+  source,
+}: {
+  site: SiteSnapshot;
+  snapshot: DynamicPriceSnapshotRecord | null;
+  error: string | null;
+  source: DynamicPriceSourceRecord | null;
+}) {
+  const visiblePoints = snapshot?.points ?? [];
+  const [homeId, setHomeId] = useState(source?.homeId ?? "");
+  const originalHomeId = source?.homeId ?? "";
+
+  // Enable save button when:
+  // 1. There's a homeId entered (not empty) AND it's different from original
+  // 2. OR there was originally a homeId but now it's cleared (user wants to remove it)
+  const isHomeIdChanged = homeId !== originalHomeId;
+  const shouldEnableSave = isHomeIdChanged || (homeId.length > 0 && originalHomeId.length === 0);
+
+  return (
+    <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-violet-300/40 to-transparent" />
+      <div>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-violet-300/90">
+          Pricing
+        </p>
+        <h3 className="mt-2 text-xl font-semibold text-white">
+          Dynamic electricity prices for {site.name}
+        </h3>
+        <p className="mt-2 text-sm leading-6 text-slate-400">
+          Tibber provides the built-in dynamic price snapshot for this site.
+        </p>
+      </div>
+
+      <form
+        action={source ? updateDynamicPriceSourceAction : createDynamicPriceSourceAction}
+        className="mt-5 space-y-4 rounded-[1.4rem] border border-white/10 bg-white/5 p-4"
+      >
+        <input type="hidden" name="siteId" value={site.id} />
+        <input type="hidden" name="sourceId" value={source?.id ?? `price-${site.id}`} />
+        <input type="hidden" name="name" value={source?.name ?? "Tibber dynamic price"} />
+        <label className="block space-y-2">
+          <span className="text-sm font-medium text-slate-300">
+            Tibber home ID (optional)
+          </span>
+          <input
+            className="w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400/50"
+            name="homeId"
+            value={homeId}
+            onChange={(e) => setHomeId(e.target.value)}
+          />
+        </label>
+        <p className="text-xs text-slate-500">
+          Leave this empty to use the first Tibber home from your account. Set `TIBBER_ACCESS_TOKEN` in the daemon environment.
+        </p>
+        <SubmitButton className={primaryButtonClass} disabled={!shouldEnableSave}>
+          Save pricing settings
+        </SubmitButton>
+      </form>
+
+      {error ? (
+        <p className="mt-4 rounded-[1.25rem] border border-amber-400/20 bg-amber-500/10 p-4 text-sm text-amber-100">
+          {error}
+        </p>
+      ) : snapshot === null ? (
+        <p className="mt-4 text-sm leading-6 text-slate-400">
+          Dynamic price data is not available yet.
+        </p>
+      ) : visiblePoints.length === 0 ? (
+        <p className="mt-4 text-sm leading-6 text-slate-400">
+          No price points were returned for this time range.
+        </p>
+      ) : (
+        <div className="mt-5 space-y-4 rounded-[1.4rem] border border-white/10 bg-white/5 p-4">
+          <PriceChart currency={snapshot.currency} points={visiblePoints} />
+          <p className="text-xs text-slate-500">
+            Showing the latest Tibber price snapshot for {site.name}.
+          </p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function PriceChart({
+  points,
+  currency,
+}: {
+  points: DynamicPricePointRecord[];
+  currency: string;
+}) {
+  const chartPoints = points.map((point) => ({
+    ...point,
+    timeLabel: formatForecastTimeLabel(point.startsAt),
+  }));
+  const values = points.map((point) => point.importPrice);
+  const maxValue = Math.max(0.01, ...values);
+
+  return (
+    <div className="space-y-3">
+      <div className="h-[260px] w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={chartPoints} margin={{ top: 16, right: 8, left: 8, bottom: 0 }}>
+            <defs>
+              <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="rgb(196,181,253)" stopOpacity={0.3}/>
+                <stop offset="95%" stopColor="rgb(196,181,253)" stopOpacity={0}/>
+              </linearGradient>
+            </defs>
+            <XAxis dataKey="timeLabel" tick={{ fill: "rgba(226,232,240,0.72)", fontSize: 12 }} axisLine={false} tickLine={false} minTickGap={30} />
+            <YAxis hide domain={[0, 'dataMax']} />
+            <Tooltip 
+              contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', borderColor: 'rgba(255,255,255,0.1)', borderRadius: '8px', color: '#f8fafc' }}
+              itemStyle={{ color: 'rgb(196,181,253)' }}
+              formatter={(value: unknown) => [`${value} ${currency}/kWh`, 'Price']}
+            />
+            <Area type="monotone" dataKey="importPrice" stroke="rgb(196,181,253)" strokeWidth={3} fillOpacity={1} fill="url(#colorPrice)" />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="flex items-center justify-between text-xs text-slate-500">
+        <span>{`0 ${currency}/kWh`}</span>
+        <span>{`${points.length > 0 ? points[points.length - 1]?.currency ?? currency : currency}/kWh max ${maxValue.toFixed(3)}`}</span>
+      </div>
+    </div>
+  );
+}
+
 function ForecastChart({
   metricLabel,
   points,
@@ -544,96 +684,34 @@ function ForecastChart({
   points: WeatherForecastPointRecord[];
   unitLabel: string;
 }) {
-  const width = 960;
-  const height = 260;
-  const paddingTop = 16;
-  const paddingBottom = 34;
-  const paddingLeft = 8;
-  const paddingRight = 8;
+  const chartPoints = points.map((point) => ({
+    ...point,
+    timeLabel: formatForecastTimeLabel(point.periodEnd),
+  }));
   const values = points.map((point) => point.value ?? 0);
   const maxValue = Math.max(100, ...values);
-  const plotWidth = width - paddingLeft - paddingRight;
-  const plotHeight = height - paddingTop - paddingBottom;
-
-  const chartPoints = points.map((point, index) => {
-    const x =
-      points.length === 1
-        ? width / 2
-        : paddingLeft + (index / (points.length - 1)) * plotWidth;
-    const y =
-      paddingTop + plotHeight - ((point.value ?? 0) / maxValue) * plotHeight;
-
-    return {
-      ...point,
-      x,
-      y,
-    };
-  });
-
-  const linePath = chartPoints
-    .map((point, index) => `${index === 0 ? "M" : "L"}${point.x} ${point.y}`)
-    .join(" ");
-  const areaPath = `${linePath} L ${paddingLeft + plotWidth} ${paddingTop + plotHeight} L ${paddingLeft} ${paddingTop + plotHeight} Z`;
-  const tickIndexes = buildTickIndexes(points.length, 6);
 
   return (
     <div className="space-y-3">
-      <div className="overflow-x-auto">
-        <svg
-          aria-label={`${metricLabel} forecast chart`}
-          className="min-w-full"
-          viewBox={`0 0 ${width} ${height}`}
-        >
-          <title>{metricLabel} forecast</title>
-          {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
-            const y = paddingTop + plotHeight - ratio * plotHeight;
-
-            return (
-              <line
-                key={ratio}
-                stroke="rgba(148,163,184,0.16)"
-                strokeDasharray="4 6"
-                strokeWidth="1"
-                x1={paddingLeft}
-                x2={paddingLeft + plotWidth}
-                y1={y}
-                y2={y}
-              />
-            );
-          })}
-
-          <path d={areaPath} fill="rgba(56,189,248,0.14)" />
-          <path
-            d={linePath}
-            fill="none"
-            stroke="rgb(125,211,252)"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth="3"
-          />
-
-          {chartPoints.map((point, index) =>
-            tickIndexes.includes(index) ? (
-              <g key={point.periodEnd}>
-                <circle
-                  cx={point.x}
-                  cy={point.y}
-                  fill="rgb(125,211,252)"
-                  r="3.5"
-                />
-                <text
-                  fill="rgba(226,232,240,0.72)"
-                  fontSize="12"
-                  textAnchor={index === 0 ? "start" : index === points.length - 1 ? "end" : "middle"}
-                  x={point.x}
-                  y={height - 10}
-                >
-                  {formatForecastTimeLabel(point.periodEnd)}
-                </text>
-              </g>
-            ) : null,
-          )}
-        </svg>
+      <div className="h-[260px] w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={chartPoints} margin={{ top: 16, right: 8, left: 8, bottom: 0 }}>
+            <defs>
+              <linearGradient id="colorForecast" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="rgb(125,211,252)" stopOpacity={0.3}/>
+                <stop offset="95%" stopColor="rgb(125,211,252)" stopOpacity={0}/>
+              </linearGradient>
+            </defs>
+            <XAxis dataKey="timeLabel" tick={{ fill: "rgba(226,232,240,0.72)", fontSize: 12 }} axisLine={false} tickLine={false} minTickGap={30} />
+            <YAxis hide domain={[0, 'dataMax']} />
+            <Tooltip 
+              contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', borderColor: 'rgba(255,255,255,0.1)', borderRadius: '8px', color: '#f8fafc' }}
+              itemStyle={{ color: 'rgb(125,211,252)' }}
+              formatter={(value: unknown) => [`${value} ${unitLabel}`, metricLabel]}
+            />
+            <Area type="monotone" dataKey="value" stroke="rgb(125,211,252)" strokeWidth={3} fillOpacity={1} fill="url(#colorForecast)" />
+          </AreaChart>
+        </ResponsiveContainer>
       </div>
       <div className="flex items-center justify-between text-xs text-slate-500">
         <span>{`0 ${unitLabel}`}</span>
@@ -847,6 +925,9 @@ function SourceList({
             />
           </>
         ) : null}
+        {kind === "price" ? (
+          <input type="hidden" name="provider" value="tibber" />
+        ) : null}
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="block space-y-2">
             <span className="text-sm font-medium text-slate-300">
@@ -867,9 +948,24 @@ function SourceList({
             />
           </label>
         </div>
+        {kind === "price" ? (
+          <label className="block space-y-2">
+            <span className="text-sm font-medium text-slate-300">
+              Tibber home ID (optional)
+            </span>
+            <input
+              className="w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400/50"
+              name="homeId"
+            />
+          </label>
+        ) : null}
         {kind === "weather" ? (
           <p className="text-xs text-slate-500">
             Weather sources default to `open-meteo` using the current site GPS location.
+          </p>
+        ) : kind === "price" ? (
+          <p className="text-xs text-slate-500">
+            Dynamic price sources currently use `tibber` and read prices with `TIBBER_ACCESS_TOKEN`.
           </p>
         ) : null}
         <SubmitButton className={primaryButtonClass}>
@@ -895,6 +991,10 @@ function SourceList({
                   <p className="mt-1 text-xs uppercase tracking-[0.14em] text-sky-300/80">
                     {(record as WeatherForecastSourceRecord).provider}
                   </p>
+                ) : kind === "price" ? (
+                  <p className="mt-1 text-xs uppercase tracking-[0.14em] text-violet-300/80">
+                    {(record as DynamicPriceSourceRecord).provider}
+                  </p>
                 ) : null}
               </div>
               <form
@@ -907,6 +1007,9 @@ function SourceList({
               >
                 <input type="hidden" name="siteId" value={site.id} />
                 <input type="hidden" name="sourceId" value={record.id} />
+                {kind === "price" ? (
+                  <input type="hidden" name="provider" value="tibber" />
+                ) : null}
                 <label className="block space-y-2">
                   <span className="text-sm font-medium text-slate-300">
                     Rename
@@ -918,6 +1021,18 @@ function SourceList({
                     required
                   />
                 </label>
+                {kind === "price" ? (
+                  <label className="block space-y-2">
+                    <span className="text-sm font-medium text-slate-300">
+                      Tibber home ID (optional)
+                    </span>
+                    <input
+                      className="w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400/50"
+                      defaultValue={(record as DynamicPriceSourceRecord).homeId ?? ""}
+                      name="homeId"
+                    />
+                  </label>
+                ) : null}
                 <div className="flex flex-wrap gap-2">
                   <SubmitButton className={secondaryButtonClass}>
                     Save

@@ -11,13 +11,16 @@ export function formatPriceHelpText(): string {
     "Usage:",
     "  price list --site-id <site-id>",
     "  price ls --site-id <site-id>",
-    "  price add <source-id> <name> --site-id <site-id>",
-    "  price create <source-id> <name> --site-id <site-id>",
-    "  price update <source-id> <name> --site-id <site-id>",
-    "  price edit <source-id> <name> --site-id <site-id>",
+    "  price add <source-id> <name> --site-id <site-id> [--provider tibber] [--home-id <home-id>]",
+    "  price create <source-id> <name> --site-id <site-id> [--provider tibber] [--home-id <home-id>]",
+    "  price update <source-id> <name> --site-id <site-id> [--provider tibber] [--home-id <home-id>]",
+    "  price edit <source-id> <name> --site-id <site-id> [--provider tibber] [--home-id <home-id>]",
     "  price remove <source-id> --site-id <site-id>",
     "  price delete <source-id> --site-id <site-id>",
     "  price rm <source-id> --site-id <site-id>",
+    "",
+    "Supported providers:",
+    "  tibber (default)",
   ].join("\n");
 }
 
@@ -26,10 +29,10 @@ export function formatPriceList(sources: DynamicPriceSourceRecord[]): string {
     return "No dynamic price sources configured for the selected site.";
   }
 
-  const header = ["SOURCE ID", "NAME", "UPDATED AT"].join(" | ");
+  const header = ["SOURCE ID", "NAME", "PROVIDER", "HOME ID", "UPDATED AT"].join(" | ");
   const separator = "-".repeat(header.length);
   const rows = sources.map((source) =>
-    [source.id, source.name, source.updatedAt].join(" | "),
+    [source.id, source.name, source.provider, source.homeId ?? "", source.updatedAt].join(" | "),
   );
 
   return [header, separator, ...rows].join("\n");
@@ -64,7 +67,12 @@ export async function runPriceCommand(args: string[] = []): Promise<number> {
       console.log(
         JSON.stringify(
           createDynamicPriceSource(
-            { id: sourceId, name: options.name },
+            {
+              homeId: options.homeId,
+              id: sourceId,
+              name: options.name,
+              provider: options.provider,
+            },
             options.siteId,
           ),
           null,
@@ -84,7 +92,7 @@ export async function runPriceCommand(args: string[] = []): Promise<number> {
 
       const source = updateDynamicPriceSource(
         sourceId,
-        { name: options.name },
+        { homeId: options.homeId, name: options.name, provider: options.provider },
         options.siteId,
       );
 
@@ -126,6 +134,8 @@ function parseNamedSourceOptions(
   args: string[],
   action: string,
 ): {
+  homeId: string | null;
+  provider: "tibber";
   siteId: string;
   name: string;
 } {
@@ -142,9 +152,51 @@ function parseNamedSourceOptions(
   }
 
   return {
+    homeId: parseHomeIdOption(args.slice(siteOptionIndex + 2)),
     name,
+    provider: parseProviderOption(args.slice(siteOptionIndex + 2)),
     siteId: parseSiteOptions(args.slice(siteOptionIndex)).siteId,
   };
+}
+
+function parseProviderOption(args: string[]): "tibber" {
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] !== "--provider") {
+      continue;
+    }
+
+    const provider = args[index + 1];
+
+    if (!provider) {
+      throw new Error("Missing value for --provider");
+    }
+
+    if (provider !== "tibber") {
+      throw new Error(`Unsupported dynamic price provider: ${provider}`);
+    }
+
+    return provider;
+  }
+
+  return "tibber";
+}
+
+function parseHomeIdOption(args: string[]): string | null {
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] !== "--home-id") {
+      continue;
+    }
+
+    const homeId = args[index + 1];
+
+    if (!homeId) {
+      throw new Error("Missing value for --home-id");
+    }
+
+    return homeId;
+  }
+
+  return null;
 }
 
 function parseSiteOptions(args: string[]): { siteId: string } {

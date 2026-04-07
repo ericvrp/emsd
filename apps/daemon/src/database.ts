@@ -3,6 +3,8 @@ import {
   type BatteryRecord,
   type BatteryStrategyRecord,
   type BatteryStrategyRuntimeRecord,
+  type DynamicPriceSnapshotRecord,
+  type DynamicPriceSourceRecord,
   type ManagedDeviceTelemetryRecord,
   type MeterRecord,
   type SiteRecord,
@@ -80,10 +82,25 @@ interface WeatherSourceRow {
   updated_at: string;
 }
 
+interface DynamicPriceSourceRow {
+  home_id: string | null;
+  id: string;
+  provider: DynamicPriceSourceRecord["provider"];
+  site_id: string;
+  name: string;
+  updated_at: string;
+}
+
 interface WeatherForecastRow {
   site_id: string;
   generated_at: string;
   forecast_json: string;
+}
+
+interface DynamicPriceSnapshotRow {
+  generated_at: string;
+  price_json: string;
+  site_id: string;
 }
 
 export function openDaemonDatabase(databasePath = getDatabasePath()): Database {
@@ -161,11 +178,14 @@ export function openDaemonDatabase(databasePath = getDatabasePath()): Database {
     CREATE TABLE IF NOT EXISTS dynamic_price_sources (
       id TEXT PRIMARY KEY,
       site_id TEXT NOT NULL,
+      provider TEXT NOT NULL DEFAULT 'tibber',
+      home_id TEXT,
       name TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       FOREIGN KEY(site_id) REFERENCES sites(id)
     );
   `);
+  ensureDynamicPriceSourceColumns(db);
   db.exec(`
     CREATE TABLE IF NOT EXISTS device_telemetry (
       device_id TEXT PRIMARY KEY,
@@ -184,6 +204,14 @@ export function openDaemonDatabase(databasePath = getDatabasePath()): Database {
       site_id TEXT PRIMARY KEY,
       generated_at TEXT NOT NULL,
       forecast_json TEXT NOT NULL,
+      FOREIGN KEY(site_id) REFERENCES sites(id)
+    );
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS dynamic_price_snapshots (
+      site_id TEXT PRIMARY KEY,
+      generated_at TEXT NOT NULL,
+      price_json TEXT NOT NULL,
       FOREIGN KEY(site_id) REFERENCES sites(id)
     );
   `);
@@ -234,6 +262,27 @@ export function readWeatherForecastSources(
   }));
 }
 
+export function readDynamicPriceSources(db: Database): DynamicPriceSourceRecord[] {
+  const rows = db
+    .query<DynamicPriceSourceRow, []>(
+      `
+        SELECT id, site_id, name, provider, home_id, updated_at
+        FROM dynamic_price_sources
+        ORDER BY name ASC, id ASC
+      `,
+    )
+    .all();
+
+  return rows.map((row) => ({
+    id: row.id,
+    homeId: row.home_id,
+    siteId: row.site_id,
+    name: row.name,
+    provider: row.provider,
+    updatedAt: row.updated_at,
+  }));
+}
+
 export function readWeatherForecast(
   db: Database,
   siteId: string,
@@ -270,6 +319,44 @@ export function upsertWeatherForecast(
         forecast_json = excluded.forecast_json
     `,
   ).run(siteId, forecast.generatedAt, JSON.stringify(forecast));
+}
+
+export function readDynamicPriceSnapshot(
+  db: Database,
+  siteId: string,
+): DynamicPriceSnapshotRecord | null {
+  const row = db
+    .query<DynamicPriceSnapshotRow, [string]>(
+      `
+        SELECT site_id, generated_at, price_json
+        FROM dynamic_price_snapshots
+        WHERE site_id = ?1
+      `,
+    )
+    .get(siteId);
+
+  if (!row) {
+    return null;
+  }
+
+  const parsed = JSON.parse(row.price_json) as DynamicPriceSnapshotRecord;
+  return { ...parsed, generatedAt: row.generated_at };
+}
+
+export function upsertDynamicPriceSnapshot(
+  db: Database,
+  siteId: string,
+  snapshot: DynamicPriceSnapshotRecord,
+): void {
+  db.query(
+    `
+      INSERT INTO dynamic_price_snapshots (site_id, generated_at, price_json)
+      VALUES (?1, ?2, ?3)
+      ON CONFLICT(site_id) DO UPDATE SET
+        generated_at = excluded.generated_at,
+        price_json = excluded.price_json
+    `,
+  ).run(siteId, snapshot.generatedAt, JSON.stringify(snapshot));
 }
 
 export function deleteWeatherForecast(db: Database, siteId: string): void {
@@ -322,6 +409,31 @@ function ensureWeatherSourceColumns(db: Database): void {
     SET surface = CASE surface
       WHEN 'open-meteo-shortwave-radiation' THEN 'open-meteo-shortwave-radiation'
       ELSE 'open-meteo-shortwave-radiation'
+    END
+  `);
+}
+
+function ensureDynamicPriceSourceColumns(db: Database): void {
+  const columns = db
+    .query<{ name: string }, []>("PRAGMA table_info(dynamic_price_sources)")
+    .all()
+    .map((column) => column.name);
+
+  if (!columns.includes("provider")) {
+    db.exec(
+      "ALTER TABLE dynamic_price_sources ADD COLUMN provider TEXT NOT NULL DEFAULT 'tibber';",
+    );
+  }
+
+  if (!columns.includes("home_id")) {
+    db.exec("ALTER TABLE dynamic_price_sources ADD COLUMN home_id TEXT;");
+  }
+
+  db.exec(`
+    UPDATE dynamic_price_sources
+    SET provider = CASE provider
+      WHEN 'tibber' THEN 'tibber'
+      ELSE 'tibber'
     END
   `);
 }

@@ -72,6 +72,8 @@ const WEATHER_SOURCE_REQUIRED_COLUMNS = [
 ];
 const DYNAMIC_PRICE_SOURCE_REQUIRED_COLUMNS = [
   "id",
+  "home_id",
+  "provider",
   "site_id",
   "name",
   "updated_at",
@@ -122,9 +124,10 @@ interface MeterRow {
 }
 
 interface SourceRow {
+  home_id: string | null;
   id: string;
-  provider: WeatherProvider | null;
-  surface: WeatherForecastSurface | null;
+  provider: string | null;
+  surface: string | null;
   site_id: string;
   name: string;
   updated_at: string;
@@ -188,15 +191,17 @@ interface UpdateSiteInput {
 }
 
 interface CreateSourceInput {
+  homeId?: string | null;
   id: string;
   name: string;
-  provider?: WeatherProvider;
+  provider?: WeatherProvider | "tibber";
   surface?: WeatherForecastSurface;
 }
 
 interface UpdateSourceInput {
+  homeId?: string | null;
   name: string;
-  provider?: WeatherProvider;
+  provider?: WeatherProvider | "tibber";
   surface?: WeatherForecastSurface;
 }
 
@@ -881,7 +886,7 @@ export function listDynamicPriceSources(
     siteId,
     DYNAMIC_PRICE_SOURCE_REQUIRED_COLUMNS,
     databasePath,
-  );
+  ) as DynamicPriceSourceRecord[];
 }
 
 export function createDynamicPriceSource(
@@ -895,7 +900,7 @@ export function createDynamicPriceSource(
     siteId,
     DYNAMIC_PRICE_SOURCE_REQUIRED_COLUMNS,
     databasePath,
-  );
+  ) as DynamicPriceSourceRecord;
 }
 
 export function updateDynamicPriceSource(
@@ -911,7 +916,7 @@ export function updateDynamicPriceSource(
     siteId,
     DYNAMIC_PRICE_SOURCE_REQUIRED_COLUMNS,
     databasePath,
-  );
+  ) as DynamicPriceSourceRecord | null;
 }
 
 export function deleteDynamicPriceSource(
@@ -925,7 +930,7 @@ export function deleteDynamicPriceSource(
     siteId,
     DYNAMIC_PRICE_SOURCE_REQUIRED_COLUMNS,
     databasePath,
-  );
+  ) as DynamicPriceSourceRecord | null;
 }
 
 function listSources(
@@ -980,17 +985,27 @@ function createSource(
         input.id,
         siteId,
         input.name,
-        normalizeWeatherProvider(input.provider),
-        normalizeWeatherSurface(input.surface, input.provider),
+        normalizeWeatherProvider(input.provider as WeatherProvider | undefined),
+        normalizeWeatherSurface(
+          input.surface,
+          input.provider as WeatherProvider | undefined,
+        ),
         now,
       );
     } else {
       db.query(
         `
-          INSERT INTO dynamic_price_sources (id, site_id, name, updated_at)
-          VALUES (?1, ?2, ?3, ?4)
+          INSERT INTO dynamic_price_sources (id, site_id, name, provider, home_id, updated_at)
+          VALUES (?1, ?2, ?3, ?4, ?5, ?6)
         `,
-      ).run(input.id, siteId, input.name, now);
+      ).run(
+        input.id,
+        siteId,
+        input.name,
+        normalizeDynamicPriceProvider(null),
+        normalizeDynamicPriceHomeId(input.homeId),
+        now,
+      );
     }
 
     return getSourceByIdOrThrow(db, tableName, input.id, siteId);
@@ -1031,22 +1046,33 @@ function updateSource(
       ).run(
         id,
         input.name,
-        normalizeWeatherProvider(input.provider ?? existingWeatherSource.provider),
+        normalizeWeatherProvider(
+          (input.provider ?? existingWeatherSource.provider) as WeatherProvider,
+        ),
         normalizeWeatherSurface(
           input.surface ?? existingWeatherSource.surface,
-          input.provider ?? existingWeatherSource.provider,
+          (input.provider ?? existingWeatherSource.provider) as WeatherProvider,
         ),
         new Date().toISOString(),
         siteId,
       );
     } else {
+      const existingDynamicPriceSource = existing as DynamicPriceSourceRecord;
+
       db.query(
         `
           UPDATE dynamic_price_sources
-          SET name = ?2, updated_at = ?3
-          WHERE id = ?1 AND site_id = ?4
+          SET name = ?2, provider = ?3, home_id = ?4, updated_at = ?5
+          WHERE id = ?1 AND site_id = ?6
         `,
-      ).run(id, input.name, new Date().toISOString(), siteId);
+      ).run(
+        id,
+        input.name,
+        normalizeDynamicPriceProvider(existingDynamicPriceSource.provider),
+        normalizeDynamicPriceHomeId(input.homeId ?? existingDynamicPriceSource.homeId),
+        new Date().toISOString(),
+        siteId,
+      );
     }
 
     return getSourceByIdOrThrow(db, tableName, id, siteId);
@@ -1184,11 +1210,14 @@ function ensureSchema(db: Database): void {
     CREATE TABLE IF NOT EXISTS dynamic_price_sources (
       id TEXT PRIMARY KEY,
       site_id TEXT NOT NULL,
+      provider TEXT NOT NULL DEFAULT 'tibber',
+      home_id TEXT,
       name TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       FOREIGN KEY(site_id) REFERENCES sites(id)
     );
   `);
+  ensureDynamicPriceSourceColumns(db);
 }
 
 function assertSiteSchema(db: Database, databasePath: string): void {
@@ -1330,6 +1359,46 @@ function normalizeWeatherSurface(
   void surface;
   void provider;
   return "open-meteo-shortwave-radiation";
+}
+
+function normalizeDynamicPriceProvider(provider: string | null | undefined): "tibber" {
+  void provider;
+  return "tibber";
+}
+
+function normalizeDynamicPriceHomeId(value: string | null | undefined): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function ensureDynamicPriceSourceColumns(db: Database): void {
+  if (!hasTable(db, "dynamic_price_sources")) {
+    return;
+  }
+
+  const columns = getTableColumns(db, "dynamic_price_sources");
+
+  if (!columns.includes("provider")) {
+    db.exec(
+      "ALTER TABLE dynamic_price_sources ADD COLUMN provider TEXT NOT NULL DEFAULT 'tibber';",
+    );
+  }
+
+  if (!columns.includes("home_id")) {
+    db.exec("ALTER TABLE dynamic_price_sources ADD COLUMN home_id TEXT;");
+  }
+
+  db.exec(`
+    UPDATE dynamic_price_sources
+    SET provider = CASE provider
+      WHEN 'tibber' THEN 'tibber'
+      ELSE 'tibber'
+    END
+  `);
 }
 
 function resolveManualTargetSoc(input: {
@@ -1533,13 +1602,13 @@ function readSources(
     .query<SourceRow, [string]>(
       tableName === "weather_sources"
         ? `
-            SELECT id, site_id, name, provider, surface, updated_at
+            SELECT id, site_id, name, provider, surface, NULL as home_id, updated_at
             FROM weather_sources
             WHERE site_id = ?1
             ORDER BY name ASC, id ASC
           `
         : `
-            SELECT id, site_id, name, NULL as provider, NULL as surface, updated_at
+            SELECT id, site_id, name, provider, NULL as surface, home_id, updated_at
             FROM dynamic_price_sources
             WHERE site_id = ?1
             ORDER BY name ASC, id ASC
@@ -1630,12 +1699,12 @@ function getSourceById(
     .query<SourceRow, [string, string]>(
       tableName === "weather_sources"
         ? `
-            SELECT id, site_id, name, provider, surface, updated_at
+            SELECT id, site_id, name, provider, surface, NULL as home_id, updated_at
             FROM weather_sources
             WHERE id = ?1 AND site_id = ?2
           `
         : `
-            SELECT id, site_id, name, NULL as provider, NULL as surface, updated_at
+            SELECT id, site_id, name, provider, NULL as surface, home_id, updated_at
             FROM dynamic_price_sources
             WHERE id = ?1 AND site_id = ?2
           `,
@@ -1768,16 +1837,21 @@ function mapSourceRow(
       id: row.id,
       siteId: row.site_id,
       name: row.name,
-      provider: normalizeWeatherProvider(row.provider),
-      surface: normalizeWeatherSurface(row.surface, row.provider),
+      provider: normalizeWeatherProvider(row.provider as WeatherProvider | null),
+      surface: normalizeWeatherSurface(
+        row.surface as WeatherForecastSurface | null,
+        row.provider as WeatherProvider | null,
+      ),
       updatedAt: row.updated_at,
     } satisfies WeatherForecastSourceRecord;
   }
 
   return {
     id: row.id,
+    homeId: normalizeDynamicPriceHomeId(row.home_id),
     siteId: row.site_id,
     name: row.name,
+    provider: normalizeDynamicPriceProvider(row.provider),
     updatedAt: row.updated_at,
   } satisfies DynamicPriceSourceRecord;
 }

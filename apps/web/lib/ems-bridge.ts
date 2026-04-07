@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { promisify } from "node:util";
 import type {
   BatteryStrategyPlanRecord,
+  DynamicPriceSnapshotRecord,
   DynamicPriceSourceRecord,
   ManagedDeviceRecord,
   ManagedDeviceStatusRecord,
@@ -263,16 +264,20 @@ export function refreshWeatherForecast(input: { siteId: string }) {
 }
 
 export function createDynamicPriceSource(input: {
+  homeId?: string | null;
   id: string;
   name: string;
+  provider?: "tibber";
   siteId: string;
 }) {
   return runBridge<DynamicPriceSourceRecord>("price-create", input);
 }
 
 export function updateDynamicPriceSource(input: {
+  homeId?: string | null;
   id: string;
   name: string;
+  provider?: "tibber";
   siteId: string;
 }) {
   return runBridge<DynamicPriceSourceRecord>("price-update", input);
@@ -283,4 +288,12 @@ export function deleteDynamicPriceSource(input: {
   siteId: string;
 }) {
   return runBridge<DynamicPriceSourceRecord>("price-delete", input);
+}
+
+export function getDynamicPriceSnapshot(input: { siteId: string }) {
+  return runBridge<DynamicPriceSnapshotRecord>("price-get-snapshot", input);
+}
+
+export function refreshDynamicPriceSnapshot(input: { siteId: string }) {
+  return runBridge<DynamicPriceSnapshotRecord>("price-refresh-snapshot", input);
 }

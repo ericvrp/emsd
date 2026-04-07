@@ -22,6 +22,7 @@ import {
   deleteSite,
   deleteWeatherForecastSource,
   getDashboardSnapshot,
+  refreshDynamicPriceSnapshot,
   refreshWeatherForecast,
   setBatteryEnabled,
   setBatteryMinimumDischargePercent,
@@ -55,6 +56,23 @@ async function ensureDefaultWeatherForecastSource(siteId: string): Promise<boole
     provider: "open-meteo",
     siteId,
     surface: "open-meteo-shortwave-radiation",
+  });
+  return true;
+}
+
+async function ensureDefaultDynamicPriceSource(siteId: string): Promise<boolean> {
+  const snapshot = await getDashboardSnapshot();
+  const site = snapshot.sites.find((entry) => entry.id === siteId);
+
+  if (!site || site.dynamicPriceSources.length > 0) {
+    return false;
+  }
+
+  await createDynamicPriceSource({
+    id: `price-${siteId}`,
+    name: "Tibber dynamic price",
+    provider: "tibber",
+    siteId,
   });
   return true;
 }
@@ -167,6 +185,8 @@ export async function createSiteAction(formData: FormData): Promise<void> {
     });
     await ensureDefaultWeatherForecastSource(siteId);
     await refreshWeatherForecast({ siteId });
+    await ensureDefaultDynamicPriceSource(siteId);
+    await refreshDynamicPriceSnapshot({ siteId }).catch(() => null);
     return { notice: `Created site ${name}.`, tab: "discover" };
   }, "site");
 }
@@ -182,10 +202,13 @@ export async function updateSiteAction(formData: FormData): Promise<void> {
       name,
     });
     const createdDefaultForecastSource = await ensureDefaultWeatherForecastSource(siteId);
+    await ensureDefaultDynamicPriceSource(siteId);
 
     if (createdDefaultForecastSource) {
       await refreshWeatherForecast({ siteId });
     }
+
+    await refreshDynamicPriceSnapshot({ siteId }).catch(() => null);
     return { notice: `Updated site ${name}.`, tab: "site" };
   }, "site");
 }
@@ -505,12 +528,17 @@ export async function createDynamicPriceSourceAction(
   return runAction(async () => {
     const sourceId = stringValue(formData, "sourceId");
     await createDynamicPriceSource({
+      ...(optionalStringValue(formData, "homeId") !== null
+        ? { homeId: optionalStringValue(formData, "homeId") }
+        : {}),
       id: sourceId,
       name: stringValue(formData, "name"),
+      provider: "tibber",
       siteId,
     });
-    return { notice: `Added price source ${sourceId}.`, tab: "devices" };
-  }, "devices");
+    await refreshDynamicPriceSnapshot({ siteId });
+    return { notice: `Added price source ${sourceId}.`, tab: "pricing" };
+  }, "pricing");
 }
 
 export async function updateDynamicPriceSourceAction(
@@ -521,12 +549,17 @@ export async function updateDynamicPriceSourceAction(
   return runAction(async () => {
     const sourceId = stringValue(formData, "sourceId");
     await updateDynamicPriceSource({
+      ...(optionalStringValue(formData, "homeId") !== null
+        ? { homeId: optionalStringValue(formData, "homeId") }
+        : {}),
       id: sourceId,
       name: stringValue(formData, "name"),
+      provider: "tibber",
       siteId,
     });
-    return { notice: `Updated price source ${sourceId}.`, tab: "devices" };
-  }, "devices");
+    await refreshDynamicPriceSnapshot({ siteId });
+    return { notice: `Updated price source ${sourceId}.`, tab: "pricing" };
+  }, "pricing");
 }
 
 export async function deleteDynamicPriceSourceAction(
@@ -537,6 +570,6 @@ export async function deleteDynamicPriceSourceAction(
   return runAction(async () => {
     const sourceId = stringValue(formData, "sourceId");
     await deleteDynamicPriceSource({ id: sourceId, siteId });
-    return { notice: `Deleted price source ${sourceId}.`, tab: "devices" };
-  }, "devices");
+    return { notice: `Deleted price source ${sourceId}.`, tab: "pricing" };
+  }, "pricing");
 }

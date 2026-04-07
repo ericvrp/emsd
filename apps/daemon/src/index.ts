@@ -2,6 +2,8 @@ import { openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import {
   type BatteryRecord,
   type BatteryStrategyPlanItem,
+  type DynamicPriceSnapshotRecord,
+  type DynamicPriceSourceRecord,
   type SiteRecord,
   type WeatherForecastRecord,
   type WeatherForecastSourceRecord,
@@ -16,11 +18,14 @@ import {
 } from "@emsd/core";
 import { createBatteryPlugin } from "../../ems/src/battery-plugins";
 import { fetchMeterTelemetry } from "../../ems/src/discover";
+import { getDynamicPriceSnapshot } from "../../ems/src/plugins/price";
 import { getWeatherForecast } from "../../ems/src/plugins/solar-forecast";
 import { formatDaemonHelpText, parseDaemonOptions } from "./daemon-options";
 import {
   openDaemonDatabase,
   readBatteries,
+  readDynamicPriceSnapshot,
+  readDynamicPriceSources,
   readSites,
   readWeatherForecast,
   readWeatherForecastSources,
@@ -28,6 +33,7 @@ import {
   updateBatteryNowModeStarted,
   updateBatteryStrategyRuntime,
   updateBatteryStrategyState,
+  upsertDynamicPriceSnapshot,
   upsertWeatherForecast,
   upsertManagedDeviceTelemetry,
 } from "./database";
@@ -35,10 +41,11 @@ import {
 const lockPath = getDaemonLockPath();
 const POLL_INTERVAL_MS = 5_000;
 const FORECAST_REFRESH_INTERVAL_MS = 10 * 60 * 1_000;
+const DYNAMIC_PRICE_REFRESH_INTERVAL_MS = 15 * 60 * 1_000;
 const FORECAST_HOURS = 48;
 const FORECAST_PERIOD_MINUTES = 15;
 
-class DaemonStartupError extends Error {}
+class DaemonStartupError extends Error { }
 
 function acquireDaemonLock(): void {
   ensureParentDirectory(lockPath);
@@ -96,26 +103,30 @@ function main(): void {
   console.log(
     `Refreshing solar forecasts at most every ${FORECAST_REFRESH_INTERVAL_MS / 60_000} minutes.`,
   );
-  if (options.verbose) {
-    console.log("Verbose strategy logging enabled.");
-  }
+  console.log(
+    `Refreshing dynamic prices at most every ${DYNAMIC_PRICE_REFRESH_INTERVAL_MS / 60_000} minutes.`,
+  );
 
-  let pollInFlight = false;
+    let pollInFlight = false;
 
-  async function pollTelemetry(): Promise<void> {
-    if (pollInFlight) {
-      return;
-    }
+    // Read sites and sources for initial refresh
+    const sites = readSites(db);
+    const dynamicPriceSources = readDynamicPriceSources(db);
+    const weatherSources = readWeatherForecastSources(db);
 
-    pollInFlight = true;
+    async function pollTelemetry(): Promise<void> {
+      if (pollInFlight) {
+        return;
+      }
 
-    try {
-      const polledBatteries = readBatteries(db);
-      const polledMeters = readMeters(db);
-      const sites = readSites(db);
-      const weatherSources = readWeatherForecastSources(db);
+      pollInFlight = true;
 
-      await refreshWeatherForecasts(db, sites, weatherSources);
+      try {
+        const polledBatteries = readBatteries(db);
+        const polledMeters = readMeters(db);
+
+        await refreshWeatherForecasts(db, sites, weatherSources, options.verbose);
+        await refreshDynamicPrices(db, sites, dynamicPriceSources, options.verbose);
 
       await Promise.all([
         ...polledBatteries.map(async (battery) => {
@@ -230,6 +241,12 @@ function main(): void {
     }
   }
 
+    // Initial refresh of forecast and price info on daemon start
+    console.log(`[${new Date().toISOString()}] Polling solar forecasts at startup...`);
+    void refreshWeatherForecasts(db, sites, weatherSources, false, true);
+    console.log(`[${new Date().toISOString()}] Polling dynamic prices at startup...`);
+    void refreshDynamicPrices(db, sites, dynamicPriceSources, false, true);
+
   void pollTelemetry();
 
   const heartbeat = setInterval(() => {
@@ -238,6 +255,12 @@ function main(): void {
   const poller = setInterval(() => {
     void pollTelemetry();
   }, POLL_INTERVAL_MS);
+  const forecastPoller = setInterval(() => {
+    void refreshWeatherForecasts(db, sites, weatherSources, options.verbose);
+  }, FORECAST_REFRESH_INTERVAL_MS);
+  const pricePoller = setInterval(() => {
+    void refreshDynamicPrices(db, sites, dynamicPriceSources, options.verbose);
+  }, DYNAMIC_PRICE_REFRESH_INTERVAL_MS);
 
   function shutdown(signal: string): void {
     clearInterval(heartbeat);
@@ -256,11 +279,13 @@ async function refreshWeatherForecasts(
   db: ReturnType<typeof openDaemonDatabase>,
   sites: SiteRecord[],
   weatherSources: WeatherForecastSourceRecord[],
+  verbose: boolean,
+  forceRefresh = false,
 ): Promise<void> {
   for (const site of sites) {
     const cachedForecast = readWeatherForecast(db, site.id);
 
-    if (!shouldRefreshWeatherForecast(cachedForecast, new Date())) {
+    if (!forceRefresh && !shouldRefreshWeatherForecast(cachedForecast, new Date())) {
       continue;
     }
 
@@ -275,9 +300,46 @@ async function refreshWeatherForecasts(
       });
 
       upsertWeatherForecast(db, site.id, forecast);
+      console.log(
+        `[${new Date().toISOString()}] refreshed solar forecast for ${site.id}`,
+      );
     } catch (error) {
       console.error(
         `[${new Date().toISOString()}] solar forecast refresh failed for ${site.id}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+}
+
+async function refreshDynamicPrices(
+  db: ReturnType<typeof openDaemonDatabase>,
+  sites: SiteRecord[],
+  sources: DynamicPriceSourceRecord[],
+  verbose: boolean,
+  forceRefresh = false,
+): Promise<void> {
+  for (const site of sites) {
+    const source = sources.find((entry) => entry.siteId === site.id) ?? null;
+
+    if (!source) {
+      continue;
+    }
+
+    const cachedSnapshot = readDynamicPriceSnapshot(db, site.id);
+
+    if (!forceRefresh && !shouldRefreshDynamicPrice(cachedSnapshot, new Date())) {
+      continue;
+    }
+
+    try {
+      const snapshot = await getDynamicPriceSnapshot({ site, source });
+      upsertDynamicPriceSnapshot(db, site.id, snapshot);
+      console.log(
+        `[${new Date().toISOString()}] refreshed dynamic price snapshot for ${site.id}`,
+      );
+    } catch (error) {
+      console.error(
+        `[${new Date().toISOString()}] dynamic price refresh failed for ${site.id}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }
@@ -298,6 +360,23 @@ function shouldRefreshWeatherForecast(
   }
 
   return now.getTime() - generatedAt >= FORECAST_REFRESH_INTERVAL_MS;
+}
+
+function shouldRefreshDynamicPrice(
+  snapshot: DynamicPriceSnapshotRecord | null,
+  now: Date,
+): boolean {
+  if (snapshot === null) {
+    return true;
+  }
+
+  const generatedAt = new Date(snapshot.generatedAt).getTime();
+
+  if (Number.isNaN(generatedAt)) {
+    return true;
+  }
+
+  return now.getTime() - generatedAt >= DYNAMIC_PRICE_REFRESH_INTERVAL_MS;
 }
 
 function shouldMarkNowModeStarted(

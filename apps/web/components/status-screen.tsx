@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "../auth";
 import {
+  getDynamicPriceSnapshot,
   getBatteryNormalizedInfo,
   getLiveStatus,
   getWeatherForecast,
@@ -39,7 +40,12 @@ export async function StatusScreen({
   }
 
   const currentSite = snapshot.sites[0] ?? null;
-  let weatherForecast = null;
+  let dynamicPriceSnapshot: Awaited<
+    ReturnType<typeof getDynamicPriceSnapshot>
+  > | null = null;
+  let dynamicPriceSnapshotError: string | null = null;
+  let weatherForecast: Awaited<ReturnType<typeof getWeatherForecast>> | null =
+    null;
   let weatherForecastError: string | null = null;
 
   const batteries = currentSite
@@ -69,6 +75,16 @@ export async function StatusScreen({
 
   if (currentSite) {
     try {
+      if (currentSite.dynamicPriceSources[0]) {
+        dynamicPriceSnapshot = await getDynamicPriceSnapshot({
+          siteId: currentSite.id,
+        });
+      }
+    } catch (error) {
+      dynamicPriceSnapshotError = error instanceof Error ? error.message : String(error);
+    }
+
+    try {
       if (currentSite.weatherSources[0]) {
         weatherForecast = await getWeatherForecast({
           hours: 48,
@@ -91,6 +107,8 @@ export async function StatusScreen({
             initialTab={initialSettingsTab}
             notice={notice}
             tone={tone}
+            dynamicPriceSnapshot={dynamicPriceSnapshot}
+            dynamicPriceSnapshotError={dynamicPriceSnapshotError}
             weatherForecast={weatherForecast}
             weatherForecastError={weatherForecastError}
           />
@@ -116,7 +134,7 @@ export async function StatusScreen({
           </CardContent>
         </Card>
       ) : (
-        <section className="grid gap-6 2xl:grid-cols-2">
+        <section className="flex w-full flex-col items-center gap-6">
           {batteries.map((battery) => {
             const currentState = battery.telemetry?.state ?? battery.state;
             const currentPower = battery.telemetry?.powerW ?? null;
@@ -127,7 +145,7 @@ export async function StatusScreen({
             return (
               <Card
                 key={battery.id}
-                className="overflow-hidden border-white/12 bg-slate-950/70"
+                className="mx-auto w-full max-w-3xl overflow-hidden border-white/12 bg-slate-950/70"
               >
                 <CardHeader className="border-b border-white/8 px-6 py-5 sm:px-8">
                   <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">

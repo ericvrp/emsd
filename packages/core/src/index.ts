@@ -113,9 +113,28 @@ export interface WeatherForecastRecord {
 
 export interface DynamicPriceSourceRecord {
   id: string;
+  homeId: string | null;
   siteId: string;
   name: string;
+  provider: "tibber";
   updatedAt: string;
+}
+
+export interface DynamicPricePointRecord {
+  currency: string;
+  importPrice: number;
+  startsAt: string;
+}
+
+export interface DynamicPriceSnapshotRecord {
+  currency: string;
+  generatedAt: string;
+  points: DynamicPricePointRecord[];
+  provider: "tibber";
+  providerLabel: string;
+  siteId: string;
+  sourceId: string | null;
+  sourceName: string;
 }
 
 export interface DiscoverReport {

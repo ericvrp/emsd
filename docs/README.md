@@ -18,3 +18,4 @@
 - `reference/batteries/indevolt/README.md`
 - `reference/meters/p1/README.md`
 - `reference/solar-forecast/open-meteo.md`
+- `reference/price/tibber.md`
