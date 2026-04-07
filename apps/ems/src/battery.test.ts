@@ -217,6 +217,100 @@ test("battery commands support a sonnen battery plugin", async () => {
   }
 });
 
+test("battery commands support a HomeWizard battery plugin", async () => {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "emsd-ems-homewizard-battery-test-"),
+  );
+  const originalDatabasePath = process.env.EMSD_DB_PATH;
+  const originalHomeWizardToken = process.env.HOMEWIZARD_BATTERY_AUTH_TOKEN;
+  const originalFetch = globalThis.fetch;
+  const originalLog = console.log;
+  const output: string[] = [];
+
+  process.env.EMSD_DB_PATH = join(tempDir, "emsd.sqlite");
+  process.env.HOMEWIZARD_BATTERY_AUTH_TOKEN = "hw-token";
+  globalThis.fetch = mockHomeWizardBatteryFetch();
+  console.log = (...args: unknown[]) => {
+    output.push(args.map(String).join(" "));
+  };
+
+  try {
+    await expect(runEms(["site", "create", "home", "Home"])).resolves.toBe(0);
+
+    const discoveries = await discoverHostDevices("192.168.1.44", {
+      verbose: false,
+      host: "192.168.1.44",
+    });
+    const discoveryId = discoveries[0]?.discoveryId;
+
+    expect(discoveryId).toBeTruthy();
+    await expect(
+      runEms([
+        "battery",
+        "create",
+        discoveryId ?? "",
+        "--site-id",
+        "home",
+        "--host",
+        "192.168.1.44",
+      ]),
+    ).resolves.toBe(0);
+    await expect(
+      runEms(["battery", "get", discoveryId ?? "", "--site-id", "home"]),
+    ).resolves.toBe(0);
+    await expect(
+      runEms([
+        "battery",
+        "strategy",
+        "set",
+        discoveryId ?? "",
+        "--site-id",
+        "home",
+        "--mode",
+        "self-consumption",
+      ]),
+    ).resolves.toBe(0);
+    await expect(
+      runEms([
+        "battery",
+        "strategy",
+        "set",
+        discoveryId ?? "",
+        "--site-id",
+        "home",
+        "--mode",
+        "manual",
+        "--state",
+        "discharging",
+        "--power",
+        "800",
+      ]),
+    ).resolves.toBe(0);
+
+    const created = JSON.parse(output[1] ?? "{}");
+    const normalized = JSON.parse(output[2] ?? "{}");
+    const selfConsumption = JSON.parse(output[3] ?? "{}");
+    const manual = JSON.parse(output[4] ?? "{}");
+
+    expect(created.model).toBe("homewizard-battery");
+    expect(created.status).toBe("discharging");
+    expect(created.strategyMode).toBe("self-consumption");
+    expect(normalized.capacityWh).toBeNull();
+    expect(normalized.currentW).toBe(404);
+    expect(normalized.socPercent).toBeNull();
+    expect(selfConsumption.strategyMode).toBe("self-consumption");
+    expect(manual.strategyMode).toBe("manual");
+    expect(manual.manualState).toBe("discharging");
+    expect(manual.manualPowerW).toBe(800);
+  } finally {
+    process.env.EMSD_DB_PATH = originalDatabasePath;
+    process.env.HOMEWIZARD_BATTERY_AUTH_TOKEN = originalHomeWizardToken;
+    globalThis.fetch = originalFetch;
+    console.log = originalLog;
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("battery list reports no batteries for an older battery table schema", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "emsd-ems-battery-schema-test-"));
   const originalDatabasePath = process.env.EMSD_DB_PATH;
@@ -629,6 +723,95 @@ function mockMeterFetch(): typeof fetch {
         }),
         { status: 200 },
       );
+    }
+
+    throw new Error(`Unexpected URL: ${url}`);
+  }) as typeof fetch;
+}
+
+function mockHomeWizardBatteryFetch(): typeof fetch {
+  return (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input);
+
+    if (url === "http://192.168.1.44:8080/rpc/Indevolt.GetData?config=%7B%22t%22%3A%5B0%2C1118%2C6000%2C6001%2C6002%2C7101%5D%7D") {
+      return new Response("not found", { status: 404 });
+    }
+
+    if (url === "http://192.168.1.44:80/api/v2/status") {
+      return new Response("not found", { status: 404 });
+    }
+
+    if (url === "https://192.168.1.44:443/api") {
+      expect(init?.headers).toMatchObject({
+        Authorization: "Bearer hw-token",
+        "X-Api-Version": "2",
+        accept: "application/json",
+      });
+
+      return new Response(
+        JSON.stringify({
+          product_name: "P1 Meter",
+          product_type: "HWE-P1",
+          serial: "5c2fafaabbcc",
+          firmware_version: "6.00",
+          api_version: "2.0.0",
+        }),
+        { status: 200 },
+      );
+    }
+
+    if (url === "https://192.168.1.44:443/api/batteries" && (!init?.method || init.method === "GET")) {
+      expect(init?.headers).toMatchObject({
+        Authorization: "Bearer hw-token",
+        "X-Api-Version": "2",
+        accept: "application/json",
+      });
+
+      return new Response(
+        JSON.stringify({
+          mode: "zero",
+          permissions: ["charge_allowed", "discharge_allowed"],
+          battery_count: 2,
+          power_w: -404,
+          target_power_w: -400,
+          max_consumption_w: 1600,
+          max_production_w: 800,
+        }),
+        { status: 200 },
+      );
+    }
+
+    if (url === "https://192.168.1.44:443/api/batteries" && init?.method === "PUT") {
+      expect(init?.headers).toMatchObject({
+        Authorization: "Bearer hw-token",
+        "X-Api-Version": "2",
+        accept: "application/json",
+        "content-type": "application/json",
+      });
+
+      const body = JSON.parse(String(init.body ?? "{}"));
+
+      if (
+        JSON.stringify(body) ===
+        JSON.stringify({
+          mode: "zero",
+          permissions: ["charge_allowed", "discharge_allowed"],
+        })
+      ) {
+        return new Response(JSON.stringify(body), { status: 200 });
+      }
+
+      if (
+        JSON.stringify(body) ===
+        JSON.stringify({
+          mode: "zero",
+          permissions: ["discharge_allowed"],
+        })
+      ) {
+        return new Response(JSON.stringify(body), { status: 200 });
+      }
+
+      throw new Error(`Unexpected HomeWizard payload: ${JSON.stringify(body)}`);
     }
 
     throw new Error(`Unexpected URL: ${url}`);

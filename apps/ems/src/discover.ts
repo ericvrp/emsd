@@ -95,7 +95,25 @@ export function parseDiscoverCommandOptions(
 }
 
 export function getDiscoverySignatures(): DiscoverySignatureDefinition[] {
-  return discoveryPlugins.map(({ buildDiscoveredDevice, parseTelemetry, supplementalRequest, ...signature }) => signature);
+  return discoveryPlugins.map(
+    ({
+      buildDiscoveredDevice,
+      parseTelemetry,
+      supplementalRequest,
+      ...signature
+    }) => ({
+      ...signature,
+      request: {
+        path: signature.request.path,
+        method: signature.request.method,
+        ...(typeof signature.request.headers === "function"
+          ? {}
+          : signature.request.headers
+            ? { headers: signature.request.headers }
+            : {}),
+      },
+    }),
+  );
 }
 
 export async function fetchBatteryTelemetry(
@@ -486,6 +504,7 @@ async function fetchDiscoveryResponse(
 
   for (const scheme of schemes) {
     const requestUrl = buildRequestUrl(ipAddress, plugin, request, scheme);
+    const headers = resolveRequestHeaders(request, ipAddress);
 
     if (options.verbose) {
       console.error(`Probing ${requestUrl} for ${plugin.model}...`);
@@ -493,8 +512,9 @@ async function fetchDiscoveryResponse(
 
     const responseResult = await fetch(requestUrl, {
       method: request.method,
-      ...(request.headers
-        ? { headers: request.headers }
+      ...(headers ? { headers } : {}),
+      ...(scheme === "https"
+        ? ({ tls: { rejectUnauthorized: false } } as RequestInit)
         : {}),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     })
@@ -536,6 +556,19 @@ async function fetchDiscoveryResponse(
   }
 
   return null;
+}
+
+function resolveRequestHeaders(
+  request: DiscoveryRequestDefinition,
+  ipAddress: string,
+): Record<string, string> | null {
+  if (!request.headers) {
+    return null;
+  }
+
+  return typeof request.headers === "function"
+    ? request.headers(ipAddress)
+    : request.headers;
 }
 
 async function fetchSupplementalPayload(

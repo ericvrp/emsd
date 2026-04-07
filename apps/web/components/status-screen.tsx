@@ -3,13 +3,13 @@ import { BatteryCharging, Zap } from "lucide-react";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "../auth";
+import { getBatteryNormalizedInfo, getLiveStatus } from "../lib/ems-bridge";
 import { AppShell } from "./app-shell";
 import { BatteryStrategyDialog } from "./battery-strategy-dialog";
 import { DaemonOfflineState } from "./daemon-offline-state";
 import { SettingsDialog } from "./settings-dialog";
 import { SettingsPanel } from "./settings-panel";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
-import { getBatteryNormalizedInfo, getLiveStatus } from "../lib/ems-bridge";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
@@ -134,6 +134,8 @@ export async function StatusScreen({
                           manualTargetSoc: 100,
                         }
                       }
+                      nowModeActive={battery.batteryNowModeActive}
+                      strategyPlan={battery.batteryStrategyPlan ?? []}
                     />
                   </div>
                 </CardHeader>
@@ -176,7 +178,6 @@ function getSingleValue(value: string | string[] | undefined): string | null {
 function BatteryChargeGauge({ socPercent }: { socPercent: number | null }) {
   const value =
     socPercent === null ? 0 : Math.max(0, Math.min(100, socPercent));
-  const fillHeight = 136 * (value / 100);
 
   return (
     <div className="flex w-[220px] flex-col items-center justify-center">
@@ -189,7 +190,7 @@ function BatteryChargeGauge({ socPercent }: { socPercent: number | null }) {
         <div className="absolute inset-[10px] overflow-hidden rounded-[20px] bg-white/5">
           <div
             className={`absolute inset-x-0 bottom-0 transition-[height] duration-500 ${getBatteryFillClass(socPercent)}`}
-            style={{ height: `${fillHeight}px` }}
+            style={{ height: `${value}%` }}
           />
         </div>
         <div className="absolute inset-0 flex items-center justify-center text-center">

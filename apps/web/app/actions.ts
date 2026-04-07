@@ -1,5 +1,9 @@
 "use server";
 
+import {
+  type BatteryStrategyPlanRecord,
+  normalizeBatteryStrategyPlan,
+} from "@emsd/core";
 import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
@@ -21,6 +25,7 @@ import {
   setBatteryEnabled,
   setBatteryMinimumDischargePercent,
   setBatteryStrategy,
+  setBatteryStrategyPlan,
   setMeterEnabled,
   updateDynamicPriceSource,
   updateSite,
@@ -282,6 +287,7 @@ export async function setBatteryStrategyAction(
         formData,
         "manualDischargeTargetSoc",
       );
+      const nowModeActiveRaw = optionalStringValue(formData, "nowModeActive");
       const manualTargetSocRaw = optionalStringValue(
         formData,
         "manualTargetSoc",
@@ -312,6 +318,7 @@ export async function setBatteryStrategyAction(
           manualTargetSocRaw === null || manualTargetSocRaw.length === 0
             ? null
             : Number(manualTargetSocRaw),
+        nowModeActive: nowModeActiveRaw === "true",
         siteId,
         strategyMode:
           strategyMode === "manual" ||
@@ -322,6 +329,49 @@ export async function setBatteryStrategyAction(
       });
       return {
         notice: `Updated strategy for battery ${batteryId}.`,
+        path: returnPath,
+        tab: null,
+      };
+    },
+    null,
+    optionalStringValue(formData, "returnPath") ?? "/",
+  );
+}
+
+export async function setBatteryStrategyPlanAction(
+  formData: FormData,
+): Promise<void> {
+  const siteId = stringValue(formData, "siteId");
+
+  return runAction(
+    async () => {
+      const batteryId = stringValue(formData, "batteryId");
+      const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
+      const minimumDischargePercent = Number(
+        stringValue(formData, "minimumDischargePercent"),
+      );
+      const strategyPlanJson = stringValue(formData, "strategyPlanJson");
+      const strategyPlan = normalizeBatteryStrategyPlan({
+        minimumDischargePercent,
+        strategy: {
+          strategyMode: "self-consumption",
+          manualState: null,
+          manualPowerW: null,
+          manualChargeTargetSoc: 100,
+          manualDischargeTargetSoc: minimumDischargePercent,
+          manualTargetSoc: 100,
+        },
+        value: JSON.parse(strategyPlanJson) as BatteryStrategyPlanRecord,
+      });
+
+      await setBatteryStrategyPlan({
+        id: batteryId,
+        siteId,
+        strategyPlan,
+      });
+
+      return {
+        notice: `Updated strategy schedule for battery ${batteryId}.`,
         path: returnPath,
         tab: null,
       };

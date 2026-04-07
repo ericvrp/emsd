@@ -5,15 +5,26 @@ import {
   type BatteryRecord,
   type BatteryStatus,
   type BatteryStrategyMode,
+  type BatteryStrategyPlanRecord,
   type DynamicPriceSourceRecord,
   type MeterRecord,
   type SiteRecord,
   type WeatherForecastSourceRecord,
   ensureParentDirectory,
   getDatabasePath,
+  parseBatteryStrategyPlanJson,
+  parseBatteryStrategyRuntimeJson,
+  stringifyBatteryStrategyPlan,
+  stringifyBatteryStrategyRuntime,
 } from "@emsd/core";
 
-const SITE_REQUIRED_COLUMNS = ["id", "name", "location", "created_at", "updated_at"];
+const SITE_REQUIRED_COLUMNS = [
+  "id",
+  "name",
+  "location",
+  "created_at",
+  "updated_at",
+];
 const BATTERY_REQUIRED_COLUMNS = [
   "id",
   "site_id",
@@ -31,6 +42,10 @@ const BATTERY_REQUIRED_COLUMNS = [
   "manual_charge_target_soc",
   "manual_discharge_target_soc",
   "manual_target_soc",
+  "now_mode_active",
+  "now_mode_started",
+  "strategy_plan_json",
+  "strategy_runtime_json",
   "updated_at",
 ];
 const METER_REQUIRED_COLUMNS = [
@@ -77,6 +92,10 @@ interface BatteryRow {
   manual_charge_target_soc: number | null;
   manual_discharge_target_soc: number | null;
   manual_target_soc: number | null;
+  now_mode_active: number;
+  now_mode_started: number;
+  strategy_plan_json: string | null;
+  strategy_runtime_json: string | null;
   updated_at: string;
 }
 
@@ -124,6 +143,11 @@ interface UpdateBatteryStrategyInput {
   manualChargeTargetSoc?: number | null;
   manualDischargeTargetSoc?: number | null;
   manualTargetSoc?: number | null;
+  nowModeActive?: boolean;
+}
+
+interface UpdateBatteryStrategyPlanInput {
+  strategyPlan: BatteryStrategyPlanRecord;
 }
 
 interface UpdateBatteryMinimumDischargeInput {
@@ -387,8 +411,12 @@ export function createBattery(
           manual_charge_target_soc,
           manual_discharge_target_soc,
           manual_target_soc,
+          now_mode_active,
+          now_mode_started,
+          strategy_plan_json,
+          strategy_runtime_json,
           updated_at
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)
       `,
     ).run(
       input.id,
@@ -409,12 +437,18 @@ export function createBattery(
         normalizeMinimumDischargePercent(input.minimumDischargePercent),
       input.manualTargetSoc ??
         resolveManualTargetSoc({
-          manualState: resolveManualState(input.manualState ?? input.status ?? null),
+          manualState: resolveManualState(
+            input.manualState ?? input.status ?? null,
+          ),
           manualChargeTargetSoc: input.manualChargeTargetSoc ?? 100,
           manualDischargeTargetSoc:
             input.manualDischargeTargetSoc ??
             normalizeMinimumDischargePercent(input.minimumDischargePercent),
         }),
+      0,
+      0,
+      null,
+      stringifyBatteryStrategyRuntime(parseBatteryStrategyRuntimeJson(null)),
       now,
     );
 
@@ -561,8 +595,10 @@ export function setBatteryStrategy(
           manual_charge_target_soc = ?5,
           manual_discharge_target_soc = ?6,
           manual_target_soc = ?7,
-          updated_at = ?8
-        WHERE id = ?1 AND site_id = ?9
+          now_mode_active = ?8,
+          now_mode_started = ?9,
+          updated_at = ?10
+        WHERE id = ?1 AND site_id = ?11
       `,
     ).run(
       id,
@@ -572,6 +608,61 @@ export function setBatteryStrategy(
       input.manualChargeTargetSoc ?? null,
       input.manualDischargeTargetSoc ?? null,
       input.manualTargetSoc ?? null,
+      input.nowModeActive === true ? 1 : 0,
+      0,
+      new Date().toISOString(),
+      siteId,
+    );
+
+    return getBatteryByIdOrThrow(db, id, siteId);
+  } finally {
+    db.close();
+  }
+}
+
+export function setBatteryStrategyPlan(
+  id: string,
+  input: UpdateBatteryStrategyPlanInput,
+  siteId: string,
+  databasePath = getDatabasePath(),
+): BatteryRecord | null {
+  assertKnownSiteId(siteId, databasePath);
+  const db = openWritableDatabase(databasePath);
+
+  try {
+    assertWritableSchema(
+      db,
+      databasePath,
+      "batteries",
+      BATTERY_REQUIRED_COLUMNS,
+    );
+
+    const existing = getBatteryById(db, id, siteId);
+
+    if (!existing) {
+      return null;
+    }
+
+    db.query(
+      `
+        UPDATE batteries
+        SET strategy_plan_json = ?2, updated_at = ?3
+        WHERE id = ?1 AND site_id = ?4
+      `,
+    ).run(
+      id,
+      stringifyBatteryStrategyPlan(
+        input.strategyPlan,
+        {
+          strategyMode: existing.strategyMode,
+          manualState: existing.manualState,
+          manualPowerW: existing.manualPowerW,
+          manualChargeTargetSoc: existing.manualChargeTargetSoc,
+          manualDischargeTargetSoc: existing.manualDischargeTargetSoc,
+          manualTargetSoc: existing.manualTargetSoc,
+        },
+        existing.minimumDischargePercent,
+      ),
       new Date().toISOString(),
       siteId,
     );
@@ -996,6 +1087,10 @@ function ensureSchema(db: Database): void {
       manual_charge_target_soc REAL,
       manual_discharge_target_soc REAL,
       manual_target_soc REAL,
+      now_mode_active INTEGER NOT NULL DEFAULT 0,
+      now_mode_started INTEGER NOT NULL DEFAULT 0,
+      strategy_plan_json TEXT,
+      strategy_runtime_json TEXT,
       updated_at TEXT NOT NULL,
       FOREIGN KEY(site_id) REFERENCES sites(id),
       UNIQUE(site_id, model, ip_address)
@@ -1059,7 +1154,9 @@ function ensureBatteryColumns(db: Database): void {
   const columns = getTableColumns(db, "batteries");
 
   if (!columns.includes("plugin")) {
-    db.exec("ALTER TABLE batteries ADD COLUMN plugin TEXT NOT NULL DEFAULT 'indevolt-battery';");
+    db.exec(
+      "ALTER TABLE batteries ADD COLUMN plugin TEXT NOT NULL DEFAULT 'indevolt-battery';",
+    );
   }
 
   if (!columns.includes("strategy_mode")) {
@@ -1097,10 +1194,32 @@ function ensureBatteryColumns(db: Database): void {
   }
 
   if (!columns.includes("manual_discharge_target_soc")) {
-    db.exec("ALTER TABLE batteries ADD COLUMN manual_discharge_target_soc REAL;");
+    db.exec(
+      "ALTER TABLE batteries ADD COLUMN manual_discharge_target_soc REAL;",
+    );
     db.exec(
       "UPDATE batteries SET manual_discharge_target_soc = COALESCE(minimum_discharge_percent, 10) WHERE manual_discharge_target_soc IS NULL;",
     );
+  }
+
+  if (!columns.includes("now_mode_active")) {
+    db.exec(
+      "ALTER TABLE batteries ADD COLUMN now_mode_active INTEGER NOT NULL DEFAULT 0;",
+    );
+  }
+
+  if (!columns.includes("now_mode_started")) {
+    db.exec(
+      "ALTER TABLE batteries ADD COLUMN now_mode_started INTEGER NOT NULL DEFAULT 0;",
+    );
+  }
+
+  if (!columns.includes("strategy_plan_json")) {
+    db.exec("ALTER TABLE batteries ADD COLUMN strategy_plan_json TEXT;");
+  }
+
+  if (!columns.includes("strategy_runtime_json")) {
+    db.exec("ALTER TABLE batteries ADD COLUMN strategy_runtime_json TEXT;");
   }
 }
 
@@ -1120,7 +1239,9 @@ function resolveManualTargetSoc(input: {
   return null;
 }
 
-function resolveManualState(state: BatteryStatus | BatteryManualState | null): BatteryManualState {
+function resolveManualState(
+  state: BatteryStatus | BatteryManualState | null,
+): BatteryManualState {
   if (state === "charging" || state === "discharging") {
     return state;
   }
@@ -1280,6 +1401,10 @@ function readBatteries(db: Database, siteId: string): BatteryRecord[] {
           manual_charge_target_soc,
           manual_discharge_target_soc,
           manual_target_soc,
+          now_mode_active,
+          now_mode_started,
+          strategy_plan_json,
+          strategy_runtime_json,
           updated_at
         FROM batteries
         WHERE site_id = ?1
@@ -1363,6 +1488,10 @@ function getBatteryById(
           manual_charge_target_soc,
           manual_discharge_target_soc,
           manual_target_soc,
+          now_mode_active,
+          now_mode_started,
+          strategy_plan_json,
+          strategy_runtime_json,
           updated_at
         FROM batteries
         WHERE id = ?1 AND site_id = ?2
@@ -1491,6 +1620,21 @@ function mapBatteryRow(row: BatteryRow): BatteryRecord {
     manualChargeTargetSoc: row.manual_charge_target_soc,
     manualDischargeTargetSoc: row.manual_discharge_target_soc,
     manualTargetSoc: row.manual_target_soc,
+    nowModeActive: row.now_mode_active === 1,
+    nowModeStarted: row.now_mode_started === 1,
+    strategyPlan: parseBatteryStrategyPlanJson({
+      minimumDischargePercent: row.minimum_discharge_percent,
+      strategy: {
+        strategyMode: row.strategy_mode,
+        manualState: row.manual_state,
+        manualPowerW: row.manual_power_w,
+        manualChargeTargetSoc: row.manual_charge_target_soc,
+        manualDischargeTargetSoc: row.manual_discharge_target_soc,
+        manualTargetSoc: row.manual_target_soc,
+      },
+      value: row.strategy_plan_json,
+    }),
+    strategyRuntime: parseBatteryStrategyRuntimeJson(row.strategy_runtime_json),
     updatedAt: row.updated_at,
   };
 }

@@ -63,6 +63,26 @@ test("getDiscoverySignatures exposes the discovery plugin catalog", () => {
       },
     },
     {
+      pluginType: "battery",
+      category: "battery",
+      model: "homewizard-battery",
+      name: "HomeWizard Battery",
+      port: 443,
+      schemes: ["https", "http"],
+      request: {
+        path: "/api/batteries",
+        method: "GET",
+      },
+      response: {
+        match: [
+          '"battery_count"\\s*:',
+          '"mode"\\s*:',
+          '"permissions"\\s*:',
+          '"power_w"\\s*:',
+        ],
+      },
+    },
+    {
       pluginType: "meter",
       category: "meter",
       model: "homewizard-p1",
@@ -351,6 +371,90 @@ test("discoverHostDevices matches a sonnen battery from the status endpoint", as
     expect(discoveries[0]?.details).toContain("SOC 61%");
     expect(discoveries[0]?.details).toContain("mode manual");
   } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("discoverHostDevices matches a HomeWizard battery controller", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalToken = process.env.HOMEWIZARD_BATTERY_AUTH_TOKEN;
+
+  process.env.HOMEWIZARD_BATTERY_AUTH_TOKEN = "hw-token";
+
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input);
+
+    if (url === "http://192.168.1.44:8080/rpc/Indevolt.GetData?config=%7B%22t%22%3A%5B0%2C1118%2C6000%2C6001%2C6002%2C7101%5D%7D") {
+      return new Response("not found", { status: 404 });
+    }
+
+    if (url === "http://192.168.1.44:80/api/v2/status") {
+      return new Response("not found", { status: 404 });
+    }
+
+    if (url === "https://192.168.1.44:443/api/batteries") {
+      expect(init?.headers).toMatchObject({
+        Authorization: "Bearer hw-token",
+        "X-Api-Version": "2",
+        accept: "application/json",
+      });
+
+      return new Response(
+        JSON.stringify({
+          mode: "zero",
+          permissions: ["charge_allowed", "discharge_allowed"],
+          battery_count: 2,
+          power_w: -404,
+          target_power_w: -400,
+          max_consumption_w: 1600,
+          max_production_w: 800,
+        }),
+        { status: 200 },
+      );
+    }
+
+    if (url === "https://192.168.1.44:443/api") {
+      expect(init?.headers).toMatchObject({
+        Authorization: "Bearer hw-token",
+        "X-Api-Version": "2",
+        accept: "application/json",
+      });
+
+      return new Response(
+        JSON.stringify({
+          product_name: "P1 Meter",
+          product_type: "HWE-P1",
+          serial: "5c2fafaabbcc",
+          firmware_version: "6.00",
+          api_version: "2.0.0",
+        }),
+        { status: 200 },
+      );
+    }
+
+    throw new Error(`Unexpected URL: ${url}`);
+  }) as typeof fetch;
+
+  try {
+    const discoveries = await discoverHostDevices("192.168.1.44", {
+      verbose: false,
+      host: "192.168.1.44",
+    });
+
+    expect(discoveries).toHaveLength(1);
+    expect(discoveries[0]).toMatchObject({
+      category: "battery",
+      model: "homewizard-battery",
+      name: "HomeWizard Battery",
+      ipAddress: "192.168.1.44",
+      powerW: 404,
+      socPercent: null,
+      state: "discharging",
+    });
+    expect(discoveries[0]?.details).toContain("2 batteries");
+    expect(discoveries[0]?.details).toContain("mode self-consumption");
+  } finally {
+    process.env.HOMEWIZARD_BATTERY_AUTH_TOKEN = originalToken;
     globalThis.fetch = originalFetch;
   }
 });

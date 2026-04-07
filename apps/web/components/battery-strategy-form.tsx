@@ -19,6 +19,10 @@ interface BatteryStrategyFormProps {
   batteryId: string;
   capacityWh: number | null;
   currentSocPercent: number | null;
+  hideStrategySelector?: boolean;
+  manualOnly?: boolean;
+  nowModeActive?: boolean;
+  showContextSummary?: boolean;
   minimumDischargePercent: number;
   returnPath?: string;
   siteId: string;
@@ -32,27 +36,31 @@ export function BatteryStrategyForm({
   batteryId,
   capacityWh,
   currentSocPercent,
+  hideStrategySelector = false,
+  manualOnly = false,
+  nowModeActive,
+  showContextSummary = true,
   minimumDischargePercent,
   returnPath,
   siteId,
   strategy,
   submitLabel = "Apply battery control",
 }: BatteryStrategyFormProps) {
-  const [strategyMode, setStrategyMode] = useState(strategy.strategyMode);
+  const [strategyMode, setStrategyMode] = useState(
+    manualOnly ? "manual" : strategy.strategyMode,
+  );
   const [manualState, setManualState] = useState<BatteryManualState>(
-    strategy.manualState ?? "idle",
+    strategy.manualState === "discharging" ? "discharging" : "charging",
   );
   const [manualPowerW, setManualPowerW] = useState(
-    String(strategy.manualPowerW ?? 0),
+    String(strategy.manualPowerW ?? 2400),
   );
   const [manualChargeTargetSocInput, setManualChargeTargetSocInput] = useState(
     String(strategy.manualChargeTargetSoc ?? 100),
   );
   const [manualDischargeTargetSocInput, setManualDischargeTargetSocInput] =
     useState(
-      String(
-        strategy.manualDischargeTargetSoc ?? minimumDischargePercent,
-      ),
+      String(strategy.manualDischargeTargetSoc ?? minimumDischargePercent),
     );
   const [durationMinutes, setDurationMinutes] = useState("60");
   const [targetMethod, setTargetMethod] = useState<TargetMethod>("soc");
@@ -68,6 +76,12 @@ export function BatteryStrategyForm({
       window.clearInterval(interval);
     };
   }, []);
+
+  useEffect(() => {
+    if (manualOnly && strategyMode !== "manual") {
+      setStrategyMode("manual");
+    }
+  }, [manualOnly, strategyMode]);
 
   const parsedManualPowerW = parseOptionalNumber(manualPowerW);
   const parsedManualChargeTargetSoc = parseOptionalNumber(
@@ -182,51 +196,66 @@ export function BatteryStrategyForm({
       <input type="hidden" name="returnPath" value={returnPath ?? "/"} />
       <input type="hidden" name="strategyMode" value={strategyMode} />
       <input type="hidden" name="manualState" value={manualState} />
-      <input type="hidden" name="manualTargetSoc" value={effectiveManualTargetSoc} />
+      {nowModeActive !== undefined ? (
+        <input
+          type="hidden"
+          name="nowModeActive"
+          value={String(nowModeActive)}
+        />
+      ) : null}
+      <input
+        type="hidden"
+        name="manualTargetSoc"
+        value={effectiveManualTargetSoc}
+      />
       <input
         type="hidden"
         name="manualChargeTargetSoc"
-        value={
-          clampTargetSoc(
-            parsedManualChargeTargetSoc ?? 100,
-            "charging",
-            minimumDischargePercent,
-          )
-        }
+        value={clampTargetSoc(
+          parsedManualChargeTargetSoc ?? 100,
+          "charging",
+          minimumDischargePercent,
+        )}
       />
       <input
         type="hidden"
         name="manualDischargeTargetSoc"
-        value={
-          clampTargetSoc(
-            parsedManualDischargeTargetSoc ?? minimumDischargePercent,
-            "discharging",
-            minimumDischargePercent,
-          )
-        }
+        value={clampTargetSoc(
+          parsedManualDischargeTargetSoc ?? minimumDischargePercent,
+          "discharging",
+          minimumDischargePercent,
+        )}
       />
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="space-y-2">
-          <Label htmlFor={`${batteryId}-strategy`}>Default Strategy</Label>
-          <Select
-            onValueChange={(value: string) =>
-              setStrategyMode(value as "auto" | "manual" | "self-consumption")
-            }
-            value={strategyMode}
-          >
-            <SelectTrigger id={`${batteryId}-strategy`}>
-              <SelectValue placeholder="Select strategy" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="self-consumption">Self-consumption</SelectItem>
-              <SelectItem value="manual">Manual</SelectItem>
-              <SelectItem disabled value="auto">
-                Auto (disabled)
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+      <div
+        className={
+          hideStrategySelector ? "grid gap-4" : "grid gap-4 md:grid-cols-2"
+        }
+      >
+        {!hideStrategySelector ? (
+          <div className="space-y-2">
+            <Label htmlFor={`${batteryId}-strategy`}>Action</Label>
+            <Select
+              onValueChange={(value: string) =>
+                setStrategyMode(value as "auto" | "manual" | "self-consumption")
+              }
+              value={strategyMode}
+            >
+              <SelectTrigger id={`${batteryId}-strategy`}>
+                <SelectValue placeholder="Select strategy" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="self-consumption">
+                  Self-consumption
+                </SelectItem>
+                <SelectItem value="manual">Manual</SelectItem>
+                <SelectItem disabled value="auto">
+                  Auto (disabled)
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        ) : null}
 
         {strategyMode === "manual" ? (
           <div className="space-y-2">
@@ -241,9 +270,11 @@ export function BatteryStrategyForm({
                 <SelectValue placeholder="Select state" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="idle">Idle</SelectItem>
                 <SelectItem value="charging">Charging</SelectItem>
                 <SelectItem value="discharging">Discharging</SelectItem>
+                {!manualOnly ? (
+                  <SelectItem value="idle">Idle</SelectItem>
+                ) : null}
               </SelectContent>
             </Select>
           </div>
@@ -252,13 +283,19 @@ export function BatteryStrategyForm({
 
       {strategyMode === "manual" ? (
         <>
-          <div className="rounded-2xl border border-white/8 bg-white/4 p-4 text-sm text-slate-300">
-            <p>Current charge: {formatSoc(currentSocPercent)}</p>
-            {capacityWh !== null ? (
-              <p className="mt-1">Known capacity: {formatCapacity(capacityWh)}</p>
-            ) : null}
-            <p className="mt-1">Minimum discharge: {minimumDischargePercent}%</p>
-          </div>
+          {showContextSummary ? (
+            <div className="rounded-2xl border border-white/8 bg-white/4 p-4 text-sm text-slate-300">
+              <p>Current charge: {formatSoc(currentSocPercent)}</p>
+              {capacityWh !== null ? (
+                <p className="mt-1">
+                  Known capacity: {formatCapacity(capacityWh)}
+                </p>
+              ) : null}
+              <p className="mt-1">
+                Minimum discharge: {minimumDischargePercent}%
+              </p>
+            </div>
+          ) : null}
 
           {manualState !== "idle" ? (
             <>
@@ -293,12 +330,8 @@ export function BatteryStrategyForm({
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="soc">Percentage</SelectItem>
-                      <SelectItem value="duration">
-                        Duration
-                      </SelectItem>
-                      <SelectItem value="end-time">
-                        End time
-                      </SelectItem>
+                      <SelectItem value="duration">Duration</SelectItem>
+                      <SelectItem value="end-time">End time</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -313,7 +346,11 @@ export function BatteryStrategyForm({
                     <Input
                       id={`${batteryId}-target-soc`}
                       max={100}
-                      min={manualState === "discharging" ? minimumDischargePercent : 5}
+                      min={
+                        manualState === "discharging"
+                          ? minimumDischargePercent
+                          : 5
+                      }
                       onChange={(event) => {
                         if (manualState === "charging") {
                           setManualChargeTargetSocInput(event.target.value);
@@ -335,11 +372,15 @@ export function BatteryStrategyForm({
 
                 {targetMethod === "duration" ? (
                   <div className="space-y-2">
-                    <Label htmlFor={`${batteryId}-duration`}>Duration (minutes)</Label>
+                    <Label htmlFor={`${batteryId}-duration`}>
+                      Duration (minutes)
+                    </Label>
                     <Input
                       id={`${batteryId}-duration`}
                       min={1}
-                      onChange={(event) => setDurationMinutes(event.target.value)}
+                      onChange={(event) =>
+                        setDurationMinutes(event.target.value)
+                      }
                       step={5}
                       type="number"
                       value={durationMinutes}
@@ -361,13 +402,19 @@ export function BatteryStrategyForm({
               </div>
 
               <div className="space-y-1 text-xs text-slate-500">
-                <p>Effective target for this command: {formatSoc(effectiveManualTargetSoc)}</p>
-                <p>Expected duration: {formatDuration(estimatedDurationMinutes)}</p>
+                <p>
+                  Effective target for this command:{" "}
+                  {formatSoc(effectiveManualTargetSoc)}
+                </p>
+                <p>
+                  Expected duration: {formatDuration(estimatedDurationMinutes)}
+                </p>
                 <p>Expected end time: {estimatedEndTime}</p>
                 {!canEstimateTarget ? (
                   <p>
-                    Time-based targeting becomes available when the battery has a
-                    known capacity, a current charge level, and a manual power target.
+                    Time-based targeting becomes available when the battery has
+                    a known capacity, a current charge level, and a manual power
+                    target.
                   </p>
                 ) : null}
               </div>
@@ -420,7 +467,11 @@ function estimateTargetSoc(input: {
       ? input.currentSocPercent + deltaSoc
       : input.currentSocPercent - deltaSoc;
 
-  return clampTargetSoc(nextSoc, input.direction, input.minimumDischargePercent);
+  return clampTargetSoc(
+    nextSoc,
+    input.direction,
+    input.minimumDischargePercent,
+  );
 }
 
 function getCurrentStoredTargetSoc(input: {
@@ -510,7 +561,11 @@ function formatFutureTime(durationMinutes: number | null, now: Date): string {
 
   const target = new Date(now.getTime() + durationMinutes * 60000);
   return formatClockTime(
-    target.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }),
+    target.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }),
   );
 }
 

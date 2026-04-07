@@ -10,7 +10,7 @@
   - `scripts`: root helper scripts for starting and stopping the daemon
 - The daemon owns the SQLite database and initializes it at `data/emsd.sqlite`.
 - The EMS command app currently reads battery state from that database.
-- The web app is intentionally a placeholder and should remain lower priority than the daemon and EMS command app.
+- The web app now includes live status, managed device configuration, and battery strategy controls, but should remain lower priority than the daemon and EMS command app.
 
 ## Product Constraints
 - Preserve the EMS-first rule from `plans/EMSD-plan.md`.
@@ -82,7 +82,12 @@
 - The daemon creates the SQLite schema but does not seed mock battery data.
 - `ems discover` reports devices that are reachable during the current scan without persisting a discovery history.
 - The EMS command app currently supports managed battery and meter commands for the default site.
-- The web app currently renders a single under-construction page.
+- The web app currently exposes live battery status, managed device settings, battery strategy schedule editing, and a temporary battery `Now Mode` manual override.
+- Battery strategy schedules are persisted as a full array on each battery record.
+- The first strategy schedule item acts as the default fallback strategy.
+- Daily manual strategy items persist their target method and timing details, including percentage, duration, or end time.
+- Strategy schedule items now persist an explicit trigger kind so the current `daily-time` trigger can expand later to price, weather, or expected-solar triggers without reshaping the saved plan.
+- A temporary battery `Now Mode` override is persisted separately from the saved strategy schedule and the daemon restores the fallback strategy after the override completes.
 
 ## Package-Specific Scripts
 
@@ -165,7 +170,6 @@
 - The web app should consume capabilities that already exist in the EMS command app or a shared backend contract.
 - Do not introduce web-only business rules.
 - Keep web terminology aligned with the EMS command app and plan docs.
-- Preserve the existing placeholder page until there is a concrete EMS-backed feature to expose.
 - Keep `apps/web` iteration lightweight during active development; avoid unnecessary build/typecheck runs that churn `.next` artifacts.
 
 ## Documentation Guidance

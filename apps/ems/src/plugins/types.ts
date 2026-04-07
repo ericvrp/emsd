@@ -10,7 +10,9 @@ export type PluginType = "battery" | "meter" | "weather" | "price";
 export interface DiscoveryRequestDefinition {
   path: string;
   method: string;
-  headers?: Record<string, string>;
+  headers?:
+    | Record<string, string>
+    | ((ipAddress: string) => Record<string, string> | null);
 }
 
 export interface DiscoveryResponseDefinition {

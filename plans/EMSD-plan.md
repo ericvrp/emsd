@@ -68,6 +68,17 @@ Current control priority:
 - Expose `self-consumption` and `manual` first across the EMS command app and web UI
 - Keep `auto` in the normalized model, but treat it as not yet user-selectable until daemon-side automation exists
 
+### Current Battery Strategy Surface
+
+- Persist the saved battery strategy schedule as a full ordered array on the battery record
+- Treat the first schedule item as the fallback strategy that applies outside scheduled overrides
+- Allow later schedule items to represent recurring daily manual or self-consumption actions with a user-friendly daily start time
+- Persist manual schedule target semantics directly on each schedule item, including percentage, duration, or end time, instead of precomputing a target percentage during editing
+- Persist an explicit trigger kind on schedule items so the current `daily-time` trigger can later expand to dynamic-price, weather, or expected-solar triggers without reshaping stored schedules
+- Keep temporary battery `Now Mode` separate from the saved schedule array
+- Persist temporary `Now Mode` state on the battery so the UI can reflect it consistently
+- Let the daemon restore the fallback strategy automatically after a temporary `Now Mode` override completes
+
 ### Manual Mode Details
 
 - Manual charging and discharging should support a configurable wattage target

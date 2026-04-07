@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
 import type {
+  BatteryStrategyPlanRecord,
   DynamicPriceSourceRecord,
   ManagedDeviceRecord,
   ManagedDeviceStatusRecord,
@@ -113,11 +114,19 @@ export function discoverDevices(
   return runBridge<DiscoveredDevice[]>("discover", { host });
 }
 
-export function createSite(input: { id: string; location: string; name: string }) {
+export function createSite(input: {
+  id: string;
+  location: string;
+  name: string;
+}) {
   return runBridge<SiteRecord>("site-create", input);
 }
 
-export function updateSite(input: { id: string; location: string; name: string }) {
+export function updateSite(input: {
+  id: string;
+  location: string;
+  name: string;
+}) {
   return runBridge<SiteRecord>("site-update", input);
 }
 
@@ -163,13 +172,25 @@ export function setBatteryStrategy(input: {
   manualPowerW: number | null;
   manualState: "idle" | "charging" | "discharging" | null;
   manualTargetSoc: number | null;
+  nowModeActive?: boolean;
   siteId: string;
   strategyMode: "auto" | "manual" | "self-consumption";
 }) {
   return runBridge<ManagedDeviceRecord>("battery-set-strategy", input);
 }
 
-export function getBatteryNormalizedInfo(input: { id: string; siteId: string }) {
+export function setBatteryStrategyPlan(input: {
+  id: string;
+  siteId: string;
+  strategyPlan: BatteryStrategyPlanRecord;
+}) {
+  return runBridge<ManagedDeviceRecord>("battery-set-strategy-plan", input);
+}
+
+export function getBatteryNormalizedInfo(input: {
+  id: string;
+  siteId: string;
+}) {
   return runBridge<NormalizedBatteryInfo>("battery-get-normalized-info", input);
 }
 

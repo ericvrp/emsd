@@ -1,11 +1,17 @@
 import { Database } from "bun:sqlite";
 import {
   type BatteryRecord,
+  type BatteryStrategyRecord,
+  type BatteryStrategyRuntimeRecord,
   type ManagedDeviceTelemetryRecord,
   type MeterRecord,
   type SiteRecord,
+  createBatteryStrategyRuntime,
   ensureParentDirectory,
   getDatabasePath,
+  parseBatteryStrategyPlanJson,
+  parseBatteryStrategyRuntimeJson,
+  stringifyBatteryStrategyRuntime,
 } from "@emsd/core";
 
 interface SiteRow {
@@ -33,6 +39,10 @@ interface BatteryRow {
   manual_charge_target_soc: BatteryRecord["manualChargeTargetSoc"];
   manual_discharge_target_soc: BatteryRecord["manualDischargeTargetSoc"];
   manual_target_soc: BatteryRecord["manualTargetSoc"];
+  now_mode_active: number;
+  now_mode_started: number;
+  strategy_plan_json: string | null;
+  strategy_runtime_json: string | null;
   updated_at: string;
 }
 
@@ -93,6 +103,10 @@ export function openDaemonDatabase(databasePath = getDatabasePath()): Database {
       manual_charge_target_soc REAL,
       manual_discharge_target_soc REAL,
       manual_target_soc REAL,
+      now_mode_active INTEGER NOT NULL DEFAULT 0,
+      now_mode_started INTEGER NOT NULL DEFAULT 0,
+      strategy_plan_json TEXT,
+      strategy_runtime_json TEXT,
       updated_at TEXT NOT NULL,
       FOREIGN KEY(site_id) REFERENCES sites(id),
       UNIQUE(site_id, model, ip_address)
@@ -201,6 +215,10 @@ export function readBatteries(db: Database): BatteryRecord[] {
           manual_charge_target_soc,
           manual_discharge_target_soc,
           manual_target_soc,
+          now_mode_active,
+          now_mode_started,
+          strategy_plan_json,
+          strategy_runtime_json,
           updated_at
         FROM batteries
         ORDER BY name ASC
@@ -225,6 +243,21 @@ export function readBatteries(db: Database): BatteryRecord[] {
     manualChargeTargetSoc: row.manual_charge_target_soc,
     manualDischargeTargetSoc: row.manual_discharge_target_soc,
     manualTargetSoc: row.manual_target_soc,
+    nowModeActive: row.now_mode_active === 1,
+    nowModeStarted: row.now_mode_started === 1,
+    strategyPlan: parseBatteryStrategyPlanJson({
+      minimumDischargePercent: row.minimum_discharge_percent,
+      strategy: {
+        strategyMode: row.strategy_mode,
+        manualState: row.manual_state,
+        manualPowerW: row.manual_power_w,
+        manualChargeTargetSoc: row.manual_charge_target_soc,
+        manualDischargeTargetSoc: row.manual_discharge_target_soc,
+        manualTargetSoc: row.manual_target_soc,
+      },
+      value: row.strategy_plan_json,
+    }),
+    strategyRuntime: parseBatteryStrategyRuntimeJson(row.strategy_runtime_json),
     updatedAt: row.updated_at,
   }));
 }
@@ -236,7 +269,9 @@ function ensureBatteryColumns(db: Database): void {
     .map((column) => column.name);
 
   if (!columns.includes("plugin")) {
-    db.exec("ALTER TABLE batteries ADD COLUMN plugin TEXT NOT NULL DEFAULT 'indevolt-battery';");
+    db.exec(
+      "ALTER TABLE batteries ADD COLUMN plugin TEXT NOT NULL DEFAULT 'indevolt-battery';",
+    );
   }
 
   if (!columns.includes("minimum_discharge_percent")) {
@@ -274,11 +309,116 @@ function ensureBatteryColumns(db: Database): void {
   }
 
   if (!columns.includes("manual_discharge_target_soc")) {
-    db.exec("ALTER TABLE batteries ADD COLUMN manual_discharge_target_soc REAL;");
+    db.exec(
+      "ALTER TABLE batteries ADD COLUMN manual_discharge_target_soc REAL;",
+    );
     db.exec(
       "UPDATE batteries SET manual_discharge_target_soc = COALESCE(minimum_discharge_percent, 10) WHERE manual_discharge_target_soc IS NULL;",
     );
   }
+
+  if (!columns.includes("now_mode_active")) {
+    db.exec(
+      "ALTER TABLE batteries ADD COLUMN now_mode_active INTEGER NOT NULL DEFAULT 0;",
+    );
+  }
+
+  if (!columns.includes("now_mode_started")) {
+    db.exec(
+      "ALTER TABLE batteries ADD COLUMN now_mode_started INTEGER NOT NULL DEFAULT 0;",
+    );
+  }
+
+  if (!columns.includes("strategy_plan_json")) {
+    db.exec("ALTER TABLE batteries ADD COLUMN strategy_plan_json TEXT;");
+  }
+
+  if (!columns.includes("strategy_runtime_json")) {
+    db.exec("ALTER TABLE batteries ADD COLUMN strategy_runtime_json TEXT;");
+    db.query(
+      "UPDATE batteries SET strategy_runtime_json = ?1 WHERE strategy_runtime_json IS NULL",
+    ).run(stringifyBatteryStrategyRuntime(createBatteryStrategyRuntime()));
+  }
+}
+
+export function updateBatteryStrategyState(
+  db: Database,
+  input: {
+    batteryId: string;
+    siteId: string;
+    nowModeActive: boolean;
+    nowModeStarted?: boolean;
+    strategy: BatteryStrategyRecord;
+  },
+): void {
+  db.query(
+    `
+      UPDATE batteries
+      SET
+        strategy_mode = ?3,
+        manual_state = ?4,
+        manual_power_w = ?5,
+        manual_charge_target_soc = ?6,
+        manual_discharge_target_soc = ?7,
+        manual_target_soc = ?8,
+        now_mode_active = ?9,
+        now_mode_started = ?10,
+        updated_at = ?11
+      WHERE id = ?1 AND site_id = ?2
+    `,
+  ).run(
+    input.batteryId,
+    input.siteId,
+    input.strategy.strategyMode,
+    input.strategy.manualState,
+    input.strategy.manualPowerW,
+    input.strategy.manualChargeTargetSoc,
+    input.strategy.manualDischargeTargetSoc,
+    input.strategy.manualTargetSoc,
+    input.nowModeActive ? 1 : 0,
+    input.nowModeStarted === true ? 1 : 0,
+    new Date().toISOString(),
+  );
+}
+
+export function updateBatteryNowModeStarted(
+  db: Database,
+  input: { batteryId: string; siteId: string; nowModeStarted: boolean },
+): void {
+  db.query(
+    `
+      UPDATE batteries
+      SET now_mode_started = ?3, updated_at = ?4
+      WHERE id = ?1 AND site_id = ?2
+    `,
+  ).run(
+    input.batteryId,
+    input.siteId,
+    input.nowModeStarted ? 1 : 0,
+    new Date().toISOString(),
+  );
+}
+
+export function updateBatteryStrategyRuntime(
+  db: Database,
+  input: {
+    batteryId: string;
+    siteId: string;
+    strategyRuntime: BatteryStrategyRuntimeRecord;
+  },
+): void {
+  db.query(
+    `
+      UPDATE batteries
+      SET strategy_runtime_json = ?3, updated_at = ?4
+      WHERE id = ?1 AND site_id = ?2
+    `,
+  ).run(
+    input.batteryId,
+    input.siteId,
+    stringifyBatteryStrategyRuntime(input.strategyRuntime),
+    new Date().toISOString(),
+  );
 }
 
 export function readMeters(db: Database): MeterRecord[] {

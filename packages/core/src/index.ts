@@ -19,6 +19,34 @@ export interface BatteryStrategyRecord {
   manualTargetSoc: number | null;
 }
 
+export type BatteryStrategyPlanItemKind = "default" | "daily";
+
+export type BatteryStrategyTargetMethod = "soc" | "duration" | "end-time";
+
+export type BatteryStrategyTriggerKind =
+  | "daily-time"
+  | "dynamic-price"
+  | "weather"
+  | "expected-solar";
+
+export interface BatteryStrategyPlanItem extends BatteryStrategyRecord {
+  id: string;
+  kind: BatteryStrategyPlanItemKind;
+  startTime: string | null;
+  targetDurationMinutes: number | null;
+  targetEndTime: string | null;
+  targetMethod: BatteryStrategyTargetMethod | null;
+  triggerKind: BatteryStrategyTriggerKind | null;
+}
+
+export type BatteryStrategyPlanRecord = BatteryStrategyPlanItem[];
+
+export interface BatteryStrategyRuntimeRecord {
+  activeItemId: string | null;
+  activeStartedAt: string | null;
+  lastTriggeredAtByItemId: Record<string, string>;
+}
+
 export interface NormalizedBatteryInfo extends BatteryStrategyRecord {
   capacityWh: number | null;
   currentW: number | null;
@@ -156,6 +184,10 @@ export interface BatteryRecord extends BatteryStrategyRecord {
   status: BatteryStatus;
   connected: boolean;
   minimumDischargePercent: number;
+  nowModeActive: boolean;
+  nowModeStarted: boolean;
+  strategyPlan: BatteryStrategyPlanRecord;
+  strategyRuntime: BatteryStrategyRuntimeRecord;
   updatedAt: string;
 }
 
@@ -191,9 +223,370 @@ export interface ManagedDeviceRecord {
   connected: boolean;
   state: ManagedDeviceState;
   batteryStrategy: BatteryStrategyRecord | null;
+  batteryStrategyPlan: BatteryStrategyPlanRecord | null;
+  batteryNowModeActive: boolean;
   minimumDischargePercent: number | null;
   note: string | null;
   updatedAt: string;
+}
+
+export function createBatteryStrategyRuntime(): BatteryStrategyRuntimeRecord {
+  return {
+    activeItemId: null,
+    activeStartedAt: null,
+    lastTriggeredAtByItemId: {},
+  };
+}
+
+export function resolveBatteryStrategyFromPlanItem(input: {
+  item: BatteryStrategyPlanItem | null | undefined;
+  minimumDischargePercent: number;
+}): BatteryStrategyRecord {
+  const item = input.item;
+
+  if (!item || item.strategyMode === "self-consumption") {
+    return {
+      strategyMode: "self-consumption",
+      manualState: null,
+      manualPowerW: null,
+      manualTargetSoc: 100,
+      manualChargeTargetSoc: 100,
+      manualDischargeTargetSoc: input.minimumDischargePercent,
+    };
+  }
+
+  return {
+    strategyMode: "manual",
+    manualState: item.manualState ?? "idle",
+    manualPowerW:
+      item.manualState === "idle" ? null : (item.manualPowerW ?? 2400),
+    manualTargetSoc:
+      item.manualState === "discharging"
+        ? (item.manualDischargeTargetSoc ?? input.minimumDischargePercent)
+        : (item.manualChargeTargetSoc ?? 100),
+    manualChargeTargetSoc: item.manualChargeTargetSoc ?? 100,
+    manualDischargeTargetSoc:
+      item.manualDischargeTargetSoc ?? input.minimumDischargePercent,
+  };
+}
+
+export function createBatteryStrategyPlanId(): string {
+  return Math.random().toString(36).slice(2, 10);
+}
+
+export function createDefaultBatteryStrategyPlan(
+  strategy: BatteryStrategyRecord,
+  minimumDischargePercent: number,
+): BatteryStrategyPlanRecord {
+  return [
+    {
+      id: createBatteryStrategyPlanId(),
+      kind: "default",
+      startTime: null,
+      targetDurationMinutes: null,
+      targetEndTime: null,
+      targetMethod: null,
+      triggerKind: null,
+      strategyMode:
+        strategy.strategyMode === "self-consumption"
+          ? "self-consumption"
+          : "manual",
+      manualState: strategy.strategyMode === "self-consumption" ? null : "idle",
+      manualPowerW: null,
+      manualChargeTargetSoc: 100,
+      manualDischargeTargetSoc: minimumDischargePercent,
+      manualTargetSoc: 100,
+    },
+  ];
+}
+
+export function normalizeBatteryStrategyPlan(input: {
+  minimumDischargePercent: number;
+  strategy: BatteryStrategyRecord;
+  value: unknown;
+}): BatteryStrategyPlanRecord {
+  const fallback = createDefaultBatteryStrategyPlan(
+    input.strategy,
+    input.minimumDischargePercent,
+  );
+
+  if (!Array.isArray(input.value)) {
+    return fallback;
+  }
+
+  const items = input.value
+    .map((entry, index) =>
+      normalizeBatteryStrategyPlanItem(entry, input.minimumDischargePercent),
+    )
+    .filter((entry): entry is BatteryStrategyPlanItem => entry !== null);
+
+  if (items.length === 0) {
+    return fallback;
+  }
+
+  const firstItem = items[0];
+
+  if (!firstItem) {
+    return fallback;
+  }
+
+  const restItems = items.slice(1);
+  const normalizedFirstItem: BatteryStrategyPlanItem = {
+    ...firstItem,
+    kind: "default",
+    startTime: null,
+    targetDurationMinutes: null,
+    targetEndTime: null,
+    targetMethod: null,
+    triggerKind: null,
+    strategyMode:
+      firstItem.strategyMode === "self-consumption"
+        ? "self-consumption"
+        : "manual",
+    manualState: firstItem.strategyMode === "self-consumption" ? null : "idle",
+    manualPowerW: null,
+  };
+
+  const normalizedRestItems = restItems.map((item) => ({
+    ...item,
+    kind: "daily" as const,
+    startTime: isDailyStartTime(item.startTime) ? item.startTime : "08:00",
+    triggerKind: normalizeTriggerKind(item.triggerKind) ?? "daily-time",
+    targetMethod: normalizeTargetMethod(item.targetMethod),
+    targetDurationMinutes:
+      normalizeTargetMethod(item.targetMethod) === "duration"
+        ? normalizeTargetDurationMinutes(item.targetDurationMinutes)
+        : null,
+    targetEndTime:
+      normalizeTargetMethod(item.targetMethod) === "end-time" &&
+      isDailyStartTime(item.targetEndTime)
+        ? item.targetEndTime
+        : null,
+  }));
+
+  return [normalizedFirstItem, ...normalizedRestItems];
+}
+
+export function parseBatteryStrategyPlanJson(input: {
+  minimumDischargePercent: number;
+  strategy: BatteryStrategyRecord;
+  value: string | null | undefined;
+}): BatteryStrategyPlanRecord {
+  if (!input.value) {
+    return createDefaultBatteryStrategyPlan(
+      input.strategy,
+      input.minimumDischargePercent,
+    );
+  }
+
+  try {
+    return normalizeBatteryStrategyPlan({
+      minimumDischargePercent: input.minimumDischargePercent,
+      strategy: input.strategy,
+      value: JSON.parse(input.value),
+    });
+  } catch {
+    return createDefaultBatteryStrategyPlan(
+      input.strategy,
+      input.minimumDischargePercent,
+    );
+  }
+}
+
+export function stringifyBatteryStrategyPlan(
+  plan: BatteryStrategyPlanRecord,
+  strategy: BatteryStrategyRecord,
+  minimumDischargePercent: number,
+): string {
+  return JSON.stringify(
+    normalizeBatteryStrategyPlan({
+      minimumDischargePercent,
+      strategy,
+      value: plan,
+    }),
+  );
+}
+
+function normalizeBatteryStrategyPlanItem(
+  value: unknown,
+  minimumDischargePercent: number,
+): BatteryStrategyPlanItem | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as Partial<BatteryStrategyPlanItem>;
+  const strategyMode =
+    candidate.strategyMode === "self-consumption" ||
+    candidate.strategyMode === "manual"
+      ? candidate.strategyMode
+      : null;
+
+  if (strategyMode === null) {
+    return null;
+  }
+
+  const manualState =
+    candidate.manualState === "idle" ||
+    candidate.manualState === "charging" ||
+    candidate.manualState === "discharging"
+      ? candidate.manualState
+      : strategyMode === "manual"
+        ? "idle"
+        : null;
+  const targetMethod = normalizeTargetMethod(candidate.targetMethod);
+  const hasSocTarget = targetMethod === null || targetMethod === "soc";
+
+  return {
+    id:
+      typeof candidate.id === "string" && candidate.id.trim().length > 0
+        ? candidate.id.trim()
+        : createBatteryStrategyPlanId(),
+    kind: candidate.kind === "daily" ? "daily" : "default",
+    startTime:
+      typeof candidate.startTime === "string" &&
+      isDailyStartTime(candidate.startTime)
+        ? candidate.startTime
+        : null,
+    triggerKind: normalizeTriggerKind(candidate.triggerKind),
+    targetDurationMinutes:
+      targetMethod === "duration"
+        ? normalizeTargetDurationMinutes(candidate.targetDurationMinutes)
+        : null,
+    targetEndTime:
+      targetMethod === "end-time" &&
+      isDailyStartTime(candidate.targetEndTime ?? null)
+        ? (candidate.targetEndTime ?? null)
+        : null,
+    targetMethod,
+    strategyMode,
+    manualState,
+    manualPowerW:
+      typeof candidate.manualPowerW === "number" &&
+      Number.isFinite(candidate.manualPowerW)
+        ? candidate.manualPowerW
+        : null,
+    manualChargeTargetSoc:
+      hasSocTarget &&
+      typeof candidate.manualChargeTargetSoc === "number" &&
+      Number.isFinite(candidate.manualChargeTargetSoc)
+        ? clampPercent(candidate.manualChargeTargetSoc, 5)
+        : hasSocTarget &&
+            strategyMode === "manual" &&
+            manualState === "charging"
+          ? 100
+          : null,
+    manualDischargeTargetSoc:
+      hasSocTarget &&
+      typeof candidate.manualDischargeTargetSoc === "number" &&
+      Number.isFinite(candidate.manualDischargeTargetSoc)
+        ? clampPercent(
+            candidate.manualDischargeTargetSoc,
+            minimumDischargePercent,
+          )
+        : hasSocTarget &&
+            strategyMode === "manual" &&
+            manualState === "discharging"
+          ? minimumDischargePercent
+          : null,
+    manualTargetSoc:
+      hasSocTarget &&
+      typeof candidate.manualTargetSoc === "number" &&
+      Number.isFinite(candidate.manualTargetSoc)
+        ? clampPercent(candidate.manualTargetSoc, 5)
+        : hasSocTarget
+          ? strategyMode === "manual" && manualState === "discharging"
+            ? minimumDischargePercent
+            : 100
+          : null,
+  };
+}
+
+export function parseBatteryStrategyRuntimeJson(
+  value: string | null | undefined,
+): BatteryStrategyRuntimeRecord {
+  if (!value) {
+    return createBatteryStrategyRuntime();
+  }
+
+  try {
+    return normalizeBatteryStrategyRuntime(JSON.parse(value));
+  } catch {
+    return createBatteryStrategyRuntime();
+  }
+}
+
+export function stringifyBatteryStrategyRuntime(
+  value: BatteryStrategyRuntimeRecord,
+): string {
+  return JSON.stringify(normalizeBatteryStrategyRuntime(value));
+}
+
+function normalizeBatteryStrategyRuntime(
+  value: unknown,
+): BatteryStrategyRuntimeRecord {
+  if (!value || typeof value !== "object") {
+    return createBatteryStrategyRuntime();
+  }
+
+  const candidate = value as Partial<BatteryStrategyRuntimeRecord>;
+  const lastTriggeredAtByItemId =
+    candidate.lastTriggeredAtByItemId &&
+    typeof candidate.lastTriggeredAtByItemId === "object"
+      ? Object.fromEntries(
+          Object.entries(candidate.lastTriggeredAtByItemId).filter(
+            ([itemId, triggeredAt]) =>
+              typeof itemId === "string" && typeof triggeredAt === "string",
+          ),
+        )
+      : {};
+
+  return {
+    activeItemId:
+      typeof candidate.activeItemId === "string" &&
+      candidate.activeItemId.length > 0
+        ? candidate.activeItemId
+        : null,
+    activeStartedAt:
+      typeof candidate.activeStartedAt === "string" &&
+      candidate.activeStartedAt.length > 0
+        ? candidate.activeStartedAt
+        : null,
+    lastTriggeredAtByItemId,
+  };
+}
+
+function normalizeTargetMethod(
+  value: BatteryStrategyPlanItem["targetMethod"] | undefined,
+): BatteryStrategyTargetMethod | null {
+  return value === "soc" || value === "duration" || value === "end-time"
+    ? value
+    : null;
+}
+
+function normalizeTriggerKind(
+  value: BatteryStrategyPlanItem["triggerKind"] | undefined,
+): BatteryStrategyTriggerKind | null {
+  return value === "daily-time" ||
+    value === "dynamic-price" ||
+    value === "weather" ||
+    value === "expected-solar"
+    ? value
+    : null;
+}
+
+function normalizeTargetDurationMinutes(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.round(value)
+    : null;
+}
+
+function isDailyStartTime(value: string | null): value is string {
+  return value !== null && /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
+}
+
+function clampPercent(value: number, minimum: number): number {
+  return Math.max(minimum, Math.min(100, Math.round(value)));
 }
 
 export function formatManagedDeviceState(state: ManagedDeviceState): string {

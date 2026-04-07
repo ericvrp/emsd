@@ -7,6 +7,7 @@ import type {
 
 const INDEVOLT_PORT = 8080;
 const INDEVOLT_MAX_POWER_W = 2400;
+const HOMEWIZARD_PORT = 443;
 const SONNEN_MAX_POWER_W = 3300;
 
 interface BatteryStrategyCommand {
@@ -37,6 +38,10 @@ export function createBatteryPlugin(battery: BatteryRecord): BatteryPlugin {
 
   if (battery.plugin === "sonnenbatterie") {
     return new SonnenBatteryPlugin(battery);
+  }
+
+  if (battery.plugin === "homewizard-battery") {
+    return new HomeWizardBatteryPlugin(battery);
   }
 
   throw new Error(`Unsupported battery plugin: ${battery.plugin}`);
@@ -151,6 +156,58 @@ class SonnenBatteryPlugin extends BatteryPlugin {
   }
 }
 
+class HomeWizardBatteryPlugin extends BatteryPlugin {
+  async getNormalizedInfo(): Promise<NormalizedBatteryInfo> {
+    const payload = await fetchHomeWizardJson(this.battery.ipAddress, "/api/batteries");
+
+    return {
+      capacityWh: null,
+      currentW: parseNullableAbsoluteNumber(payload?.power_w),
+      manualChargeTargetSoc: this.battery.manualChargeTargetSoc,
+      manualDischargeTargetSoc: this.battery.manualDischargeTargetSoc,
+      manualPowerW: this.battery.manualPowerW,
+      manualState: this.battery.manualState,
+      manualTargetSoc: this.battery.manualTargetSoc,
+      model: this.battery.model,
+      name: this.battery.name,
+      socPercent: null,
+      status: parseHomeWizardBatteryStatus(payload),
+      strategyMode: parseHomeWizardStrategyMode(payload),
+    };
+  }
+
+  async setStrategy(command: BatteryStrategyCommand): Promise<void> {
+    if (!this.supportsStrategy(command.strategyMode)) {
+      throw new Error(
+        `Battery strategy '${command.strategyMode}' is not supported by ${this.battery.plugin}`,
+      );
+    }
+
+    if (command.strategyMode === "self-consumption") {
+      await putHomeWizardBatteries(this.battery.ipAddress, {
+        mode: "zero",
+        permissions: ["charge_allowed", "discharge_allowed"],
+      });
+      return;
+    }
+
+    const manualState = command.manualState ?? "idle";
+
+    if (manualState === "charging") {
+      await putHomeWizardBatteries(this.battery.ipAddress, {
+        mode: "to_full",
+      });
+      return;
+    }
+
+    await putHomeWizardBatteries(this.battery.ipAddress, {
+      mode: manualState === "idle" ? "standby" : "zero",
+      permissions:
+        manualState === "discharging" ? ["discharge_allowed"] : [],
+    });
+  }
+}
+
 async function fetchIndevoltData(
   host: string,
   points: number[],
@@ -237,6 +294,53 @@ async function putSonnenConfiguration(
   }
 }
 
+async function fetchHomeWizardJson(
+  host: string,
+  path: string,
+): Promise<Record<string, unknown> | null> {
+  const response = await fetch(`https://${host}:${HOMEWIZARD_PORT}${path}`, {
+    method: "GET",
+    headers: buildHomeWizardHeaders(host),
+    tls: {
+      rejectUnauthorized: false,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `Battery telemetry request failed with HTTP ${response.status}`,
+    );
+  }
+
+  return parseJsonObject(await response.text());
+}
+
+async function putHomeWizardBatteries(
+  host: string,
+  payload: {
+    mode: "zero" | "to_full" | "standby";
+    permissions?: string[];
+  },
+): Promise<void> {
+  const response = await fetch(`https://${host}:${HOMEWIZARD_PORT}/api/batteries`, {
+    method: "PUT",
+    headers: {
+      ...buildHomeWizardHeaders(host),
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(payload),
+    tls: {
+      rejectUnauthorized: false,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `Battery control request failed with HTTP ${response.status}`,
+    );
+  }
+}
+
 async function postSonnenSetpoint(
   host: string,
   state: BatteryManualState,
@@ -273,6 +377,16 @@ function buildSonnenHeaders(token: string | null): Record<string, string> {
       };
 }
 
+function buildHomeWizardHeaders(host: string): Record<string, string> {
+  const token = getHomeWizardAuthToken(host);
+
+  return {
+    accept: "application/json",
+    Authorization: `Bearer ${token}`,
+    "X-Api-Version": "2",
+  };
+}
+
 function getSonnenAuthToken(host: string): string {
   const hostKey = host.replaceAll(".", "_");
   const token =
@@ -282,6 +396,21 @@ function getSonnenAuthToken(host: string): string {
   if (!token || token.trim().length === 0) {
     throw new Error(
       `Missing sonnen auth token for ${host}. Set SONNEN_BATTERY_AUTH_TOKEN or SONNEN_BATTERY_AUTH_TOKEN_${hostKey}.`,
+    );
+  }
+
+  return token.trim();
+}
+
+function getHomeWizardAuthToken(host: string): string {
+  const hostKey = host.replaceAll(".", "_");
+  const token =
+    process.env[`HOMEWIZARD_BATTERY_AUTH_TOKEN_${hostKey}`] ??
+    process.env.HOMEWIZARD_BATTERY_AUTH_TOKEN;
+
+  if (!token || token.trim().length === 0) {
+    throw new Error(
+      `Missing HomeWizard auth token for ${host}. Set HOMEWIZARD_BATTERY_AUTH_TOKEN or HOMEWIZARD_BATTERY_AUTH_TOKEN_${hostKey}.`,
     );
   }
 
@@ -388,6 +517,52 @@ function parseSonnenStrategyMode(value: unknown): BatteryStrategyMode {
     default:
       return "auto";
   }
+}
+
+function parseHomeWizardBatteryStatus(
+  payload: Record<string, unknown> | null,
+): NormalizedBatteryInfo["status"] {
+  const power = getStringNumber(payload?.power_w);
+
+  if (power === null) {
+    return "offline";
+  }
+
+  if (power > 0) {
+    return "charging";
+  }
+
+  if (power < 0) {
+    return "discharging";
+  }
+
+  return "idle";
+}
+
+function parseHomeWizardStrategyMode(
+  payload: Record<string, unknown> | null,
+): BatteryStrategyMode {
+  const mode = String(payload?.mode ?? "");
+  const permissions = new Set(
+    Array.isArray(payload?.permissions)
+      ? payload.permissions.filter(
+          (entry): entry is string => typeof entry === "string",
+        )
+      : [],
+  );
+
+  if (mode === "to_full" || mode === "standby") {
+    return "manual";
+  }
+
+  if (mode === "zero") {
+    return permissions.has("charge_allowed") &&
+      permissions.has("discharge_allowed")
+      ? "self-consumption"
+      : "manual";
+  }
+
+  return "auto";
 }
 
 function inferSonnenCapacityWh(

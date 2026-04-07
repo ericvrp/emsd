@@ -14,5 +14,6 @@
 
 ## Reference
 
+- `reference/batteries/homewizard/README.md`
 - `reference/batteries/indevolt/README.md`
 - `reference/meters/p1/README.md`

@@ -44,6 +44,7 @@ import {
   setBatteryEnabled,
   setBatteryMinimumDischargePercent,
   setBatteryStrategy,
+  setBatteryStrategyPlan,
   setMeterEnabled,
   updateDynamicPriceSource,
   updateSite,
@@ -212,6 +213,8 @@ function toManagedDeviceRecord(
         manualTargetSoc: record.manualTargetSoc,
         strategyMode: record.strategyMode,
       },
+      batteryStrategyPlan: record.strategyPlan,
+      batteryNowModeActive: record.nowModeActive,
       minimumDischargePercent: record.minimumDischargePercent,
       note: record.plugin,
       updatedAt: record.updatedAt,
@@ -229,6 +232,8 @@ function toManagedDeviceRecord(
     connected: record.connected,
     state: record.connected ? "connected" : "offline",
     batteryStrategy: null,
+    batteryStrategyPlan: null,
+    batteryNowModeActive: false,
     minimumDischargePercent: null,
     note: record.details || null,
     updatedAt: record.updatedAt,
@@ -375,7 +380,11 @@ async function run(): Promise<void> {
     }
 
     case "site-create": {
-      const input = readInput<{ id?: string; location?: string; name?: string }>();
+      const input = readInput<{
+        id?: string;
+        location?: string;
+        name?: string;
+      }>();
       succeed(
         createSite({
           id: requireString(input.id, "id"),
@@ -387,7 +396,11 @@ async function run(): Promise<void> {
     }
 
     case "site-update": {
-      const input = readInput<{ id?: string; location?: string; name?: string }>();
+      const input = readInput<{
+        id?: string;
+        location?: string;
+        name?: string;
+      }>();
       const site = updateSite(requireString(input.id, "id"), {
         location: requireString(input.location, "location"),
         name: requireString(input.name, "name"),
@@ -496,6 +509,7 @@ async function run(): Promise<void> {
         manualPowerW?: number | null;
         manualState?: BatteryManualState | null;
         manualTargetSoc?: number | null;
+        nowModeActive?: boolean;
         siteId?: string;
         strategyMode?: BatteryStrategyMode;
       }>();
@@ -534,14 +548,14 @@ async function run(): Promise<void> {
               existing.minimumDischargePercent,
             )
           : clampNullableManualTargetSoc(
-                resolveManualTargetSoc({
-                  manualState,
-                  manualChargeTargetSoc,
-                  manualDischargeTargetSoc,
-                }) ?? existing.manualTargetSoc,
+              resolveManualTargetSoc({
                 manualState,
-                existing.minimumDischargePercent,
-              );
+                manualChargeTargetSoc,
+                manualDischargeTargetSoc,
+              }) ?? existing.manualTargetSoc,
+              manualState,
+              existing.minimumDischargePercent,
+            );
 
       await createBatteryPlugin(existing).setStrategy({
         manualChargeTargetSoc,
@@ -560,7 +574,34 @@ async function run(): Promise<void> {
           manualPowerW,
           manualState,
           manualTargetSoc,
+          nowModeActive: input.nowModeActive === true,
           strategyMode,
+        },
+        siteId,
+      );
+
+      if (!updated) {
+        throw new Error(`Managed battery not found: ${batteryId}`);
+      }
+
+      succeed(toManagedDeviceRecord(updated));
+      return;
+    }
+
+    case "battery-set-strategy-plan": {
+      const input = readInput<{
+        id?: string;
+        siteId?: string;
+        strategyPlan?: BatteryRecord["strategyPlan"];
+      }>();
+      const batteryId = requireString(input.id, "id");
+      const siteId = requireString(input.siteId, "siteId");
+      const updated = setBatteryStrategyPlan(
+        batteryId,
+        {
+          strategyPlan: Array.isArray(input.strategyPlan)
+            ? input.strategyPlan
+            : [],
         },
         siteId,
       );
