@@ -30,7 +30,7 @@ export function AppShell({
           </div>
         </section>
       </header>
-      <section className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
+      <section className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 px-4 pb-6 pt-4 sm:px-6 sm:pb-6 sm:pt-5 lg:px-8">
         {children}
       </section>
     </main>
