@@ -17,6 +17,7 @@ import {
 
 interface BatteryStrategyFormProps {
   batteryId: string;
+  batteryName?: string;
   capacityWh: number | null;
   currentSocPercent: number | null;
   hideStrategySelector?: boolean;
@@ -34,6 +35,7 @@ type TargetMethod = "soc" | "duration" | "end-time";
 
 export function BatteryStrategyForm({
   batteryId,
+  batteryName,
   capacityWh,
   currentSocPercent,
   hideStrategySelector = false,
@@ -193,6 +195,9 @@ export function BatteryStrategyForm({
     <form action={setBatteryStrategyAction} className="space-y-4">
       <input type="hidden" name="siteId" value={siteId} />
       <input type="hidden" name="batteryId" value={batteryId} />
+      {batteryName ? (
+        <input type="hidden" name="batteryName" value={batteryName} />
+      ) : null}
       <input type="hidden" name="returnPath" value={returnPath ?? "/"} />
       <input type="hidden" name="strategyMode" value={strategyMode} />
       <input type="hidden" name="manualState" value={manualState} />

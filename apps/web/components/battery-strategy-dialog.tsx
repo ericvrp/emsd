@@ -121,6 +121,7 @@ export function BatteryStrategyDialog({
                         <div className="mt-5 max-w-2xl space-y-4">
                           <BatteryStrategyForm
                             batteryId={batteryId}
+                            batteryName={batteryName}
                             capacityWh={capacityWh}
                             currentSocPercent={currentSocPercent}
                             hideStrategySelector
@@ -142,6 +143,11 @@ export function BatteryStrategyDialog({
                               type="hidden"
                               name="batteryId"
                               value={batteryId}
+                            />
+                            <input
+                              type="hidden"
+                              name="batteryName"
+                              value={batteryName}
                             />
                             <input type="hidden" name="returnPath" value="/" />
                             <input
@@ -201,6 +207,7 @@ export function BatteryStrategyDialog({
 
                     <BatteryStrategyPlanForm
                       batteryId={batteryId}
+                      batteryName={batteryName}
                       minimumDischargePercent={minimumDischargePercent}
                       returnPath="/"
                       siteId={siteId}

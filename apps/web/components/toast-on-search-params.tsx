@@ -1,22 +1,25 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 
-export function ToastOnSearchParams({
-  notice,
-  tone,
-}: {
-  notice: string | null;
-  tone: "error" | "success";
-}) {
+export function ToastOnSearchParams() {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const notice = searchParams.get("notice");
+  const tone = searchParams.get("tone");
+  const lastToasted = useRef<string | null>(null);
 
   useEffect(() => {
     if (!notice) {
+      lastToasted.current = null;
+      return;
+    }
+
+    const toastKey = `${tone}:${notice}`;
+    if (lastToasted.current === toastKey) {
       return;
     }
 
@@ -25,6 +28,8 @@ export function ToastOnSearchParams({
     } else {
       toast.success(notice);
     }
+    
+    lastToasted.current = toastKey;
 
     const params = new URLSearchParams(searchParams.toString());
     params.delete("notice");

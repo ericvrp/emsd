@@ -14,6 +14,7 @@ import { BatteryStrategyDialog } from "./battery-strategy-dialog";
 import { DaemonOfflineState } from "./daemon-offline-state";
 import { SettingsDialog } from "./settings-dialog";
 import { SettingsPanel } from "./settings-panel";
+import { ToastOnSearchParams } from "./toast-on-search-params";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
@@ -31,9 +32,6 @@ export async function StatusScreen({
 
   const snapshot = await getLiveStatus();
   const resolvedSearchParams = (await searchParams) ?? {};
-  const notice = getSingleValue(resolvedSearchParams.notice);
-  const tone =
-    getSingleValue(resolvedSearchParams.tone) === "error" ? "error" : "success";
 
   if (!snapshot.daemon.running) {
     return <DaemonOfflineState />;
@@ -98,23 +96,23 @@ export async function StatusScreen({
   }
 
   return (
-    <AppShell
-      generatedAt={snapshot.generatedAt}
-      headerActions={
-        <SettingsDialog>
-          <SettingsPanel
-            currentSite={currentSite}
-            initialTab={initialSettingsTab}
-            notice={notice}
-            tone={tone}
-            dynamicPriceSnapshot={dynamicPriceSnapshot}
-            dynamicPriceSnapshotError={dynamicPriceSnapshotError}
-            weatherForecast={weatherForecast}
-            weatherForecastError={weatherForecastError}
-          />
-        </SettingsDialog>
-      }
-    >
+    <>
+      <ToastOnSearchParams />
+      <AppShell
+        generatedAt={snapshot.generatedAt}
+        headerActions={
+          <SettingsDialog>
+            <SettingsPanel
+              currentSite={currentSite}
+              initialTab={initialSettingsTab}
+              dynamicPriceSnapshot={dynamicPriceSnapshot}
+              dynamicPriceSnapshotError={dynamicPriceSnapshotError}
+              weatherForecast={weatherForecast}
+              weatherForecastError={weatherForecastError}
+            />
+          </SettingsDialog>
+        }
+      >
       {currentSite === null ? (
         <Card className="border-white/12 bg-slate-950/70">
           <CardContent className="px-6 py-10 text-center sm:px-8 sm:py-12">
@@ -204,15 +202,8 @@ export async function StatusScreen({
         </section>
       )}
     </AppShell>
+    </>
   );
-}
-
-function getSingleValue(value: string | string[] | undefined): string | null {
-  if (typeof value === "string") {
-    return value;
-  }
-
-  return value?.[0] ?? null;
 }
 
 function BatteryChargeGauge({ socPercent }: { socPercent: number | null }) {

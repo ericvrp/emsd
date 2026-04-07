@@ -26,6 +26,7 @@ type StrategyAction = "self-consumption" | BatteryManualState;
 
 interface BatteryStrategyPlanFormProps {
   batteryId: string;
+  batteryName?: string;
   minimumDischargePercent: number;
   returnPath?: string;
   siteId: string;
@@ -34,6 +35,7 @@ interface BatteryStrategyPlanFormProps {
 
 export function BatteryStrategyPlanForm({
   batteryId,
+  batteryName,
   minimumDischargePercent,
   returnPath,
   siteId,
@@ -92,6 +94,9 @@ export function BatteryStrategyPlanForm({
     <form action={setBatteryStrategyPlanAction} className="space-y-4">
       <input type="hidden" name="siteId" value={siteId} />
       <input type="hidden" name="batteryId" value={batteryId} />
+      {batteryName ? (
+        <input type="hidden" name="batteryName" value={batteryName} />
+      ) : null}
       <input type="hidden" name="returnPath" value={returnPath ?? "/"} />
       <input
         type="hidden"

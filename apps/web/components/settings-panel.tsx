@@ -38,7 +38,6 @@ import {
 } from "../app/actions";
 import { DiscoveryPanel } from "./discovery-panel";
 import { SubmitButton } from "./submit-button";
-import { ToastOnSearchParams } from "./toast-on-search-params";
 import { Button } from "./ui/button";
 
 type SettingsTab = "devices" | "forecast" | "pricing" | "site" | "discover";
@@ -59,8 +58,6 @@ export function SettingsPanel({
   dynamicPriceSnapshot,
   dynamicPriceSnapshotError,
   initialTab,
-  notice,
-  tone,
   weatherForecast,
   weatherForecastError,
 }: {
@@ -68,8 +65,6 @@ export function SettingsPanel({
   dynamicPriceSnapshot: DynamicPriceSnapshotRecord | null;
   dynamicPriceSnapshotError: string | null;
   initialTab: string | null;
-  notice: string | null;
-  tone: "error" | "success";
   weatherForecast: WeatherForecastRecord | null;
   weatherForecastError: string | null;
 }) {
@@ -79,8 +74,6 @@ export function SettingsPanel({
 
   return (
     <div className="space-y-4">
-      <ToastOnSearchParams notice={notice} tone={tone} />
-
       <section className="rounded-[1.6rem] border border-white/10 bg-slate-950/55 p-3 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
         <div className="grid gap-2 sm:grid-cols-5">
           {([
@@ -603,6 +596,7 @@ function PricingSection({
           Leave this empty to use the first Tibber home from your account. Set `TIBBER_ACCESS_TOKEN` in the daemon environment.
         </p>
         <SubmitButton className={primaryButtonClass} disabled={!shouldEnableSave}>
+          <Save size={14} />
           Save pricing settings
         </SubmitButton>
       </form>
@@ -846,6 +840,7 @@ function DeviceList({
               >
                 <input type="hidden" name="siteId" value={site.id} />
                 <input type="hidden" name="batteryId" value={device.id} />
+                <input type="hidden" name="batteryName" value={device.name} />
                 <label className="block space-y-2">
                   <span className="text-sm font-medium text-slate-300">
                     Minimum discharge (%)

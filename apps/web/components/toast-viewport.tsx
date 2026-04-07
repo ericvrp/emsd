@@ -5,8 +5,7 @@ import { Toaster } from "sonner";
 export function ToastViewport() {
   return (
     <Toaster
-      closeButton
-      position="top-right"
+      position="bottom-right"
       richColors
       theme="dark"
       toastOptions={{

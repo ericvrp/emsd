@@ -39,7 +39,7 @@ const TIBBER_QUERY = `
       homes {
         id
         currentSubscription {
-          priceInfo {
+          priceInfo(resolution: QUARTER_HOURLY) {
             current {
               currency
               startsAt

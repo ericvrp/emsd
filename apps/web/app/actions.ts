@@ -301,6 +301,7 @@ export async function setBatteryMinimumDischargePercentAction(
 
   return runAction(async () => {
     const batteryId = stringValue(formData, "batteryId");
+    const batteryName = optionalStringValue(formData, "batteryName") ?? batteryId;
     const minimumDischargePercent = Number(
       stringValue(formData, "minimumDischargePercent"),
     );
@@ -310,7 +311,7 @@ export async function setBatteryMinimumDischargePercentAction(
       siteId,
     });
     return {
-      notice: `Updated minimum discharge for battery ${batteryId}.`,
+      notice: `Updated minimum discharge for ${batteryName}.`,
       tab: "devices",
     };
   }, "devices");
@@ -324,6 +325,7 @@ export async function setBatteryStrategyAction(
   return runAction(
     async () => {
       const batteryId = stringValue(formData, "batteryId");
+      const batteryName = optionalStringValue(formData, "batteryName") ?? batteryId;
       const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
       const strategyMode = stringValue(formData, "strategyMode");
       const manualState = optionalStringValue(formData, "manualState");
@@ -377,7 +379,7 @@ export async function setBatteryStrategyAction(
             : "auto",
       });
       return {
-        notice: `Updated strategy for battery ${batteryId}.`,
+        notice: `Updated strategy for ${batteryName}.`,
         path: returnPath,
         tab: null,
       };
@@ -395,6 +397,7 @@ export async function setBatteryStrategyPlanAction(
   return runAction(
     async () => {
       const batteryId = stringValue(formData, "batteryId");
+      const batteryName = optionalStringValue(formData, "batteryName") ?? batteryId;
       const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
       const minimumDischargePercent = Number(
         stringValue(formData, "minimumDischargePercent"),
@@ -420,7 +423,7 @@ export async function setBatteryStrategyPlanAction(
       });
 
       return {
-        notice: `Updated strategy schedule for battery ${batteryId}.`,
+        notice: `Updated strategy schedule for ${batteryName}.`,
         path: returnPath,
         tab: null,
       };
