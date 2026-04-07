@@ -17,7 +17,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(99,102,241,0.22),transparent_28%),radial-gradient(circle_at_top_right,rgba(16,185,129,0.16),transparent_24%),linear-gradient(180deg,#050816_0%,#02040a_100%)] text-slate-100 antialiased">
-        {children}
+        <div className="min-h-screen [content-visibility:auto]">{children}</div>
         <ToastViewport />
       </body>
     </html>

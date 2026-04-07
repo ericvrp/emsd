@@ -26,6 +26,7 @@ Example command areas:
 
 - `status`
 - `battery list`
+- `battery get`
 - `strategy get`
 - `strategy set`
 - `price sync`
@@ -61,6 +62,11 @@ The system should support these strategy modes:
 - `time-based`: run charge and discharge behavior on configured schedules, similar to cron-based automation
 - `dynamic-pricing`: optimize against changing import and export prices with a highly configurable rule set
 - `manual`: explicitly set the battery to `idle`, `charging`, or `discharging`
+
+Current control priority:
+
+- Expose `self-consumption` and `manual` first across the EMS command app and web UI
+- Keep `auto` in the normalized model, but treat it as not yet user-selectable until daemon-side automation exists
 
 ### Manual Mode Details
 
@@ -202,74 +208,59 @@ Example flow:
 
 ## Delivery Phases
 
-### Phase 1
+### Current Scaffold Status
 
-- Set up Bun service, EMS command app, and SQLite schema
-- Define the daemon-to-EMS contract
-- Add PM2 startup docs
-- Add a mock battery adapter
-- Add a mock meter adapter
+- Bun service, EMS command app, and SQLite schema are in place
+- The daemon-to-EMS contract exists through the shared database and bridge layer
+- PM2 and direct daemon startup scripts are available
+- Discovery is transient and site-scoped managed records exist for batteries, meters, weather sources, and dynamic price sources
+- The EMS command app already covers managed site CRUD, discovery, and inventory flows
+- The web app already sits on top of the EMS surface for live status, configuration, and control
 
-### Phase 2
-
-- Implement config loading and persistence
-- Implement discovery framework
-- Replace persistent discovery history with transient discovery output
-- Add site-scoped persistence for managed batteries, meters, and weather sources
-- Add EMS commands for status, config, meter inspection, managed inventory, and strategy control
-
-### Phase 3
+### Next Phase
 
 - Implement simulator and strategy engine
-- Add strategy support for disabled, self-consumption, time-based, dynamic-pricing, and manual modes
+- Expand strategy support beyond the currently prioritized `self-consumption` and `manual` modes
 - Add HomeWizard P1 meter integration
 - Add weather forecast provider integration for solar-aware planning
 - Add Nordpool and Tibber integrations
 - Expand EMS coverage until it fully covers the intended product surface
 
-### Phase 4
+### Later Phase
 
-- Add the Next.js app on top of the EMS command app once the EMS surface is stable
 - Route Next.js backend operations through the EMS command app only
 - Add real battery brand adapters, starting with Sonnen
 - Improve resilience, logs, retries, and long-running stability
 
 ## Near-Term Implementation Plan
 
-### Step 1: Normalize Discovery Output
+### Step 1: Normalize Battery Runtime And Control State
 
-- Change `ems discover` to stop writing into SQLite as a persistent discovery history
-- Return concise one-line summaries by default
-- Keep `--verbose` as the machine-friendly JSON output mode
-- Include a stable discovery identifier in both concise and verbose output
+- Define a shared normalized battery shape for current state, current wattage, and selected strategy
+- Require battery adapters to return normalized battery information regardless of vendor
+- Normalize strategy state so `manual`, `self-consumption`, and reserved `auto` are represented consistently
 
-### Step 2: Introduce Site Persistence
+### Step 2: Add Adapter-Based Battery Control
 
-- Add a `sites` table owned by the daemon database
-- Create a default site for the current one-household-per-install assumption
-- Prepare the schema so future multi-site support remains possible without changing the conceptual model
+- Introduce a battery adapter base class that owns battery-specific reads and writes
+- Implement the default Indevolt adapter with normalized status reads and control writes
+- Support switching the current default adapter between `self-consumption` and `manual`
+- Support manual control for `idle`, `charging`, and `discharging` with a capped power target up to `2400 W`
 
-### Step 3: Split Managed Tables By Domain
+### Step 3: Expand EMS Battery Commands
 
-- Refactor the current `batteries` table into a managed battery table with explicit configuration and runtime fields
-- Add a `meters` table for managed meter records
-- Add a `weather_sources` table for configured forecast providers
-- Remove the current `discovered_devices` table from the intended architecture
+- Add EMS commands to inspect normalized live battery information
+- Add EMS commands to read and update normalized battery strategy settings
+- Keep battery control explicit under battery-oriented commands rather than adding a generic equipment abstraction first
 
-### Step 4: Add Explicit Management Commands
+### Step 4: Expand Web Monitoring And Control
 
-- Replace the current discovery-backed `device` CRUD flow with typed add and list commands
-- Start with battery and meter flows because they are the first supported discovered types
-- Keep weather source management explicit and provider-oriented instead of forcing it through network discovery
+- Keep the live page focused on large battery-centric information
+- Add a dedicated top-level control page for equipment actions, starting with batteries
+- Use shadcn-style UI primitives for forms, cards, selects, and buttons where they fit the current web surface
 
-### Step 5: Align Daemon Runtime State
+### Step 5: Prepare For Daemon-Side Automation
 
-- Make the daemon treat managed site records as the source of truth
-- Have the daemon update `connected` and type-specific runtime state for managed records
-- Keep discovery separate from runtime polling and scheduling
-
-### Step 6: Update Tests And Documentation
-
-- Update EMS command tests to cover discover, add, list, enable, disable, and remove flows
-- Update daemon database tests to match the new schema
-- Update README examples so the setup flow reflects discovery plus explicit add
+- Keep `auto` disabled in the current user-facing control surface until strategy-engine behavior exists
+- Preserve the daemon as the future owner of automatic strategy execution
+- Treat current web and EMS manual/self-consumption controls as the normalized contract that future automation will write through

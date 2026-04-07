@@ -3,22 +3,24 @@ import { type NetworkInterfaceInfo, networkInterfaces } from "node:os";
 import type {
   DiscoverReport,
   DiscoverReportDevice,
-  DiscoveryCategory,
-  ManagedDeviceState,
 } from "@emsd/core";
-import discoverySignaturesJson from "./discovery-signatures.json";
+import type {
+  BatteryTelemetrySample,
+  DiscoveredDevice,
+  MeterTelemetrySample,
+} from "./discovery-types";
+import {
+  discoveryPlugins,
+  type DiscoveryPlugin,
+  type DiscoveryRequestDefinition,
+  type DiscoverySignatureDefinition,
+} from "./plugins";
 
-export interface DiscoveredDevice {
-  discoveryId: string;
-  category: DiscoveryCategory;
-  model: string;
-  name: string;
-  ipAddress: string;
-  details: string;
-  powerW: number | null;
-  socPercent: number | null;
-  state: ManagedDeviceState | null;
-}
+export type {
+  BatteryTelemetrySample,
+  DiscoveredDevice,
+  MeterTelemetrySample,
+} from "./discovery-types";
 
 export interface DiscoveryScanTarget {
   interfaceName: string;
@@ -30,49 +32,14 @@ export interface DiscoverCommandOptions {
   host: string | null;
 }
 
-export interface BatteryTelemetrySample {
-  powerW: number | null;
-  socPercent: number | null;
-  state: ManagedDeviceState;
-}
-
-export interface MeterTelemetrySample {
-  gasM3: number | null;
-  powerW: number | null;
-  state: Extract<ManagedDeviceState, "connected" | "offline">;
-}
-
-interface DiscoveryRequestDefinition {
-  path: string;
-  method: string;
-  headers?: Record<string, string>;
-}
-
-interface DiscoveryResponseDefinition {
-  match: string[];
-}
-
 interface DiscoverySupplementalPayload {
   responseText: string;
   scheme: "https" | "http";
 }
 
-interface DiscoverySignatureDefinition {
-  category: DiscoveryCategory;
-  model: string;
-  name: string;
-  port: number;
-  schemes?: Array<"https" | "http">;
-  request: DiscoveryRequestDefinition;
-  response: DiscoveryResponseDefinition;
-}
-
 const HOST_SCAN_START = 1;
 const HOST_SCAN_END = 254;
 const REQUEST_TIMEOUT_MS = 2000;
-
-const discoverySignatures =
-  discoverySignaturesJson as DiscoverySignatureDefinition[];
 
 export function formatHelpText(): string {
   return [
@@ -128,52 +95,48 @@ export function parseDiscoverCommandOptions(
 }
 
 export function getDiscoverySignatures(): DiscoverySignatureDefinition[] {
-  return [...discoverySignatures];
+  return discoveryPlugins.map(({ buildDiscoveredDevice, parseTelemetry, supplementalRequest, ...signature }) => signature);
 }
 
 export async function fetchBatteryTelemetry(
   ipAddress: string,
 ): Promise<BatteryTelemetrySample | null> {
-  const signature = requireSignature("indevolt-battery");
+  const plugin = requirePlugin("indevolt-battery");
   const response = await fetchDiscoveryResponse(
     ipAddress,
-    signature,
-    signature.request.path,
+    plugin,
+    plugin.request,
     { host: ipAddress, verbose: false },
   );
 
-  if (!response) {
+  if (!response || !plugin.parseTelemetry) {
     return null;
   }
 
-  return parseBatteryTelemetry(response.responseText);
+  return plugin.parseTelemetry(response.responseText) as BatteryTelemetrySample;
 }
 
 export async function fetchMeterTelemetry(
   ipAddress: string,
 ): Promise<MeterTelemetrySample | null> {
-  const signature = requireSignature("homewizard-p1");
-  const response = await fetchDiscoveryResponse(
-    ipAddress,
-    {
-      ...signature,
-      request: {
-        path: "/api/v1/data",
-        method: "GET",
-        headers: {
-          accept: "application/json",
-        },
-      },
-    },
-    "/api/v1/data",
-    { host: ipAddress, verbose: false },
-  );
+  const plugin = requirePlugin("homewizard-p1");
 
-  if (!response) {
+  if (!plugin.supplementalRequest) {
     return null;
   }
 
-  return parseMeterTelemetry(response.responseText);
+  const response = await fetchDiscoveryResponse(
+    ipAddress,
+    plugin,
+    plugin.supplementalRequest,
+    { host: ipAddress, verbose: false },
+  );
+
+  if (!response || !plugin.parseTelemetry) {
+    return null;
+  }
+
+  return plugin.parseTelemetry(response.responseText) as MeterTelemetrySample;
 }
 
 export function getLocalIpv4Subnets(
@@ -331,7 +294,7 @@ export async function runDiscoverCommand(args: string[] = []): Promise<number> {
   if (options.host) {
     if (options.verbose) {
       console.error(
-        `Using ${discoverySignatures.length} discovery fingerprint(s): ${discoverySignatures.map((signature) => signature.model).join(", ")}`,
+        `Using ${discoveryPlugins.length} discovery fingerprint(s): ${discoveryPlugins.map((plugin) => plugin.model).join(", ")}`,
       );
     }
 
@@ -357,8 +320,8 @@ export async function runDiscoverCommand(args: string[] = []): Promise<number> {
 
   if (options.verbose) {
     console.error(
-      `Using ${discoverySignatures.length} discovery fingerprint(s): ${discoverySignatures.map((signature) => signature.model).join(", ")}`,
-    );
+        `Using ${discoveryPlugins.length} discovery fingerprint(s): ${discoveryPlugins.map((plugin) => plugin.model).join(", ")}`,
+      );
   }
 
   const devices = await discoverDevices([target.subnet], options);
@@ -459,11 +422,11 @@ async function probeTarget(
   ipAddress: string,
   options: DiscoverCommandOptions,
 ): Promise<DiscoveredDevice | null> {
-  for (const signature of discoverySignatures) {
+  for (const plugin of discoveryPlugins) {
     const primaryResponse = await fetchDiscoveryResponse(
       ipAddress,
-      signature,
-      signature.request.path,
+      plugin,
+      plugin.request,
       options,
     );
 
@@ -471,28 +434,28 @@ async function probeTarget(
       continue;
     }
 
-    if (!matchesSignatureResponse(signature, primaryResponse.responseText)) {
+    if (!matchesSignatureResponse(plugin, primaryResponse.responseText)) {
       if (options.verbose) {
         console.error(
-          `Response from ${primaryResponse.url} did not match ${signature.model}`,
+          `Response from ${primaryResponse.url} did not match ${plugin.model}`,
         );
       }
       continue;
     }
 
     if (options.verbose) {
-      console.error(`Matched ${signature.model} at ${ipAddress}`);
+      console.error(`Matched ${plugin.model} at ${ipAddress}`);
     }
 
     const supplementalPayload = await fetchSupplementalPayload(
-      signature,
+      plugin,
       ipAddress,
       primaryResponse.scheme,
       options,
     );
 
     return buildDiscoveredDevice(
-      signature,
+      plugin,
       ipAddress,
       primaryResponse.responseText,
       supplementalPayload,
@@ -504,8 +467,8 @@ async function probeTarget(
 
 async function fetchDiscoveryResponse(
   ipAddress: string,
-  signature: DiscoverySignatureDefinition,
-  path: string,
+  plugin: DiscoveryPlugin,
+  request: DiscoveryRequestDefinition,
   options: DiscoverCommandOptions,
   preferredScheme: "https" | "http" = "https",
 ): Promise<{
@@ -513,7 +476,7 @@ async function fetchDiscoveryResponse(
   scheme: "https" | "http";
   url: string;
 } | null> {
-  const configuredSchemes = signature.schemes ?? ["https", "http"];
+  const configuredSchemes = plugin.schemes ?? ["https", "http"];
   const schemes = configuredSchemes.includes(preferredScheme)
     ? [
         preferredScheme,
@@ -522,16 +485,16 @@ async function fetchDiscoveryResponse(
     : [...configuredSchemes];
 
   for (const scheme of schemes) {
-    const requestUrl = buildRequestUrl(ipAddress, signature, path, scheme);
+    const requestUrl = buildRequestUrl(ipAddress, plugin, request, scheme);
 
     if (options.verbose) {
-      console.error(`Probing ${requestUrl} for ${signature.model}...`);
+      console.error(`Probing ${requestUrl} for ${plugin.model}...`);
     }
 
     const responseResult = await fetch(requestUrl, {
-      method: signature.request.method,
-      ...(signature.request.headers
-        ? { headers: signature.request.headers }
+      method: request.method,
+      ...(request.headers
+        ? { headers: request.headers }
         : {}),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     })
@@ -576,28 +539,19 @@ async function fetchDiscoveryResponse(
 }
 
 async function fetchSupplementalPayload(
-  signature: DiscoverySignatureDefinition,
+  plugin: DiscoveryPlugin,
   ipAddress: string,
   preferredScheme: "https" | "http",
   options: DiscoverCommandOptions,
 ): Promise<DiscoverySupplementalPayload | null> {
-  if (signature.model !== "homewizard-p1") {
+  if (!plugin.supplementalRequest) {
     return null;
   }
 
   const supplementalResponse = await fetchDiscoveryResponse(
     ipAddress,
-    {
-      ...signature,
-      request: {
-        path: "/api/v1/data",
-        method: "GET",
-        headers: {
-          accept: "application/json",
-        },
-      },
-    },
-    "/api/v1/data",
+    plugin,
+    plugin.supplementalRequest,
     options,
     preferredScheme,
   );
@@ -620,11 +574,11 @@ async function fetchSupplementalPayload(
 
 function buildRequestUrl(
   ipAddress: string,
-  signature: DiscoverySignatureDefinition,
-  path = signature.request.path,
+  plugin: DiscoveryPlugin,
+  request: DiscoveryRequestDefinition,
   scheme: "https" | "http" = "https",
 ): string {
-  return `${scheme}://${ipAddress}:${signature.port}${path}`;
+  return `${scheme}://${ipAddress}:${plugin.port}${request.path}`;
 }
 
 function formatUnknownError(error: unknown): string {
@@ -635,244 +589,43 @@ function formatUnknownError(error: unknown): string {
   return String(error);
 }
 
-function requireSignature(model: string): DiscoverySignatureDefinition {
-  const signature = discoverySignatures.find(
+function requirePlugin(model: string): DiscoveryPlugin {
+  const plugin = discoveryPlugins.find(
     (candidate) => candidate.model === model,
   );
 
-  if (!signature) {
-    throw new Error(`Discovery signature not found for model: ${model}`);
+  if (!plugin) {
+    throw new Error(`Discovery plugin not found for model: ${model}`);
   }
 
-  return signature;
+  return plugin;
 }
 
 function matchesSignatureResponse(
-  signature: DiscoverySignatureDefinition,
+  plugin: DiscoveryPlugin,
   responseText: string,
 ): boolean {
-  return signature.response.match.every((pattern) =>
+  return plugin.response.match.every((pattern) =>
     new RegExp(pattern).test(responseText),
   );
 }
 
 function buildDiscoveredDevice(
-  signature: DiscoverySignatureDefinition,
+  plugin: DiscoveryPlugin,
   ipAddress: string,
   responseText: string,
   supplementalPayload: DiscoverySupplementalPayload | null,
 ): DiscoveredDevice {
-  if (signature.model === "indevolt-battery") {
-    return buildIndevoltDiscoveredDevice(signature, ipAddress, responseText);
-  }
-
-  const payload = parseJsonObject(responseText);
-  const apiVersion = getStringValue(payload?.api_version);
-  const firmwareVersion = getStringValue(payload?.firmware_version);
-  const serial = getStringValue(payload?.serial);
-  const supplemental = parseJsonObject(supplementalPayload?.responseText ?? "");
-  const smrVersion = getStringOrNumber(supplemental?.smr_version);
-  const meterModel = getStringValue(supplemental?.meter_model);
-  const activePower = getStringOrNumber(supplemental?.active_power_w);
-  const totalGas = getStringOrNumber(supplemental?.total_gas_m3);
-  const detailsParts = smrVersion
-    ? [`SMR ${smrVersion}`]
-    : apiVersion
-      ? [`API ${apiVersion}`]
-      : ["fingerprint matched"];
-
-  if (meterModel) {
-    detailsParts.push(`meter ${meterModel}`);
-  }
-
-  if (activePower) {
-    detailsParts.push(`power ${activePower} W`);
-  }
-
-  if (totalGas) {
-    detailsParts.push(`gas ${totalGas} m3`);
-  }
-
-  if (firmwareVersion) {
-    detailsParts.push(`firmware ${firmwareVersion}`);
-  }
-
-  if (serial) {
-    detailsParts.push(`serial ${serial}`);
-  }
-
-  const device = {
-    category: signature.category,
-    model: signature.model,
-    name: signature.name,
+  const device = plugin.buildDiscoveredDevice({
     ipAddress,
-    details: detailsParts.join(", "),
-    powerW: parseNullableNumber(supplemental?.active_power_w),
-    socPercent: null,
-    state: supplemental ? ("connected" as const) : null,
-  };
+    responseText,
+    supplementalResponseText: supplementalPayload?.responseText ?? null,
+  });
 
   return {
     ...device,
     discoveryId: getDiscoveryId(device),
   };
-}
-
-function buildIndevoltDiscoveredDevice(
-  signature: DiscoverySignatureDefinition,
-  ipAddress: string,
-  responseText: string,
-): DiscoveredDevice {
-  const payload = parseJsonObject(responseText);
-  const serial = getStringValue(payload?.["0"]);
-  const firmwareVersion = getStringValue(payload?.["1118"]);
-  const batteryPower = getStringOrNumber(payload?.["6000"]);
-  const batteryState = formatIndevoltBatteryState(payload?.["6001"]);
-  const batterySoc = getStringOrNumber(payload?.["6002"]);
-  const workMode = formatIndevoltWorkMode(payload?.["7101"]);
-  const detailsParts = batterySoc
-    ? [`SOC ${batterySoc}%`]
-    : ["fingerprint matched"];
-
-  if (batteryPower) {
-    detailsParts.push(`power ${batteryPower} W`);
-  }
-
-  if (batteryState) {
-    detailsParts.push(`state ${batteryState}`);
-  }
-
-  if (workMode) {
-    detailsParts.push(`mode ${workMode}`);
-  }
-
-  if (firmwareVersion) {
-    detailsParts.push(`EMS firmware ${firmwareVersion}`);
-  }
-
-  if (serial) {
-    detailsParts.push(`serial ${serial}`);
-  }
-
-  const device = {
-    category: signature.category,
-    model: signature.model,
-    name: signature.name,
-    ipAddress,
-    details: detailsParts.join(", "),
-    powerW: parseNullableNumber(payload?.["6000"]),
-    socPercent: parseNullableNumber(payload?.["6002"]),
-    state: parseIndevoltBatteryState(payload?.["6001"]),
-  };
-
-  return {
-    ...device,
-    discoveryId: getDiscoveryId(device),
-  };
-}
-
-function parseBatteryTelemetry(responseText: string): BatteryTelemetrySample {
-  const payload = parseJsonObject(responseText);
-
-  return {
-    powerW: parseNullableNumber(payload?.["6000"]),
-    socPercent: parseNullableNumber(payload?.["6002"]),
-    state: parseIndevoltBatteryState(payload?.["6001"]),
-  };
-}
-
-function parseMeterTelemetry(responseText: string): MeterTelemetrySample {
-  const payload = parseJsonObject(responseText);
-  return {
-    gasM3: parseNullableNumber(payload?.total_gas_m3),
-    powerW: parseNullableNumber(payload?.active_power_w),
-    state: payload ? "connected" : "offline",
-  };
-}
-
-function parseJsonObject(responseText: string): Record<string, unknown> | null {
-  let parsed: unknown;
-
-  try {
-    parsed = JSON.parse(responseText) as unknown;
-  } catch {
-    return null;
-  }
-
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    return null;
-  }
-
-  return parsed as Record<string, unknown>;
-}
-
-function getStringValue(value: unknown): string | null {
-  return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function getStringOrNumber(value: unknown): string | null {
-  if (typeof value === "string" && value.length > 0) {
-    return value;
-  }
-
-  if (typeof value === "number") {
-    return String(value);
-  }
-
-  return null;
-}
-
-function parseNullableNumber(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-
-  if (typeof value === "string" && value.trim().length > 0) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-
-  return null;
-}
-
-function parseIndevoltBatteryState(value: unknown): ManagedDeviceState {
-  const state = formatIndevoltBatteryState(value);
-
-  if (state === "idle" || state === "charging" || state === "discharging") {
-    return state;
-  }
-
-  return "offline";
-}
-
-function formatIndevoltBatteryState(value: unknown): string | null {
-  const stateCode = getStringOrNumber(value);
-
-  switch (stateCode) {
-    case "1000":
-      return "idle";
-    case "1001":
-      return "charging";
-    case "1002":
-      return "discharging";
-    default:
-      return stateCode ? `code ${stateCode}` : null;
-  }
-}
-
-function formatIndevoltWorkMode(value: unknown): string | null {
-  const modeCode = getStringOrNumber(value);
-
-  switch (modeCode) {
-    case "1":
-      return "self-consumption";
-    case "4":
-      return "real-time control";
-    case "5":
-      return "charge/discharge schedule";
-    default:
-      return modeCode ? `code ${modeCode}` : null;
-  }
 }
 
 function compareDiscoveredDevices(

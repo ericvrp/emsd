@@ -47,12 +47,49 @@ test("battery commands require a persisted site and use it for CRUD", async () =
     const created = JSON.parse(output[1] ?? "{}");
     expect(created.id).toBe(discoveryId);
     expect(created.status).toBe("charging");
+    expect(created.strategyMode).toBe("manual");
+    expect(created.manualState).toBe("charging");
+    expect(created.manualPowerW).toBe(900);
     expect(output[2]).toContain(
-      "DISCOVERY ID | NAME | STATUS | ENABLED | CONNECTED | MODEL | IP ADDRESS | UPDATED AT",
+      "BATTERY ID | NAME | STATUS | STRATEGY | MANUAL STATE | MANUAL W | ENABLED | CONNECTED | MODEL | IP ADDRESS | UPDATED AT",
     );
     expect(output[2]).toContain(
-      `${created.id} | Indevolt Battery | charging | yes | yes`,
+      `${created.id} | Indevolt Battery | charging | manual | charging | 900 | yes | yes`,
     );
+
+    await expect(
+      runEms([
+        "battery",
+        "strategy",
+        "set",
+        created.id,
+        "--site-id",
+        "home",
+        "--mode",
+        "self-consumption",
+      ]),
+    ).resolves.toBe(0);
+    await expect(
+      runEms(["battery", "strategy", "get", created.id, "--site-id", "home"]),
+    ).resolves.toBe(0);
+    await expect(
+      runEms([
+        "battery",
+        "strategy",
+        "set",
+        created.id,
+        "--site-id",
+        "home",
+        "--mode",
+        "manual",
+        "--state",
+        "discharging",
+        "--power",
+        "2400",
+        "--target-soc",
+        "15",
+      ]),
+    ).resolves.toBe(0);
 
     await expect(
       runEms(["battery", "disable", created.id, "--site-id", "home"]),
@@ -64,10 +101,19 @@ test("battery commands require a persisted site and use it for CRUD", async () =
       runEms(["battery", "delete", created.id, "--site-id", "home"]),
     ).resolves.toBe(0);
 
-    const disabled = JSON.parse(output[3] ?? "{}");
-    const enabled = JSON.parse(output[4] ?? "{}");
-    const removed = JSON.parse(output[5] ?? "{}");
+    const selfConsumption = JSON.parse(output[3] ?? "{}");
+    const strategyGet = JSON.parse(output[4] ?? "{}");
+    const manual = JSON.parse(output[5] ?? "{}");
+    const disabled = JSON.parse(output[6] ?? "{}");
+    const enabled = JSON.parse(output[7] ?? "{}");
+    const removed = JSON.parse(output[8] ?? "{}");
 
+    expect(selfConsumption.strategyMode).toBe("self-consumption");
+    expect(strategyGet.strategyMode).toBe("self-consumption");
+    expect(manual.strategyMode).toBe("manual");
+    expect(manual.manualState).toBe("discharging");
+    expect(manual.manualPowerW).toBe(2400);
+    expect(manual.manualTargetSoc).toBe(15);
     expect(disabled.enabled).toBe(false);
     expect(enabled.enabled).toBe(true);
     expect(removed.id).toBe(created.id);
@@ -96,11 +142,12 @@ test("battery list reports no batteries for an older battery table schema", asyn
     CREATE TABLE sites (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
+      location TEXT NOT NULL,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
-    INSERT INTO sites (id, name, created_at, updated_at)
-    VALUES ('home', 'Home', '2024-01-01T00:00:00.000Z', '2024-01-01T00:00:00.000Z');
+    INSERT INTO sites (id, name, location, created_at, updated_at)
+    VALUES ('home', 'Home', '52.367600, 4.904100', '2024-01-01T00:00:00.000Z', '2024-01-01T00:00:00.000Z');
     CREATE TABLE batteries (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -225,11 +272,12 @@ test("battery add reports an outdated battery table schema", async () => {
     CREATE TABLE sites (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
+      location TEXT NOT NULL,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
-    INSERT INTO sites (id, name, created_at, updated_at)
-    VALUES ('home', 'Home', '2024-01-01T00:00:00.000Z', '2024-01-01T00:00:00.000Z');
+    INSERT INTO sites (id, name, location, created_at, updated_at)
+    VALUES ('home', 'Home', '52.367600, 4.904100', '2024-01-01T00:00:00.000Z', '2024-01-01T00:00:00.000Z');
     CREATE TABLE batteries (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -349,6 +397,21 @@ function mockBatteryFetch(): typeof fetch {
         }),
         { status: 200 },
       );
+    }
+
+    if (
+      url ===
+        "http://192.168.1.15:8080/rpc/Indevolt.SetData?config=%7B%22f%22%3A16%2C%22t%22%3A47005%2C%22v%22%3A%5B1%5D%7D" ||
+      url ===
+        "http://192.168.1.15:8080/rpc/Indevolt.SetData?config=%7B%22f%22%3A16%2C%22t%22%3A47005%2C%22v%22%3A%5B4%5D%7D" ||
+      url ===
+        "http://192.168.1.15:8080/rpc/Indevolt.SetData?config=%7B%22f%22%3A16%2C%22t%22%3A47015%2C%22v%22%3A%5B2%5D%7D" ||
+      url ===
+        "http://192.168.1.15:8080/rpc/Indevolt.SetData?config=%7B%22f%22%3A16%2C%22t%22%3A47016%2C%22v%22%3A%5B2400%5D%7D" ||
+      url ===
+        "http://192.168.1.15:8080/rpc/Indevolt.SetData?config=%7B%22f%22%3A16%2C%22t%22%3A47017%2C%22v%22%3A%5B15%5D%7D"
+    ) {
+      return new Response(JSON.stringify({ result: true }), { status: 200 });
     }
 
     throw new Error(`Unexpected URL: ${url}`);

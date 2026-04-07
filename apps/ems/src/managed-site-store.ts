@@ -1,8 +1,10 @@
 import { Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
 import {
+  type BatteryManualState,
   type BatteryRecord,
   type BatteryStatus,
+  type BatteryStrategyMode,
   type DynamicPriceSourceRecord,
   type MeterRecord,
   type SiteRecord,
@@ -11,7 +13,7 @@ import {
   getDatabasePath,
 } from "@emsd/core";
 
-const SITE_REQUIRED_COLUMNS = ["id", "name", "created_at", "updated_at"];
+const SITE_REQUIRED_COLUMNS = ["id", "name", "location", "created_at", "updated_at"];
 const BATTERY_REQUIRED_COLUMNS = [
   "id",
   "site_id",
@@ -22,6 +24,10 @@ const BATTERY_REQUIRED_COLUMNS = [
   "enabled",
   "status",
   "connected",
+  "strategy_mode",
+  "manual_state",
+  "manual_power_w",
+  "manual_target_soc",
   "updated_at",
 ];
 const METER_REQUIRED_COLUMNS = [
@@ -45,6 +51,7 @@ const DYNAMIC_PRICE_SOURCE_REQUIRED_COLUMNS = [
 
 interface SiteRow {
   id: string;
+  location: string;
   name: string;
   created_at: string;
   updated_at: string;
@@ -60,6 +67,10 @@ interface BatteryRow {
   enabled: number;
   status: BatteryStatus;
   connected: number;
+  strategy_mode: BatteryStrategyMode | "self-consumption";
+  manual_state: BatteryManualState | null;
+  manual_power_w: number | null;
+  manual_target_soc: number | null;
   updated_at: string;
 }
 
@@ -90,7 +101,18 @@ interface CreateBatteryInput {
   ipAddress: string;
   enabled?: boolean;
   connected?: boolean;
-  status?: BatteryStatus;
+    status?: BatteryStatus;
+    strategyMode?: BatteryStrategyMode;
+  manualState?: BatteryManualState | null;
+  manualPowerW?: number | null;
+  manualTargetSoc?: number | null;
+}
+
+interface UpdateBatteryStrategyInput {
+  strategyMode: BatteryStrategyMode;
+  manualState?: BatteryManualState | null;
+  manualPowerW?: number | null;
+  manualTargetSoc?: number | null;
 }
 
 interface CreateMeterInput {
@@ -105,10 +127,12 @@ interface CreateMeterInput {
 
 interface CreateSiteInput {
   id: string;
+  location?: string;
   name: string;
 }
 
 interface UpdateSiteInput {
+  location?: string;
   name: string;
 }
 
@@ -139,7 +163,7 @@ export function listSites(databasePath = getDatabasePath()): SiteRecord[] {
     return db
       .query<SiteRow, []>(
         `
-          SELECT id, name, created_at, updated_at
+          SELECT id, name, location, created_at, updated_at
           FROM sites
           ORDER BY name ASC, id ASC
         `,
@@ -166,12 +190,13 @@ export function createSite(
     }
 
     const now = new Date().toISOString();
+    const location = normalizeSiteLocation(input.location);
     db.query(
       `
-        INSERT INTO sites (id, name, created_at, updated_at)
-        VALUES (?1, ?2, ?3, ?4)
+        INSERT INTO sites (id, name, location, created_at, updated_at)
+        VALUES (?1, ?2, ?3, ?4, ?5)
       `,
-    ).run(input.id, input.name, now, now);
+    ).run(input.id, input.name, location, now, now);
 
     return getSiteByIdOrThrow(db, input.id);
   } finally {
@@ -193,13 +218,18 @@ export function updateSite(
       return null;
     }
 
+    const location =
+      input.location === undefined
+        ? getSiteByIdOrThrow(db, siteId).location
+        : normalizeSiteLocation(input.location);
+
     db.query(
       `
         UPDATE sites
-        SET name = ?2, updated_at = ?3
+        SET name = ?2, location = ?3, updated_at = ?4
         WHERE id = ?1
       `,
-    ).run(siteId, input.name, new Date().toISOString());
+    ).run(siteId, input.name, location, new Date().toISOString());
 
     return getSiteByIdOrThrow(db, siteId);
   } finally {
@@ -335,8 +365,12 @@ export function createBattery(
           enabled,
           status,
           connected,
+          strategy_mode,
+          manual_state,
+          manual_power_w,
+          manual_target_soc,
           updated_at
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
       `,
     ).run(
       input.id,
@@ -348,6 +382,10 @@ export function createBattery(
       input.enabled === false ? 0 : 1,
       input.status ?? "idle",
       input.connected === false ? 0 : 1,
+      input.strategyMode ?? "self-consumption",
+      input.manualState ?? input.status ?? "idle",
+      input.manualPowerW ?? null,
+      input.manualTargetSoc ?? 100,
       now,
     );
 
@@ -429,6 +467,81 @@ export function setBatteryEnabled(
         WHERE id = ?1 AND site_id = ?4
       `,
     ).run(id, enabled ? 1 : 0, new Date().toISOString(), siteId);
+
+    return getBatteryByIdOrThrow(db, id, siteId);
+  } finally {
+    db.close();
+  }
+}
+
+export function getBattery(
+  id: string,
+  siteId: string,
+  databasePath = getDatabasePath(),
+): BatteryRecord | null {
+  assertKnownSiteId(siteId, databasePath);
+
+  if (!existsSync(databasePath)) {
+    return null;
+  }
+
+  const db = new Database(databasePath, { readonly: true });
+
+  try {
+    if (
+      !hasTable(db, "batteries") ||
+      !hasColumns(db, "batteries", BATTERY_REQUIRED_COLUMNS)
+    ) {
+      return null;
+    }
+
+    return getBatteryById(db, id, siteId);
+  } finally {
+    db.close();
+  }
+}
+
+export function setBatteryStrategy(
+  id: string,
+  input: UpdateBatteryStrategyInput,
+  siteId: string,
+  databasePath = getDatabasePath(),
+): BatteryRecord | null {
+  assertKnownSiteId(siteId, databasePath);
+  const db = openWritableDatabase(databasePath);
+
+  try {
+    assertWritableSchema(
+      db,
+      databasePath,
+      "batteries",
+      BATTERY_REQUIRED_COLUMNS,
+    );
+
+    if (!getBatteryById(db, id, siteId)) {
+      return null;
+    }
+
+    db.query(
+      `
+        UPDATE batteries
+        SET
+          strategy_mode = ?2,
+          manual_state = ?3,
+          manual_power_w = ?4,
+          manual_target_soc = ?5,
+          updated_at = ?6
+        WHERE id = ?1 AND site_id = ?7
+      `,
+    ).run(
+      id,
+      input.strategyMode,
+      input.manualState ?? null,
+      input.manualPowerW ?? null,
+      input.manualTargetSoc ?? null,
+      new Date().toISOString(),
+      siteId,
+    );
 
     return getBatteryByIdOrThrow(db, id, siteId);
   } finally {
@@ -786,10 +899,12 @@ function ensureSchema(db: Database): void {
     CREATE TABLE IF NOT EXISTS sites (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
+      location TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
   `);
+  ensureSiteColumns(db);
   db.exec(`
     CREATE TABLE IF NOT EXISTS batteries (
       id TEXT PRIMARY KEY,
@@ -801,11 +916,16 @@ function ensureSchema(db: Database): void {
       enabled INTEGER NOT NULL,
       status TEXT NOT NULL,
       connected INTEGER NOT NULL,
+      strategy_mode TEXT NOT NULL DEFAULT 'self-consumption',
+      manual_state TEXT,
+      manual_power_w REAL,
+      manual_target_soc REAL,
       updated_at TEXT NOT NULL,
       FOREIGN KEY(site_id) REFERENCES sites(id),
       UNIQUE(site_id, model, ip_address)
     );
   `);
+  ensureBatteryColumns(db);
   db.exec(`
     CREATE TABLE IF NOT EXISTS meters (
       id TEXT PRIMARY KEY,
@@ -853,6 +973,79 @@ function assertSiteSchema(db: Database, databasePath: string): void {
       `Database schema is outdated at ${databasePath}: table 'sites' is missing ${formatColumnList(missingColumns)}. Remove the database file and let the daemon recreate it.`,
     );
   }
+}
+
+function ensureBatteryColumns(db: Database): void {
+  if (!hasTable(db, "batteries")) {
+    return;
+  }
+
+  const columns = getTableColumns(db, "batteries");
+
+  if (!columns.includes("strategy_mode")) {
+    db.exec(
+      "ALTER TABLE batteries ADD COLUMN strategy_mode TEXT NOT NULL DEFAULT 'self-consumption';",
+    );
+  }
+
+  if (!columns.includes("manual_state")) {
+    db.exec("ALTER TABLE batteries ADD COLUMN manual_state TEXT;");
+  }
+
+  if (!columns.includes("manual_power_w")) {
+    db.exec("ALTER TABLE batteries ADD COLUMN manual_power_w REAL;");
+  }
+
+  if (!columns.includes("manual_target_soc")) {
+    db.exec("ALTER TABLE batteries ADD COLUMN manual_target_soc REAL;");
+    db.exec(
+      "UPDATE batteries SET manual_target_soc = 100 WHERE manual_target_soc IS NULL;",
+    );
+  }
+}
+
+function ensureSiteColumns(db: Database): void {
+  if (!hasTable(db, "sites")) {
+    return;
+  }
+
+  const columns = getTableColumns(db, "sites");
+
+  if (!columns.includes("location")) {
+    db.exec("ALTER TABLE sites ADD COLUMN location TEXT NOT NULL DEFAULT '';");
+  }
+}
+
+function normalizeSiteLocation(location: string | undefined): string {
+  if (location === undefined) {
+    return "";
+  }
+
+  const matched = location
+    .trim()
+    .match(/^([+-]?\d+(?:\.\d+)?)\s*,\s*([+-]?\d+(?:\.\d+)?)$/);
+
+  if (!matched) {
+    throw new Error(
+      "Site location must be a GPS coordinate in 'latitude, longitude' format.",
+    );
+  }
+
+  const latitude = Number(matched[1]);
+  const longitude = Number(matched[2]);
+
+  if (
+    !Number.isFinite(latitude) ||
+    !Number.isFinite(longitude) ||
+    latitude < -90 ||
+    latitude > 90 ||
+    longitude < -180 ||
+    longitude > 180
+  ) {
+    throw new Error("Site location is outside valid GPS bounds.");
+  }
+
+  return `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
 }
 
 function getLinkedSiteTable(db: Database, siteId: string): string | null {
@@ -932,7 +1125,21 @@ function readBatteries(db: Database, siteId: string): BatteryRecord[] {
   return db
     .query<BatteryRow, [string]>(
       `
-        SELECT id, site_id, name, adapter, model, ip_address, enabled, status, connected, updated_at
+        SELECT
+          id,
+          site_id,
+          name,
+          adapter,
+          model,
+          ip_address,
+          enabled,
+          status,
+          connected,
+          strategy_mode,
+          manual_state,
+          manual_power_w,
+          manual_target_soc,
+          updated_at
         FROM batteries
         WHERE site_id = ?1
         ORDER BY name ASC, id ASC
@@ -980,7 +1187,7 @@ function getSiteById(db: Database, siteId: string): SiteRecord | null {
   const row = db
     .query<SiteRow, [string]>(
       `
-        SELECT id, name, created_at, updated_at
+        SELECT id, name, location, created_at, updated_at
         FROM sites
         WHERE id = ?1
       `,
@@ -998,7 +1205,21 @@ function getBatteryById(
   const row = db
     .query<BatteryRow, [string, string]>(
       `
-        SELECT id, site_id, name, adapter, model, ip_address, enabled, status, connected, updated_at
+        SELECT
+          id,
+          site_id,
+          name,
+          adapter,
+          model,
+          ip_address,
+          enabled,
+          status,
+          connected,
+          strategy_mode,
+          manual_state,
+          manual_power_w,
+          manual_target_soc,
+          updated_at
         FROM batteries
         WHERE id = ?1 AND site_id = ?2
       `,
@@ -1101,6 +1322,7 @@ function getSourceByIdOrThrow(
 function mapSiteRow(row: SiteRow): SiteRecord {
   return {
     id: row.id,
+    location: row.location,
     name: row.name,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -1118,6 +1340,10 @@ function mapBatteryRow(row: BatteryRow): BatteryRecord {
     enabled: row.enabled === 1,
     status: row.status,
     connected: row.connected === 1,
+    strategyMode: row.strategy_mode,
+    manualState: row.manual_state,
+    manualPowerW: row.manual_power_w,
+    manualTargetSoc: row.manual_target_soc,
     updatedAt: row.updated_at,
   };
 }

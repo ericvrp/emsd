@@ -31,10 +31,10 @@ const DISCOVERY_CACHE_PREFIX = "emsd-discovery:";
 const DISCOVERY_CACHE_VERSION = 2;
 
 const primaryButtonClass =
-  "inline-flex items-center justify-center rounded-2xl bg-gradient-to-r from-indigo-500 via-cyan-500 to-emerald-400 px-4 py-2.5 text-sm font-semibold text-slate-950 shadow-[0_18px_50px_rgba(6,182,212,0.18)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60";
+  "inline-flex h-9 items-center justify-center rounded-md bg-gradient-to-r from-indigo-500 via-cyan-500 to-emerald-400 px-4 text-sm font-medium text-slate-950 shadow-[0_18px_50px_rgba(6,182,212,0.18)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60";
 
 const secondaryButtonClass =
-  "inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/6 px-4 py-2.5 text-sm font-semibold text-slate-100 transition hover:border-white/20 hover:bg-white/10";
+  "inline-flex h-9 items-center justify-center rounded-md border border-white/10 bg-white/6 px-4 text-sm font-medium text-slate-100 transition hover:border-white/20 hover:bg-white/10";
 
 export function DiscoveryPanel({
   existingDeviceIds,
@@ -322,7 +322,7 @@ function DiscoveryDeviceCard({
       <div className="mt-4">
         {alreadyAdded ? (
           <button
-            className="inline-flex w-full items-center justify-center rounded-2xl border border-white/10 bg-white/6 px-4 py-2.5 text-sm font-semibold text-slate-300"
+            className="inline-flex h-9 w-full items-center justify-center rounded-md border border-white/10 bg-white/6 px-4 text-sm font-medium text-slate-300"
             disabled
             type="button"
           >

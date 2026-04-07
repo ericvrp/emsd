@@ -112,11 +112,11 @@ export function discoverDevices(
   return runBridge<DiscoveredDevice[]>("discover", { host });
 }
 
-export function createSite(input: { id: string; name: string }) {
+export function createSite(input: { id: string; location: string; name: string }) {
   return runBridge<SiteRecord>("site-create", input);
 }
 
-export function updateSite(input: { id: string; name: string }) {
+export function updateSite(input: { id: string; location: string; name: string }) {
   return runBridge<SiteRecord>("site-update", input);
 }
 
@@ -142,6 +142,17 @@ export function setBatteryEnabled(input: {
 
 export function deleteBattery(input: { id: string; siteId: string }) {
   return runBridge<ManagedDeviceRecord>("battery-delete", input);
+}
+
+export function setBatteryStrategy(input: {
+  id: string;
+  manualPowerW: number | null;
+  manualState: "idle" | "charging" | "discharging" | null;
+  manualTargetSoc: number | null;
+  siteId: string;
+  strategyMode: "auto" | "manual" | "self-consumption";
+}) {
+  return runBridge<ManagedDeviceRecord>("battery-set-strategy", input);
 }
 
 export function createMeterFromDiscovery(input: {

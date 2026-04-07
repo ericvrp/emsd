@@ -6,10 +6,8 @@ import {
   getDaemonLockPath,
   getDatabasePath,
 } from "@emsd/core";
-import {
-  fetchBatteryTelemetry,
-  fetchMeterTelemetry,
-} from "../../ems/src/discover";
+import { createBatteryAdapter } from "../../ems/src/battery-adapters";
+import { fetchMeterTelemetry } from "../../ems/src/discover";
 import {
   openDaemonDatabase,
   readBatteries,
@@ -82,14 +80,14 @@ function main(): void {
 
       await Promise.all([
         ...polledBatteries.map(async (battery) => {
-          const sample = await fetchBatteryTelemetry(battery.ipAddress).catch(
-            (error: unknown) => {
+          const sample = await createBatteryAdapter(battery)
+            .getNormalizedInfo()
+            .catch((error: unknown) => {
               console.error(
                 `[${new Date().toISOString()}] battery telemetry poll failed for ${battery.id} at ${battery.ipAddress}: ${error instanceof Error ? error.message : String(error)}`,
               );
               return null;
-            },
-          );
+            });
 
           if (!sample) {
             return;
@@ -99,10 +97,10 @@ function main(): void {
             deviceId: battery.id,
             siteId: battery.siteId,
             kind: "battery",
-            powerW: sample.powerW,
+            powerW: sample.currentW,
             socPercent: sample.socPercent,
             gasM3: null,
-            state: sample.state,
+            state: sample.status,
             observedAt: new Date().toISOString(),
           } satisfies ManagedDeviceTelemetryRecord);
         }),

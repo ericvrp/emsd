@@ -1,6 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import {
+  type BatteryManualState,
   type BatteryRecord,
+  type BatteryStrategyMode,
   type DynamicPriceSourceRecord,
   type ManagedDeviceRecord,
   type ManagedDeviceStatusRecord,
@@ -14,6 +16,7 @@ import {
   openDaemonDatabase,
   readManagedDeviceTelemetry,
 } from "../../daemon/src/database";
+import { createBatteryAdapter } from "../../ems/src/battery-adapters";
 import {
   type DiscoveredDevice,
   discoverDevices,
@@ -31,12 +34,14 @@ import {
   deleteMeter,
   deleteSite,
   deleteWeatherForecastSource,
+  getBattery,
   listBatteries,
   listDynamicPriceSources,
   listMeters,
   listSites,
   listWeatherForecastSources,
   setBatteryEnabled,
+  setBatteryStrategy,
   setMeterEnabled,
   updateDynamicPriceSource,
   updateSite,
@@ -104,6 +109,31 @@ function inferBatteryStatus(details: string): BatteryRecord["status"] {
   return "idle";
 }
 
+function inferBatteryStrategyMode(details: string): BatteryStrategyMode {
+  const matchedMode = details.match(/mode\s+([^,]+)/i)?.[1]?.trim();
+
+  if (matchedMode === "self-consumption") {
+    return "self-consumption";
+  }
+
+  if (matchedMode === "real-time control") {
+    return "manual";
+  }
+
+  return "auto";
+}
+
+function inferBatteryPowerW(details: string): number | null {
+  const matchedPower = details.match(/power\s+(-?\d+)\s*W/i)?.[1];
+
+  if (!matchedPower) {
+    return null;
+  }
+
+  const parsed = Number(matchedPower);
+  return Number.isFinite(parsed) ? Math.abs(parsed) : null;
+}
+
 function getExistingManagedDeviceIds(siteId: string): Set<string> {
   return new Set([
     ...listBatteries(siteId).map((battery) => battery.id),
@@ -124,7 +154,14 @@ function createManagedBatteryFromDiscovered(
       ipAddress: discovered.ipAddress,
       model: discovered.model,
       name: discovered.name,
+      manualPowerW: inferBatteryPowerW(discovered.details),
+      manualState:
+        inferBatteryStatus(discovered.details) === "offline"
+          ? "idle"
+          : (inferBatteryStatus(discovered.details) as BatteryManualState),
+      manualTargetSoc: 100,
       status: inferBatteryStatus(discovered.details),
+      strategyMode: inferBatteryStrategyMode(discovered.details),
     },
     siteId,
   );
@@ -162,6 +199,12 @@ function toManagedDeviceRecord(
       enabled: record.enabled,
       connected: record.connected,
       state: record.connected ? record.status : "offline",
+      batteryStrategy: {
+        manualPowerW: record.manualPowerW,
+        manualState: record.manualState,
+        manualTargetSoc: record.manualTargetSoc,
+        strategyMode: record.strategyMode,
+      },
       note: record.adapter,
       updatedAt: record.updatedAt,
     };
@@ -177,6 +220,7 @@ function toManagedDeviceRecord(
     enabled: record.enabled,
     connected: record.connected,
     state: record.connected ? "connected" : "offline",
+    batteryStrategy: null,
     note: record.details || null,
     updatedAt: record.updatedAt,
   };
@@ -322,10 +366,11 @@ async function run(): Promise<void> {
     }
 
     case "site-create": {
-      const input = readInput<{ id?: string; name?: string }>();
+      const input = readInput<{ id?: string; location?: string; name?: string }>();
       succeed(
         createSite({
           id: requireString(input.id, "id"),
+          location: requireString(input.location, "location"),
           name: requireString(input.name, "name"),
         }),
       );
@@ -333,8 +378,9 @@ async function run(): Promise<void> {
     }
 
     case "site-update": {
-      const input = readInput<{ id?: string; name?: string }>();
+      const input = readInput<{ id?: string; location?: string; name?: string }>();
       const site = updateSite(requireString(input.id, "id"), {
+        location: requireString(input.location, "location"),
         name: requireString(input.name, "name"),
       });
 
@@ -403,6 +449,65 @@ async function run(): Promise<void> {
       }
 
       succeed(toManagedDeviceRecord(battery));
+      return;
+    }
+
+    case "battery-set-strategy": {
+      const input = readInput<{
+        id?: string;
+        manualPowerW?: number | null;
+        manualState?: BatteryManualState | null;
+        manualTargetSoc?: number | null;
+        siteId?: string;
+        strategyMode?: BatteryStrategyMode;
+      }>();
+      const batteryId = requireString(input.id, "id");
+      const siteId = requireString(input.siteId, "siteId");
+      const existing = getBattery(batteryId, siteId);
+
+      if (!existing) {
+        throw new Error(`Managed battery not found: ${batteryId}`);
+      }
+
+      const strategyMode =
+        input.strategyMode === "manual" ||
+        input.strategyMode === "self-consumption" ||
+        input.strategyMode === "auto"
+          ? input.strategyMode
+          : existing.strategyMode;
+      const manualState = input.manualState ?? existing.manualState;
+      const manualPowerW =
+        typeof input.manualPowerW === "number"
+          ? input.manualPowerW
+          : existing.manualPowerW;
+      const manualTargetSoc =
+        typeof input.manualTargetSoc === "number"
+          ? input.manualTargetSoc
+          : existing.manualTargetSoc;
+
+      await createBatteryAdapter(existing).setStrategy({
+        strategyMode,
+        manualPowerW,
+        manualState,
+        manualTargetSoc,
+      });
+
+      const updated = setBatteryStrategy(
+        batteryId,
+        {
+          manualPowerW,
+          manualState,
+          manualTargetSoc,
+          strategyMode,
+        },
+        siteId,
+      );
+
+      if (!updated) {
+        throw new Error(`Managed battery not found: ${batteryId}`);
+      }
+
+      succeed(toManagedDeviceRecord(updated));
       return;
     }
 

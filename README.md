@@ -132,3 +132,4 @@ bun run daemon:stop
 - Shared reusable domain types belong in `packages/core`.
 
 See `plans/EMSD-plan.md` for the broader product direction and intended delivery phases.
+See `docs/README.md` for the documentation index, including plugin authoring guides.

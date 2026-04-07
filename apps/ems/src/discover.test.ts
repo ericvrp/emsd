@@ -13,9 +13,10 @@ import {
   runDiscoverCommand,
 } from "./discover";
 
-test("getDiscoverySignatures exposes the JSON discovery catalog", () => {
+test("getDiscoverySignatures exposes the discovery plugin catalog", () => {
   expect(getDiscoverySignatures()).toEqual([
     {
+      pluginType: "battery",
       category: "battery",
       model: "indevolt-battery",
       name: "Indevolt Battery",
@@ -38,6 +39,7 @@ test("getDiscoverySignatures exposes the JSON discovery catalog", () => {
       },
     },
     {
+      pluginType: "meter",
       category: "meter",
       model: "homewizard-p1",
       name: "HomeWizard P1",

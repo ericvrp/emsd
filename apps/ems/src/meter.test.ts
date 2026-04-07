@@ -222,11 +222,12 @@ test("meter add reports an outdated meter table schema", async () => {
     CREATE TABLE sites (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
+      location TEXT NOT NULL,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
-    INSERT INTO sites (id, name, created_at, updated_at)
-    VALUES ('home', 'Home', '2024-01-01T00:00:00.000Z', '2024-01-01T00:00:00.000Z');
+    INSERT INTO sites (id, name, location, created_at, updated_at)
+    VALUES ('home', 'Home', '52.367600, 4.904100', '2024-01-01T00:00:00.000Z', '2024-01-01T00:00:00.000Z');
     CREATE TABLE meters (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,

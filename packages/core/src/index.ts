@@ -6,6 +6,25 @@ export const EMSD_NAME = "EMSD";
 
 export type BatteryStatus = "idle" | "charging" | "discharging" | "offline";
 
+export type BatteryStrategyMode = "auto" | "manual" | "self-consumption";
+
+export type BatteryManualState = "idle" | "charging" | "discharging";
+
+export interface BatteryStrategyRecord {
+  strategyMode: BatteryStrategyMode;
+  manualPowerW: number | null;
+  manualState: BatteryManualState | null;
+  manualTargetSoc: number | null;
+}
+
+export interface NormalizedBatteryInfo extends BatteryStrategyRecord {
+  currentW: number | null;
+  model: string;
+  name: string;
+  socPercent: number | null;
+  status: BatteryStatus;
+}
+
 export type DiscoveryCategory = "battery" | "meter";
 
 export interface DiscoverReportDevice {
@@ -19,6 +38,7 @@ export interface DiscoverReportDevice {
 
 export interface SiteRecord {
   id: string;
+  location: string;
   name: string;
   createdAt: string;
   updatedAt: string;
@@ -122,7 +142,7 @@ export const discoverReportJsonSchema = {
   },
 } as const;
 
-export interface BatteryRecord {
+export interface BatteryRecord extends BatteryStrategyRecord {
   id: string;
   siteId: string;
   name: string;
@@ -166,6 +186,7 @@ export interface ManagedDeviceRecord {
   enabled: boolean;
   connected: boolean;
   state: ManagedDeviceState;
+  batteryStrategy: BatteryStrategyRecord | null;
   note: string | null;
   updatedAt: string;
 }

@@ -10,6 +10,7 @@ import {
 
 interface SiteRow {
   id: string;
+  location: string;
   name: string;
   created_at: string;
   updated_at: string;
@@ -25,6 +26,10 @@ interface BatteryRow {
   enabled: number;
   status: BatteryRecord["status"];
   connected: number;
+  strategy_mode: BatteryRecord["strategyMode"] | "self-consumption";
+  manual_state: BatteryRecord["manualState"];
+  manual_power_w: BatteryRecord["manualPowerW"];
+  manual_target_soc: BatteryRecord["manualTargetSoc"];
   updated_at: string;
 }
 
@@ -61,10 +66,12 @@ export function openDaemonDatabase(databasePath = getDatabasePath()): Database {
     CREATE TABLE IF NOT EXISTS sites (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
+      location TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
   `);
+  ensureSiteColumns(db);
   db.exec(`
     CREATE TABLE IF NOT EXISTS batteries (
       id TEXT PRIMARY KEY,
@@ -76,11 +83,16 @@ export function openDaemonDatabase(databasePath = getDatabasePath()): Database {
       enabled INTEGER NOT NULL,
       status TEXT NOT NULL,
       connected INTEGER NOT NULL,
+      strategy_mode TEXT NOT NULL DEFAULT 'self-consumption',
+      manual_state TEXT,
+      manual_power_w REAL,
+      manual_target_soc REAL,
       updated_at TEXT NOT NULL,
       FOREIGN KEY(site_id) REFERENCES sites(id),
       UNIQUE(site_id, model, ip_address)
     );
   `);
+  ensureBatteryColumns(db);
   db.exec(`
     CREATE TABLE IF NOT EXISTS meters (
       id TEXT PRIMARY KEY,
@@ -135,7 +147,7 @@ export function readSites(db: Database): SiteRecord[] {
   const rows = db
     .query<SiteRow, []>(
       `
-        SELECT id, name, created_at, updated_at
+        SELECT id, name, location, created_at, updated_at
         FROM sites
         ORDER BY name ASC
       `,
@@ -144,10 +156,22 @@ export function readSites(db: Database): SiteRecord[] {
 
   return rows.map((row) => ({
     id: row.id,
+    location: row.location,
     name: row.name,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }));
+}
+
+function ensureSiteColumns(db: Database): void {
+  const columns = db
+    .query<{ name: string }, []>("PRAGMA table_info(sites)")
+    .all()
+    .map((column) => column.name);
+
+  if (!columns.includes("location")) {
+    db.exec("ALTER TABLE sites ADD COLUMN location TEXT NOT NULL DEFAULT '';");
+  }
 }
 
 export function readBatteries(db: Database): BatteryRecord[] {
@@ -164,6 +188,10 @@ export function readBatteries(db: Database): BatteryRecord[] {
           enabled,
           status,
           connected,
+          strategy_mode,
+          manual_state,
+          manual_power_w,
+          manual_target_soc,
           updated_at
         FROM batteries
         ORDER BY name ASC
@@ -181,8 +209,40 @@ export function readBatteries(db: Database): BatteryRecord[] {
     enabled: row.enabled === 1,
     status: row.status,
     connected: row.connected === 1,
+    strategyMode: row.strategy_mode,
+    manualState: row.manual_state,
+    manualPowerW: row.manual_power_w,
+    manualTargetSoc: row.manual_target_soc,
     updatedAt: row.updated_at,
   }));
+}
+
+function ensureBatteryColumns(db: Database): void {
+  const columns = db
+    .query<{ name: string }, []>("PRAGMA table_info(batteries)")
+    .all()
+    .map((column) => column.name);
+
+  if (!columns.includes("strategy_mode")) {
+    db.exec(
+      "ALTER TABLE batteries ADD COLUMN strategy_mode TEXT NOT NULL DEFAULT 'self-consumption';",
+    );
+  }
+
+  if (!columns.includes("manual_state")) {
+    db.exec("ALTER TABLE batteries ADD COLUMN manual_state TEXT;");
+  }
+
+  if (!columns.includes("manual_power_w")) {
+    db.exec("ALTER TABLE batteries ADD COLUMN manual_power_w REAL;");
+  }
+
+  if (!columns.includes("manual_target_soc")) {
+    db.exec("ALTER TABLE batteries ADD COLUMN manual_target_soc REAL;");
+    db.exec(
+      "UPDATE batteries SET manual_target_soc = 100 WHERE manual_target_soc IS NULL;",
+    );
+  }
 }
 
 export function readMeters(db: Database): MeterRecord[] {

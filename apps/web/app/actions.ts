@@ -19,6 +19,7 @@ import {
   deleteWeatherForecastSource,
   getDashboardSnapshot,
   setBatteryEnabled,
+  setBatteryStrategy,
   setMeterEnabled,
   updateDynamicPriceSource,
   updateSite,
@@ -77,40 +78,46 @@ function buildSiteId(name: string, existingSiteIds: string[]): string {
 function redirectWithNotice(options: {
   tab?: string | null;
   notice: string;
+  path?: string;
   tone: "success" | "error";
 }): never {
   const params = new URLSearchParams();
 
   if (options.tab) {
-    params.set("tab", options.tab);
+    params.set("settings", "1");
+    params.set("settingsTab", options.tab);
   }
 
   params.set("notice", options.notice);
   params.set("tone", options.tone);
-  redirect(`/config?${params.toString()}`);
+  redirect(`${options.path ?? "/"}?${params.toString()}`);
 }
 
 async function runAction(
-  runner: () => Promise<{ notice: string; tab?: string | null }>,
+  runner: () => Promise<{ notice: string; path?: string; tab?: string | null }>,
   fallbackTab: string | null,
+  fallbackPath = "/",
 ): Promise<void> {
   await requireSession();
 
   try {
     const result = await runner();
     revalidatePath("/");
-    revalidatePath("/config");
+    revalidatePath("/status");
     const tab = result.tab === undefined ? fallbackTab : result.tab;
+    const path = result.path;
 
     redirectWithNotice(
       tab
         ? {
             notice: result.notice,
+            ...(path ? { path } : {}),
             tab,
             tone: "success",
           }
         : {
             notice: result.notice,
+            ...(path ? { path } : {}),
             tone: "success",
           },
     );
@@ -120,16 +127,18 @@ async function runAction(
     }
 
     revalidatePath("/");
-    revalidatePath("/config");
+    revalidatePath("/status");
     redirectWithNotice(
       fallbackTab
         ? {
             notice: error instanceof Error ? error.message : String(error),
+            path: fallbackPath,
             tab: fallbackTab,
             tone: "error",
           }
         : {
             notice: error instanceof Error ? error.message : String(error),
+            path: fallbackPath,
             tone: "error",
           },
     );
@@ -150,7 +159,11 @@ export async function createSiteAction(formData: FormData): Promise<void> {
       snapshot.sites.map((site) => site.id),
     );
 
-    await createSite({ id: siteId, name });
+    await createSite({
+      id: siteId,
+      location: stringValue(formData, "location"),
+      name,
+    });
     return { notice: `Created site ${siteId}.`, tab: "discover" };
   }, "site");
 }
@@ -159,7 +172,11 @@ export async function updateSiteAction(formData: FormData): Promise<void> {
   const siteId = stringValue(formData, "siteId");
 
   return runAction(async () => {
-    await updateSite({ id: siteId, name: stringValue(formData, "name") });
+    await updateSite({
+      id: siteId,
+      location: stringValue(formData, "location"),
+      name: stringValue(formData, "name"),
+    });
     return { notice: `Updated site ${siteId}.`, tab: "site" };
   }, "site");
 }
@@ -242,6 +259,57 @@ export async function deleteBatteryAction(formData: FormData): Promise<void> {
     await deleteBattery({ id: batteryId, siteId });
     return { notice: `Deleted battery ${batteryId}.`, tab: "devices" };
   }, "devices");
+}
+
+export async function setBatteryStrategyAction(
+  formData: FormData,
+): Promise<void> {
+  const siteId = stringValue(formData, "siteId");
+
+  return runAction(
+    async () => {
+      const batteryId = stringValue(formData, "batteryId");
+      const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
+      const strategyMode = stringValue(formData, "strategyMode");
+      const manualState = optionalStringValue(formData, "manualState");
+      const manualPowerRaw = optionalStringValue(formData, "manualPowerW");
+      const manualTargetSocRaw = optionalStringValue(
+        formData,
+        "manualTargetSoc",
+      );
+      await setBatteryStrategy({
+        id: batteryId,
+        manualPowerW:
+          manualPowerRaw === null || manualPowerRaw.length === 0
+            ? null
+            : Number(manualPowerRaw),
+        manualState:
+          manualState === "idle" ||
+          manualState === "charging" ||
+          manualState === "discharging"
+            ? manualState
+            : null,
+        manualTargetSoc:
+          manualTargetSocRaw === null || manualTargetSocRaw.length === 0
+            ? null
+            : Number(manualTargetSocRaw),
+        siteId,
+        strategyMode:
+          strategyMode === "manual" ||
+          strategyMode === "self-consumption" ||
+          strategyMode === "auto"
+            ? strategyMode
+            : "auto",
+      });
+      return {
+        notice: `Updated strategy for battery ${batteryId}.`,
+        path: returnPath,
+        tab: null,
+      };
+    },
+    null,
+    optionalStringValue(formData, "returnPath") ?? "/",
+  );
 }
 
 export async function createMeterFromDiscoveryAction(

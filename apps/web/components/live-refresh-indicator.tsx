@@ -5,14 +5,21 @@ import { useEffect, useState } from "react";
 
 const REFRESH_INTERVAL_MS = 5000;
 
-export function StatusAutoRefresh() {
+export function LiveRefreshIndicator({
+  generatedAt,
+}: {
+  generatedAt: string;
+}) {
   const router = useRouter();
   const [isPaused, setIsPaused] = useState(false);
 
   useEffect(() => {
+    void generatedAt;
+  }, [generatedAt]);
+
+  useEffect(() => {
     function handleVisibilityChange() {
       const isVisible = document.visibilityState === "visible";
-
       setIsPaused(!isVisible);
 
       if (isVisible) {

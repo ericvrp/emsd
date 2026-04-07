@@ -1,5 +1,13 @@
-import { redirect } from "next/navigation";
+import { StatusScreen } from "../components/status-screen";
 
-export default function HomePage() {
-  redirect("/status");
+export const dynamic = "force-dynamic";
+
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams?: SearchParams;
+}) {
+  return <StatusScreen searchParams={searchParams} />;
 }
