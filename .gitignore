@@ -10,3 +10,7 @@ var/
 *.sqlite-shm
 *.sqlite-wal
 *.tsbuildinfo
+.env
+.env.*
+!.env.example
+!apps/web/.env.example

@@ -69,7 +69,7 @@ interface DiscoverySignatureDefinition {
 
 const HOST_SCAN_START = 1;
 const HOST_SCAN_END = 254;
-const REQUEST_TIMEOUT_MS = 750;
+const REQUEST_TIMEOUT_MS = 2000;
 
 const discoverySignatures =
   discoverySignaturesJson as DiscoverySignatureDefinition[];
@@ -133,7 +133,7 @@ export function getDiscoverySignatures(): DiscoverySignatureDefinition[] {
 
 export async function fetchBatteryTelemetry(
   ipAddress: string,
-): Promise<BatteryTelemetrySample> {
+): Promise<BatteryTelemetrySample | null> {
   const signature = requireSignature("indevolt-battery");
   const response = await fetchDiscoveryResponse(
     ipAddress,
@@ -143,11 +143,7 @@ export async function fetchBatteryTelemetry(
   );
 
   if (!response) {
-    return {
-      powerW: null,
-      socPercent: null,
-      state: "offline",
-    };
+    return null;
   }
 
   return parseBatteryTelemetry(response.responseText);
@@ -155,7 +151,7 @@ export async function fetchBatteryTelemetry(
 
 export async function fetchMeterTelemetry(
   ipAddress: string,
-): Promise<MeterTelemetrySample> {
+): Promise<MeterTelemetrySample | null> {
   const signature = requireSignature("homewizard-p1");
   const response = await fetchDiscoveryResponse(
     ipAddress,
@@ -174,11 +170,7 @@ export async function fetchMeterTelemetry(
   );
 
   if (!response) {
-    return {
-      gasM3: null,
-      powerW: null,
-      state: "offline",
-    };
+    return null;
   }
 
   return parseMeterTelemetry(response.responseText);

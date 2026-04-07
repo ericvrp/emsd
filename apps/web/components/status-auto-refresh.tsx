@@ -11,7 +11,13 @@ export function StatusAutoRefresh() {
 
   useEffect(() => {
     function handleVisibilityChange() {
-      setIsPaused(document.visibilityState !== "visible");
+      const isVisible = document.visibilityState === "visible";
+
+      setIsPaused(!isVisible);
+
+      if (isVisible) {
+        router.refresh();
+      }
     }
 
     handleVisibilityChange();
@@ -20,7 +26,7 @@ export function StatusAutoRefresh() {
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     if (isPaused) {

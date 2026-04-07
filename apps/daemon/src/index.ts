@@ -18,7 +18,7 @@ import {
 } from "./database";
 
 const lockPath = getDaemonLockPath();
-const POLL_INTERVAL_MS = 15_000;
+const POLL_INTERVAL_MS = 5_000;
 
 class DaemonStartupError extends Error {}
 
@@ -83,12 +83,17 @@ function main(): void {
       await Promise.all([
         ...polledBatteries.map(async (battery) => {
           const sample = await fetchBatteryTelemetry(battery.ipAddress).catch(
-            () => ({
-              powerW: null,
-              socPercent: null,
-              state: "offline" as const,
-            }),
+            (error: unknown) => {
+              console.error(
+                `[${new Date().toISOString()}] battery telemetry poll failed for ${battery.id} at ${battery.ipAddress}: ${error instanceof Error ? error.message : String(error)}`,
+              );
+              return null;
+            },
           );
+
+          if (!sample) {
+            return;
+          }
 
           upsertManagedDeviceTelemetry(db, {
             deviceId: battery.id,
@@ -103,12 +108,17 @@ function main(): void {
         }),
         ...polledMeters.map(async (meter) => {
           const sample = await fetchMeterTelemetry(meter.ipAddress).catch(
-            () => ({
-              gasM3: null,
-              powerW: null,
-              state: "offline" as const,
-            }),
+            (error: unknown) => {
+              console.error(
+                `[${new Date().toISOString()}] meter telemetry poll failed for ${meter.id} at ${meter.ipAddress}: ${error instanceof Error ? error.message : String(error)}`,
+              );
+              return null;
+            },
           );
+
+          if (!sample) {
+            return;
+          }
 
           upsertManagedDeviceTelemetry(db, {
             deviceId: meter.id,
