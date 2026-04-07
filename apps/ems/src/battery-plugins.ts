@@ -12,10 +12,12 @@ interface BatteryStrategyCommand {
   strategyMode: BatteryStrategyMode;
   manualPowerW: number | null;
   manualState: BatteryManualState | null;
+  manualChargeTargetSoc: number | null;
+  manualDischargeTargetSoc: number | null;
   manualTargetSoc: number | null;
 }
 
-export abstract class BatteryAdapter {
+export abstract class BatteryPlugin {
   constructor(protected readonly battery: BatteryRecord) {}
 
   abstract getNormalizedInfo(): Promise<NormalizedBatteryInfo>;
@@ -27,23 +29,26 @@ export abstract class BatteryAdapter {
   }
 }
 
-export function createBatteryAdapter(battery: BatteryRecord): BatteryAdapter {
-  if (battery.adapter === "indevolt-battery") {
-    return new IndevoltBatteryAdapter(battery);
+export function createBatteryPlugin(battery: BatteryRecord): BatteryPlugin {
+  if (battery.plugin === "indevolt-battery") {
+    return new IndevoltBatteryPlugin(battery);
   }
 
-  throw new Error(`Unsupported battery adapter: ${battery.adapter}`);
+  throw new Error(`Unsupported battery plugin: ${battery.plugin}`);
 }
 
-class IndevoltBatteryAdapter extends BatteryAdapter {
+class IndevoltBatteryPlugin extends BatteryPlugin {
   async getNormalizedInfo(): Promise<NormalizedBatteryInfo> {
     const payload = await fetchIndevoltData(
       this.battery.ipAddress,
-      [6000, 6001, 6002, 7101],
+      [142, 6000, 6001, 6002, 7101],
     );
 
     return {
+      capacityWh: parseNullableKiloWattHours(payload?.["142"]),
       currentW: parseNullableNumber(payload?.["6000"]),
+      manualChargeTargetSoc: this.battery.manualChargeTargetSoc,
+      manualDischargeTargetSoc: this.battery.manualDischargeTargetSoc,
       manualPowerW: this.battery.manualPowerW,
       manualState: this.battery.manualState,
       manualTargetSoc: this.battery.manualTargetSoc,
@@ -58,7 +63,7 @@ class IndevoltBatteryAdapter extends BatteryAdapter {
   async setStrategy(command: BatteryStrategyCommand): Promise<void> {
     if (!this.supportsStrategy(command.strategyMode)) {
       throw new Error(
-        `Battery strategy '${command.strategyMode}' is not supported by ${this.battery.adapter}`,
+        `Battery strategy '${command.strategyMode}' is not supported by ${this.battery.plugin}`,
       );
     }
 
@@ -70,7 +75,15 @@ class IndevoltBatteryAdapter extends BatteryAdapter {
     const manualState = command.manualState ?? "idle";
     const manualPowerW = clampManualPower(command.manualPowerW);
     const manualTargetSoc = clampTargetSoc(
-      command.manualTargetSoc ?? getDefaultTargetSoc(manualState),
+      command.manualTargetSoc ??
+        resolveManualTargetSoc({
+          manualState,
+          manualChargeTargetSoc: command.manualChargeTargetSoc,
+          manualDischargeTargetSoc: command.manualDischargeTargetSoc,
+        }) ??
+        getDefaultTargetSoc(manualState, this.battery.minimumDischargePercent),
+      manualState,
+      this.battery.minimumDischargePercent,
     );
 
     await setIndevoltData(this.battery.ipAddress, 47005, [4]);
@@ -155,6 +168,16 @@ function parseNullableNumber(value: unknown): number | null {
   return null;
 }
 
+function parseNullableKiloWattHours(value: unknown): number | null {
+  const parsed = parseNullableNumber(value);
+
+  if (parsed === null) {
+    return null;
+  }
+
+  return Math.round(parsed * 1000);
+}
+
 function parseIndevoltBatteryStatus(
   value: unknown,
 ): NormalizedBatteryInfo["status"] {
@@ -200,10 +223,34 @@ function clampManualPower(value: number | null): number {
   return Math.max(0, Math.min(INDEVOLT_MAX_POWER_W, Math.round(value)));
 }
 
-function clampTargetSoc(value: number): number {
-  return Math.max(5, Math.min(100, Math.round(value)));
+function clampTargetSoc(
+  value: number,
+  state: BatteryManualState,
+  minimumDischargePercent: number,
+): number {
+  const minimum = state === "discharging" ? minimumDischargePercent : 5;
+  return Math.max(minimum, Math.min(100, Math.round(value)));
 }
 
-function getDefaultTargetSoc(state: BatteryManualState): number {
-  return state === "discharging" ? 5 : 100;
+function getDefaultTargetSoc(
+  state: BatteryManualState,
+  minimumDischargePercent: number,
+): number {
+  return state === "discharging" ? minimumDischargePercent : 100;
+}
+
+function resolveManualTargetSoc(input: {
+  manualState: BatteryManualState;
+  manualChargeTargetSoc: number | null;
+  manualDischargeTargetSoc: number | null;
+}): number | null {
+  if (input.manualState === "charging") {
+    return input.manualChargeTargetSoc;
+  }
+
+  if (input.manualState === "discharging") {
+    return input.manualDischargeTargetSoc;
+  }
+
+  return null;
 }

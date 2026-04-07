@@ -3,7 +3,7 @@ import type {
   BatteryRecord,
   BatteryStrategyMode,
 } from "@emsd/core";
-import { createBatteryAdapter } from "./battery-adapters";
+import { createBatteryPlugin } from "./battery-plugins";
 import {
   type DiscoveredDevice,
   discoverDevices,
@@ -29,6 +29,8 @@ interface BatteryCommandOptions {
 }
 
 interface BatteryStrategySetOptions extends BatteryCommandOptions {
+  manualChargeTargetSoc: number | null;
+  manualDischargeTargetSoc: number | null;
   manualPowerW: number | null;
   manualState: BatteryManualState | null;
   manualTargetSoc: number | null;
@@ -56,7 +58,7 @@ export function formatBatteryHelpText(): string {
     "  battery enable <battery-id> --site-id <site-id>",
     "  battery disable <battery-id> --site-id <site-id>",
     "  battery strategy get <battery-id> --site-id <site-id>",
-    "  battery strategy set <battery-id> --site-id <site-id> --mode <manual|self-consumption|auto> [--state <idle|charging|discharging>] [--power <watts>] [--target-soc <percent>]",
+    "  battery strategy set <battery-id> --site-id <site-id> --mode <manual|self-consumption|auto> [--state <idle|charging|discharging>] [--power <watts>] [--target-soc <percent>] [--charge-target-soc <percent>] [--discharge-target-soc <percent>]",
   ].join("\n");
 }
 
@@ -132,12 +134,13 @@ export async function runBatteryCommand(args: string[] = []): Promise<number> {
         throw new Error(`Managed battery not found: ${id}`);
       }
 
-      const adapter = createBatteryAdapter(battery);
-      const info = await adapter.getNormalizedInfo();
+      const plugin = createBatteryPlugin(battery);
+      const info = await plugin.getNormalizedInfo();
       console.log(
         JSON.stringify(
           {
             ...battery,
+            capacityWh: info.capacityWh,
             currentW: info.currentW,
             socPercent: info.socPercent,
             strategyMode: info.strategyMode,
@@ -182,9 +185,12 @@ export async function runBatteryCommand(args: string[] = []): Promise<number> {
             {
               id: discoveryId,
               name: discovered.name,
-              adapter: discovered.model,
+              plugin: discovered.model,
               model: discovered.model,
               ipAddress: discovered.ipAddress,
+              minimumDischargePercent: 10,
+              manualChargeTargetSoc: 100,
+              manualDischargeTargetSoc: 10,
               connected: true,
               enabled: true,
               status: inferBatteryStatus(discovered.details),
@@ -269,6 +275,8 @@ async function runBatteryStrategyCommand(args: string[]): Promise<number> {
       JSON.stringify(
         {
           id: battery.id,
+          manualChargeTargetSoc: battery.manualChargeTargetSoc,
+          manualDischargeTargetSoc: battery.manualDischargeTargetSoc,
           manualPowerW: battery.manualPowerW,
           manualState: battery.manualState,
           manualTargetSoc: battery.manualTargetSoc,
@@ -295,15 +303,19 @@ async function runBatteryStrategyCommand(args: string[]): Promise<number> {
       throw new Error(`Managed battery not found: ${id}`);
     }
 
-    const adapter = createBatteryAdapter(battery);
+    const plugin = createBatteryPlugin(battery);
 
-    if (!adapter.supportsStrategy(options.strategyMode)) {
+    if (!plugin.supportsStrategy(options.strategyMode)) {
       throw new Error(
         `Battery strategy '${options.strategyMode}' is not supported yet`,
       );
     }
 
-    await adapter.setStrategy({
+    await plugin.setStrategy({
+      manualChargeTargetSoc:
+        options.manualChargeTargetSoc ?? battery.manualChargeTargetSoc,
+      manualDischargeTargetSoc:
+        options.manualDischargeTargetSoc ?? battery.manualDischargeTargetSoc,
       strategyMode: options.strategyMode,
       manualPowerW: options.manualPowerW,
       manualState: options.manualState,
@@ -312,8 +324,12 @@ async function runBatteryStrategyCommand(args: string[]): Promise<number> {
 
     const updated = setBatteryStrategy(
       id,
-      {
-        strategyMode: options.strategyMode,
+        {
+          strategyMode: options.strategyMode,
+          manualChargeTargetSoc:
+            options.manualChargeTargetSoc ?? battery.manualChargeTargetSoc,
+          manualDischargeTargetSoc:
+            options.manualDischargeTargetSoc ?? battery.manualDischargeTargetSoc,
         manualPowerW:
           options.strategyMode === "manual"
             ? clampManualPowerW(options.manualPowerW)
@@ -322,11 +338,11 @@ async function runBatteryStrategyCommand(args: string[]): Promise<number> {
           options.strategyMode === "manual"
             ? (options.manualState ?? battery.manualState ?? "idle")
             : battery.manualState,
-        manualTargetSoc:
-          options.strategyMode === "manual"
-            ? (options.manualTargetSoc ?? battery.manualTargetSoc ?? 100)
-            : battery.manualTargetSoc,
-      },
+          manualTargetSoc:
+            options.strategyMode === "manual"
+              ? (options.manualTargetSoc ?? battery.manualTargetSoc ?? 100)
+              : battery.manualTargetSoc,
+        },
       options.siteId,
     );
 
@@ -388,6 +404,8 @@ function parseBatteryStrategySetOptions(
 ): BatteryStrategySetOptions {
   const siteId = parseRequiredSiteId(args);
   let strategyMode: BatteryStrategyMode | null = null;
+  let manualChargeTargetSoc: number | null = null;
+  let manualDischargeTargetSoc: number | null = null;
   let manualState: BatteryManualState | null = null;
   let manualPowerW: number | null = null;
   let manualTargetSoc: number | null = null;
@@ -440,6 +458,24 @@ function parseBatteryStrategySetOptions(
       continue;
     }
 
+    if (arg === "--charge-target-soc") {
+      manualChargeTargetSoc = parseIntegerOption(
+        args[index + 1],
+        "--charge-target-soc",
+      );
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--discharge-target-soc") {
+      manualDischargeTargetSoc = parseIntegerOption(
+        args[index + 1],
+        "--discharge-target-soc",
+      );
+      index += 1;
+      continue;
+    }
+
     throw new Error(`Unknown battery strategy option: ${arg}`);
   }
 
@@ -481,6 +517,8 @@ function parseBatteryStrategySetOptions(
 
   return {
     siteId,
+    manualChargeTargetSoc,
+    manualDischargeTargetSoc,
     strategyMode,
     manualPowerW,
     manualState,

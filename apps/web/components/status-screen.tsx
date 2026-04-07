@@ -8,13 +8,8 @@ import { BatteryStrategyDialog } from "./battery-strategy-dialog";
 import { DaemonOfflineState } from "./daemon-offline-state";
 import { SettingsDialog } from "./settings-dialog";
 import { SettingsPanel } from "./settings-panel";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "./ui/card";
-import { getLiveStatus } from "../lib/ems-bridge";
+import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
+import { getBatteryNormalizedInfo, getLiveStatus } from "../lib/ems-bridge";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
@@ -31,8 +26,6 @@ export async function StatusScreen({
 
   const snapshot = await getLiveStatus();
   const resolvedSearchParams = (await searchParams) ?? {};
-  const settingsRequested = getSingleValue(resolvedSearchParams.settings) === "1";
-  const initialSettingsTab = getSingleValue(resolvedSearchParams.settingsTab);
   const notice = getSingleValue(resolvedSearchParams.notice);
   const tone =
     getSingleValue(resolvedSearchParams.tone) === "error" ? "error" : "success";
@@ -43,23 +36,36 @@ export async function StatusScreen({
 
   const currentSite = snapshot.sites[0] ?? null;
 
-  if (!currentSite) {
-    redirect("/?settings=1&settingsTab=site");
-  }
+  const batteries = currentSite
+    ? currentSite.devices.filter((device) => device.kind === "battery")
+    : [];
+  const currentSiteId = currentSite?.id ?? null;
+  const initialSettingsTab =
+    currentSite === null ? "site" : batteries.length === 0 ? "discover" : null;
 
-  const batteries = currentSite.devices.filter(
-    (device) => device.kind === "battery",
+  const normalizedBatteryInfoById = new Map<
+    string,
+    Awaited<ReturnType<typeof getBatteryNormalizedInfo>>
+  >(
+    await Promise.all(
+      batteries.map(
+        async (battery) =>
+          [
+            battery.id,
+            await getBatteryNormalizedInfo({
+              id: battery.id,
+              siteId: currentSiteId ?? "",
+            }),
+          ] as const,
+      ),
+    ),
   );
-
-  if (batteries.length === 0) {
-    redirect("/?settings=1&settingsTab=discover");
-  }
 
   return (
     <AppShell
       generatedAt={snapshot.generatedAt}
       headerActions={
-        <SettingsDialog defaultOpen={settingsRequested}>
+        <SettingsDialog>
           <SettingsPanel
             currentSite={currentSite}
             initialTab={initialSettingsTab}
@@ -69,59 +75,92 @@ export async function StatusScreen({
         </SettingsDialog>
       }
     >
-      <section className="grid gap-6 2xl:grid-cols-2">
-        {batteries.map((battery) => {
-          const currentState = battery.telemetry?.state ?? battery.state;
-          const currentPower = battery.telemetry?.powerW ?? null;
-          const socPercent = battery.telemetry?.socPercent ?? null;
+      {currentSite === null ? (
+        <Card className="border-white/12 bg-slate-950/70">
+          <CardContent className="px-6 py-10 text-center sm:px-8 sm:py-12">
+            <p className="text-xl font-medium text-white">
+              To get started, please go to Settings and create a new site and
+              assign devices to it.
+            </p>
+          </CardContent>
+        </Card>
+      ) : batteries.length === 0 ? (
+        <Card className="border-white/12 bg-slate-950/70">
+          <CardContent className="px-6 py-10 text-center sm:px-8 sm:py-12">
+            <p className="text-xl font-medium text-white">
+              No devices are currently connected. Please go to Settings and
+              assigned devices to your site.
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <section className="grid gap-6 2xl:grid-cols-2">
+          {batteries.map((battery) => {
+            const currentState = battery.telemetry?.state ?? battery.state;
+            const currentPower = battery.telemetry?.powerW ?? null;
+            const socPercent = battery.telemetry?.socPercent ?? null;
+            const capacityWh =
+              normalizedBatteryInfoById.get(battery.id)?.capacityWh ?? null;
 
-          return (
-            <Card
-              key={battery.id}
-              className="overflow-hidden border-white/12 bg-slate-950/70"
-            >
-              <CardHeader className="border-b border-white/8 px-6 py-5 sm:px-8">
-                <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                  <div className="min-w-0">
-                    <CardTitle className="truncate text-3xl font-semibold tracking-tight sm:text-4xl">
-                      {battery.name}
-                    </CardTitle>
-                  </div>
-                  <BatteryStrategyDialog
-                    batteryId={battery.id}
-                    batteryName={battery.name}
-                    siteId={currentSite.id}
-                    strategy={
-                      battery.batteryStrategy ?? {
-                        strategyMode: "self-consumption",
-                        manualPowerW: null,
-                        manualState: "idle",
-                        manualTargetSoc: 100,
+            return (
+              <Card
+                key={battery.id}
+                className="overflow-hidden border-white/12 bg-slate-950/70"
+              >
+                <CardHeader className="border-b border-white/8 px-6 py-5 sm:px-8">
+                  <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                    <div className="min-w-0">
+                      <CardTitle className="truncate text-3xl font-semibold tracking-tight sm:text-4xl">
+                        {battery.name}
+                      </CardTitle>
+                    </div>
+                    <BatteryStrategyDialog
+                      batteryId={battery.id}
+                      batteryName={battery.name}
+                      capacityWh={capacityWh}
+                      currentSocPercent={socPercent}
+                      minimumDischargePercent={
+                        battery.minimumDischargePercent ?? 10
                       }
-                    }
-                  />
-                </div>
-              </CardHeader>
-              <CardContent className="px-6 py-6 sm:px-8 sm:py-8">
-                <div className="flex flex-col items-center justify-center gap-6">
-                  <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-6">
-                    <BatteryChargeGauge socPercent={socPercent} />
-                    <PowerIndicator state={currentState} value={currentPower} />
+                      siteId={currentSiteId ?? ""}
+                      strategy={
+                        battery.batteryStrategy ?? {
+                          manualChargeTargetSoc: 100,
+                          manualDischargeTargetSoc:
+                            battery.minimumDischargePercent ?? 10,
+                          strategyMode: "self-consumption",
+                          manualPowerW: null,
+                          manualState: "idle",
+                          manualTargetSoc: 100,
+                        }
+                      }
+                    />
                   </div>
-                  <div className="text-center">
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                      Current state
-                    </p>
-                    <p className="mt-2 text-lg font-medium capitalize text-slate-200">
-                      {formatManagedDeviceState(currentState)}
-                    </p>
+                </CardHeader>
+                <CardContent className="px-6 py-6 sm:px-8 sm:py-8">
+                  <div className="flex flex-col items-center justify-center gap-6">
+                    <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-6">
+                      <BatteryChargeGauge socPercent={socPercent} />
+                      <PowerIndicator
+                        state={currentState}
+                        value={currentPower}
+                      />
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        Current state
+                      </p>
+                      <p className="mt-2 text-lg font-medium capitalize text-slate-200">
+                        {formatManagedDeviceState(currentState)}
+                      </p>
+                    </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </section>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </section>
+      )}
     </AppShell>
   );
 }
@@ -134,11 +173,7 @@ function getSingleValue(value: string | string[] | undefined): string | null {
   return value?.[0] ?? null;
 }
 
-function BatteryChargeGauge({
-  socPercent,
-}: {
-  socPercent: number | null;
-}) {
+function BatteryChargeGauge({ socPercent }: { socPercent: number | null }) {
   const value =
     socPercent === null ? 0 : Math.max(0, Math.min(100, socPercent));
   const fillHeight = 136 * (value / 100);

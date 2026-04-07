@@ -172,7 +172,7 @@ Example flow:
 
 ### Backend Modules
 
-- `battery-adapters`
+- `battery-plugins`
 - `meter-adapters`
 - `weather-providers`
 - `price-providers`
@@ -188,7 +188,7 @@ Example flow:
 
 - `Site`
 - `Battery`
-- `BatteryAdapter`
+- `BatteryPlugin`
 - `Meter`
 - `MeterAdapter`
 - `WeatherSource`
@@ -242,9 +242,9 @@ Example flow:
 
 ### Step 2: Add Adapter-Based Battery Control
 
-- Introduce a battery adapter base class that owns battery-specific reads and writes
-- Implement the default Indevolt adapter with normalized status reads and control writes
-- Support switching the current default adapter between `self-consumption` and `manual`
+- Introduce a battery plugin base class that owns battery-specific reads and writes
+- Implement the default Indevolt plugin with normalized status reads and control writes
+- Support switching the current default plugin between `self-consumption` and `manual`
 - Support manual control for `idle`, `charging`, and `discharging` with a capped power target up to `2400 W`
 
 ### Step 3: Expand EMS Battery Commands

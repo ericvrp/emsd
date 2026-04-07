@@ -30,7 +30,7 @@ Every new plugin should be implemented in this order:
 
 Use this checklist regardless of plugin type:
 
-1. Define the provider or adapter identifier and keep it stable.
+1. Define the provider or plugin identifier and keep it stable.
 2. Decide whether the plugin is discovered transiently, configured manually, or both.
 3. Identify the normalized data the rest of EMSD needs from the plugin.
 4. Add or extend shared types in `packages/core` only when reused across app boundaries.

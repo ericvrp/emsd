@@ -1,7 +1,6 @@
 "use client";
 
 import { Settings, X } from "lucide-react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { DialogPortal } from "./ui/dialog-portal";
@@ -14,24 +13,7 @@ export function SettingsDialog({
   children: ReactNode;
   defaultOpen?: boolean;
 }) {
-  const pathname = usePathname();
-  const router = useRouter();
-  const searchParams = useSearchParams();
   const [isOpen, setIsOpen] = useState(defaultOpen);
-
-  useEffect(() => {
-    if (!defaultOpen) {
-      return;
-    }
-
-    const params = new URLSearchParams(searchParams.toString());
-    params.delete("settings");
-    params.delete("settingsTab");
-    const nextUrl = params.toString()
-      ? `${pathname}?${params.toString()}`
-      : pathname;
-    router.replace(nextUrl, { scroll: false });
-  }, [defaultOpen, pathname, router, searchParams]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -76,9 +58,9 @@ export function SettingsDialog({
                     <p className="text-sm font-semibold uppercase tracking-[0.22em] text-cyan-300">
                       Settings
                     </p>
-                    <h2 className="mt-3 text-3xl font-semibold text-white">
+                    {/* <h2 className="mt-3 text-3xl font-semibold text-white">
                       EMSD settings
-                    </h2>
+                    </h2> */}
                   </div>
                   <Button
                     aria-label="Close settings dialog"

@@ -14,10 +14,13 @@ export interface BatteryStrategyRecord {
   strategyMode: BatteryStrategyMode;
   manualPowerW: number | null;
   manualState: BatteryManualState | null;
+  manualChargeTargetSoc: number | null;
+  manualDischargeTargetSoc: number | null;
   manualTargetSoc: number | null;
 }
 
 export interface NormalizedBatteryInfo extends BatteryStrategyRecord {
+  capacityWh: number | null;
   currentW: number | null;
   model: string;
   name: string;
@@ -146,12 +149,13 @@ export interface BatteryRecord extends BatteryStrategyRecord {
   id: string;
   siteId: string;
   name: string;
-  adapter: string;
+  plugin: string;
   model: string;
   ipAddress: string;
   enabled: boolean;
   status: BatteryStatus;
   connected: boolean;
+  minimumDischargePercent: number;
   updatedAt: string;
 }
 
@@ -187,6 +191,7 @@ export interface ManagedDeviceRecord {
   connected: boolean;
   state: ManagedDeviceState;
   batteryStrategy: BatteryStrategyRecord | null;
+  minimumDischargePercent: number | null;
   note: string | null;
   updatedAt: string;
 }

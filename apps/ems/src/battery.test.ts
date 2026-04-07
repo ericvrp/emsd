@@ -151,7 +151,7 @@ test("battery list reports no batteries for an older battery table schema", asyn
     CREATE TABLE batteries (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
-      adapter TEXT NOT NULL,
+      plugin TEXT NOT NULL,
       model TEXT NOT NULL,
       ip_address TEXT NOT NULL,
       enabled INTEGER NOT NULL,
@@ -281,7 +281,7 @@ test("battery add reports an outdated battery table schema", async () => {
     CREATE TABLE batteries (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
-      adapter TEXT NOT NULL,
+      plugin TEXT NOT NULL,
       model TEXT NOT NULL,
       ip_address TEXT NOT NULL,
       enabled INTEGER NOT NULL,
@@ -384,12 +384,15 @@ function mockBatteryFetch(): typeof fetch {
 
     if (
       url ===
-      "http://192.168.1.15:8080/rpc/Indevolt.GetData?config=%7B%22t%22%3A%5B0%2C1118%2C6000%2C6001%2C6002%2C7101%5D%7D"
+        "http://192.168.1.15:8080/rpc/Indevolt.GetData?config=%7B%22t%22%3A%5B0%2C1118%2C6000%2C6001%2C6002%2C7101%5D%7D" ||
+      url ===
+      "http://192.168.1.15:8080/rpc/Indevolt.GetData?config=%7B%22t%22%3A%5B142%2C6000%2C6001%2C6002%2C7101%5D%7D"
     ) {
       return new Response(
         JSON.stringify({
           0: "INV-BAT-123",
           1118: "1.2.3",
+          142: 4.8,
           6000: 900,
           6001: 1001,
           6002: 48,

@@ -236,9 +236,7 @@ export function DiscoveryPanel({
               >{`Add all (${addableDiscoveryIds.length})`}</SubmitButton>
             </form>
           ) : (
-            <button className={secondaryButtonClass} disabled type="button">
-              All discovered devices are already added
-            </button>
+            <></>
           )}
 
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -272,7 +270,7 @@ function DiscoveryDeviceCard({
   const alreadyAdded = existingIdSet.has(device.discoveryId);
 
   return (
-    <article className="relative overflow-hidden rounded-[1.6rem] border border-white/10 bg-slate-950/60 p-4 shadow-[0_16px_60px_rgba(0,0,0,0.22)]">
+    <article className="relative flex h-full flex-col overflow-hidden rounded-[1.6rem] border border-white/10 bg-slate-950/60 p-4 shadow-[0_16px_60px_rgba(0,0,0,0.22)]">
       <div
         className={`pointer-events-none absolute inset-x-0 top-0 h-px ${device.category === "battery" ? "bg-gradient-to-r from-transparent via-cyan-300/40 to-transparent" : "bg-gradient-to-r from-transparent via-violet-300/40 to-transparent"}`}
       />
@@ -292,7 +290,7 @@ function DiscoveryDeviceCard({
         </span>
       </div>
 
-      <div className="mt-4 space-y-2 rounded-2xl border border-white/8 bg-white/4 p-3 text-sm text-slate-300">
+      <div className="mt-4 flex-1 space-y-2 rounded-2xl border border-white/8 bg-white/4 p-3 text-sm text-slate-300">
         <p>
           <span className="text-slate-500">Model:</span> {device.model}
         </p>
@@ -320,15 +318,7 @@ function DiscoveryDeviceCard({
       </div>
 
       <div className="mt-4">
-        {alreadyAdded ? (
-          <button
-            className="inline-flex h-9 w-full items-center justify-center rounded-md border border-white/10 bg-white/6 px-4 text-sm font-medium text-slate-300"
-            disabled
-            type="button"
-          >
-            Already added
-          </button>
-        ) : selectedSiteId ? (
+        {!alreadyAdded && selectedSiteId ? (
           <form
             action={
               device.category === "battery"

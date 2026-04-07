@@ -19,6 +19,7 @@ import {
   deleteWeatherForecastSource,
   getDashboardSnapshot,
   setBatteryEnabled,
+  setBatteryMinimumDischargePercent,
   setBatteryStrategy,
   setMeterEnabled,
   updateDynamicPriceSource,
@@ -76,17 +77,11 @@ function buildSiteId(name: string, existingSiteIds: string[]): string {
 }
 
 function redirectWithNotice(options: {
-  tab?: string | null;
   notice: string;
   path?: string;
   tone: "success" | "error";
 }): never {
   const params = new URLSearchParams();
-
-  if (options.tab) {
-    params.set("settings", "1");
-    params.set("settingsTab", options.tab);
-  }
 
   params.set("notice", options.notice);
   params.set("tone", options.tone);
@@ -104,23 +99,14 @@ async function runAction(
     const result = await runner();
     revalidatePath("/");
     revalidatePath("/status");
-    const tab = result.tab === undefined ? fallbackTab : result.tab;
     const path = result.path;
 
-    redirectWithNotice(
-      tab
-        ? {
-            notice: result.notice,
-            ...(path ? { path } : {}),
-            tab,
-            tone: "success",
-          }
-        : {
-            notice: result.notice,
-            ...(path ? { path } : {}),
-            tone: "success",
-          },
-    );
+    void fallbackTab;
+    redirectWithNotice({
+      notice: result.notice,
+      ...(path ? { path } : {}),
+      tone: "success",
+    });
   } catch (error) {
     if (isRedirectError(error)) {
       throw error;
@@ -128,20 +114,11 @@ async function runAction(
 
     revalidatePath("/");
     revalidatePath("/status");
-    redirectWithNotice(
-      fallbackTab
-        ? {
-            notice: error instanceof Error ? error.message : String(error),
-            path: fallbackPath,
-            tab: fallbackTab,
-            tone: "error",
-          }
-        : {
-            notice: error instanceof Error ? error.message : String(error),
-            path: fallbackPath,
-            tone: "error",
-          },
-    );
+    redirectWithNotice({
+      notice: error instanceof Error ? error.message : String(error),
+      path: fallbackPath,
+      tone: "error",
+    });
   }
 }
 
@@ -164,7 +141,7 @@ export async function createSiteAction(formData: FormData): Promise<void> {
       location: stringValue(formData, "location"),
       name,
     });
-    return { notice: `Created site ${siteId}.`, tab: "discover" };
+    return { notice: `Created site ${name}.`, tab: "discover" };
   }, "site");
 }
 
@@ -172,12 +149,13 @@ export async function updateSiteAction(formData: FormData): Promise<void> {
   const siteId = stringValue(formData, "siteId");
 
   return runAction(async () => {
+    const name = stringValue(formData, "name");
     await updateSite({
       id: siteId,
       location: stringValue(formData, "location"),
-      name: stringValue(formData, "name"),
+      name,
     });
-    return { notice: `Updated site ${siteId}.`, tab: "site" };
+    return { notice: `Updated site ${name}.`, tab: "site" };
   }, "site");
 }
 
@@ -185,8 +163,9 @@ export async function deleteSiteAction(formData: FormData): Promise<void> {
   const siteId = stringValue(formData, "siteId");
 
   return runAction(async () => {
+    const siteName = stringValue(formData, "siteName");
     await deleteSite({ id: siteId });
-    return { notice: `Deleted site ${siteId}.`, tab: "site" };
+    return { notice: `Deleted site ${siteName}.`, tab: "site" };
   }, "site");
 }
 
@@ -261,6 +240,28 @@ export async function deleteBatteryAction(formData: FormData): Promise<void> {
   }, "devices");
 }
 
+export async function setBatteryMinimumDischargePercentAction(
+  formData: FormData,
+): Promise<void> {
+  const siteId = stringValue(formData, "siteId");
+
+  return runAction(async () => {
+    const batteryId = stringValue(formData, "batteryId");
+    const minimumDischargePercent = Number(
+      stringValue(formData, "minimumDischargePercent"),
+    );
+    await setBatteryMinimumDischargePercent({
+      id: batteryId,
+      minimumDischargePercent,
+      siteId,
+    });
+    return {
+      notice: `Updated minimum discharge for battery ${batteryId}.`,
+      tab: "devices",
+    };
+  }, "devices");
+}
+
 export async function setBatteryStrategyAction(
   formData: FormData,
 ): Promise<void> {
@@ -273,12 +274,30 @@ export async function setBatteryStrategyAction(
       const strategyMode = stringValue(formData, "strategyMode");
       const manualState = optionalStringValue(formData, "manualState");
       const manualPowerRaw = optionalStringValue(formData, "manualPowerW");
+      const manualChargeTargetSocRaw = optionalStringValue(
+        formData,
+        "manualChargeTargetSoc",
+      );
+      const manualDischargeTargetSocRaw = optionalStringValue(
+        formData,
+        "manualDischargeTargetSoc",
+      );
       const manualTargetSocRaw = optionalStringValue(
         formData,
         "manualTargetSoc",
       );
       await setBatteryStrategy({
         id: batteryId,
+        manualChargeTargetSoc:
+          manualChargeTargetSocRaw === null ||
+          manualChargeTargetSocRaw.length === 0
+            ? null
+            : Number(manualChargeTargetSocRaw),
+        manualDischargeTargetSoc:
+          manualDischargeTargetSocRaw === null ||
+          manualDischargeTargetSocRaw.length === 0
+            ? null
+            : Number(manualDischargeTargetSocRaw),
         manualPowerW:
           manualPowerRaw === null || manualPowerRaw.length === 0
             ? null

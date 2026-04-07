@@ -10,11 +10,17 @@ import { Button } from "./ui/button";
 export function BatteryStrategyDialog({
   batteryId,
   batteryName,
+  capacityWh,
+  currentSocPercent,
+  minimumDischargePercent,
   siteId,
   strategy,
 }: {
   batteryId: string;
   batteryName: string;
+  capacityWh: number | null;
+  currentSocPercent: number | null;
+  minimumDischargePercent: number;
   siteId: string;
   strategy: BatteryStrategyRecord;
 }) {
@@ -48,12 +54,12 @@ export function BatteryStrategyDialog({
       {isOpen ? (
         <DialogPortal>
           <div className="fixed inset-0 z-[100] overflow-y-auto bg-slate-950/75 p-4 backdrop-blur-sm">
-            <div className="flex min-h-full items-center justify-center py-6">
-              <div className="w-full max-w-xl rounded-3xl border border-white/10 bg-slate-950 p-6 shadow-[0_30px_120px_rgba(0,0,0,0.45)]">
+            <div className="flex min-h-full items-start justify-center py-6">
+              <div className="flex h-[min(90vh,760px)] w-full max-w-xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-slate-950 p-6 shadow-[0_30px_120px_rgba(0,0,0,0.45)]">
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <p className="text-sm font-semibold uppercase tracking-[0.22em] text-cyan-300">
-                      Battery strategy
+                      Strategy
                     </p>
                     <h2 className="mt-3 text-3xl font-semibold text-white">
                       {batteryName}
@@ -70,9 +76,12 @@ export function BatteryStrategyDialog({
                   </Button>
                 </div>
 
-                <div className="mt-6">
+                <div className="mt-6 min-h-0 flex-1 overflow-y-auto">
                   <BatteryStrategyForm
                     batteryId={batteryId}
+                    capacityWh={capacityWh}
+                    currentSocPercent={currentSocPercent}
+                    minimumDischargePercent={minimumDischargePercent}
                     returnPath="/"
                     siteId={siteId}
                     strategy={strategy}

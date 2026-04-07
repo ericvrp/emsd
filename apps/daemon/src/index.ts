@@ -6,7 +6,7 @@ import {
   getDaemonLockPath,
   getDatabasePath,
 } from "@emsd/core";
-import { createBatteryAdapter } from "../../ems/src/battery-adapters";
+import { createBatteryPlugin } from "../../ems/src/battery-plugins";
 import { fetchMeterTelemetry } from "../../ems/src/discover";
 import {
   openDaemonDatabase,
@@ -80,7 +80,7 @@ function main(): void {
 
       await Promise.all([
         ...polledBatteries.map(async (battery) => {
-          const sample = await createBatteryAdapter(battery)
+          const sample = await createBatteryPlugin(battery)
             .getNormalizedInfo()
             .catch((error: unknown) => {
               console.error(

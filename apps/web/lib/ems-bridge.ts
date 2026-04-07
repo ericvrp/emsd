@@ -5,6 +5,7 @@ import type {
   DynamicPriceSourceRecord,
   ManagedDeviceRecord,
   ManagedDeviceStatusRecord,
+  NormalizedBatteryInfo,
   SiteRecord,
   WeatherForecastSourceRecord,
 } from "@emsd/core";
@@ -140,12 +141,25 @@ export function setBatteryEnabled(input: {
   return runBridge<ManagedDeviceRecord>("battery-set-enabled", input);
 }
 
+export function setBatteryMinimumDischargePercent(input: {
+  id: string;
+  minimumDischargePercent: number;
+  siteId: string;
+}) {
+  return runBridge<ManagedDeviceRecord>(
+    "battery-set-minimum-discharge-percent",
+    input,
+  );
+}
+
 export function deleteBattery(input: { id: string; siteId: string }) {
   return runBridge<ManagedDeviceRecord>("battery-delete", input);
 }
 
 export function setBatteryStrategy(input: {
   id: string;
+  manualChargeTargetSoc: number | null;
+  manualDischargeTargetSoc: number | null;
   manualPowerW: number | null;
   manualState: "idle" | "charging" | "discharging" | null;
   manualTargetSoc: number | null;
@@ -153,6 +167,10 @@ export function setBatteryStrategy(input: {
   strategyMode: "auto" | "manual" | "self-consumption";
 }) {
   return runBridge<ManagedDeviceRecord>("battery-set-strategy", input);
+}
+
+export function getBatteryNormalizedInfo(input: { id: string; siteId: string }) {
+  return runBridge<NormalizedBatteryInfo>("battery-get-normalized-info", input);
 }
 
 export function createMeterFromDiscovery(input: {

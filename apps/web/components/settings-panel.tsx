@@ -9,6 +9,7 @@ import type {
 import { HardDrive, Home, LocateFixed, Save, ScanSearch, Search, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
+import { toast } from "sonner";
 import {
   createDynamicPriceSourceAction,
   createSiteAction,
@@ -18,6 +19,7 @@ import {
   deleteMeterAction,
   deleteSiteAction,
   deleteWeatherForecastSourceAction,
+  setBatteryMinimumDischargePercentAction,
   updateDynamicPriceSourceAction,
   updateSiteAction,
   updateWeatherForecastSourceAction,
@@ -102,19 +104,16 @@ export function SettingsPanel({
             <section className="grid gap-4 xl:grid-cols-2">
               <ResourceSection
                 title="Batteries"
-                description="Manage installed batteries."
               >
                 <DeviceList kind="battery" site={currentSite} />
               </ResourceSection>
               <ResourceSection
                 title="Meters"
-                description="Manage installed meters."
               >
                 <DeviceList kind="meter" site={currentSite} />
               </ResourceSection>
               <ResourceSection
                 title="Weather Sources"
-                description="Manage forecast providers."
               >
                 <SourceList
                   kind="weather"
@@ -125,7 +124,6 @@ export function SettingsPanel({
               </ResourceSection>
               <ResourceSection
                 title="Dynamic Price Sources"
-                description="Manage tariff providers."
               >
                 <SourceList
                   kind="price"
@@ -229,16 +227,27 @@ function SitePanel({ site }: { site: SiteSnapshot | null }) {
     return <SiteSetupPanel />;
   }
 
+  const batteries = site.devices.filter((device) => device.kind === "battery");
+  const meters = site.devices.filter((device) => device.kind === "meter");
+  const deletionBlockers = [
+    formatNamedBlocker("battery", batteries.map((device) => device.name)),
+    formatNamedBlocker("meter", meters.map((device) => device.name)),
+    formatNamedBlocker(
+      "weather source",
+      site.weatherSources.map((source) => source.name),
+    ),
+    formatNamedBlocker(
+      "dynamic price source",
+      site.dynamicPriceSources.map((source) => source.name),
+    ),
+  ].filter((value): value is string => value !== null);
+  const deleteBlocked = deletionBlockers.length > 0;
+
   return (
     <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-emerald-300/40 to-transparent" />
       <div>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-300/90">
-          Current Site
-        </p>
-        <h2 className="mt-2 text-2xl font-semibold text-white">{site.name}</h2>
-        <p className="mt-1 text-sm text-slate-400">{site.id}</p>
-        <p className="mt-2 text-sm text-slate-300">GPS: {site.location || "Unavailable"}</p>
+        <h2 className="text-2xl font-semibold text-white">{site.name}</h2>
       </div>
 
       <div className="mt-5">
@@ -261,6 +270,11 @@ function SitePanel({ site }: { site: SiteSnapshot | null }) {
           </label>
           <SiteLocationFields defaultLocation={site.location} />
         </form>
+        {deleteBlocked ? (
+          <div className="mt-4 rounded-[1.25rem] border border-amber-400/20 bg-amber-500/10 p-4 text-sm text-amber-100">
+            You cannot delete this site until you remove {joinWithAnd(deletionBlockers)}.
+          </div>
+        ) : null}
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <Button
             className={secondaryButtonClass}
@@ -272,10 +286,11 @@ function SitePanel({ site }: { site: SiteSnapshot | null }) {
           </Button>
           <form action={deleteSiteAction}>
             <input type="hidden" name="siteId" value={site.id} />
-            <SubmitButton className={dangerButtonClass}>
+            <input type="hidden" name="siteName" value={site.name} />
+            <Button className={dangerButtonClass} disabled={deleteBlocked} type="submit">
               <Trash2 size={14} />
               Delete site
-            </SubmitButton>
+            </Button>
           </form>
         </div>
       </div>
@@ -283,11 +298,30 @@ function SitePanel({ site }: { site: SiteSnapshot | null }) {
   );
 }
 
+function formatNamedBlocker(label: string, names: string[]): string | null {
+  if (names.length === 0) {
+    return null;
+  }
+
+  const normalizedLabel = names.length === 1 ? label : `${label}s`;
+  return `${names.length} ${normalizedLabel} (${names.join(", ")})`;
+}
+
+function joinWithAnd(values: string[]): string {
+  if (values.length <= 1) {
+    return values[0] ?? "";
+  }
+
+  if (values.length === 2) {
+    return `${values[0]} and ${values[1]}`;
+  }
+
+  return `${values.slice(0, -1).join(", ")}, and ${values.at(-1)}`;
+}
+
 function SiteLocationFields({ defaultLocation }: { defaultLocation: string }) {
   const [location, setLocation] = useState(defaultLocation);
   const [query, setQuery] = useState("");
-  const [status, setStatus] = useState<string | null>(null);
-  const [statusTone, setStatusTone] = useState<"error" | "success" | null>(null);
   const [isLocating, setIsLocating] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
 
@@ -295,13 +329,11 @@ function SiteLocationFields({ defaultLocation }: { defaultLocation: string }) {
     const trimmedQuery = query.trim();
 
     if (!trimmedQuery) {
-      setStatus("Enter a place name to look up.");
-      setStatusTone("error");
+      toast.error("Enter a place name to look up.");
       return;
     }
 
     setIsSearching(true);
-    setStatus(null);
 
     try {
       const response = await fetch(
@@ -317,11 +349,9 @@ function SiteLocationFields({ defaultLocation }: { defaultLocation: string }) {
       }
 
       setLocation(payload.location);
-      setStatus(`Resolved '${trimmedQuery}' to ${payload.location}.`);
-      setStatusTone("success");
+      toast.success(`Resolved '${trimmedQuery}' to ${payload.location}.`);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : String(error));
-      setStatusTone("error");
+      toast.error(error instanceof Error ? error.message : String(error));
     } finally {
       setIsSearching(false);
     }
@@ -329,13 +359,11 @@ function SiteLocationFields({ defaultLocation }: { defaultLocation: string }) {
 
   function useCurrentLocation() {
     if (!("geolocation" in navigator)) {
-      setStatus("Browser geolocation is not available here.");
-      setStatusTone("error");
+      toast.error("Browser geolocation is not available here.");
       return;
     }
 
     setIsLocating(true);
-    setStatus(null);
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
@@ -345,13 +373,11 @@ function SiteLocationFields({ defaultLocation }: { defaultLocation: string }) {
         );
 
         setLocation(nextLocation);
-        setStatus(`Using current GPS location ${nextLocation}.`);
-        setStatusTone("success");
+        toast.success(`Using current GPS location ${nextLocation}.`);
         setIsLocating(false);
       },
       (error) => {
-        setStatus(error.message || "Unable to read the current GPS location.");
-        setStatusTone("error");
+        toast.error(error.message || "Unable to read the current GPS location.");
         setIsLocating(false);
       },
       {
@@ -407,33 +433,18 @@ function SiteLocationFields({ defaultLocation }: { defaultLocation: string }) {
           {isLocating ? "Locating..." : "Use current GPS"}
         </button>
       </div>
-
-      {status ? (
-        <p
-          className={`text-sm ${statusTone === "error" ? "text-rose-300" : "text-emerald-300"}`}
-        >
-          {status}
-        </p>
-      ) : null}
     </div>
   );
 }
 
 function ResourceSection({
   title,
-  description,
   children,
-}: { title: string; description: string; children: ReactNode }) {
+}: { title: string; children: ReactNode }) {
   return (
     <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-violet-300/30 to-transparent" />
-      <div className="mb-4">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-          Resource
-        </p>
-        <h3 className="mt-2 text-xl font-semibold text-white">{title}</h3>
-        <p className="mt-2 text-sm leading-6 text-slate-400">{description}</p>
-      </div>
+      <h3 className="mb-4 text-xl font-semibold text-white">{title}</h3>
       {children}
     </section>
   );
@@ -461,7 +472,7 @@ function DeviceList({
         return (
           <article
             key={device.id}
-            className={`rounded-[1.4rem] border border-white/10 bg-white/5 p-4 ${kind === "battery" ? "ring-1 ring-cyan-300/5" : "ring-1 ring-violet-300/5"}`}
+            className={`flex min-h-[220px] flex-col rounded-[1.4rem] border border-white/10 bg-white/5 p-4 ${kind === "battery" ? "ring-1 ring-cyan-300/5" : "ring-1 ring-violet-300/5"}`}
           >
             <div className="min-w-0">
               <h4 className="truncate text-base font-semibold text-white">
@@ -498,8 +509,43 @@ function DeviceList({
                     : "Unavailable"
                 }
               />
+              {kind === "battery" ? (
+                <MetaItem
+                  label="Min discharge"
+                  value={`${device.minimumDischargePercent ?? 10}%`}
+                />
+              ) : null}
             </dl>
-            <div className="mt-4 flex flex-wrap gap-2">
+            {kind === "battery" ? (
+              <form
+                action={setBatteryMinimumDischargePercentAction}
+                className="mt-4 space-y-2"
+              >
+                <input type="hidden" name="siteId" value={site.id} />
+                <input type="hidden" name="batteryId" value={device.id} />
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium text-slate-300">
+                    Minimum discharge (%)
+                  </span>
+                  <input
+                    className="w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400/50"
+                    defaultValue={device.minimumDischargePercent ?? 10}
+                    max={100}
+                    min={10}
+                    name="minimumDischargePercent"
+                    step={1}
+                    type="number"
+                  />
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  <SubmitButton className={secondaryButtonClass}>
+                    <Save size={14} />
+                    Save minimum
+                  </SubmitButton>
+                </div>
+              </form>
+            ) : null}
+            <div className="mt-auto pt-4 flex flex-wrap gap-2">
               <form
                 action={
                   kind === "battery" ? deleteBatteryAction : deleteMeterAction

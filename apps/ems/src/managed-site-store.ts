@@ -18,15 +18,18 @@ const BATTERY_REQUIRED_COLUMNS = [
   "id",
   "site_id",
   "name",
-  "adapter",
+  "plugin",
   "model",
   "ip_address",
   "enabled",
   "status",
   "connected",
+  "minimum_discharge_percent",
   "strategy_mode",
   "manual_state",
   "manual_power_w",
+  "manual_charge_target_soc",
+  "manual_discharge_target_soc",
   "manual_target_soc",
   "updated_at",
 ];
@@ -61,15 +64,18 @@ interface BatteryRow {
   id: string;
   site_id: string;
   name: string;
-  adapter: string;
+  plugin: string;
   model: string;
   ip_address: string;
   enabled: number;
   status: BatteryStatus;
   connected: number;
+  minimum_discharge_percent: number;
   strategy_mode: BatteryStrategyMode | "self-consumption";
   manual_state: BatteryManualState | null;
   manual_power_w: number | null;
+  manual_charge_target_soc: number | null;
+  manual_discharge_target_soc: number | null;
   manual_target_soc: number | null;
   updated_at: string;
 }
@@ -96,15 +102,18 @@ interface SourceRow {
 interface CreateBatteryInput {
   id: string;
   name: string;
-  adapter: string;
+  plugin: string;
   model: string;
   ipAddress: string;
   enabled?: boolean;
   connected?: boolean;
-    status?: BatteryStatus;
-    strategyMode?: BatteryStrategyMode;
+  minimumDischargePercent?: number;
+  status?: BatteryStatus;
+  strategyMode?: BatteryStrategyMode;
   manualState?: BatteryManualState | null;
   manualPowerW?: number | null;
+  manualChargeTargetSoc?: number | null;
+  manualDischargeTargetSoc?: number | null;
   manualTargetSoc?: number | null;
 }
 
@@ -112,7 +121,13 @@ interface UpdateBatteryStrategyInput {
   strategyMode: BatteryStrategyMode;
   manualState?: BatteryManualState | null;
   manualPowerW?: number | null;
+  manualChargeTargetSoc?: number | null;
+  manualDischargeTargetSoc?: number | null;
   manualTargetSoc?: number | null;
+}
+
+interface UpdateBatteryMinimumDischargeInput {
+  minimumDischargePercent: number;
 }
 
 interface CreateMeterInput {
@@ -251,11 +266,11 @@ export function deleteSite(
       return null;
     }
 
-    const linkedTable = getLinkedSiteTable(db, siteId);
+    const linkedResources = getLinkedSiteResources(db, siteId);
 
-    if (linkedTable) {
+    if (linkedResources.length > 0) {
       throw new Error(
-        `Cannot remove site ${siteId}: ${linkedTable} still reference it`,
+        `Cannot remove site ${siteId} until its linked resources are deleted: ${linkedResources.map((resource) => `${resource.count} ${resource.label}`).join(", ")}.`,
       );
     }
 
@@ -359,33 +374,47 @@ export function createBattery(
           id,
           site_id,
           name,
-          adapter,
+          plugin,
           model,
           ip_address,
           enabled,
           status,
           connected,
+          minimum_discharge_percent,
           strategy_mode,
           manual_state,
           manual_power_w,
+          manual_charge_target_soc,
+          manual_discharge_target_soc,
           manual_target_soc,
           updated_at
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
       `,
     ).run(
       input.id,
       siteId,
       input.name,
-      input.adapter,
+      input.plugin,
       input.model,
       input.ipAddress,
       input.enabled === false ? 0 : 1,
       input.status ?? "idle",
       input.connected === false ? 0 : 1,
+      normalizeMinimumDischargePercent(input.minimumDischargePercent),
       input.strategyMode ?? "self-consumption",
-      input.manualState ?? input.status ?? "idle",
+      resolveManualState(input.manualState ?? input.status ?? null),
       input.manualPowerW ?? null,
-      input.manualTargetSoc ?? 100,
+      input.manualChargeTargetSoc ?? 100,
+      input.manualDischargeTargetSoc ??
+        normalizeMinimumDischargePercent(input.minimumDischargePercent),
+      input.manualTargetSoc ??
+        resolveManualTargetSoc({
+          manualState: resolveManualState(input.manualState ?? input.status ?? null),
+          manualChargeTargetSoc: input.manualChargeTargetSoc ?? 100,
+          manualDischargeTargetSoc:
+            input.manualDischargeTargetSoc ??
+            normalizeMinimumDischargePercent(input.minimumDischargePercent),
+        }),
       now,
     );
 
@@ -529,16 +558,60 @@ export function setBatteryStrategy(
           strategy_mode = ?2,
           manual_state = ?3,
           manual_power_w = ?4,
-          manual_target_soc = ?5,
-          updated_at = ?6
-        WHERE id = ?1 AND site_id = ?7
+          manual_charge_target_soc = ?5,
+          manual_discharge_target_soc = ?6,
+          manual_target_soc = ?7,
+          updated_at = ?8
+        WHERE id = ?1 AND site_id = ?9
       `,
     ).run(
       id,
       input.strategyMode,
       input.manualState ?? null,
       input.manualPowerW ?? null,
+      input.manualChargeTargetSoc ?? null,
+      input.manualDischargeTargetSoc ?? null,
       input.manualTargetSoc ?? null,
+      new Date().toISOString(),
+      siteId,
+    );
+
+    return getBatteryByIdOrThrow(db, id, siteId);
+  } finally {
+    db.close();
+  }
+}
+
+export function setBatteryMinimumDischargePercent(
+  id: string,
+  input: UpdateBatteryMinimumDischargeInput,
+  siteId: string,
+  databasePath = getDatabasePath(),
+): BatteryRecord | null {
+  assertKnownSiteId(siteId, databasePath);
+  const db = openWritableDatabase(databasePath);
+
+  try {
+    assertWritableSchema(
+      db,
+      databasePath,
+      "batteries",
+      BATTERY_REQUIRED_COLUMNS,
+    );
+
+    if (!getBatteryById(db, id, siteId)) {
+      return null;
+    }
+
+    db.query(
+      `
+        UPDATE batteries
+        SET minimum_discharge_percent = ?2, updated_at = ?3
+        WHERE id = ?1 AND site_id = ?4
+      `,
+    ).run(
+      id,
+      normalizeMinimumDischargePercent(input.minimumDischargePercent),
       new Date().toISOString(),
       siteId,
     );
@@ -910,15 +983,18 @@ function ensureSchema(db: Database): void {
       id TEXT PRIMARY KEY,
       site_id TEXT NOT NULL,
       name TEXT NOT NULL,
-      adapter TEXT NOT NULL,
+      plugin TEXT NOT NULL,
       model TEXT NOT NULL,
       ip_address TEXT NOT NULL,
       enabled INTEGER NOT NULL,
       status TEXT NOT NULL,
       connected INTEGER NOT NULL,
+      minimum_discharge_percent REAL NOT NULL DEFAULT 10,
       strategy_mode TEXT NOT NULL DEFAULT 'self-consumption',
       manual_state TEXT,
       manual_power_w REAL,
+      manual_charge_target_soc REAL,
+      manual_discharge_target_soc REAL,
       manual_target_soc REAL,
       updated_at TEXT NOT NULL,
       FOREIGN KEY(site_id) REFERENCES sites(id),
@@ -982,6 +1058,10 @@ function ensureBatteryColumns(db: Database): void {
 
   const columns = getTableColumns(db, "batteries");
 
+  if (!columns.includes("plugin")) {
+    db.exec("ALTER TABLE batteries ADD COLUMN plugin TEXT NOT NULL DEFAULT 'indevolt-battery';");
+  }
+
   if (!columns.includes("strategy_mode")) {
     db.exec(
       "ALTER TABLE batteries ADD COLUMN strategy_mode TEXT NOT NULL DEFAULT 'self-consumption';",
@@ -996,12 +1076,66 @@ function ensureBatteryColumns(db: Database): void {
     db.exec("ALTER TABLE batteries ADD COLUMN manual_power_w REAL;");
   }
 
+  if (!columns.includes("minimum_discharge_percent")) {
+    db.exec(
+      "ALTER TABLE batteries ADD COLUMN minimum_discharge_percent REAL NOT NULL DEFAULT 10;",
+    );
+  }
+
   if (!columns.includes("manual_target_soc")) {
     db.exec("ALTER TABLE batteries ADD COLUMN manual_target_soc REAL;");
     db.exec(
       "UPDATE batteries SET manual_target_soc = 100 WHERE manual_target_soc IS NULL;",
     );
   }
+
+  if (!columns.includes("manual_charge_target_soc")) {
+    db.exec("ALTER TABLE batteries ADD COLUMN manual_charge_target_soc REAL;");
+    db.exec(
+      "UPDATE batteries SET manual_charge_target_soc = COALESCE(manual_target_soc, 100) WHERE manual_charge_target_soc IS NULL;",
+    );
+  }
+
+  if (!columns.includes("manual_discharge_target_soc")) {
+    db.exec("ALTER TABLE batteries ADD COLUMN manual_discharge_target_soc REAL;");
+    db.exec(
+      "UPDATE batteries SET manual_discharge_target_soc = COALESCE(minimum_discharge_percent, 10) WHERE manual_discharge_target_soc IS NULL;",
+    );
+  }
+}
+
+function resolveManualTargetSoc(input: {
+  manualState: BatteryManualState | null;
+  manualChargeTargetSoc: number | null;
+  manualDischargeTargetSoc: number | null;
+}): number | null {
+  if (input.manualState === "charging") {
+    return input.manualChargeTargetSoc;
+  }
+
+  if (input.manualState === "discharging") {
+    return input.manualDischargeTargetSoc;
+  }
+
+  return null;
+}
+
+function resolveManualState(state: BatteryStatus | BatteryManualState | null): BatteryManualState {
+  if (state === "charging" || state === "discharging") {
+    return state;
+  }
+
+  return "idle";
+}
+
+function normalizeMinimumDischargePercent(value: number | undefined): number {
+  const nextValue = value ?? 10;
+
+  if (!Number.isFinite(nextValue)) {
+    throw new Error("Minimum discharge percentage must be a number.");
+  }
+
+  return Math.max(10, Math.min(100, Math.round(nextValue)));
 }
 
 function ensureSiteColumns(db: Database): void {
@@ -1048,15 +1182,19 @@ function normalizeSiteLocation(location: string | undefined): string {
   return `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
 }
 
-function getLinkedSiteTable(db: Database, siteId: string): string | null {
+function getLinkedSiteResources(
+  db: Database,
+  siteId: string,
+): Array<{ count: number; label: string }> {
   const linkedTables = [
-    "batteries",
-    "meters",
-    "weather_sources",
-    "dynamic_price_sources",
+    { tableName: "batteries", label: "battery plugin(s)" },
+    { tableName: "meters", label: "meter(s)" },
+    { tableName: "weather_sources", label: "weather source(s)" },
+    { tableName: "dynamic_price_sources", label: "dynamic price source(s)" },
   ] as const;
+  const resources: Array<{ count: number; label: string }> = [];
 
-  for (const tableName of linkedTables) {
+  for (const { tableName, label } of linkedTables) {
     if (
       !hasTable(db, tableName) ||
       !getTableColumns(db, tableName).includes("site_id")
@@ -1071,11 +1209,11 @@ function getLinkedSiteTable(db: Database, siteId: string): string | null {
       .get(siteId);
 
     if ((row?.count ?? 0) > 0) {
-      return tableName;
+      resources.push({ count: row?.count ?? 0, label });
     }
   }
 
-  return null;
+  return resources;
 }
 
 function hasTable(db: Database, tableName: string): boolean {
@@ -1129,15 +1267,18 @@ function readBatteries(db: Database, siteId: string): BatteryRecord[] {
           id,
           site_id,
           name,
-          adapter,
+          plugin,
           model,
           ip_address,
           enabled,
           status,
           connected,
+          minimum_discharge_percent,
           strategy_mode,
           manual_state,
           manual_power_w,
+          manual_charge_target_soc,
+          manual_discharge_target_soc,
           manual_target_soc,
           updated_at
         FROM batteries
@@ -1209,15 +1350,18 @@ function getBatteryById(
           id,
           site_id,
           name,
-          adapter,
+          plugin,
           model,
           ip_address,
           enabled,
           status,
           connected,
+          minimum_discharge_percent,
           strategy_mode,
           manual_state,
           manual_power_w,
+          manual_charge_target_soc,
+          manual_discharge_target_soc,
           manual_target_soc,
           updated_at
         FROM batteries
@@ -1334,15 +1478,18 @@ function mapBatteryRow(row: BatteryRow): BatteryRecord {
     id: row.id,
     siteId: row.site_id,
     name: row.name,
-    adapter: row.adapter,
+    plugin: row.plugin,
     model: row.model,
     ipAddress: row.ip_address,
     enabled: row.enabled === 1,
     status: row.status,
     connected: row.connected === 1,
+    minimumDischargePercent: row.minimum_discharge_percent,
     strategyMode: row.strategy_mode,
     manualState: row.manual_state,
     manualPowerW: row.manual_power_w,
+    manualChargeTargetSoc: row.manual_charge_target_soc,
+    manualDischargeTargetSoc: row.manual_discharge_target_soc,
     manualTargetSoc: row.manual_target_soc,
     updatedAt: row.updated_at,
   };

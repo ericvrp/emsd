@@ -8,6 +8,7 @@ import {
   type ManagedDeviceStatusRecord,
   type ManagedDeviceTelemetryRecord,
   type MeterRecord,
+  type NormalizedBatteryInfo,
   type SiteRecord,
   type WeatherForecastSourceRecord,
   getDaemonLockPath,
@@ -16,7 +17,7 @@ import {
   openDaemonDatabase,
   readManagedDeviceTelemetry,
 } from "../../daemon/src/database";
-import { createBatteryAdapter } from "../../ems/src/battery-adapters";
+import { createBatteryPlugin } from "../../ems/src/battery-plugins";
 import {
   type DiscoveredDevice,
   discoverDevices,
@@ -41,6 +42,7 @@ import {
   listSites,
   listWeatherForecastSources,
   setBatteryEnabled,
+  setBatteryMinimumDischargePercent,
   setBatteryStrategy,
   setMeterEnabled,
   updateDynamicPriceSource,
@@ -147,11 +149,14 @@ function createManagedBatteryFromDiscovered(
 ) {
   return createBattery(
     {
-      adapter: discovered.model,
+      plugin: discovered.model,
       connected: true,
       enabled: true,
       id: discovered.discoveryId,
       ipAddress: discovered.ipAddress,
+      minimumDischargePercent: 10,
+      manualChargeTargetSoc: 100,
+      manualDischargeTargetSoc: 10,
       model: discovered.model,
       name: discovered.name,
       manualPowerW: inferBatteryPowerW(discovered.details),
@@ -188,7 +193,7 @@ function createManagedMeterFromDiscovered(
 function toManagedDeviceRecord(
   record: BatteryRecord | MeterRecord,
 ): ManagedDeviceRecord {
-  if ("adapter" in record) {
+  if ("plugin" in record) {
     return {
       id: record.id,
       siteId: record.siteId,
@@ -200,12 +205,15 @@ function toManagedDeviceRecord(
       connected: record.connected,
       state: record.connected ? record.status : "offline",
       batteryStrategy: {
+        manualChargeTargetSoc: record.manualChargeTargetSoc,
+        manualDischargeTargetSoc: record.manualDischargeTargetSoc,
         manualPowerW: record.manualPowerW,
         manualState: record.manualState,
         manualTargetSoc: record.manualTargetSoc,
         strategyMode: record.strategyMode,
       },
-      note: record.adapter,
+      minimumDischargePercent: record.minimumDischargePercent,
+      note: record.plugin,
       updatedAt: record.updatedAt,
     };
   }
@@ -221,6 +229,7 @@ function toManagedDeviceRecord(
     connected: record.connected,
     state: record.connected ? "connected" : "offline",
     batteryStrategy: null,
+    minimumDischargePercent: null,
     note: record.details || null,
     updatedAt: record.updatedAt,
   };
@@ -452,9 +461,38 @@ async function run(): Promise<void> {
       return;
     }
 
+    case "battery-set-minimum-discharge-percent": {
+      const input = readInput<{
+        id?: string;
+        minimumDischargePercent?: number;
+        siteId?: string;
+      }>();
+      const battery = setBatteryMinimumDischargePercent(
+        requireString(input.id, "id"),
+        {
+          minimumDischargePercent:
+            typeof input.minimumDischargePercent === "number"
+              ? input.minimumDischargePercent
+              : 10,
+        },
+        requireString(input.siteId, "siteId"),
+      );
+
+      if (!battery) {
+        throw new Error(
+          `Managed battery not found: ${requireString(input.id, "id")}`,
+        );
+      }
+
+      succeed(toManagedDeviceRecord(battery));
+      return;
+    }
+
     case "battery-set-strategy": {
       const input = readInput<{
         id?: string;
+        manualChargeTargetSoc?: number | null;
+        manualDischargeTargetSoc?: number | null;
         manualPowerW?: number | null;
         manualState?: BatteryManualState | null;
         manualTargetSoc?: number | null;
@@ -480,12 +518,34 @@ async function run(): Promise<void> {
         typeof input.manualPowerW === "number"
           ? input.manualPowerW
           : existing.manualPowerW;
+      const manualChargeTargetSoc =
+        typeof input.manualChargeTargetSoc === "number"
+          ? input.manualChargeTargetSoc
+          : existing.manualChargeTargetSoc;
+      const manualDischargeTargetSoc =
+        typeof input.manualDischargeTargetSoc === "number"
+          ? input.manualDischargeTargetSoc
+          : existing.manualDischargeTargetSoc;
       const manualTargetSoc =
         typeof input.manualTargetSoc === "number"
-          ? input.manualTargetSoc
-          : existing.manualTargetSoc;
+          ? clampManualTargetSoc(
+              input.manualTargetSoc,
+              manualState,
+              existing.minimumDischargePercent,
+            )
+          : clampNullableManualTargetSoc(
+                resolveManualTargetSoc({
+                  manualState,
+                  manualChargeTargetSoc,
+                  manualDischargeTargetSoc,
+                }) ?? existing.manualTargetSoc,
+                manualState,
+                existing.minimumDischargePercent,
+              );
 
-      await createBatteryAdapter(existing).setStrategy({
+      await createBatteryPlugin(existing).setStrategy({
+        manualChargeTargetSoc,
+        manualDischargeTargetSoc,
         strategyMode,
         manualPowerW,
         manualState,
@@ -495,6 +555,8 @@ async function run(): Promise<void> {
       const updated = setBatteryStrategy(
         batteryId,
         {
+          manualChargeTargetSoc,
+          manualDischargeTargetSoc,
           manualPowerW,
           manualState,
           manualTargetSoc,
@@ -508,6 +570,20 @@ async function run(): Promise<void> {
       }
 
       succeed(toManagedDeviceRecord(updated));
+      return;
+    }
+
+    case "battery-get-normalized-info": {
+      const input = readInput<{ id?: string; siteId?: string }>();
+      const batteryId = requireString(input.id, "id");
+      const siteId = requireString(input.siteId, "siteId");
+      const battery = getBattery(batteryId, siteId);
+
+      if (!battery) {
+        throw new Error(`Managed battery not found: ${batteryId}`);
+      }
+
+      succeed(await createBatteryPlugin(battery).getNormalizedInfo());
       return;
     }
 
@@ -762,6 +838,43 @@ async function run(): Promise<void> {
     default:
       throw new Error(`Unknown bridge action: ${action}`);
   }
+}
+
+function resolveManualTargetSoc(input: {
+  manualState: BatteryManualState | null;
+  manualChargeTargetSoc: number | null;
+  manualDischargeTargetSoc: number | null;
+}): number | null {
+  if (input.manualState === "charging") {
+    return input.manualChargeTargetSoc;
+  }
+
+  if (input.manualState === "discharging") {
+    return input.manualDischargeTargetSoc;
+  }
+
+  return null;
+}
+
+function clampManualTargetSoc(
+  value: number,
+  state: BatteryManualState | null,
+  minimumDischargePercent: number,
+): number {
+  const minimum = state === "discharging" ? minimumDischargePercent : 5;
+  return Math.max(minimum, Math.min(100, Math.round(value)));
+}
+
+function clampNullableManualTargetSoc(
+  value: number | null,
+  state: BatteryManualState | null,
+  minimumDischargePercent: number,
+): number | null {
+  if (value === null) {
+    return null;
+  }
+
+  return clampManualTargetSoc(value, state, minimumDischargePercent);
 }
 
 run().catch((error) => {

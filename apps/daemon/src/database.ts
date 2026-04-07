@@ -20,15 +20,18 @@ interface BatteryRow {
   id: string;
   site_id: string;
   name: string;
-  adapter: string;
+  plugin: string;
   model: string;
   ip_address: string;
   enabled: number;
   status: BatteryRecord["status"];
   connected: number;
+  minimum_discharge_percent: BatteryRecord["minimumDischargePercent"];
   strategy_mode: BatteryRecord["strategyMode"] | "self-consumption";
   manual_state: BatteryRecord["manualState"];
   manual_power_w: BatteryRecord["manualPowerW"];
+  manual_charge_target_soc: BatteryRecord["manualChargeTargetSoc"];
+  manual_discharge_target_soc: BatteryRecord["manualDischargeTargetSoc"];
   manual_target_soc: BatteryRecord["manualTargetSoc"];
   updated_at: string;
 }
@@ -77,15 +80,18 @@ export function openDaemonDatabase(databasePath = getDatabasePath()): Database {
       id TEXT PRIMARY KEY,
       site_id TEXT NOT NULL,
       name TEXT NOT NULL,
-      adapter TEXT NOT NULL,
+      plugin TEXT NOT NULL,
       model TEXT NOT NULL,
       ip_address TEXT NOT NULL,
       enabled INTEGER NOT NULL,
       status TEXT NOT NULL,
       connected INTEGER NOT NULL,
+      minimum_discharge_percent REAL NOT NULL DEFAULT 10,
       strategy_mode TEXT NOT NULL DEFAULT 'self-consumption',
       manual_state TEXT,
       manual_power_w REAL,
+      manual_charge_target_soc REAL,
+      manual_discharge_target_soc REAL,
       manual_target_soc REAL,
       updated_at TEXT NOT NULL,
       FOREIGN KEY(site_id) REFERENCES sites(id),
@@ -182,15 +188,18 @@ export function readBatteries(db: Database): BatteryRecord[] {
           id,
           site_id,
           name,
-          adapter,
+          plugin,
           model,
           ip_address,
           enabled,
           status,
           connected,
+          minimum_discharge_percent,
           strategy_mode,
           manual_state,
           manual_power_w,
+          manual_charge_target_soc,
+          manual_discharge_target_soc,
           manual_target_soc,
           updated_at
         FROM batteries
@@ -203,15 +212,18 @@ export function readBatteries(db: Database): BatteryRecord[] {
     id: row.id,
     siteId: row.site_id,
     name: row.name,
-    adapter: row.adapter,
+    plugin: row.plugin,
     model: row.model,
     ipAddress: row.ip_address,
     enabled: row.enabled === 1,
     status: row.status,
     connected: row.connected === 1,
+    minimumDischargePercent: row.minimum_discharge_percent,
     strategyMode: row.strategy_mode,
     manualState: row.manual_state,
     manualPowerW: row.manual_power_w,
+    manualChargeTargetSoc: row.manual_charge_target_soc,
+    manualDischargeTargetSoc: row.manual_discharge_target_soc,
     manualTargetSoc: row.manual_target_soc,
     updatedAt: row.updated_at,
   }));
@@ -222,6 +234,16 @@ function ensureBatteryColumns(db: Database): void {
     .query<{ name: string }, []>("PRAGMA table_info(batteries)")
     .all()
     .map((column) => column.name);
+
+  if (!columns.includes("plugin")) {
+    db.exec("ALTER TABLE batteries ADD COLUMN plugin TEXT NOT NULL DEFAULT 'indevolt-battery';");
+  }
+
+  if (!columns.includes("minimum_discharge_percent")) {
+    db.exec(
+      "ALTER TABLE batteries ADD COLUMN minimum_discharge_percent REAL NOT NULL DEFAULT 10;",
+    );
+  }
 
   if (!columns.includes("strategy_mode")) {
     db.exec(
@@ -241,6 +263,20 @@ function ensureBatteryColumns(db: Database): void {
     db.exec("ALTER TABLE batteries ADD COLUMN manual_target_soc REAL;");
     db.exec(
       "UPDATE batteries SET manual_target_soc = 100 WHERE manual_target_soc IS NULL;",
+    );
+  }
+
+  if (!columns.includes("manual_charge_target_soc")) {
+    db.exec("ALTER TABLE batteries ADD COLUMN manual_charge_target_soc REAL;");
+    db.exec(
+      "UPDATE batteries SET manual_charge_target_soc = COALESCE(manual_target_soc, 100) WHERE manual_charge_target_soc IS NULL;",
+    );
+  }
+
+  if (!columns.includes("manual_discharge_target_soc")) {
+    db.exec("ALTER TABLE batteries ADD COLUMN manual_discharge_target_soc REAL;");
+    db.exec(
+      "UPDATE batteries SET manual_discharge_target_soc = COALESCE(minimum_discharge_percent, 10) WHERE manual_discharge_target_soc IS NULL;",
     );
   }
 }
