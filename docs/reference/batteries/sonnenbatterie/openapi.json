@@ -1,0 +1,964 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "sonnenBatterie API",
+    "description": "The sonnenBatterie API allows to remote control a sonnenBatterie.\n                           \nMost API endpoints require an authentication token.\n                           This token is available in the sonnenBatterie Dashboard (‘Software-Integration’).\n                           Unproteced endpoints are marked below.\n                           \n\nExample request:\n                           \n`curl --header 'Auth-Token: TOKEN' http://SYSTEM-IP/api/v2/latestdata`",
+    "license": {
+      "name": "Proprietary",
+      "url": "https://www.sonnen.de"
+    },
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://IP",
+      "description": "sonnenBatterie"
+    }
+  ],
+  "paths": {
+    "/api/v2/battery": {
+      "get": {
+        "tags": [
+          "Read API"
+        ],
+        "summary": "Get battery module data",
+        "description": "Get battery module data\n\n|**Variable**|**Example Value**|**Unit**|**Description**|**Data type**|\n| :-: | :-: | :-: | :-: | :-: |\n|balancechargerequest|0|N/A|Module request for balance charge, 0 for false, 1 for true|Boolean|\n|chargecurrentlimit|38\\.0|A|Module charge current limit|Float|\n|cyclecount|344|N/A|Number of charge/discharge cycles|Integer|\n|dischargecurrentlimit|38\\.0|A|Module discharge current limit|Float|\n|fullchargecapacity|96\\.922|Ah|Fullcharge capacity|Float|\n|maximumcelltemperature|28\\.05|ºC|Max cell temperature|Float|\n|maximumcellvoltage|3\\.327|V|Max cell voltage|Float|\n|maximumcellvoltagenum|0|-|-|Enum|\n|maximummodulecurrent|-0.01|A|Max module DC current|Float|\n|maximummoduledcvoltage|106\\.27|V|Max module DC voltage|Float|\n|maximummoduletemperature|-273.15|ºC|Max module DC temperature|Float|\n|minimumcelltemperature|22\\.05|ºC|Min cell temperature|Float|\n|minimumcellvoltage|3\\.293|V|Min cell voltage|Float|\n|minimumcellvoltagenum|0|-|-|Enum|\n|minimummodulecurrent|-0.05|A|Min module current|Float|\n|minimummoduledcvoltage|105\\.528|V|Min module voltage|Float|\n|minimummoduletemperature|-273.15|ºC|Min module temperature|Float|\n|relativestateofcharge|79\\.0|%, percentage|Relative state of charge|Float|\n|remainingcapacity|79\\.941|Ah|Remaining capacity in Ah|Float|\n|systemalarm|0|N/A|System alarm, 0 for false, 1 for true|Boolean|\n|systemcurrent|0\\.0|A|System current|Float|\n|systemdcvoltage|211\\.797|V|System battery voltage|Float|\n|systemstatus|49|N/A|System status|Integer|\n|systemtime|0|N/A|System time|Boolean|\n|systemwarning|0|N/A|System warning, 0 for false, 1 for true|Boolean|\n",
+        "operationId": "GetBattery",
+        "responses": {
+          "200": {
+            "description": "Battery module measurements",
+            "content": {
+              "application/json": {
+                "schema": {},
+                "example": {
+                  "chargecurrentlimit": 0,
+                  "cyclecount": 127,
+                  "dischargecurrentlimit": 29.6,
+                  "fullchargecapacity": 40.359,
+                  "maximumcelltemperature": 21.15,
+                  "maximumcellvoltage": 3.333,
+                  "maximummodulecurrent": 0.001,
+                  "maximummoduledcvoltage": 53.307,
+                  "minimumcelltemperature": 20.35,
+                  "minimumcellvoltage": 3.331,
+                  "minimummodulecurrent": 0.001,
+                  "minimummoduledcvoltage": 53.307,
+                  "relativestateofcharge": 100,
+                  "remainingcapacity": 40.272,
+                  "systemalarm": 0,
+                  "systemcurrent": 0.001,
+                  "systemdcvoltage": 53.307,
+                  "systemstatus": 49,
+                  "systemtime": 20635588,
+                  "systemwarning": 0
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/PublicUnauthorized"
+          }
+        }
+      }
+    },
+    "/api/v2/configurations": {
+      "get": {
+        "tags": [
+          "Read API"
+        ],
+        "summary": "Get all configurations",
+        "description": "Get all configurations\n\nGets the values of all allowed configurations. The allowed configurations are:\n- CM_MarketingModuleCapacity\n- CN_CascadingRole\n- DE_Software\n- EM_OperatingMode\n- EM_Prognosis_Charging\n- EM_RE_ENABLE_MICROGRID\n- EM_ToU_Schedule\n- EM_USER_INPUT_TIME_ONE\n- EM_USER_INPUT_TIME_THREE\n- EM_USER_INPUT_TIME_TWO\n- EM_USOC\n- EM_US_CHP_Max_SOC\n- EM_US_CHP_Min_SOC\n- EM_US_GENRATOR_TYPE\n- EM_US_GEN_POWER_SET_POINT\n- EM_US_RE_ENABLE_MICROGRID\n- EM_US_USER_INPUT_TIME_ONE\n- EM_US_USER_INPUT_TIME_THREE\n- EM_US_USER_INPUT_TIME_TWO\n- IC_BatteryModules\n- IC_InverterMaxPower_w\n- NVM_PfcFixedCosPhi\n- NVM_PfcIsFixedCosPhiActive\n- NVM_PfcIsFixedCosPhiLagging\n- SH_HeaterOperatingMode\n- SH_HeaterTemperatureMax\n- SH_HeaterTemperatureMin",
+        "operationId": "GetConfigurations",
+        "responses": {
+          "200": {
+            "description": "Get all Configurations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Configurations"
+                },
+                "example": {
+                  "CM_MarketingModuleCapacity": "5500",
+                  "CN_CascadingRole": "secondary",
+                  "DE_Software": "1.8.3",
+                  "EM_CHP_Max_SOC": "90",
+                  "EM_CHP_Min_SOC": null,
+                  "EM_OperatingMode": "1",
+                  "EM_Prognosis_Charging": "0",
+                  "EM_RE_ENABLE_MICROGRID": "0",
+                  "EM_ToU_Schedule": "[{\"grid\":\"1\",\"start\":\"07:00\",\"stop\":\"08:00\",\"charge\":\"07:31\"}]",
+                  "EM_USER_INPUT_TIME_ONE": "00:00",
+                  "EM_USER_INPUT_TIME_TWO": "00:00",
+                  "EM_USOC": "0",
+                  "EM_US_GENRATOR_TYPE": "automatic",
+                  "EM_US_GEN_POWER_SET_POINT": "0",
+                  "IC_BatteryModules": "4",
+                  "IC_InverterMaxPower_w": "3300",
+                  "NVM_PfcFixedCosPhi": "1",
+                  "NVM_PfcIsFixedCosPhiActive": "0",
+                  "NVM_PfcIsFixedCosPhiLagging": "1",
+                  "SH_HeaterOperatingMode": "0",
+                  "SH_HeaterTemperatureMax": "65",
+                  "SH_HeaterTemperatureMin": "42"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/PublicUnauthorized"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Write API"
+        ],
+        "summary": "Update configurations",
+        "description": "Update configurations\n\nSets the value of one or more configurations. The writable configurations are:\n- EM_OperatingMode\n- EM_Prognosis_Charging\n- EM_RE_ENABLE_MICROGRID\n- EM_ToU_Schedule\n- EM_USER_INPUT_TIME_ONE\n- EM_USER_INPUT_TIME_THREE\n- EM_USER_INPUT_TIME_TWO\n- EM_USOC\n- EM_US_CHP_Max_SOC\n- EM_US_CHP_Min_SOC\n- EM_US_GENRATOR_TYPE\n- EM_US_GEN_POWER_SET_POINT\n- EM_US_RE_ENABLE_MICROGRID\n- EM_US_USER_INPUT_TIME_ONE\n- EM_US_USER_INPUT_TIME_THREE\n- EM_US_USER_INPUT_TIME_TWO\n- NVM_PfcFixedCosPhi\n- NVM_PfcIsFixedCosPhiActive\n- NVM_PfcIsFixedCosPhiLagging\n- SH_HeaterOperatingMode\n- SH_HeaterTemperatureMax\n- SH_HeaterTemperatureMin\n\nThe operating mode (EM_OperatingMode) can not be changed if VPP is active.\n\nPossible values for EM_USOC are:\n* 0 (disable backup buffer)\n* 5 - 100 (backup buffer percentage)\n\n**Examples:**\n\n`curl -X PUT -d NVM_PfcFixedCosPhi=1 --header 'Auth-Token: TOKEN' http://SYSTEM-IP/api/v2/configurations`\n\n`curl -X PUT -d NVM_PfcFixedCosPhi=1 -d NVM_PfcIsFixedCosPhiActive=0 --header 'Auth-Token: TOKEN' http://SYSTEM-IP/api/v2/configurations`\n",
+        "operationId": "PutConfiguration",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Configurations"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetResponseBody"
+                },
+                "example": {
+                  "EM_OperatingMode": "2"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/PublicUnauthorized"
+          },
+          "403": {
+            "description": "403 Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v2/configurations/{name}": {
+      "get": {
+        "tags": [
+          "Read API"
+        ],
+        "summary": "Get a single configuration",
+        "description": "Get a single configuration\n\nGets the value of a given configuration. The allowed configurations are:\n- CM_MarketingModuleCapacity\n- CN_CascadingRole\n- DE_Software\n- EM_OperatingMode\n- EM_Prognosis_Charging\n- EM_RE_ENABLE_MICROGRID\n- EM_ToU_Schedule\n- EM_USER_INPUT_TIME_ONE\n- EM_USER_INPUT_TIME_THREE\n- EM_USER_INPUT_TIME_TWO\n- EM_USOC\n- EM_US_CHP_Max_SOC\n- EM_US_CHP_Min_SOC\n- EM_US_GENRATOR_TYPE\n- EM_US_GEN_POWER_SET_POINT\n- EM_US_RE_ENABLE_MICROGRID\n- EM_US_USER_INPUT_TIME_ONE\n- EM_US_USER_INPUT_TIME_THREE\n- EM_US_USER_INPUT_TIME_TWO\n- IC_BatteryModules\n- IC_InverterMaxPower_w\n- NVM_PfcFixedCosPhi\n- NVM_PfcIsFixedCosPhiActive\n- NVM_PfcIsFixedCosPhiLagging\n- SH_HeaterOperatingMode\n- SH_HeaterTemperatureMax\n- SH_HeaterTemperatureMin",
+        "operationId": "GetConfiguration",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "description": "The name of a configuration entry",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetResponseBody"
+                },
+                "example": {
+                  "EM_OperatingMode": "2"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/PublicUnauthorized"
+          },
+          "403": {
+            "description": "Trying to read an unexpected or restricted configuration"
+          }
+        }
+      }
+    },
+    "/api/v2/inverter": {
+      "get": {
+        "tags": [
+          "Read API"
+        ],
+        "summary": "Get inverter data",
+        "description": "Get inverter data\n\n|**Variable**|**Example Value**|**Unit**|**Description**|**Data type**|\n| :-: | :-: | :-: | :-: | :-: |\n|fac|49.947|Hz, hertz|AC frequency in hertz|Float|\n|iac_total|0.41|A, ampere|AC current|Float|\n|ibat|0|A, ampere|Battery current|Float|\n|ipv|0|A, ampere|PV current|Float|\n|pac_microgrid|0|W, watt|AC microgrid power:<br> greater than 0 means discharging, <br>less than 0 means charging|Float|\n|pac_total|-4.126|W, watt|AC power:<br> greater than 0 means discharging, <br>less than 0 means charging|Float|\n|pbat|0|W, watt|DC Power|Float|\n|phi|0|N/A|Power factor cos φ|Float|\n|ppv|0|W, watt|PV production in watts|Float|\n|sac_total|97.124|VA, volt-ampere|Output of apparent power in VA|Float|\n|tmax|32.351|ºC, degrees Celsius|Inverter Temperature|Float|\n|uac|237.764|V, volt|AC voltage in volts|Float|\n|ubat|212.0|V, volt|Battery voltage in volts|Float|\n|upv|0|V, volt|PV voltage in volts|Float|\n",
+        "operationId": "GetInverter",
+        "responses": {
+          "200": {
+            "description": "Inverter measurements",
+            "content": {
+              "application/json": {
+                "schema": {},
+                "example": {
+                  "fac": 50.011,
+                  "iac_total": 0.99,
+                  "ibat": -0.01,
+                  "ipv": 0,
+                  "pac_microgrid": 0,
+                  "pac_total": -6.62,
+                  "pbat": -0.56,
+                  "phi": 0,
+                  "ppv": 0,
+                  "sac_total": 230.09,
+                  "tmax": 37.98,
+                  "uac": 232.61,
+                  "ubat": 49.16,
+                  "upv": 0
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/PublicUnauthorized"
+          }
+        }
+      }
+    },
+    "/api/v2/io": {
+      "get": {
+        "tags": [
+          "Read API"
+        ],
+        "summary": "Return the status of all inputs and outputs",
+        "description": "Return the status of all inputs and outputs\n",
+        "operationId": "GetIos",
+        "responses": {
+          "200": {
+            "description": "Inputs and outputs",
+            "content": {
+              "application/json": {
+                "schema": {},
+                "example": {
+                  "DI_1": {
+                    "connector": "X23_1",
+                    "status": 0,
+                    "usage": ""
+                  },
+                  "DI_10": {
+                    "connector": "X23_10",
+                    "status": 0,
+                    "usage": "Micro CHP"
+                  },
+                  "DI_11": {
+                    "connector": "X23_11",
+                    "status": 0,
+                    "usage": ""
+                  },
+                  "DI_12": {
+                    "connector": "X23_12",
+                    "status": 0,
+                    "usage": ""
+                  },
+                  "DI_2": {
+                    "connector": "X23_2",
+                    "status": 0,
+                    "usage": ""
+                  },
+                  "DI_3": {
+                    "connector": "X23_3",
+                    "status": 0,
+                    "usage": ""
+                  },
+                  "DI_4": {
+                    "connector": "X23_4",
+                    "status": 1,
+                    "usage": ""
+                  },
+                  "DI_5": {
+                    "connector": "X23_5",
+                    "status": 0,
+                    "usage": "OV"
+                  },
+                  "DI_6": {
+                    "connector": "X23_6",
+                    "status": 0,
+                    "usage": "CE"
+                  },
+                  "DI_7": {
+                    "connector": "X23_7",
+                    "status": 0,
+                    "usage": "DE"
+                  },
+                  "DI_8": {
+                    "connector": "X23_8",
+                    "status": 0,
+                    "usage": "UV"
+                  },
+                  "DI_9": {
+                    "connector": "X23_9",
+                    "status": 0,
+                    "usage": ""
+                  },
+                  "DO_1": {
+                    "connector": "X24_4",
+                    "status": 0,
+                    "usage": "DC-CONTACTOR"
+                  },
+                  "DO_10": {
+                    "connector": "X24_10",
+                    "status": 0,
+                    "usage": ""
+                  },
+                  "DO_11": {
+                    "connector": "X24_11",
+                    "status": 1,
+                    "usage": "CHP SOC (Min/Max)"
+                  },
+                  "DO_12": {
+                    "connector": "X24_12",
+                    "status": 0,
+                    "usage": "Self Consumption Relay"
+                  },
+                  "DO_13": {
+                    "connector": "X24_16",
+                    "status": 0,
+                    "usage": "PV Reduction 1"
+                  },
+                  "DO_14": {
+                    "connector": "X24_15",
+                    "status": 0,
+                    "usage": "PV Reduction 2"
+                  },
+                  "DO_16": {
+                    "connector": "X24_13",
+                    "status": 1,
+                    "usage": ""
+                  },
+                  "DO_2": {
+                    "connector": "X24_3",
+                    "status": 0,
+                    "usage": "DC-FAN"
+                  },
+                  "DO_3": {
+                    "connector": "X24_2",
+                    "status": 1,
+                    "usage": ""
+                  },
+                  "DO_4": {
+                    "connector": "X24_1",
+                    "status": 0,
+                    "usage": ""
+                  },
+                  "DO_5": {
+                    "connector": "X24_5",
+                    "status": 0,
+                    "usage": ""
+                  },
+                  "DO_6": {
+                    "connector": "X24_6",
+                    "status": 0,
+                    "usage": ""
+                  },
+                  "DO_7": {
+                    "connector": "X24_7",
+                    "status": 0,
+                    "usage": ""
+                  },
+                  "DO_8": {
+                    "connector": "X24_8",
+                    "status": 0,
+                    "usage": ""
+                  },
+                  "DO_9": {
+                    "connector": "X24_9",
+                    "status": 0,
+                    "usage": ""
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/PublicUnauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/v2/latestdata": {
+      "get": {
+        "tags": [
+          "Read API"
+        ],
+        "summary": "Get latest data",
+        "description": "Get latest data\n\nSupported since firmware version 1.13.2",
+        "operationId": "LatestData",
+        "responses": {
+          "200": {
+            "description": "Latest data",
+            "content": {
+              "application/json": {
+                "schema": {},
+                "example": {
+                  "Consumption_W": 0,
+                  "FullChargeCapacity": 0,
+                  "GridFeedIn_W": 0,
+                  "Pac_total_W": 0,
+                  "Production_W": 0,
+                  "RSOC": 0,
+                  "SetPoint_W": 0,
+                  "Timestamp": "2019-09-19 15:07:19",
+                  "USOC": 0,
+                  "UTC_Offet": 2,
+                  "ic_status": {
+                    "DC Shutdown Reason": {
+                      "Critical BMS Alarm": false,
+                      "Error condition in BMS initialization": false,
+                      "HW_Shutdown": false,
+                      "HardWire Over Voltage": false,
+                      "HardWired Dry Signal A": false,
+                      "HardWired Under Voltage": false,
+                      "Initialization Timeout": false,
+                      "Initialization of AC contactor failed": false,
+                      "Initialization of BMS hardware failed": false,
+                      "Initialization of DC contactor failed": false,
+                      "Initialization of Inverter failed": false,
+                      "Invalid or no SystemType was set": false,
+                      "Inverter Over Temperature": false,
+                      "Inverter Under Voltage": false,
+                      "Manual shutdown by user": false,
+                      "Minimum rSOC of System reached": false,
+                      "No Setpoint received by HC": false,
+                      "Shutdown Timer started": false,
+                      "System Validation failed": false,
+                      "Voltage Monitor Changed": false
+                    },
+                    "Eclipse Led": {
+                      "Pulsing Green": false,
+                      "Pulsing Orange": true,
+                      "Pulsing White": false,
+                      "Solid Red": false
+                    },
+                    "Flat Status": {
+                      "Auto Mode": false,
+                      "Error": false,
+                      "Full Charge Power": false,
+                      "Full Discharge Power": false,
+                      "Not Connected": false,
+                      "Spare 1": false,
+                      "Spare 2": false,
+                      "Spare 3": false,
+                      "Timeout": false
+                    },
+                    "MISC Status Bits": {
+                      "Discharge not allowed": false,
+                      "Min System SOC": false,
+                      "Min User SOC": false
+                    },
+                    "Microgrid Status": {
+                      "Continious Power Violation": false,
+                      "Discharge Current Limit Violation": false,
+                      "Low Temperature": false,
+                      "Max System SOC": false,
+                      "Max User SOC": false,
+                      "Microgrid Enabled": false,
+                      "Min System SOC": false,
+                      "Min User SOC": false,
+                      "Over Charge Current": false,
+                      "Over Discharge Current": false,
+                      "Peak Power Violation": false,
+                      "Protect is activated": false,
+                      "Transition to Ongrid Pending": false
+                    },
+                    "Setpoint Priority": {
+                      "BMS": false,
+                      "Energy Manager": false,
+                      "Flat": false,
+                      "Full Charge Request": false,
+                      "Inverter": false,
+                      "Min User SOC": false,
+                      "Trickle Charge": false
+                    },
+                    "System Validation": {
+                      "Country Code Set status flag 1": false,
+                      "Country Code Set status flag 2": false,
+                      "Self test Error DC Wiring": false,
+                      "Self test Postponed": false,
+                      "Self test Precondition not met": false,
+                      "Self test Running": false,
+                      "Self test successful finished": false
+                    },
+                    "nrbatterymodules": 0,
+                    "secondssincefullcharge": 0,
+                    "statebms": "not ready",
+                    "statecorecontrolmodule": "config",
+                    "stateinverter": "not ready",
+                    "timestamp": "Thu Jan 1 01:00:00 1970"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/PublicUnauthorized"
+          }
+        }
+      }
+    },
+    "/api/v2/powermeter": {
+      "get": {
+        "tags": [
+          "Read API"
+        ],
+        "summary": "Get power-meter measurements",
+        "description": "Get power-meter measurements\n\nSupported since firmware version 1.13.2",
+        "operationId": "Powermeter",
+        "responses": {
+          "200": {
+            "description": "Power-meter data",
+            "content": {
+              "application/json": {
+                "schema": {},
+                "example": [
+                  {
+                    "a_l1": 0,
+                    "a_l2": 0,
+                    "a_l3": 0,
+                    "channel": 1,
+                    "deviceid": 4,
+                    "direction": "production",
+                    "error": -1,
+                    "kwh_exported": 0,
+                    "kwh_imported": 0,
+                    "v_l1_l2": 0,
+                    "v_l1_n": 0,
+                    "v_l2_l3": 0,
+                    "v_l2_n": 0,
+                    "v_l3_l1": 0,
+                    "v_l3_n": 0,
+                    "va_total": 0,
+                    "var_total": 0,
+                    "w_l1": 0,
+                    "w_l2": 0,
+                    "w_l3": 0,
+                    "w_total": 0
+                  },
+                  {
+                    "a_l1": 0,
+                    "a_l2": 0,
+                    "a_l3": 0,
+                    "channel": 2,
+                    "deviceid": 4,
+                    "direction": "consumption",
+                    "error": -1,
+                    "kwh_exported": 0,
+                    "kwh_imported": 0,
+                    "v_l1_l2": 0,
+                    "v_l1_n": 0,
+                    "v_l2_l3": 0,
+                    "v_l2_n": 0,
+                    "v_l3_l1": 0,
+                    "v_l3_n": 0,
+                    "va_total": 0,
+                    "var_total": 0,
+                    "w_l1": 0,
+                    "w_l2": 0,
+                    "w_l3": 0,
+                    "w_total": 0
+                  }
+                ]
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/PublicUnauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/v2/setpoint/{direction}/{watts}": {
+      "post": {
+        "tags": [
+          "Write API"
+        ],
+        "summary": "Charge/Discharge battery",
+        "description": "Charge/Discharge battery\n\nThe discharging power of a storage system can be controlled by setting a setpoint in watts.\nThe corresponding value of the setpoint is kept until the battery receives a new charging or discharging value.\nIf VPP is active, the request will be rejected.\n",
+        "operationId": "ChargeDischarge",
+        "parameters": [
+          {
+            "name": "direction",
+            "in": "path",
+            "description": "Setpoint direction: must be \"charge\" or \"discharge\".",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "charge|discharge"
+            }
+          },
+          {
+            "name": "watts",
+            "in": "path",
+            "description": "Amount of charge or discharge, in watts.\nMust be a positive number less than 1.000.000.000 (1000 MW).",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean"
+                },
+                "example": true
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/PublicUnauthorized"
+          },
+          "403": {
+            "description": "If VPP is enabled for this battery, it's not possible to charge or discharge using this endpoint.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "VPP has priority"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/v2/status": {
+      "get": {
+        "tags": [
+          "Read API"
+        ],
+        "summary": "Get status data",
+        "description": "Get status data\n\nThis endpoint does not require an authentication token.\n\n| Variable | Example Value | Unit | Description | Data type |\n| --- | --- | --- | --- | --- |\n| Apparent\\_output | 226 | VA, volt-ampere | All AC output of apparent power in VA | Integer |\n| BackupBuffer | 0 | %, percentage | Backup-buffer in percentage that is set on the system. | Integer |\n| BatteryCharging | false | \\- | Boolean that indicates the charge status. True if charging | Boolean |\n| BatteryDischarging | false | \\- | Boolean that indicates the discharge status. True if discharging | Boolean |\n| Consumption\\_Avg | 223 | W, watt | House consumption in watts, average over the last 60s | Integer |\n| Consumption\\_W | 232 | W, watt | House consumption in watts, direct measurement | Integer |\n| Fac | 49.999000549316400 | Hz, hertz | AC frequency in hertz | Float |\n| FlowConsumptionBattery | false | \\- | Boolean that indicates the energy flow at the installation site. True if battery feeds the consumption | Boolean |\n| FlowConsumptionGrid | true | \\- | Boolean that indicates the energy flow at the installation site. True if grid feeds the consumption | Boolean |\n| FlowConsumptionProduction | true | \\- | Boolean that indicates the energy flow at the installation site. True if production feeds the consumption | Boolean |\n| FlowGridBattery | false | \\- | Boolean that indicates the energy flow at the installation site. True if battery is charging from grid | Boolean |\n| FlowProductionBattery | false | \\- | Boolean that indicates the energy flow at the installation site. True if production is charging the battery | Boolean |\n| FlowProductionGrid | false | \\- | Boolean that indicates the energy flow at the installation site. True if production feeds into the grid | Boolean |\n| GridFeedIn\\_W | \\-208 | W, watt | Grid Feed in negative is consumption and positive is feed in | Integer |\n| IsSystemInstalled | 1 | \\- | System is installed or not | Integer |\n| OperatingMode | 2 | \\- | Operating mode that is set on the system: 1: Manual charging or discharging via API; 2: Automatic Self Consumption. Default.| Integer |\n| Pac\\_total\\_W | \\-5 | W, watt | AC Power greater than ZERO is discharging Inverter AC Power less than ZERO is charging | Signed Integer |\n| Production\\_W | 28 | W, watt | PV production in watts | Integer |\n| RSOC | 4 | %, percentage | Relative state of charge | Integer |\n| RemainingCapacity\\_W | 674 | Wh | Remaining capacity based on RSOC | Integer |\n| Sac1 | 75 | VA, volt-ampere | Output of apparent power in VA on Phase 1 | Integer |\n| Sac2 | 75 | VA, volt-ampere | Output of apparent power in VA on Phase 2 | Integer |\n| Sac3 | 76 | VA, volt-ampere | Output of apparent power in VA on Phase 3 | Integer |\n| SystemStatus | OnGrid | \\- | String that indicates if the system is connected to the grid (“OnGrid”) or disconnected (“OffGrid”) | String |\n| Timestamp | 2020-12-10 11:26:01 | \\- | Local system time | String |\n| USOC | 0 | %, percentage | User state of charge | Integer |\n| Uac | 230 | V, volt | AC voltage in volts | Integer |\n| Ubat | 50 | V, volt | Battery voltage in volts | Integer |\n| dischargeNotAllowed | false | \\- | Boolean that indicates the discharge status. True if no discharge allowed, based on battery maintenance | Boolean |\n| generator\\_autostart | false | \\- | Boolean that indicates the autostart setting of the generator. | Boolean |\n",
+        "operationId": "Status",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusResponseBody"
+                },
+                "example": {
+                  "Apparent_output": 96,
+                  "BackupBuffer": "0",
+                  "BatteryCharging": false,
+                  "BatteryDischarging": false,
+                  "Consumption_W": 0,
+                  "Fac": 50.0239143371582,
+                  "FlowConsumptionBattery": false,
+                  "FlowConsumptionGrid": false,
+                  "FlowConsumptionProduction": false,
+                  "FlowGridBattery": false,
+                  "FlowProductionBattery": false,
+                  "FlowProductionGrid": false,
+                  "GridFeedIn_W": -3,
+                  "IsSystemInstalled": 1,
+                  "OperatingMode": "2",
+                  "Pac_total_W": 7,
+                  "Production_W": 0,
+                  "RSOC": 21,
+                  "Sac1": 96,
+                  "Sac2": null,
+                  "Sac3": null,
+                  "SystemStatus": "OnGrid",
+                  "Timestamp": "2020-03-26 17:10:06",
+                  "USOC": 12,
+                  "Uac": 238,
+                  "Ubat": 209,
+                  "dischargeNotAllowed": false,
+                  "generator_autostart": false
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/PublicUnauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Configurations": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string",
+          "description": "A map of configuration entries with key and value.",
+          "nullable": true
+        }
+      },
+      "Error": {
+        "type": "object",
+        "description": "Errors that return a JSON response.\n\nHeavily inspired from: https://github.com/actix/actix-web/blob/bcdde1d4ea2f4bf6c01ccf8b5b6118f7c9a3b2bf/actix-web/src/error/internal.rs\n\n# Examples\n```\n# use std::io;\n# use apimodule::errors::ErrorUnauthorized;\nasync fn handler_error() -> Result<String, actix_web::Error> {\nErr(ErrorUnauthorized(\"...\".to_string()))\n}\n```",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        }
+      },
+      "GetResponseBody": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string",
+          "nullable": true
+        }
+      },
+      "StatusResponseBody": {
+        "type": "object",
+        "properties": {
+          "Apparent_output": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "BackupBuffer": {
+            "type": "string",
+            "nullable": true
+          },
+          "BatteryCharging": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "BatteryDischarging": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "Consumption_Avg": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "Consumption_W": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "Fac": {
+            "type": "number",
+            "format": "float",
+            "nullable": true
+          },
+          "FlowConsumptionBattery": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "FlowConsumptionGrid": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "FlowConsumptionProduction": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "FlowGridBattery": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "FlowProductionBattery": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "FlowProductionGrid": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "GridFeedIn_W": {
+            "type": "number",
+            "format": "float",
+            "nullable": true
+          },
+          "IsSystemInstalled": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "minimum": 0
+          },
+          "OperatingMode": {
+            "type": "string",
+            "nullable": true
+          },
+          "Pac_total_W": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "Production_W": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "RSOC": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "RemainingCapacity_Wh": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "Sac1": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "Sac2": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "Sac3": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "SystemStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "Timestamp": {
+            "type": "string",
+            "nullable": true
+          },
+          "USOC": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "Uac": {
+            "type": "number",
+            "format": "float",
+            "nullable": true
+          },
+          "Ubat": {
+            "type": "number",
+            "format": "float",
+            "nullable": true
+          },
+          "dischargeNotAllowed": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "generator_autostart": {
+            "type": "boolean",
+            "nullable": true
+          }
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Bad request. The reason could be:\n- Wrong request parameters.\n- Malformed request body.\n- Others. Please check the endpoint description.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "description": "Bad request. The reason could be:\n- Wrong request parameters.\n- Malformed request body.\n- Others. Please check the endpoint description.",
+              "properties": {
+                "error": {
+                  "type": "string",
+                  "default": "invalid parameters"
+                }
+              }
+            }
+          }
+        }
+      },
+      "InternalServerError": {
+        "description": "Internal server error has occurred.\nPlease read the details in the response body.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "description": "Internal server error has occurred.\nPlease read the details in the response body.",
+              "properties": {
+                "error": {
+                  "type": "string",
+                  "default": "internal server error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "PublicUnauthorized": {
+        "description": "Request is unauthorized. The authentication token is invalid or missing.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "description": "Request is unauthorized. The authentication token is invalid or missing.",
+              "properties": {
+                "error": {
+                  "type": "string",
+                  "default": "Unauthorized"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "API-Token": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "Auth-Token"
+      }
+    }
+  },
+  "security": [
+    {
+      "API-Token": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Read API",
+      "description": "Endpoints for reading data."
+    },
+    {
+      "name": "Write API",
+      "description": "Endpoints for writing data or controlling the sonnenBatterie."
+    }
+  ]
+}
