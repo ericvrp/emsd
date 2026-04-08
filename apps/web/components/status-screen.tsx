@@ -1,50 +1,29 @@
 import { formatManagedDeviceState } from "@emsd/core";
 import { BatteryCharging, Zap } from "lucide-react";
-import { getServerSession } from "next-auth";
-import { redirect } from "next/navigation";
-import { authOptions } from "../auth";
 import {
-  getDynamicPriceSnapshot,
   getBatteryNormalizedInfo,
-  getLiveStatus,
-  getWeatherForecast,
 } from "../lib/ems-bridge";
-import { AppShell } from "./app-shell";
 import { BatteryStrategyDialog } from "./battery-strategy-dialog";
+import { loadDashboardPageData, type SearchParams } from "./dashboard-page-data";
+import { DashboardPageFrame } from "./dashboard-page-frame";
 import { DaemonOfflineState } from "./daemon-offline-state";
-import { SettingsDialog } from "./settings-dialog";
-import { SettingsPanel } from "./settings-panel";
-import { ToastOnSearchParams } from "./toast-on-search-params";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
-
-type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
 export async function StatusScreen({
   searchParams,
 }: {
   searchParams: SearchParams | undefined;
 }) {
-  const session = await getServerSession(authOptions);
+  const dashboardData = await loadDashboardPageData(searchParams);
 
-  if (!session) {
-    redirect("/login");
-  }
-
-  const snapshot = await getLiveStatus();
-  const resolvedSearchParams = (await searchParams) ?? {};
-
-  if (!snapshot.daemon.running) {
+  if (dashboardData.offline) {
     return <DaemonOfflineState />;
   }
 
-  const currentSite = snapshot.sites[0] ?? null;
-  let dynamicPriceSnapshot: Awaited<
-    ReturnType<typeof getDynamicPriceSnapshot>
-  > | null = null;
-  let dynamicPriceSnapshotError: string | null = null;
-  let weatherForecast: Awaited<ReturnType<typeof getWeatherForecast>> | null =
-    null;
-  let weatherForecastError: string | null = null;
+  const {
+    currentSite,
+    generatedAt,
+  } = dashboardData;
 
   const batteries = currentSite
     ? currentSite.devices.filter((device) => device.kind === "battery")
@@ -69,47 +48,11 @@ export async function StatusScreen({
     ),
   );
 
-  if (currentSite) {
-    try {
-      if (currentSite.dynamicPriceSources[0]) {
-        dynamicPriceSnapshot = await getDynamicPriceSnapshot({
-          siteId: currentSite.id,
-        });
-      }
-    } catch (error) {
-      dynamicPriceSnapshotError = error instanceof Error ? error.message : String(error);
-    }
-
-    try {
-      if (currentSite.weatherSources[0]) {
-        weatherForecast = await getWeatherForecast({
-          hours: 48,
-          periodMinutes: 15,
-          siteId: currentSite.id,
-        });
-      }
-    } catch (error) {
-      weatherForecastError = error instanceof Error ? error.message : String(error);
-    }
-  }
-
   return (
-    <>
-      <ToastOnSearchParams />
-      <AppShell
-        generatedAt={snapshot.generatedAt}
-        headerActions={
-          <SettingsDialog>
-            <SettingsPanel
-              currentSite={currentSite}
-              dynamicPriceSnapshot={dynamicPriceSnapshot}
-              dynamicPriceSnapshotError={dynamicPriceSnapshotError}
-              weatherForecast={weatherForecast}
-              weatherForecastError={weatherForecastError}
-            />
-          </SettingsDialog>
-        }
-      >
+    <DashboardPageFrame
+      currentSite={currentSite}
+      generatedAt={generatedAt}
+    >
       {currentSite === null ? (
         <Card className="border-white/12 bg-slate-950/70">
           <CardContent className="px-6 py-10 text-center sm:px-8 sm:py-12">
@@ -198,8 +141,7 @@ export async function StatusScreen({
           })}
         </section>
       )}
-    </AppShell>
-    </>
+    </DashboardPageFrame>
   );
 }
 

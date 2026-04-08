@@ -46,7 +46,7 @@ import { SubmitButton } from "./submit-button";
 import { DialogPortal } from "./ui/dialog-portal";
 import { Button } from "./ui/button";
 
-type SettingsTab = "devices" | "forecast" | "pricing" | "site" | "discover";
+type SettingsTab = "devices" | "site" | "discover";
 
 function formatManagedDeviceState(state: string): string {
   return state.replace(/-/g, " ");
@@ -61,16 +61,8 @@ const dangerButtonClass =
 
 export function SettingsPanel({
   currentSite,
-  dynamicPriceSnapshot,
-  dynamicPriceSnapshotError,
-  weatherForecast,
-  weatherForecastError,
 }: {
   currentSite: SiteSnapshot | null;
-  dynamicPriceSnapshot: DynamicPriceSnapshotRecord | null;
-  dynamicPriceSnapshotError: string | null;
-  weatherForecast: WeatherForecastRecord | null;
-  weatherForecastError: string | null;
 }) {
   const hasSite = currentSite !== null;
   const hasDevices = (currentSite?.devices.length ?? 0) > 0;
@@ -81,14 +73,8 @@ export function SettingsPanel({
   return (
     <div className="space-y-4">
       <section className="rounded-[1.6rem] border border-white/10 bg-slate-950/55 p-3 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
-        <div className="grid gap-2 sm:grid-cols-5">
-          {([
-            "site",
-            "discover",
-            "devices",
-            "forecast",
-            "pricing",
-          ] as SettingsTab[]).map((tab) => {
+        <div className="grid gap-2 sm:grid-cols-3">
+          {(["site", "discover", "devices"] as SettingsTab[]).map((tab) => {
             const isDisabled = !hasSite && tab !== "site";
 
             return (
@@ -109,19 +95,11 @@ export function SettingsPanel({
                 <HardDrive size={15} />
               ) : tab === "site" ? (
                 <Home size={15} />
-              ) : tab === "forecast" ? (
-                <Search size={15} />
-              ) : tab === "pricing" ? (
-                <Save size={15} />
               ) : (
                 <ScanSearch size={15} />
               )}
               {tab === "devices"
                 ? "Devices"
-                : tab === "forecast"
-                  ? "Forecast"
-                  : tab === "pricing"
-                    ? "Pricing"
                 : tab === "site"
                   ? "Site"
                   : "Discover"}
@@ -154,32 +132,6 @@ export function SettingsPanel({
           <SiteSetupPanel />
         )
       ) : null}
-
-      {activeTab === "forecast" ? (
-        currentSite ? (
-          <WeatherForecastSection
-            error={weatherForecastError}
-            forecast={weatherForecast}
-            site={currentSite}
-            source={currentSite.weatherSources[0] ?? null}
-          />
-        ) : (
-          <SiteSetupPanel />
-        )
-      ) : null}
-
-      {activeTab === "pricing" ? (
-        currentSite ? (
-          <PricingSection
-            error={dynamicPriceSnapshotError}
-            site={currentSite}
-            snapshot={dynamicPriceSnapshot}
-          />
-        ) : (
-          <SiteSetupPanel />
-        )
-      ) : null}
-
       {activeTab === "site" ? <SitePanel site={currentSite} /> : null}
 
       {activeTab === "discover" ? (
@@ -227,7 +179,7 @@ function formatGpsCoordinate(latitude: number, longitude: number): string {
   return `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
 }
 
-function SiteSetupPanel() {
+export function SiteSetupPanel() {
   return (
     <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-emerald-300/40 to-transparent" />
@@ -491,7 +443,7 @@ function SiteLocationFields({ defaultLocation }: { defaultLocation: string }) {
   );
 }
 
-function WeatherForecastSection({
+export function WeatherForecastSection({
   site,
   forecast,
   error,
@@ -562,7 +514,7 @@ function WeatherForecastSection({
   );
 }
 
-function PricingSection({
+export function PricingSection({
   site,
   snapshot,
   error,
