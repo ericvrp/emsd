@@ -201,13 +201,10 @@ export async function updateSiteAction(formData: FormData): Promise<void> {
       location: stringValue(formData, "location"),
       name,
     });
-    const createdDefaultForecastSource = await ensureDefaultWeatherForecastSource(siteId);
+    await ensureDefaultWeatherForecastSource(siteId);
     await ensureDefaultDynamicPriceSource(siteId);
 
-    if (createdDefaultForecastSource) {
-      await refreshWeatherForecast({ siteId });
-    }
-
+    await refreshWeatherForecast({ siteId });
     await refreshDynamicPriceSnapshot({ siteId }).catch(() => null);
     return { notice: `Updated site ${name}.`, tab: "site" };
   }, "site");
@@ -531,9 +528,6 @@ export async function createDynamicPriceSourceAction(
   return runAction(async () => {
     const sourceId = stringValue(formData, "sourceId");
     await createDynamicPriceSource({
-      ...(optionalStringValue(formData, "homeId") !== null
-        ? { homeId: optionalStringValue(formData, "homeId") }
-        : {}),
       id: sourceId,
       name: stringValue(formData, "name"),
       provider: "tibber",
@@ -552,9 +546,6 @@ export async function updateDynamicPriceSourceAction(
   return runAction(async () => {
     const sourceId = stringValue(formData, "sourceId");
     await updateDynamicPriceSource({
-      ...(optionalStringValue(formData, "homeId") !== null
-        ? { homeId: optionalStringValue(formData, "homeId") }
-        : {}),
       id: sourceId,
       name: stringValue(formData, "name"),
       provider: "tibber",

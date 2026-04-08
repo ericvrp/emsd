@@ -7,6 +7,7 @@ Use Tibber as a dynamic electricity price provider for site-level import price s
 ## Authentication
 
 - Set `TIBBER_ACCESS_TOKEN` in the daemon environment.
+- Optionally set `TIBBER_HOME_ID` in the daemon environment to target a specific Tibber home.
 - The current integration uses Tibber's GraphQL API with a personal access token.
 
 ## Endpoint
@@ -22,7 +23,8 @@ Use Tibber as a dynamic electricity price provider for site-level import price s
 
 ## Notes
 
-- If `homeId` is not configured on the source, the integration uses the first Tibber home returned by the account.
+- If `TIBBER_HOME_ID` is set, the integration uses that Tibber home.
+- If it is not set, the integration uses the first Tibber home returned by the account.
 - Prices are normalized as timestamped import price points with `currency`, `startsAt`, and `importPrice`.
 - The daemon refreshes Tibber price snapshots on a schedule and keeps persistence ownership.
 

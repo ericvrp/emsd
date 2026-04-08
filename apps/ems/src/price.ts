@@ -11,10 +11,10 @@ export function formatPriceHelpText(): string {
     "Usage:",
     "  price list --site-id <site-id>",
     "  price ls --site-id <site-id>",
-    "  price add <source-id> <name> --site-id <site-id> [--provider tibber] [--home-id <home-id>]",
-    "  price create <source-id> <name> --site-id <site-id> [--provider tibber] [--home-id <home-id>]",
-    "  price update <source-id> <name> --site-id <site-id> [--provider tibber] [--home-id <home-id>]",
-    "  price edit <source-id> <name> --site-id <site-id> [--provider tibber] [--home-id <home-id>]",
+    "  price add <source-id> <name> --site-id <site-id> [--provider tibber]",
+    "  price create <source-id> <name> --site-id <site-id> [--provider tibber]",
+    "  price update <source-id> <name> --site-id <site-id> [--provider tibber]",
+    "  price edit <source-id> <name> --site-id <site-id> [--provider tibber]",
     "  price remove <source-id> --site-id <site-id>",
     "  price delete <source-id> --site-id <site-id>",
     "  price rm <source-id> --site-id <site-id>",
@@ -29,10 +29,10 @@ export function formatPriceList(sources: DynamicPriceSourceRecord[]): string {
     return "No dynamic price sources configured for the selected site.";
   }
 
-  const header = ["SOURCE ID", "NAME", "PROVIDER", "HOME ID", "UPDATED AT"].join(" | ");
+  const header = ["SOURCE ID", "NAME", "PROVIDER", "UPDATED AT"].join(" | ");
   const separator = "-".repeat(header.length);
   const rows = sources.map((source) =>
-    [source.id, source.name, source.provider, source.homeId ?? "", source.updatedAt].join(" | "),
+    [source.id, source.name, source.provider, source.updatedAt].join(" | "),
   );
 
   return [header, separator, ...rows].join("\n");
@@ -68,7 +68,6 @@ export async function runPriceCommand(args: string[] = []): Promise<number> {
         JSON.stringify(
           createDynamicPriceSource(
             {
-              homeId: options.homeId,
               id: sourceId,
               name: options.name,
               provider: options.provider,
@@ -92,7 +91,7 @@ export async function runPriceCommand(args: string[] = []): Promise<number> {
 
       const source = updateDynamicPriceSource(
         sourceId,
-        { homeId: options.homeId, name: options.name, provider: options.provider },
+        { name: options.name, provider: options.provider },
         options.siteId,
       );
 
@@ -134,7 +133,6 @@ function parseNamedSourceOptions(
   args: string[],
   action: string,
 ): {
-  homeId: string | null;
   provider: "tibber";
   siteId: string;
   name: string;
@@ -152,7 +150,6 @@ function parseNamedSourceOptions(
   }
 
   return {
-    homeId: parseHomeIdOption(args.slice(siteOptionIndex + 2)),
     name,
     provider: parseProviderOption(args.slice(siteOptionIndex + 2)),
     siteId: parseSiteOptions(args.slice(siteOptionIndex)).siteId,
@@ -179,24 +176,6 @@ function parseProviderOption(args: string[]): "tibber" {
   }
 
   return "tibber";
-}
-
-function parseHomeIdOption(args: string[]): string | null {
-  for (let index = 0; index < args.length; index += 1) {
-    if (args[index] !== "--home-id") {
-      continue;
-    }
-
-    const homeId = args[index + 1];
-
-    if (!homeId) {
-      throw new Error("Missing value for --home-id");
-    }
-
-    return homeId;
-  }
-
-  return null;
 }
 
 function parseSiteOptions(args: string[]): { siteId: string } {

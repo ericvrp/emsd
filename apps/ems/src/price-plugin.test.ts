@@ -4,10 +4,12 @@ import { getDynamicPriceSnapshot } from "./plugins/price";
 
 const originalFetch = globalThis.fetch;
 const originalToken = process.env.TIBBER_ACCESS_TOKEN;
+const originalHomeId = process.env.TIBBER_HOME_ID;
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
   process.env.TIBBER_ACCESS_TOKEN = originalToken;
+  process.env.TIBBER_HOME_ID = originalHomeId;
 });
 
 test("Tibber price plugin fetches today and tomorrow prices", async () => {
@@ -57,7 +59,7 @@ test("Tibber price plugin fetches today and tomorrow prices", async () => {
       }),
       { status: 200 },
     );
-  }) as typeof fetch;
+  }) as unknown as typeof fetch;
 
   const snapshot = await getDynamicPriceSnapshot({
     site: buildSite(),
@@ -85,6 +87,65 @@ test("Tibber price plugin fetches today and tomorrow prices", async () => {
   ]);
 });
 
+test("Tibber price plugin prefers TIBBER_HOME_ID when set", async () => {
+  process.env.TIBBER_ACCESS_TOKEN = "tibber-token";
+  process.env.TIBBER_HOME_ID = "home-2";
+  globalThis.fetch = (async () => {
+    return new Response(
+      JSON.stringify({
+        data: {
+          viewer: {
+            homes: [
+              {
+                id: "home-1",
+                currentSubscription: {
+                  priceInfo: {
+                    today: [
+                      {
+                        currency: "EUR",
+                        startsAt: "2026-04-07T11:00:00.000Z",
+                        total: 0.201,
+                      },
+                    ],
+                  },
+                },
+              },
+              {
+                id: "home-2",
+                currentSubscription: {
+                  priceInfo: {
+                    today: [
+                      {
+                        currency: "EUR",
+                        startsAt: "2026-04-07T11:00:00.000Z",
+                        total: 0.133,
+                      },
+                    ],
+                  },
+                },
+              },
+            ],
+          },
+        },
+      }),
+      { status: 200 },
+    );
+  }) as unknown as typeof fetch;
+
+  const snapshot = await getDynamicPriceSnapshot({
+    site: buildSite(),
+    source: buildSource(),
+  });
+
+  expect(snapshot.points).toEqual([
+    {
+      currency: "EUR",
+      importPrice: 0.133,
+      startsAt: "2026-04-07T11:00:00.000Z",
+    },
+  ]);
+});
+
 function buildSite(): SiteRecord {
   return {
     id: "home",
@@ -98,7 +159,6 @@ function buildSite(): SiteRecord {
 function buildSource(): DynamicPriceSourceRecord {
   return {
     id: "tibber-main",
-    homeId: null,
     siteId: "home",
     name: "Tibber",
     provider: "tibber",

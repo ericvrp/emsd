@@ -77,6 +77,9 @@
 - Do not move write ownership for the database into the web app.
 - Prefer keeping schema creation and write-side persistence logic inside `apps/daemon`.
 - The EMS command app may read from the daemon-owned database for local commands.
+- Solar forecast providers, dynamic price providers, and similar external plugins must run server-side only.
+- Do not execute forecast or price plugin code in the browser or in client-side React code.
+- The web app may request server-owned results, but plugin execution must stay in the daemon or another server-side EMS layer.
 
 ## Current Behavior
 - The daemon creates the SQLite schema but does not seed mock battery data.
@@ -171,6 +174,8 @@
 - Do not introduce web-only business rules.
 - Keep web terminology aligned with the EMS command app and plan docs.
 - Keep `apps/web` iteration lightweight during active development; avoid unnecessary build/typecheck runs that churn `.next` artifacts.
+- Do not fetch solar forecasts or dynamic price info client-side.
+- Treat forecast and pricing plugins as server-only integrations; the web UI should only display data fetched through server-side EMS or daemon-owned paths.
 
 ## Documentation Guidance
 - Update `plans/EMSD-plan.md` when architecture changes meaningfully.

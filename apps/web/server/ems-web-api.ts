@@ -3,6 +3,7 @@ import {
   type BatteryManualState,
   type BatteryRecord,
   type BatteryStrategyMode,
+  type DynamicPriceSnapshotRecord,
   type DynamicPriceSourceRecord,
   type ManagedDeviceRecord,
   type ManagedDeviceStatusRecord,
@@ -23,8 +24,6 @@ import {
   readSites,
   readWeatherForecast,
   readWeatherForecastSources,
-  upsertDynamicPriceSnapshot,
-  upsertWeatherForecast,
 } from "../../daemon/src/database";
 import { createBatteryPlugin } from "../../ems/src/battery-plugins";
 import {
@@ -59,8 +58,6 @@ import {
   updateSite,
   updateWeatherForecastSource,
 } from "../../ems/src/managed-site-store";
-import { getDynamicPriceSnapshot } from "../../ems/src/plugins/price";
-import { getWeatherForecast } from "../../ems/src/plugins/solar-forecast";
 
 interface BridgeSuccess<T> {
   ok: true;
@@ -364,6 +361,76 @@ function buildLiveStatus() {
     generatedAt: snapshot.generatedAt,
     sites: snapshot.sites,
   };
+}
+
+function requestDaemonRefresh(): void {
+  const daemon = readDaemonState();
+
+  if (!daemon.running || daemon.pid === null) {
+    throw new Error("EMSD daemon is not running.");
+  }
+
+  process.kill(daemon.pid, "SIGUSR1");
+}
+
+function sleep(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
+}
+
+async function waitForWeatherForecastRefresh(
+  siteId: string,
+  previousGeneratedAt: string | null,
+): Promise<WeatherForecastRecord> {
+  const deadline = Date.now() + 12_000;
+
+  while (Date.now() < deadline) {
+    const db = openDaemonDatabase();
+
+    try {
+      const forecast = readWeatherForecast(db, siteId);
+
+      if (forecast && forecast.generatedAt !== previousGeneratedAt) {
+        return forecast;
+      }
+    } finally {
+      db.close();
+    }
+
+    await sleep(250);
+  }
+
+  throw new Error(
+    `Timed out waiting for the daemon to refresh the solar forecast for site ${siteId}.`,
+  );
+}
+
+async function waitForDynamicPriceRefresh(
+  siteId: string,
+  previousGeneratedAt: string | null,
+): Promise<DynamicPriceSnapshotRecord> {
+  const deadline = Date.now() + 12_000;
+
+  while (Date.now() < deadline) {
+    const db = openDaemonDatabase();
+
+    try {
+      const snapshot = readDynamicPriceSnapshot(db, siteId);
+
+      if (snapshot && snapshot.generatedAt !== previousGeneratedAt) {
+        return snapshot;
+      }
+    } finally {
+      db.close();
+    }
+
+    await sleep(250);
+  }
+
+  throw new Error(
+    `Timed out waiting for the daemon to refresh the dynamic price snapshot for site ${siteId}.`,
+  );
 }
 
 async function run(): Promise<void> {
@@ -875,6 +942,7 @@ async function run(): Promise<void> {
       const input = readInput<{ siteId?: string }>();
       const siteId = requireString(input.siteId, "siteId");
       const db = openDaemonDatabase();
+      let previousGeneratedAt: string | null = null;
 
       try {
         const site = readSites(db).find((entry) => entry.id === siteId);
@@ -894,24 +962,18 @@ async function run(): Promise<void> {
           );
         }
 
-        const forecast = await getWeatherForecast({
-          hours: 48,
-          periodMinutes: 15,
-          site,
-          source,
-        });
-
-        upsertWeatherForecast(db, siteId, forecast);
-        succeed(forecast satisfies WeatherForecastRecord);
+        previousGeneratedAt = readWeatherForecast(db, siteId)?.generatedAt ?? null;
       } finally {
         db.close();
       }
+
+      requestDaemonRefresh();
+      succeed(await waitForWeatherForecastRefresh(siteId, previousGeneratedAt));
       return;
     }
 
     case "price-create": {
       const input = readInput<{
-        homeId?: string | null;
         id?: string;
         name?: string;
         provider?: "tibber";
@@ -920,7 +982,6 @@ async function run(): Promise<void> {
       succeed(
         createDynamicPriceSource(
           {
-            ...(typeof input.homeId === "string" ? { homeId: input.homeId } : {}),
             id: requireString(input.id, "id"),
             name: requireString(input.name, "name"),
             provider: "tibber",
@@ -933,7 +994,6 @@ async function run(): Promise<void> {
 
     case "price-update": {
       const input = readInput<{
-        homeId?: string | null;
         id?: string;
         name?: string;
         provider?: "tibber";
@@ -942,7 +1002,6 @@ async function run(): Promise<void> {
       const source = updateDynamicPriceSource(
         requireString(input.id, "id"),
         {
-          ...(typeof input.homeId === "string" ? { homeId: input.homeId } : {}),
           name: requireString(input.name, "name"),
           provider: "tibber",
         },
@@ -1001,6 +1060,7 @@ async function run(): Promise<void> {
       const input = readInput<{ siteId?: string }>();
       const siteId = requireString(input.siteId, "siteId");
       const db = openDaemonDatabase();
+      let previousGeneratedAt: string | null = null;
 
       try {
         const site = readSites(db).find((entry) => entry.id === siteId);
@@ -1018,12 +1078,13 @@ async function run(): Promise<void> {
           );
         }
 
-        const snapshot = await getDynamicPriceSnapshot({ site, source });
-        upsertDynamicPriceSnapshot(db, siteId, snapshot);
-        succeed(snapshot);
+        previousGeneratedAt = readDynamicPriceSnapshot(db, siteId)?.generatedAt ?? null;
       } finally {
         db.close();
       }
+
+      requestDaemonRefresh();
+      succeed(await waitForDynamicPriceRefresh(siteId, previousGeneratedAt));
       return;
     }
 

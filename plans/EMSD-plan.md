@@ -40,6 +40,8 @@ Example command areas:
 - Lower priority than the daemon and EMS command app
 - The Next.js backend should use only the EMS command app
 - The web app should not gain capabilities that are unavailable in the EMS command app
+- Forecast providers, dynamic price providers, and similar plugins must run server-side only
+- The web UI may show forecast and price results, but must not execute plugin fetch logic in the browser
 - Focus on monitoring, configuration, simulation, and strategy review
 
 ## Core Requirements
@@ -227,6 +229,7 @@ Example flow:
 - Discovery is transient and site-scoped managed records exist for batteries, meters, solar forecast sources, and dynamic price sources
 - The EMS command app already covers managed site CRUD, discovery, and inventory flows
 - The web app already sits on top of the EMS surface for live status, configuration, and control
+- Forecast and dynamic price plugin execution is intended to stay on the daemon or another server-side EMS layer, not in browser code
 
 ### Next Phase
 

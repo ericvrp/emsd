@@ -123,6 +123,16 @@ function getTibberAccessToken(): string {
   return token.trim();
 }
 
+function getConfiguredTibberHomeId(): string | null {
+  const homeId = process.env.TIBBER_HOME_ID ?? null;
+
+  if (!homeId || homeId.trim().length === 0) {
+    return null;
+  }
+
+  return homeId.trim();
+}
+
 function selectTibberHome(
   homes: TibberHomePriceInfo[],
   source: DynamicPriceSourceRecord,
@@ -131,11 +141,13 @@ function selectTibberHome(
     throw new Error("Tibber returned no homes for the current account.");
   }
 
-  if (source.homeId) {
-    const matched = homes.find((home) => home.id === source.homeId);
+  const configuredHomeId = getConfiguredTibberHomeId();
+
+  if (configuredHomeId) {
+    const matched = homes.find((home) => home.id === configuredHomeId);
 
     if (!matched) {
-      throw new Error(`Tibber home not found for configured homeId ${source.homeId}.`);
+      throw new Error(`Tibber home not found for configured homeId ${configuredHomeId}.`);
     }
 
     return matched;

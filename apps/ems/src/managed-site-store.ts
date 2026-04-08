@@ -191,7 +191,6 @@ interface UpdateSiteInput {
 }
 
 interface CreateSourceInput {
-  homeId?: string | null;
   id: string;
   name: string;
   provider?: WeatherProvider | "tibber";
@@ -199,7 +198,6 @@ interface CreateSourceInput {
 }
 
 interface UpdateSourceInput {
-  homeId?: string | null;
   name: string;
   provider?: WeatherProvider | "tibber";
   surface?: WeatherForecastSurface;
@@ -311,14 +309,7 @@ export function deleteSite(
       return null;
     }
 
-    const linkedResources = getLinkedSiteResources(db, siteId);
-
-    if (linkedResources.length > 0) {
-      throw new Error(
-        `Cannot remove site ${siteId} until its linked resources are deleted: ${linkedResources.map((resource) => `${resource.count} ${resource.label}`).join(", ")}.`,
-      );
-    }
-
+    deleteLinkedSiteResources(db, siteId);
     db.query("DELETE FROM sites WHERE id = ?1").run(siteId);
     return site;
   } finally {
@@ -1003,7 +994,7 @@ function createSource(
         siteId,
         input.name,
         normalizeDynamicPriceProvider(null),
-        normalizeDynamicPriceHomeId(input.homeId),
+        null,
         now,
       );
     }
@@ -1057,8 +1048,6 @@ function updateSource(
         siteId,
       );
     } else {
-      const existingDynamicPriceSource = existing as DynamicPriceSourceRecord;
-
       db.query(
         `
           UPDATE dynamic_price_sources
@@ -1068,8 +1057,8 @@ function updateSource(
       ).run(
         id,
         input.name,
-        normalizeDynamicPriceProvider(existingDynamicPriceSource.provider),
-        normalizeDynamicPriceHomeId(input.homeId ?? existingDynamicPriceSource.homeId),
+        normalizeDynamicPriceProvider((existing as DynamicPriceSourceRecord).provider),
+        null,
         new Date().toISOString(),
         siteId,
       );
@@ -1366,15 +1355,6 @@ function normalizeDynamicPriceProvider(provider: string | null | undefined): "ti
   return "tibber";
 }
 
-function normalizeDynamicPriceHomeId(value: string | null | undefined): string | null {
-  if (typeof value !== "string") {
-    return null;
-  }
-
-  const normalized = value.trim();
-  return normalized.length > 0 ? normalized : null;
-}
-
 function ensureDynamicPriceSourceColumns(db: Database): void {
   if (!hasTable(db, "dynamic_price_sources")) {
     return;
@@ -1465,19 +1445,18 @@ function normalizeSiteLocation(location: string | undefined): string {
   return `${coordinate.latitude.toFixed(6)}, ${coordinate.longitude.toFixed(6)}`;
 }
 
-function getLinkedSiteResources(
-  db: Database,
-  siteId: string,
-): Array<{ count: number; label: string }> {
+function deleteLinkedSiteResources(db: Database, siteId: string): void {
   const linkedTables = [
-    { tableName: "batteries", label: "battery plugin(s)" },
-    { tableName: "meters", label: "meter(s)" },
-    { tableName: "weather_sources", label: "solar forecast source(s)" },
-    { tableName: "dynamic_price_sources", label: "dynamic price source(s)" },
+    "device_telemetry",
+    "weather_forecasts",
+    "dynamic_price_snapshots",
+    "batteries",
+    "meters",
+    "weather_sources",
+    "dynamic_price_sources",
   ] as const;
-  const resources: Array<{ count: number; label: string }> = [];
 
-  for (const { tableName, label } of linkedTables) {
+  for (const tableName of linkedTables) {
     if (
       !hasTable(db, tableName) ||
       !getTableColumns(db, tableName).includes("site_id")
@@ -1485,18 +1464,8 @@ function getLinkedSiteResources(
       continue;
     }
 
-    const row = db
-      .query<{ count: number }, [string]>(
-        `SELECT COUNT(*) as count FROM ${tableName} WHERE site_id = ?1`,
-      )
-      .get(siteId);
-
-    if ((row?.count ?? 0) > 0) {
-      resources.push({ count: row?.count ?? 0, label });
-    }
+    db.query(`DELETE FROM ${tableName} WHERE site_id = ?1`).run(siteId);
   }
-
-  return resources;
 }
 
 function hasTable(db: Database, tableName: string): boolean {
@@ -1848,7 +1817,6 @@ function mapSourceRow(
 
   return {
     id: row.id,
-    homeId: normalizeDynamicPriceHomeId(row.home_id),
     siteId: row.site_id,
     name: row.name,
     provider: normalizeDynamicPriceProvider(row.provider),

@@ -12,16 +12,21 @@ import type {
 } from "@emsd/core";
 import { HardDrive, Home, LocateFixed, Save, ScanSearch, Search, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Area,
   AreaChart,
+  Bar,
+  BarChart,
+  Cell,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
 import { toast } from "sonner";
+import type { ValueType } from "recharts/types/component/DefaultTooltipContent";
 import {
   createDynamicPriceSourceAction,
   createSiteAction,
@@ -38,6 +43,7 @@ import {
 } from "../app/actions";
 import { DiscoveryPanel } from "./discovery-panel";
 import { SubmitButton } from "./submit-button";
+import { DialogPortal } from "./ui/dialog-portal";
 import { Button } from "./ui/button";
 
 type SettingsTab = "devices" | "forecast" | "pricing" | "site" | "discover";
@@ -57,19 +63,19 @@ export function SettingsPanel({
   currentSite,
   dynamicPriceSnapshot,
   dynamicPriceSnapshotError,
-  initialTab,
   weatherForecast,
   weatherForecastError,
 }: {
   currentSite: SiteSnapshot | null;
   dynamicPriceSnapshot: DynamicPriceSnapshotRecord | null;
   dynamicPriceSnapshotError: string | null;
-  initialTab: string | null;
   weatherForecast: WeatherForecastRecord | null;
   weatherForecastError: string | null;
 }) {
+  const hasSite = currentSite !== null;
+  const hasDevices = (currentSite?.devices.length ?? 0) > 0;
   const [activeTab, setActiveTab] = useState<SettingsTab>(
-    resolveTab(initialTab, Boolean(currentSite)),
+    resolveTab({ hasDevices, hasSite }),
   );
 
   return (
@@ -78,18 +84,24 @@ export function SettingsPanel({
         <div className="grid gap-2 sm:grid-cols-5">
           {([
             "site",
+            "discover",
             "devices",
             "forecast",
             "pricing",
-            "discover",
-          ] as SettingsTab[]).map((tab) => (
-            <button
-              key={tab}
-              className={`inline-flex h-9 items-center justify-center gap-2 rounded-md px-4 text-sm font-medium transition ${
-                activeTab === tab
-                  ? "border border-cyan-300/30 bg-gradient-to-r from-cyan-300 via-white to-emerald-200 !text-slate-950 shadow-[0_12px_40px_rgba(125,211,252,0.22)] [&_svg]:!text-slate-950"
-                  : "border border-white/8 bg-white/5 text-slate-200 hover:bg-white/8"
-              }`}
+          ] as SettingsTab[]).map((tab) => {
+            const isDisabled = !hasSite && tab !== "site";
+
+            return (
+              <button
+                key={tab}
+                className={`inline-flex h-9 items-center justify-center gap-2 rounded-md px-4 text-sm font-medium transition ${
+                  activeTab === tab
+                    ? "border border-cyan-300/30 bg-gradient-to-r from-cyan-300 via-white to-emerald-200 !text-slate-950 shadow-[0_12px_40px_rgba(125,211,252,0.22)] [&_svg]:!text-slate-950"
+                  : isDisabled
+                    ? "cursor-not-allowed border border-white/8 bg-white/5 text-slate-500 opacity-50"
+                    : "border border-white/8 bg-white/5 text-slate-200 hover:bg-white/8"
+                }`}
+              disabled={isDisabled}
               onClick={() => setActiveTab(tab)}
               type="button"
             >
@@ -114,7 +126,8 @@ export function SettingsPanel({
                   ? "Site"
                   : "Discover"}
             </button>
-          ))}
+            );
+          })}
         </div>
       </section>
 
@@ -161,7 +174,6 @@ export function SettingsPanel({
             error={dynamicPriceSnapshotError}
             site={currentSite}
             snapshot={dynamicPriceSnapshot}
-            source={currentSite.dynamicPriceSources[0] ?? null}
           />
         ) : (
           <SiteSetupPanel />
@@ -199,14 +211,16 @@ export function SettingsPanel({
   );
 }
 
-function resolveTab(tab: string | null, hasSite: boolean): SettingsTab {
-  if (!hasSite) {
+function resolveTab(options: { hasDevices: boolean; hasSite: boolean }): SettingsTab {
+  if (!options.hasSite) {
     return "site";
   }
 
-  return tab === "site" || tab === "discover" || tab === "forecast" || tab === "pricing"
-    ? tab
-    : "devices";
+  if (!options.hasDevices) {
+    return "discover";
+  }
+
+  return "devices";
 }
 
 function formatGpsCoordinate(latitude: number, longitude: number): string {
@@ -260,15 +274,18 @@ function SitePanel({ site }: { site: SiteSnapshot | null }) {
 
   const batteries = site.devices.filter((device) => device.kind === "battery");
   const meters = site.devices.filter((device) => device.kind === "meter");
-  const deletionBlockers = [
+  const deletionWarning = [
     formatNamedBlocker("battery", batteries.map((device) => device.name)),
     formatNamedBlocker("meter", meters.map((device) => device.name)),
+    formatNamedBlocker(
+      "solar forecast source",
+      site.weatherSources.map(formatWeatherSourceDeleteName),
+    ),
     formatNamedBlocker(
       "dynamic price source",
       site.dynamicPriceSources.map((source) => source.name),
     ),
   ].filter((value): value is string => value !== null);
-  const deleteBlocked = deletionBlockers.length > 0;
 
   return (
     <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
@@ -277,7 +294,7 @@ function SitePanel({ site }: { site: SiteSnapshot | null }) {
         <h2 className="text-2xl font-semibold text-white">{site.name}</h2>
       </div>
 
-      <div className="mt-5">
+      <div className="mt-5 space-y-4">
         <form
           action={updateSiteAction}
           className="space-y-4 rounded-[1.4rem] border border-white/10 bg-white/5 p-4"
@@ -297,11 +314,6 @@ function SitePanel({ site }: { site: SiteSnapshot | null }) {
           </label>
           <SiteLocationFields defaultLocation={site.location} />
         </form>
-        {deleteBlocked ? (
-          <div className="mt-4 rounded-[1.25rem] border border-amber-400/20 bg-amber-500/10 p-4 text-sm text-amber-100">
-            You cannot delete this site until you remove {joinWithAnd(deletionBlockers)}.
-          </div>
-        ) : null}
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <Button
             className={secondaryButtonClass}
@@ -311,15 +323,26 @@ function SitePanel({ site }: { site: SiteSnapshot | null }) {
             <Save size={14} />
             Save site
           </Button>
-          <form action={deleteSiteAction}>
-            <input type="hidden" name="siteId" value={site.id} />
-            <input type="hidden" name="siteName" value={site.name} />
-            <Button className={dangerButtonClass} disabled={deleteBlocked} type="submit">
-              <Trash2 size={14} />
-              Delete site
-            </Button>
-          </form>
+          <DestructiveConfirmButton
+            action={deleteSiteAction}
+            confirmLabel="Delete site"
+            description={
+              deletionWarning.length > 0
+                ? `This deletes ${site.name}, ${joinWithAnd(deletionWarning)}, and the stored forecast and price snapshots for this site. This cannot be undone.`
+                : `This deletes ${site.name} and the stored forecast and price snapshots for this site. This cannot be undone.`
+            }
+            hiddenFields={[
+              { name: "siteId", value: site.id },
+              { name: "siteName", value: site.name },
+            ]}
+            title={`Delete ${site.name}?`}
+            triggerClassName={dangerButtonClass}
+          >
+            <Trash2 size={14} />
+            Delete site and linked data
+          </DestructiveConfirmButton>
         </div>
+
       </div>
     </section>
   );
@@ -332,6 +355,10 @@ function formatNamedBlocker(label: string, names: string[]): string | null {
 
   const normalizedLabel = names.length === 1 ? label : `${label}s`;
   return `${names.length} ${normalizedLabel} (${names.join(", ")})`;
+}
+
+function formatWeatherSourceDeleteName(source: WeatherForecastSourceRecord): string {
+  return source.provider === "open-meteo" ? "Open-Meteo" : source.name;
 }
 
 function joinWithAnd(values: string[]): string {
@@ -416,21 +443,6 @@ function SiteLocationFields({ defaultLocation }: { defaultLocation: string }) {
 
   return (
     <div className="space-y-4 rounded-[1.25rem] border border-white/8 bg-slate-950/40 p-4">
-      <label className="block space-y-2">
-        <span className="text-sm font-medium text-slate-300">GPS location</span>
-        <input
-          className="w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-cyan-400/50"
-          name="location"
-          onChange={(event) => setLocation(event.target.value)}
-          placeholder="52.367600, 4.904100"
-          required
-          value={location}
-        />
-        <p className="text-xs text-slate-500">
-          Store the site as `latitude, longitude` using Google Maps style coordinates.
-        </p>
-      </label>
-
       <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-end">
         <label className="block space-y-2">
           <span className="text-sm font-medium text-slate-300">Place lookup</span>
@@ -460,6 +472,21 @@ function SiteLocationFields({ defaultLocation }: { defaultLocation: string }) {
           {isLocating ? "Locating..." : "Use current GPS"}
         </button>
       </div>
+
+      <label className="block space-y-2">
+        <span className="text-sm font-medium text-slate-300">GPS location</span>
+        <input
+          className="w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-cyan-400/50"
+          name="location"
+          onChange={(event) => setLocation(event.target.value)}
+          placeholder="52.367600, 4.904100"
+          required
+          value={location}
+        />
+        <p className="text-xs text-slate-500">
+          Store the site as `latitude, longitude` using Google Maps style coordinates.
+        </p>
+      </label>
     </div>
   );
 }
@@ -529,9 +556,6 @@ function WeatherForecastSection({
             points={visiblePoints}
             unitLabel={forecast.unitLabel}
           />
-          <p className="text-xs text-slate-500">
-            {`Showing the latest forecast snapshot for ${forecast.location}.`}
-          </p>
         </div>
       )}
     </section>
@@ -542,22 +566,21 @@ function PricingSection({
   site,
   snapshot,
   error,
-  source,
 }: {
   site: SiteSnapshot;
   snapshot: DynamicPriceSnapshotRecord | null;
   error: string | null;
-  source: DynamicPriceSourceRecord | null;
 }) {
-  const visiblePoints = snapshot?.points ?? [];
-  const [homeId, setHomeId] = useState(source?.homeId ?? "");
-  const originalHomeId = source?.homeId ?? "";
-
-  // Enable save button when:
-  // 1. There's a homeId entered (not empty) AND it's different from original
-  // 2. OR there was originally a homeId but now it's cleared (user wants to remove it)
-  const isHomeIdChanged = homeId !== originalHomeId;
-  const shouldEnableSave = isHomeIdChanged || (homeId.length > 0 && originalHomeId.length === 0);
+  const visiblePoints = snapshot
+    ? selectPricePoints({
+        generatedAt: snapshot.generatedAt,
+        horizonHours: 48,
+        points: snapshot.points,
+      })
+    : [];
+  const coverageSummary = snapshot
+    ? formatPriceCoverageSummary(visiblePoints)
+    : null;
 
   return (
     <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
@@ -572,34 +595,10 @@ function PricingSection({
         <p className="mt-2 text-sm leading-6 text-slate-400">
           Tibber provides the built-in dynamic price snapshot for this site.
         </p>
+        {coverageSummary ? (
+          <p className="mt-2 text-xs leading-5 text-slate-500">{coverageSummary}</p>
+        ) : null}
       </div>
-
-      <form
-        action={source ? updateDynamicPriceSourceAction : createDynamicPriceSourceAction}
-        className="mt-5 space-y-4 rounded-[1.4rem] border border-white/10 bg-white/5 p-4"
-      >
-        <input type="hidden" name="siteId" value={site.id} />
-        <input type="hidden" name="sourceId" value={source?.id ?? `price-${site.id}`} />
-        <input type="hidden" name="name" value={source?.name ?? "Tibber dynamic price"} />
-        <label className="block space-y-2">
-          <span className="text-sm font-medium text-slate-300">
-            Tibber home ID (optional)
-          </span>
-          <input
-            className="w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400/50"
-            name="homeId"
-            value={homeId}
-            onChange={(e) => setHomeId(e.target.value)}
-          />
-        </label>
-        <p className="text-xs text-slate-500">
-          Leave this empty to use the first Tibber home from your account. Set `TIBBER_ACCESS_TOKEN` in the daemon environment.
-        </p>
-        <SubmitButton className={primaryButtonClass} disabled={!shouldEnableSave}>
-          <Save size={14} />
-          Save pricing settings
-        </SubmitButton>
-      </form>
 
       {error ? (
         <p className="mt-4 rounded-[1.25rem] border border-amber-400/20 bg-amber-500/10 p-4 text-sm text-amber-100">
@@ -616,9 +615,6 @@ function PricingSection({
       ) : (
         <div className="mt-5 space-y-4 rounded-[1.4rem] border border-white/10 bg-white/5 p-4">
           <PriceChart currency={snapshot.currency} points={visiblePoints} />
-          <p className="text-xs text-slate-500">
-            Showing the latest Tibber price snapshot for {site.name}.
-          </p>
         </div>
       )}
     </section>
@@ -632,38 +628,58 @@ function PriceChart({
   points: DynamicPricePointRecord[];
   currency: string;
 }) {
-  const chartPoints = points.map((point) => ({
-    ...point,
-    timeLabel: formatForecastTimeLabel(point.startsAt),
-  }));
-  const values = points.map((point) => point.importPrice);
-  const maxValue = Math.max(0.01, ...values);
+  const now = Date.now();
+  const chartPoints = points.map((point) => {
+    const pointTime = new Date(point.startsAt).getTime();
+    const isPast = pointTime < now;
 
+    return {
+      ...point,
+      isMidnight: isMidnightTimestamp(point.startsAt),
+      isPast,
+      timeLabel: formatForecastTimeLabel(point.startsAt),
+    };
+  });
   return (
     <div className="space-y-3">
+      <p className="text-xs leading-5 text-slate-500">
+        Shows the full 15-minute series across today and tomorrow.
+      </p>
       <div className="h-[260px] w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={chartPoints} margin={{ top: 16, right: 8, left: 8, bottom: 0 }}>
-            <defs>
-              <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="rgb(196,181,253)" stopOpacity={0.3}/>
-                <stop offset="95%" stopColor="rgb(196,181,253)" stopOpacity={0}/>
-              </linearGradient>
-            </defs>
+          <BarChart data={chartPoints} margin={{ top: 16, right: 8, left: 8, bottom: 0 }} barCategoryGap="18%">
             <XAxis dataKey="timeLabel" tick={{ fill: "rgba(226,232,240,0.72)", fontSize: 12 }} axisLine={false} tickLine={false} minTickGap={30} />
             <YAxis hide domain={[0, 'dataMax']} />
             <Tooltip 
+              content={
+                <SingleSeriesTooltip
+                  formatter={(value) => `${value.toFixed(3)} ${currency}/kWh`}
+                  label="Price"
+                />
+              }
               contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', borderColor: 'rgba(255,255,255,0.1)', borderRadius: '8px', color: '#f8fafc' }}
               itemStyle={{ color: 'rgb(196,181,253)' }}
-              formatter={(value: unknown) => [`${value} ${currency}/kWh`, 'Price']}
             />
-            <Area type="monotone" dataKey="importPrice" stroke="rgb(196,181,253)" strokeWidth={3} fillOpacity={1} fill="url(#colorPrice)" />
-          </AreaChart>
+            {chartPoints
+              .filter((point) => point.isMidnight)
+              .map((point) => (
+                <ReferenceLine
+                  key={`price-midnight-${point.startsAt}`}
+                  x={point.timeLabel}
+                  stroke="rgba(255,255,255,0.24)"
+                  strokeDasharray="3 5"
+                />
+              ))}
+            <Bar dataKey="importPrice" radius={[2, 2, 0, 0]} maxBarSize={12}>
+              {chartPoints.map((point) => (
+                <Cell
+                  key={`price-bar-${point.startsAt}`}
+                  fill={point.isPast ? "rgba(202,138,4,0.35)" : "rgba(202,138,4,0.82)"}
+                />
+              ))}
+            </Bar>
+          </BarChart>
         </ResponsiveContainer>
-      </div>
-      <div className="flex items-center justify-between text-xs text-slate-500">
-        <span>{`0 ${currency}/kWh`}</span>
-        <span>{`${points.length > 0 ? points[points.length - 1]?.currency ?? currency : currency}/kWh max ${maxValue.toFixed(3)}`}</span>
       </div>
     </div>
   );
@@ -678,12 +694,33 @@ function ForecastChart({
   points: WeatherForecastPointRecord[];
   unitLabel: string;
 }) {
-  const chartPoints = points.map((point) => ({
-    ...point,
-    timeLabel: formatForecastTimeLabel(point.periodEnd),
-  }));
-  const values = points.map((point) => point.value ?? 0);
-  const maxValue = Math.max(100, ...values);
+  const now = Date.now();
+  const transitionIndex = points.findIndex(
+    (point) => new Date(point.periodEnd).getTime() >= now,
+  );
+  const chartPoints = points.map((point, index) => {
+    const pointTime = new Date(point.periodEnd).getTime();
+    const isPast = pointTime < now;
+
+    return {
+      ...point,
+      futureValue:
+        transitionIndex === -1
+          ? null
+          : index >= Math.max(0, transitionIndex - 1)
+            ? point.value
+            : null,
+      isMidnight: isMidnightTimestamp(point.periodEnd),
+      isPast,
+      timeLabel: formatForecastTimeLabel(point.periodEnd),
+      value:
+        transitionIndex === -1
+          ? point.value
+          : index <= transitionIndex
+            ? point.value
+            : null,
+    };
+  });
 
   return (
     <div className="space-y-3">
@@ -699,24 +736,67 @@ function ForecastChart({
             <XAxis dataKey="timeLabel" tick={{ fill: "rgba(226,232,240,0.72)", fontSize: 12 }} axisLine={false} tickLine={false} minTickGap={30} />
             <YAxis hide domain={[0, 'dataMax']} />
             <Tooltip 
+              content={
+                <SingleSeriesTooltip
+                  formatter={(value) => `${value} ${unitLabel}`}
+                  label={metricLabel}
+                />
+              }
               contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', borderColor: 'rgba(255,255,255,0.1)', borderRadius: '8px', color: '#f8fafc' }}
               itemStyle={{ color: 'rgb(125,211,252)' }}
-              formatter={(value: unknown) => [`${value} ${unitLabel}`, metricLabel]}
             />
-            <Area type="monotone" dataKey="value" stroke="rgb(125,211,252)" strokeWidth={3} fillOpacity={1} fill="url(#colorForecast)" />
+            {chartPoints
+              .filter((point) => point.isMidnight)
+              .map((point) => (
+                <ReferenceLine
+                  key={`forecast-midnight-${point.periodEnd}`}
+                  x={point.timeLabel}
+                  stroke="rgba(255,255,255,0.24)"
+                  strokeDasharray="3 5"
+                />
+              ))}
+            <Area type="monotone" dataKey="value" stroke="rgb(125,211,252)" strokeOpacity={0.35} strokeWidth={3} fillOpacity={0.2} fill="url(#colorForecast)" connectNulls={false} />
+            <Area type="monotone" dataKey="futureValue" stroke="rgb(125,211,252)" strokeWidth={3} fillOpacity={1} fill="url(#colorForecast)" connectNulls={false} />
           </AreaChart>
         </ResponsiveContainer>
-      </div>
-      <div className="flex items-center justify-between text-xs text-slate-500">
-        <span>{`0 ${unitLabel}`}</span>
-        <span>{`${formatForecastValue(maxValue)} ${unitLabel}`}</span>
       </div>
     </div>
   );
 }
 
-function formatForecastValue(value: number): string {
-  return value >= 10 ? String(Math.round(value)) : value.toFixed(2);
+function SingleSeriesTooltip({
+  active,
+  formatter,
+  label,
+  payload,
+}: {
+  active?: boolean;
+  formatter: (value: number) => string;
+  label: string;
+  payload?: Array<{
+    color?: string;
+    dataKey?: string;
+    value?: ValueType;
+  }>;
+}) {
+  if (!active || !payload || payload.length === 0) {
+    return null;
+  }
+
+  const selectedEntry =
+    payload.find((entry) => entry.dataKey?.startsWith("future") && typeof entry.value === "number") ??
+    payload.find((entry) => typeof entry.value === "number");
+
+  if (!selectedEntry || typeof selectedEntry.value !== "number") {
+    return null;
+  }
+
+  return (
+    <div className="rounded-lg border border-white/10 bg-slate-900/90 px-3 py-2 text-sm text-slate-50 shadow-lg backdrop-blur">
+      <p className="font-medium">{label}</p>
+      <p className="text-slate-300">{formatter(selectedEntry.value)}</p>
+    </div>
+  );
 }
 
 function selectForecastPoints(input: {
@@ -736,6 +816,54 @@ function selectForecastPoints(input: {
   return withinRange.filter((_, index) => index % stride === 0);
 }
 
+function selectPricePoints(input: {
+  generatedAt: string;
+  horizonHours: 48;
+  points: DynamicPricePointRecord[];
+}): DynamicPricePointRecord[] {
+  const generatedAt = new Date(input.generatedAt).getTime();
+  const cutoff = generatedAt + input.horizonHours * 60 * 60 * 1000;
+
+  return input.points.filter((point) => new Date(point.startsAt).getTime() <= cutoff);
+}
+
+function formatPriceCoverageSummary(points: DynamicPricePointRecord[]): string | null {
+  if (points.length === 0) {
+    return null;
+  }
+
+  const lastPoint = points[points.length - 1];
+
+  if (!lastPoint) {
+    return null;
+  }
+
+  if (includesTomorrow(points)) {
+    return `Showing available prices through ${formatCoverageLabel(lastPoint.startsAt)}.`;
+  }
+
+  return "Tomorrow's prices are not available from Tibber yet.";
+}
+
+function includesTomorrow(points: DynamicPricePointRecord[]): boolean {
+  const tomorrow = new Date();
+  tomorrow.setHours(0, 0, 0, 0);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowKey = tomorrow.toDateString();
+
+  return points.some((point) => new Date(point.startsAt).toDateString() === tomorrowKey);
+}
+
+function formatCoverageLabel(value: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    month: "short",
+    weekday: "short",
+  }).format(new Date(value));
+}
+
 function buildTickIndexes(length: number, count: number): number[] {
   if (length <= count) {
     return Array.from({ length }, (_, index) => index);
@@ -749,9 +877,89 @@ function buildTickIndexes(length: number, count: number): number[] {
 function formatForecastTimeLabel(value: string): string {
   return new Intl.DateTimeFormat(undefined, {
     day: "numeric",
+    month: "short",
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(value));
+}
+
+function isMidnightTimestamp(value: string): boolean {
+  const timestamp = new Date(value);
+
+  return timestamp.getHours() === 0 && timestamp.getMinutes() === 0;
+}
+
+function DestructiveConfirmButton({
+  action,
+  children,
+  confirmLabel,
+  description,
+  hiddenFields,
+  title,
+  triggerClassName,
+}: {
+  action: (formData: FormData) => void | Promise<void>;
+  children: ReactNode;
+  confirmLabel: string;
+  description: string;
+  hiddenFields: Array<{ name: string; value: string }>;
+  title: string;
+  triggerClassName: string;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setIsOpen(false);
+      }
+    }
+
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [isOpen]);
+
+  return (
+    <>
+      <button className={triggerClassName} onClick={() => setIsOpen(true)} type="button">
+        {children}
+      </button>
+
+      {isOpen ? (
+        <DialogPortal>
+          <div className="fixed inset-0 z-[110] bg-slate-950/80 p-4 backdrop-blur-sm">
+            <div className="flex min-h-full items-center justify-center">
+              <div className="w-full max-w-md rounded-3xl border border-white/10 bg-slate-950 p-5 shadow-[0_30px_120px_rgba(0,0,0,0.45)]">
+                <p className="text-sm font-semibold uppercase tracking-[0.22em] text-rose-300">
+                  Confirm delete
+                </p>
+                <h3 className="mt-3 text-xl font-semibold text-white">{title}</h3>
+                <p className="mt-3 text-sm leading-6 text-slate-300">{description}</p>
+                <div className="mt-5 flex flex-wrap justify-end gap-3">
+                  <Button onClick={() => setIsOpen(false)} type="button" variant="ghost">
+                    Cancel
+                  </Button>
+                  <form action={action}>
+                    {hiddenFields.map((field) => (
+                      <input key={field.name} name={field.name} type="hidden" value={field.value} />
+                    ))}
+                    <SubmitButton className={dangerButtonClass}>{confirmLabel}</SubmitButton>
+                  </form>
+                </div>
+              </div>
+            </div>
+          </div>
+        </DialogPortal>
+      ) : null}
+    </>
+  );
 }
 
 function ResourceSection({
@@ -827,59 +1035,58 @@ function DeviceList({
                 }
               />
               {kind === "battery" ? (
-                <MetaItem
-                  label="Min discharge"
-                  value={`${device.minimumDischargePercent ?? 10}%`}
-                />
+                <form
+                  action={setBatteryMinimumDischargePercentAction}
+                  className="rounded-2xl border border-white/8 bg-slate-950/55 px-3 py-2"
+                  id={`battery-backup-reserve-${device.id}`}
+                >
+                  <input type="hidden" name="siteId" value={site.id} />
+                  <input type="hidden" name="batteryId" value={device.id} />
+                  <input type="hidden" name="batteryName" value={device.name} />
+                  <label className="block space-y-2">
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                      Backup reserve
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <input
+                        className="w-full rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-cyan-400/50"
+                        defaultValue={device.minimumDischargePercent ?? 10}
+                        max={100}
+                        min={10}
+                        name="minimumDischargePercent"
+                        step={1}
+                        type="number"
+                      />
+                      <span className="text-sm text-slate-400">%</span>
+                    </div>
+                  </label>
+                </form>
               ) : null}
             </dl>
-            {kind === "battery" ? (
-              <form
-                action={setBatteryMinimumDischargePercentAction}
-                className="mt-4 space-y-2"
-              >
-                <input type="hidden" name="siteId" value={site.id} />
-                <input type="hidden" name="batteryId" value={device.id} />
-                <input type="hidden" name="batteryName" value={device.name} />
-                <label className="block space-y-2">
-                  <span className="text-sm font-medium text-slate-300">
-                    Minimum discharge (%)
-                  </span>
-                  <input
-                    className="w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400/50"
-                    defaultValue={device.minimumDischargePercent ?? 10}
-                    max={100}
-                    min={10}
-                    name="minimumDischargePercent"
-                    step={1}
-                    type="number"
-                  />
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  <SubmitButton className={secondaryButtonClass}>
-                    <Save size={14} />
-                    Save minimum
-                  </SubmitButton>
-                </div>
-              </form>
-            ) : null}
             <div className="mt-auto pt-4 flex flex-wrap gap-2">
-              <form
-                action={
-                  kind === "battery" ? deleteBatteryAction : deleteMeterAction
-                }
+              {kind === "battery" ? (
+                <Button className={secondaryButtonClass} form={`battery-backup-reserve-${device.id}`} type="submit">
+                  <Save size={14} />
+                  Save
+                </Button>
+              ) : null}
+              <DestructiveConfirmButton
+                action={kind === "battery" ? deleteBatteryAction : deleteMeterAction}
+                confirmLabel={kind === "battery" ? "Delete battery" : "Delete meter"}
+                description={`This deletes ${device.name}. This cannot be undone.`}
+                hiddenFields={[
+                  { name: "siteId", value: site.id },
+                  {
+                    name: kind === "battery" ? "batteryId" : "meterId",
+                    value: device.id,
+                  },
+                ]}
+                title={`Delete ${device.name}?`}
+                triggerClassName={dangerButtonClass}
               >
-                <input type="hidden" name="siteId" value={site.id} />
-                <input
-                  type="hidden"
-                  name={kind === "battery" ? "batteryId" : "meterId"}
-                  value={device.id}
-                />
-                <SubmitButton className={dangerButtonClass}>
-                  <Trash2 size={14} />
-                  Delete
-                </SubmitButton>
-              </form>
+                <Trash2 size={14} />
+                Delete
+              </DestructiveConfirmButton>
             </div>
           </article>
         );
@@ -943,24 +1150,13 @@ function SourceList({
             />
           </label>
         </div>
-        {kind === "price" ? (
-          <label className="block space-y-2">
-            <span className="text-sm font-medium text-slate-300">
-              Tibber home ID (optional)
-            </span>
-            <input
-              className="w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400/50"
-              name="homeId"
-            />
-          </label>
-        ) : null}
         {kind === "weather" ? (
           <p className="text-xs text-slate-500">
             Weather sources default to `open-meteo` using the current site GPS location.
           </p>
         ) : kind === "price" ? (
           <p className="text-xs text-slate-500">
-            Dynamic price sources currently use `tibber` and read prices with `TIBBER_ACCESS_TOKEN`.
+            Dynamic price sources currently use `tibber` and read prices with `TIBBER_ACCESS_TOKEN`, plus optional `TIBBER_HOME_ID`.
           </p>
         ) : null}
         <SubmitButton className={primaryButtonClass}>
@@ -1016,38 +1212,37 @@ function SourceList({
                     required
                   />
                 </label>
-                {kind === "price" ? (
-                  <label className="block space-y-2">
-                    <span className="text-sm font-medium text-slate-300">
-                      Tibber home ID (optional)
-                    </span>
-                    <input
-                      className="w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400/50"
-                      defaultValue={(record as DynamicPriceSourceRecord).homeId ?? ""}
-                      name="homeId"
-                    />
-                  </label>
-                ) : null}
                 <div className="flex flex-wrap gap-2">
                   <SubmitButton className={secondaryButtonClass}>
                     Save
                   </SubmitButton>
                 </div>
               </form>
-              <form
-                action={
-                  kind === "weather"
-                    ? deleteWeatherForecastSourceAction
-                    : deleteDynamicPriceSourceAction
-                }
-                className="mt-2"
-              >
-                <input type="hidden" name="siteId" value={site.id} />
-                <input type="hidden" name="sourceId" value={record.id} />
-                <SubmitButton className={dangerButtonClass}>
+              <div className="mt-2">
+                <DestructiveConfirmButton
+                  action={
+                    kind === "weather"
+                      ? deleteWeatherForecastSourceAction
+                      : deleteDynamicPriceSourceAction
+                  }
+                  confirmLabel={
+                    kind === "weather" ? "Delete forecast source" : "Delete price source"
+                  }
+                  description={
+                    kind === "weather"
+                      ? `This deletes the forecast source ${formatWeatherSourceDeleteName(record as WeatherForecastSourceRecord)}. This cannot be undone.`
+                      : `This deletes the price source ${record.name}. This cannot be undone.`
+                  }
+                  hiddenFields={[
+                    { name: "siteId", value: site.id },
+                    { name: "sourceId", value: record.id },
+                  ]}
+                  title={`Delete ${kind === "weather" ? formatWeatherSourceDeleteName(record as WeatherForecastSourceRecord) : record.name}?`}
+                  triggerClassName={dangerButtonClass}
+                >
                   Delete
-                </SubmitButton>
-              </form>
+                </DestructiveConfirmButton>
+              </div>
             </article>
           ))}
         </div>

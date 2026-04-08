@@ -19,9 +19,9 @@ export function AppShell({
           <div className="flex min-w-0 items-center gap-6">
             <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-[0.3em] text-cyan-300">
-                EMSD
+                EMS
               </p>
-              <p className="mt-1 text-sm text-slate-400">Energy management</p>
+              {/* <p className="mt-1 text-sm text-slate-400">Energy management</p> */}
             </div>
             <AppNav />
           </div>

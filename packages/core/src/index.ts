@@ -113,7 +113,6 @@ export interface WeatherForecastRecord {
 
 export interface DynamicPriceSourceRecord {
   id: string;
-  homeId: string | null;
   siteId: string;
   name: string;
   provider: "tibber";

@@ -50,8 +50,6 @@ export async function StatusScreen({
     ? currentSite.devices.filter((device) => device.kind === "battery")
     : [];
   const currentSiteId = currentSite?.id ?? null;
-  const initialSettingsTab =
-    currentSite === null ? "site" : batteries.length === 0 ? "discover" : null;
 
   const normalizedBatteryInfoById = new Map<
     string,
@@ -104,7 +102,6 @@ export async function StatusScreen({
           <SettingsDialog>
             <SettingsPanel
               currentSite={currentSite}
-              initialTab={initialSettingsTab}
               dynamicPriceSnapshot={dynamicPriceSnapshot}
               dynamicPriceSnapshotError={dynamicPriceSnapshotError}
               weatherForecast={weatherForecast}

@@ -76,14 +76,33 @@ async function runBridge<T>(
   action: string,
   input: Record<string, unknown> = {},
 ): Promise<T> {
-  const { stdout, stderr } = await execFileAsync(
-    "bun",
-    ["run", bridgeScriptPath, action, JSON.stringify(input)],
-    {
-      cwd: process.cwd(),
-      env: process.env,
-    },
-  );
+  let stdout = "";
+  let stderr = "";
+
+  try {
+    const result = await execFileAsync(
+      "bun",
+      ["run", bridgeScriptPath, action, JSON.stringify(input)],
+      {
+        cwd: process.cwd(),
+        env: process.env,
+      },
+    );
+
+    stdout = result.stdout;
+    stderr = result.stderr;
+  } catch (error) {
+    stdout = typeof (error as { stdout?: unknown }).stdout === "string"
+      ? ((error as { stdout: string }).stdout)
+      : "";
+    stderr = typeof (error as { stderr?: unknown }).stderr === "string"
+      ? ((error as { stderr: string }).stderr)
+      : "";
+
+    if (!stdout.trim()) {
+      throw error;
+    }
+  }
 
   const output = stdout.trim();
 
@@ -264,7 +283,6 @@ export function refreshWeatherForecast(input: { siteId: string }) {
 }
 
 export function createDynamicPriceSource(input: {
-  homeId?: string | null;
   id: string;
   name: string;
   provider?: "tibber";
@@ -274,7 +292,6 @@ export function createDynamicPriceSource(input: {
 }
 
 export function updateDynamicPriceSource(input: {
-  homeId?: string | null;
   id: string;
   name: string;
   provider?: "tibber";

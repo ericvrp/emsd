@@ -107,26 +107,40 @@ function main(): void {
     `Refreshing dynamic prices at most every ${DYNAMIC_PRICE_REFRESH_INTERVAL_MS / 60_000} minutes.`,
   );
 
-    let pollInFlight = false;
+  let pollInFlight = false;
+  let refreshInFlight = false;
 
-    // Read sites and sources for initial refresh
-    const sites = readSites(db);
-    const dynamicPriceSources = readDynamicPriceSources(db);
-    const weatherSources = readWeatherForecastSources(db);
+  async function refreshSiteData(forceRefresh = false): Promise<void> {
+    if (refreshInFlight) {
+      return;
+    }
 
-    async function pollTelemetry(): Promise<void> {
-      if (pollInFlight) {
-        return;
-      }
+    refreshInFlight = true;
 
-      pollInFlight = true;
+    try {
+      const sites = readSites(db);
+      const dynamicPriceSources = readDynamicPriceSources(db);
+      const weatherSources = readWeatherForecastSources(db);
 
-      try {
-        const polledBatteries = readBatteries(db);
-        const polledMeters = readMeters(db);
+      await refreshWeatherForecasts(db, sites, weatherSources, options.verbose, forceRefresh);
+      await refreshDynamicPrices(db, sites, dynamicPriceSources, options.verbose, forceRefresh);
+    } finally {
+      refreshInFlight = false;
+    }
+  }
 
-        await refreshWeatherForecasts(db, sites, weatherSources, options.verbose);
-        await refreshDynamicPrices(db, sites, dynamicPriceSources, options.verbose);
+  async function pollTelemetry(): Promise<void> {
+    if (pollInFlight) {
+      return;
+    }
+
+    pollInFlight = true;
+
+    try {
+      const polledBatteries = readBatteries(db);
+      const polledMeters = readMeters(db);
+
+      await refreshSiteData();
 
       await Promise.all([
         ...polledBatteries.map(async (battery) => {
@@ -241,30 +255,36 @@ function main(): void {
     }
   }
 
-    // Initial refresh of forecast and price info on daemon start
-    console.log(`[${new Date().toISOString()}] Polling solar forecasts at startup...`);
-    void refreshWeatherForecasts(db, sites, weatherSources, false, true);
-    console.log(`[${new Date().toISOString()}] Polling dynamic prices at startup...`);
-    void refreshDynamicPrices(db, sites, dynamicPriceSources, false, true);
+  // Initial refresh of forecast and price info on daemon start
+  console.log(`[${new Date().toISOString()}] Polling solar forecasts at startup...`);
+  void refreshSiteData(true);
+  console.log(`[${new Date().toISOString()}] Polling dynamic prices at startup...`);
 
   void pollTelemetry();
 
-  const heartbeat = setInterval(() => {
-    console.log(`[${new Date().toISOString()}] daemon heartbeat`);
-  }, 60_000);
+  // const heartbeat = setInterval(() => {
+  //   console.log(`[${new Date().toISOString()}] daemon heartbeat`);
+  // }, 60_000);
   const poller = setInterval(() => {
     void pollTelemetry();
   }, POLL_INTERVAL_MS);
   const forecastPoller = setInterval(() => {
-    void refreshWeatherForecasts(db, sites, weatherSources, options.verbose);
+    void refreshSiteData();
   }, FORECAST_REFRESH_INTERVAL_MS);
   const pricePoller = setInterval(() => {
-    void refreshDynamicPrices(db, sites, dynamicPriceSources, options.verbose);
+    void refreshSiteData();
   }, DYNAMIC_PRICE_REFRESH_INTERVAL_MS);
 
+  process.on("SIGUSR1", () => {
+    console.log(`[${new Date().toISOString()}] received on-demand refresh request`);
+    void refreshSiteData(true);
+  });
+
   function shutdown(signal: string): void {
-    clearInterval(heartbeat);
+    // clearInterval(heartbeat);
     clearInterval(poller);
+    clearInterval(forecastPoller);
+    clearInterval(pricePoller);
     db.close();
     rmSync(lockPath, { force: true });
     console.log(`${EMSD_NAME} daemon stopped after ${signal}.`);

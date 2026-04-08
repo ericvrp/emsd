@@ -275,7 +275,6 @@ export function readDynamicPriceSources(db: Database): DynamicPriceSourceRecord[
 
   return rows.map((row) => ({
     id: row.id,
-    homeId: row.home_id,
     siteId: row.site_id,
     name: row.name,
     provider: row.provider,
