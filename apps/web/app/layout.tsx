@@ -4,9 +4,8 @@ import "./globals.css";
 import { ToastViewport } from "../components/toast-viewport";
 
 export const metadata: Metadata = {
-  title: "EMSD Control Center",
-  description:
-    "Authenticated EMS management UI for sites, devices, and sources.",
+  title: "EMS",
+  description: "Energy Management System",
 };
 
 export default function RootLayout({

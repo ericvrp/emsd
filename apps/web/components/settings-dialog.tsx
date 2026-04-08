@@ -45,7 +45,7 @@ export function SettingsDialog({
     <>
       <Button onClick={openDialog} type="button" variant="ghost">
         <Settings size={16} />
-        Settings
+        <span className="hidden sm:inline">Settings</span>
       </Button>
 
       {isOpen ? (

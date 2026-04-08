@@ -86,8 +86,8 @@ export async function StatusScreen({
                 className="mx-auto w-full max-w-3xl overflow-hidden border-white/12 bg-slate-950/70"
               >
                 <CardHeader className="border-b border-white/8 px-6 py-5 sm:px-8">
-                  <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                    <div className="min-w-0">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
                       <CardTitle className="truncate text-3xl font-semibold tracking-tight sm:text-4xl">
                         {battery.name}
                       </CardTitle>
@@ -95,6 +95,7 @@ export async function StatusScreen({
                     <BatteryStrategyDialog
                       batteryId={battery.id}
                       batteryName={battery.name}
+                      className="shrink-0 self-start px-3 sm:px-4"
                       capacityWh={capacityWh}
                       currentSocPercent={socPercent}
                       minimumDischargePercent={

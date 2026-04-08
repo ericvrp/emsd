@@ -16,6 +16,7 @@ import { DialogPortal } from "./ui/dialog-portal";
 export function BatteryStrategyDialog({
   batteryId,
   batteryName,
+  className,
   capacityWh,
   currentSocPercent,
   minimumDischargePercent,
@@ -26,6 +27,7 @@ export function BatteryStrategyDialog({
 }: {
   batteryId: string;
   batteryName: string;
+  className?: string;
   capacityWh: number | null;
   currentSocPercent: number | null;
   minimumDischargePercent: number;
@@ -67,9 +69,16 @@ export function BatteryStrategyDialog({
 
   return (
     <>
-      <Button onClick={() => setIsOpen(true)} variant="ghost">
+      <Button
+        aria-label={formatStrategyLabel({ nowModeActive, strategy, strategyPlan })}
+        className={className}
+        onClick={() => setIsOpen(true)}
+        variant="ghost"
+      >
         <Settings2 size={16} />
-        {formatStrategyLabel({ nowModeActive, strategy, strategyPlan })}
+        <span className="hidden sm:inline">
+          {formatStrategyLabel({ nowModeActive, strategy, strategyPlan })}
+        </span>
       </Button>
 
       {isOpen ? (
