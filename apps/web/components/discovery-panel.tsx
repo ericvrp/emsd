@@ -1,5 +1,6 @@
 "use client";
 
+import { BatteryCharging, Gauge, LoaderCircle, Plus, ScanSearch } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -31,10 +32,10 @@ const DISCOVERY_CACHE_PREFIX = "emsd-discovery:";
 const DISCOVERY_CACHE_VERSION = 2;
 
 const primaryButtonClass =
-  "inline-flex h-9 items-center justify-center rounded-md bg-gradient-to-r from-indigo-500 via-cyan-500 to-emerald-400 px-4 text-sm font-medium text-slate-950 shadow-[0_18px_50px_rgba(6,182,212,0.18)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60";
+  "inline-flex h-9 items-center justify-center gap-2 rounded-md bg-gradient-to-r from-indigo-500 via-cyan-500 to-emerald-400 px-4 text-sm font-medium text-slate-950 shadow-[0_18px_50px_rgba(6,182,212,0.18)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60";
 
 const secondaryButtonClass =
-  "inline-flex h-9 items-center justify-center rounded-md border border-white/10 bg-white/6 px-4 text-sm font-medium text-slate-100 transition hover:border-white/20 hover:bg-white/10";
+  "inline-flex h-9 items-center justify-center gap-2 rounded-md border border-white/10 bg-white/6 px-4 text-sm font-medium text-slate-100 transition hover:border-white/20 hover:bg-white/10";
 
 export function DiscoveryPanel({
   existingDeviceIds,
@@ -189,11 +190,17 @@ export function DiscoveryPanel({
           onClick={runDiscovery}
           type="button"
         >
-          {isLoading
-            ? "Scanning..."
-            : host.trim()
-              ? "Probe host"
-              : "Scan network"}
+          {isLoading ? (
+            <>
+              <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin" />
+              Scanning...
+            </>
+          ) : (
+            <>
+              <ScanSearch aria-hidden="true" className="h-4 w-4" />
+              {host.trim() ? "Probe host" : "Scan network"}
+            </>
+          )}
         </button>
       </div>
 
@@ -233,7 +240,10 @@ export function DiscoveryPanel({
               />
               <SubmitButton
                 className={primaryButtonClass}
-              >{`Add all (${addableDiscoveryIds.length})`}</SubmitButton>
+              >
+                <Plus aria-hidden="true" className="h-4 w-4" />
+                {`Add all (${addableDiscoveryIds.length})`}
+              </SubmitButton>
             </form>
           ) : (
             <></>
@@ -334,7 +344,17 @@ function DiscoveryDeviceCard({
             />
             <input type="hidden" name="host" value={host} />
             <SubmitButton className={secondaryButtonClass}>
-              {device.category === "battery" ? "Add battery" : "Add meter"}
+              {device.category === "battery" ? (
+                <>
+                  <BatteryCharging aria-hidden="true" className="h-4 w-4" />
+                  Add battery
+                </>
+              ) : (
+                <>
+                  <Gauge aria-hidden="true" className="h-4 w-4" />
+                  Add meter
+                </>
+              )}
             </SubmitButton>
           </form>
         ) : null}
