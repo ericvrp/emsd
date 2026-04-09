@@ -3,6 +3,7 @@ import { BatteryCharging, Zap } from "lucide-react";
 import {
   getBatteryNormalizedInfo,
 } from "../lib/ems-bridge";
+import { UI_STYLES } from "../lib/ui-colors";
 import { BatteryStrategyDialog } from "./battery-strategy-dialog";
 import { loadDashboardPageData, type SearchParams } from "./dashboard-page-data";
 import { DashboardPageFrame } from "./dashboard-page-frame";
@@ -239,28 +240,28 @@ function formatPower(value: number | null | undefined): string {
 
 function getBatteryFillClass(socPercent: number | null): string {
   if (socPercent === null) {
-    return "bg-slate-500/70";
+    return UI_STYLES.batteryFillUnknown;
   }
 
   if (socPercent < 25) {
-    return "bg-rose-500/85";
+    return UI_STYLES.batteryFillLow;
   }
 
   if (socPercent >= 80) {
-    return "bg-emerald-400/85";
+    return UI_STYLES.batteryFillHigh;
   }
 
-  return "bg-sky-400/85";
+  return UI_STYLES.batteryFillMid;
 }
 
 function getPowerFillClass(state: string): string {
   if (state === "charging") {
-    return "bg-emerald-400/85";
+    return UI_STYLES.powerFillCharging;
   }
 
   if (state === "discharging") {
-    return "bg-sky-400/85";
+    return UI_STYLES.powerFillDischarging;
   }
 
-  return "bg-slate-500/70";
+  return UI_STYLES.powerFillUnknown;
 }

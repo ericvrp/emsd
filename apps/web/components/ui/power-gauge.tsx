@@ -1,3 +1,4 @@
+import { UI_STYLES } from "../../lib/ui-colors";
 import { cn } from "../../lib/utils";
 
 export function PowerGauge({
@@ -90,16 +91,16 @@ function getBarClass(state: string, isActive: boolean): string {
   }
 
   if (state === "charging") {
-    return "border-sky-300/30 bg-sky-300 shadow-[0_0_24px_rgba(125,211,252,0.32)]";
+    return UI_STYLES.powerBarCharging;
   }
 
   if (state === "discharging") {
-    return "border-amber-300/30 bg-amber-300 shadow-[0_0_24px_rgba(252,211,77,0.32)]";
+    return UI_STYLES.powerBarDischarging;
   }
 
   if (state === "idle") {
-    return "border-emerald-300/30 bg-emerald-300 shadow-[0_0_24px_rgba(110,231,183,0.32)]";
+    return UI_STYLES.powerBarIdle;
   }
 
-  return "border-slate-300/20 bg-slate-300 shadow-[0_0_24px_rgba(203,213,225,0.2)]";
+  return UI_STYLES.powerBarOffline;
 }

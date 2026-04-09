@@ -3,6 +3,7 @@
 import * as SelectPrimitive from "@radix-ui/react-select";
 import { Check, ChevronDown } from "lucide-react";
 import type * as React from "react";
+import { UI_STYLES } from "../../lib/ui-colors";
 import { cn } from "../../lib/utils";
 
 export const Select = SelectPrimitive.Root;
@@ -14,11 +15,11 @@ export function SelectTrigger({
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Trigger>) {
   return (
-    <SelectPrimitive.Trigger
-      className={cn(
-        "flex h-11 w-full items-center justify-between rounded-xl border border-white/10 bg-slate-950/80 px-3 py-2 text-sm text-slate-100 outline-none data-[placeholder]:text-slate-500",
-        className,
-      )}
+      <SelectPrimitive.Trigger
+        className={cn(
+          UI_STYLES.selectTrigger,
+          className,
+        )}
       type="button"
       {...props}
     >
@@ -39,7 +40,7 @@ export function SelectContent({
     <SelectPrimitive.Portal>
       <SelectPrimitive.Content
         className={cn(
-          "z-[120] min-w-[8rem] overflow-hidden rounded-xl border border-white/10 bg-slate-950 text-slate-100 shadow-lg",
+          UI_STYLES.selectContent,
           className,
         )}
         {...props}
@@ -60,7 +61,7 @@ export function SelectItem({
   return (
     <SelectPrimitive.Item
       className={cn(
-        "relative flex cursor-default select-none items-center rounded-lg py-2 pl-8 pr-3 text-sm outline-none focus:bg-white/10 data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+        UI_STYLES.selectItem,
         className,
       )}
       {...props}

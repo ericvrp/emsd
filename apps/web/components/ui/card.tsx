@@ -1,4 +1,5 @@
 import type * as React from "react";
+import { UI_STYLES } from "../../lib/ui-colors";
 import { cn } from "../../lib/utils";
 
 export function Card({
@@ -8,7 +9,7 @@ export function Card({
   return (
     <div
       className={cn(
-        "rounded-3xl border border-white/10 bg-slate-950/60 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur",
+        UI_STYLES.card,
         className,
       )}
       {...props}

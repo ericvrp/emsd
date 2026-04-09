@@ -10,7 +10,15 @@ import type {
   WeatherForecastPointRecord,
   WeatherForecastSourceRecord,
 } from "@emsd/core";
-import { HardDrive, Home, LocateFixed, Save, ScanSearch, Search, Trash2 } from "lucide-react";
+import {
+  HardDrive,
+  Home,
+  LocateFixed,
+  Save,
+  ScanSearch,
+  Search,
+  Trash2,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import {
@@ -27,6 +35,12 @@ import {
 } from "recharts";
 import { toast } from "sonner";
 import type { ValueType } from "recharts/types/component/DefaultTooltipContent";
+import {
+  UI_CHART_STYLES,
+  UI_COLORS,
+  UI_STYLES,
+} from "../lib/ui-colors";
+import { cn } from "../lib/utils";
 import {
   createDynamicPriceSourceAction,
   createSiteAction,
@@ -52,12 +66,9 @@ function formatManagedDeviceState(state: string): string {
   return state.replace(/-/g, " ");
 }
 
-const primaryButtonClass =
-  "inline-flex h-9 items-center justify-center gap-2 rounded-md bg-gradient-to-r from-indigo-500 via-cyan-500 to-emerald-400 px-4 text-sm font-medium text-slate-950 shadow-[0_18px_50px_rgba(6,182,212,0.18)] transition hover:brightness-110";
-const secondaryButtonClass =
-  "inline-flex h-9 items-center justify-center gap-2 rounded-md border border-white/10 bg-white/6 px-4 text-sm font-medium text-slate-100 transition hover:border-white/20 hover:bg-white/10";
-const dangerButtonClass =
-  "inline-flex h-9 items-center justify-center gap-2 rounded-md border border-rose-400/20 bg-rose-500/10 px-4 text-sm font-medium text-rose-100 transition hover:bg-rose-500/15";
+const primaryButtonClass = UI_STYLES.buttonPrimary;
+const secondaryButtonClass = UI_STYLES.buttonSecondary;
+const dangerButtonClass = UI_STYLES.buttonDanger;
 
 export function SettingsPanel({
   currentSite,
@@ -72,38 +83,39 @@ export function SettingsPanel({
 
   return (
     <div className="space-y-4">
-      <section className="rounded-[1.6rem] border border-white/10 bg-slate-950/55 p-3 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
-        <div className="grid gap-2 sm:grid-cols-3">
+      <section className={`${UI_STYLES.panel} p-3`}>
+        <div className={UI_STYLES.tabBar}>
           {(["site", "discover", "devices"] as SettingsTab[]).map((tab) => {
             const isDisabled = !hasSite && tab !== "site";
 
             return (
               <button
                 key={tab}
-                className={`inline-flex h-9 items-center justify-center gap-2 rounded-md px-4 text-sm font-medium transition ${
+                className={cn(
+                  UI_STYLES.tabItem,
                   activeTab === tab
-                    ? "border border-cyan-300/30 bg-gradient-to-r from-cyan-300 via-white to-emerald-200 !text-slate-950 shadow-[0_12px_40px_rgba(125,211,252,0.22)] [&_svg]:!text-slate-950"
-                  : isDisabled
-                    ? "cursor-not-allowed border border-white/8 bg-white/5 text-slate-500 opacity-50"
-                    : "border border-white/8 bg-white/5 text-slate-200 hover:bg-white/8"
-                }`}
-              disabled={isDisabled}
-              onClick={() => setActiveTab(tab)}
-              type="button"
-            >
-              {tab === "devices" ? (
-                <HardDrive size={15} />
-              ) : tab === "site" ? (
-                <Home size={15} />
-              ) : (
-                <ScanSearch size={15} />
-              )}
-              {tab === "devices"
-                ? "Devices"
-                : tab === "site"
-                  ? "Site"
-                  : "Discover"}
-            </button>
+                    ? UI_STYLES.tabItemActive
+                    : isDisabled
+                      ? UI_STYLES.tabItemDisabled
+                      : UI_STYLES.tabItemInactive,
+                )}
+                disabled={isDisabled}
+                onClick={() => setActiveTab(tab)}
+                type="button"
+              >
+                {tab === "devices" ? (
+                  <HardDrive size={15} />
+                ) : tab === "site" ? (
+                  <Home size={15} />
+                ) : (
+                  <ScanSearch size={15} />
+                )}
+                {tab === "devices"
+                  ? "Devices"
+                  : tab === "site"
+                    ? "Site"
+                    : "Discover"}
+              </button>
             );
           })}
         </div>
@@ -163,7 +175,10 @@ export function SettingsPanel({
   );
 }
 
-function resolveTab(options: { hasDevices: boolean; hasSite: boolean }): SettingsTab {
+function resolveTab(options: {
+  hasDevices: boolean;
+  hasSite: boolean;
+}): SettingsTab {
   if (!options.hasSite) {
     return "site";
   }
@@ -227,8 +242,14 @@ function SitePanel({ site }: { site: SiteSnapshot | null }) {
   const batteries = site.devices.filter((device) => device.kind === "battery");
   const meters = site.devices.filter((device) => device.kind === "meter");
   const deletionWarning = [
-    formatNamedBlocker("battery", batteries.map((device) => device.name)),
-    formatNamedBlocker("meter", meters.map((device) => device.name)),
+    formatNamedBlocker(
+      "battery",
+      batteries.map((device) => device.name),
+    ),
+    formatNamedBlocker(
+      "meter",
+      meters.map((device) => device.name),
+    ),
     formatNamedBlocker(
       "solar forecast source",
       site.weatherSources.map(formatWeatherSourceDeleteName),
@@ -294,7 +315,6 @@ function SitePanel({ site }: { site: SiteSnapshot | null }) {
             Delete site and linked data
           </DestructiveConfirmButton>
         </div>
-
       </div>
     </section>
   );
@@ -309,7 +329,9 @@ function formatNamedBlocker(label: string, names: string[]): string | null {
   return `${names.length} ${normalizedLabel} (${names.join(", ")})`;
 }
 
-function formatWeatherSourceDeleteName(source: WeatherForecastSourceRecord): string {
+function formatWeatherSourceDeleteName(
+  source: WeatherForecastSourceRecord,
+): string {
   return source.provider === "open-meteo" ? "Open-Meteo" : source.name;
 }
 
@@ -383,7 +405,9 @@ function SiteLocationFields({ defaultLocation }: { defaultLocation: string }) {
         setIsLocating(false);
       },
       (error) => {
-        toast.error(error.message || "Unable to read the current GPS location.");
+        toast.error(
+          error.message || "Unable to read the current GPS location.",
+        );
         setIsLocating(false);
       },
       {
@@ -397,7 +421,9 @@ function SiteLocationFields({ defaultLocation }: { defaultLocation: string }) {
     <div className="space-y-4 rounded-[1.25rem] border border-white/8 bg-slate-950/40 p-4">
       <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-end">
         <label className="block space-y-2">
-          <span className="text-sm font-medium text-slate-300">Place lookup</span>
+          <span className="text-sm font-medium text-slate-300">
+            Place lookup
+          </span>
           <input
             className="w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-cyan-400/50"
             onChange={(event) => setQuery(event.target.value)}
@@ -436,7 +462,8 @@ function SiteLocationFields({ defaultLocation }: { defaultLocation: string }) {
           value={location}
         />
         <p className="text-xs text-slate-500">
-          Store the site as `latitude, longitude` using Google Maps style coordinates.
+          Store the site as `latitude, longitude` using Google Maps style
+          coordinates.
         </p>
       </label>
     </div>
@@ -476,7 +503,8 @@ export function WeatherForecastSection({
             Solar forecast for {site.name}
           </h3>
           <p className="mt-2 text-sm leading-6 text-slate-400">
-            Open-Meteo provides the built-in ground sunlight forecast for this site.
+            Open-Meteo provides the built-in ground sunlight forecast for this
+            site.
           </p>
         </div>
       </div>
@@ -548,7 +576,9 @@ export function PricingSection({
           Tibber provides the built-in dynamic price snapshot for this site.
         </p>
         {coverageSummary ? (
-          <p className="mt-2 text-xs leading-5 text-slate-500">{coverageSummary}</p>
+          <p className="mt-2 text-xs leading-5 text-slate-500">
+            {coverageSummary}
+          </p>
         ) : null}
       </div>
 
@@ -594,23 +624,33 @@ function PriceChart({
   });
   return (
     <div className="space-y-3">
-      <p className="text-xs leading-5 text-slate-500">
+      {/* <p className="text-xs leading-5 text-slate-500">
         Shows the full 15-minute series across today and tomorrow.
-      </p>
+      </p> */}
       <div className="h-[260px] w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={chartPoints} margin={{ top: 16, right: 8, left: 8, bottom: 0 }} barCategoryGap="18%">
-            <XAxis dataKey="timeLabel" tick={{ fill: "rgba(226,232,240,0.72)", fontSize: 12 }} axisLine={false} tickLine={false} minTickGap={30} />
-            <YAxis hide domain={[0, 'dataMax']} />
-            <Tooltip 
+          <BarChart
+            data={chartPoints}
+            margin={{ top: 16, right: 8, left: 8, bottom: 0 }}
+            barCategoryGap="18%"
+          >
+            <XAxis
+              dataKey="timeLabel"
+              tick={UI_CHART_STYLES.axisTick}
+              axisLine={false}
+              tickLine={false}
+              minTickGap={30}
+            />
+            <YAxis hide domain={[0, "dataMax"]} />
+            <Tooltip
               content={
                 <SingleSeriesTooltip
                   formatter={(value) => `${value.toFixed(3)} ${currency}/kWh`}
                   label="Price"
                 />
               }
-              contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', borderColor: 'rgba(255,255,255,0.1)', borderRadius: '8px', color: '#f8fafc' }}
-              itemStyle={{ color: 'rgb(196,181,253)' }}
+              contentStyle={UI_CHART_STYLES.tooltipContentStyle}
+              itemStyle={{ color: UI_COLORS.priceSection }}
             />
             {chartPoints
               .filter((point) => point.isMidnight)
@@ -618,7 +658,7 @@ function PriceChart({
                 <ReferenceLine
                   key={`price-midnight-${point.startsAt}`}
                   x={point.timeLabel}
-                  stroke="rgba(255,255,255,0.24)"
+                  stroke={UI_COLORS.chartReference}
                   strokeDasharray="3 5"
                 />
               ))}
@@ -626,7 +666,11 @@ function PriceChart({
               {chartPoints.map((point) => (
                 <Cell
                   key={`price-bar-${point.startsAt}`}
-                  fill={point.isPast ? "rgba(202,138,4,0.35)" : "rgba(202,138,4,0.82)"}
+                  fill={
+                    point.isPast
+                      ? `${UI_COLORS.price}59`
+                      : `${UI_COLORS.price}D1`
+                  }
                 />
               ))}
             </Bar>
@@ -678,24 +722,41 @@ function ForecastChart({
     <div className="space-y-3">
       <div className="h-[260px] w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={chartPoints} margin={{ top: 16, right: 8, left: 8, bottom: 0 }}>
+          <AreaChart
+            data={chartPoints}
+            margin={{ top: 16, right: 8, left: 8, bottom: 0 }}
+          >
             <defs>
               <linearGradient id="colorForecast" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="rgb(125,211,252)" stopOpacity={0.3}/>
-                <stop offset="95%" stopColor="rgb(125,211,252)" stopOpacity={0}/>
+                <stop
+                  offset="5%"
+                  stopColor={UI_COLORS.forecast}
+                  stopOpacity={0.3}
+                />
+                <stop
+                  offset="95%"
+                  stopColor={UI_COLORS.forecast}
+                  stopOpacity={0}
+                />
               </linearGradient>
             </defs>
-            <XAxis dataKey="timeLabel" tick={{ fill: "rgba(226,232,240,0.72)", fontSize: 12 }} axisLine={false} tickLine={false} minTickGap={30} />
-            <YAxis hide domain={[0, 'dataMax']} />
-            <Tooltip 
+            <XAxis
+              dataKey="timeLabel"
+              tick={UI_CHART_STYLES.axisTick}
+              axisLine={false}
+              tickLine={false}
+              minTickGap={30}
+            />
+            <YAxis hide domain={[0, "dataMax"]} />
+            <Tooltip
               content={
                 <SingleSeriesTooltip
                   formatter={(value) => `${value} ${unitLabel}`}
                   label={metricLabel}
                 />
               }
-              contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', borderColor: 'rgba(255,255,255,0.1)', borderRadius: '8px', color: '#f8fafc' }}
-              itemStyle={{ color: 'rgb(125,211,252)' }}
+              contentStyle={UI_CHART_STYLES.tooltipContentStyle}
+              itemStyle={{ color: UI_COLORS.forecast }}
             />
             {chartPoints
               .filter((point) => point.isMidnight)
@@ -703,12 +764,29 @@ function ForecastChart({
                 <ReferenceLine
                   key={`forecast-midnight-${point.periodEnd}`}
                   x={point.timeLabel}
-                  stroke="rgba(255,255,255,0.24)"
+                  stroke={UI_COLORS.chartReference}
                   strokeDasharray="3 5"
                 />
               ))}
-            <Area type="monotone" dataKey="value" stroke="rgb(125,211,252)" strokeOpacity={0.35} strokeWidth={3} fillOpacity={0.2} fill="url(#colorForecast)" connectNulls={false} />
-            <Area type="monotone" dataKey="futureValue" stroke="rgb(125,211,252)" strokeWidth={3} fillOpacity={1} fill="url(#colorForecast)" connectNulls={false} />
+            <Area
+              type="monotone"
+              dataKey="value"
+              stroke={UI_COLORS.forecast}
+              strokeOpacity={0.35}
+              strokeWidth={3}
+              fillOpacity={0.2}
+              fill="url(#colorForecast)"
+              connectNulls={false}
+            />
+            <Area
+              type="monotone"
+              dataKey="futureValue"
+              stroke={UI_COLORS.forecast}
+              strokeWidth={3}
+              fillOpacity={1}
+              fill="url(#colorForecast)"
+              connectNulls={false}
+            />
           </AreaChart>
         </ResponsiveContainer>
       </div>
@@ -736,15 +814,17 @@ function SingleSeriesTooltip({
   }
 
   const selectedEntry =
-    payload.find((entry) => entry.dataKey?.startsWith("future") && typeof entry.value === "number") ??
-    payload.find((entry) => typeof entry.value === "number");
+    payload.find(
+      (entry) =>
+        entry.dataKey?.startsWith("future") && typeof entry.value === "number",
+    ) ?? payload.find((entry) => typeof entry.value === "number");
 
   if (!selectedEntry || typeof selectedEntry.value !== "number") {
     return null;
   }
 
   return (
-    <div className="rounded-lg border border-white/10 bg-slate-900/90 px-3 py-2 text-sm text-slate-50 shadow-lg backdrop-blur">
+    <div className={UI_STYLES.tooltipPanel}>
       <p className="font-medium">{label}</p>
       <p className="text-slate-300">{formatter(selectedEntry.value)}</p>
     </div>
@@ -763,7 +843,10 @@ function selectForecastPoints(input: {
   const withinRange = input.points.filter(
     (point) => new Date(point.periodEnd).getTime() <= cutoff,
   );
-  const stride = Math.max(1, Math.round(input.sampleRateMinutes / input.sourcePeriodMinutes));
+  const stride = Math.max(
+    1,
+    Math.round(input.sampleRateMinutes / input.sourcePeriodMinutes),
+  );
 
   return withinRange.filter((_, index) => index % stride === 0);
 }
@@ -776,10 +859,14 @@ function selectPricePoints(input: {
   const generatedAt = new Date(input.generatedAt).getTime();
   const cutoff = generatedAt + input.horizonHours * 60 * 60 * 1000;
 
-  return input.points.filter((point) => new Date(point.startsAt).getTime() <= cutoff);
+  return input.points.filter(
+    (point) => new Date(point.startsAt).getTime() <= cutoff,
+  );
 }
 
-function formatPriceCoverageSummary(points: DynamicPricePointRecord[]): string | null {
+function formatPriceCoverageSummary(
+  points: DynamicPricePointRecord[],
+): string | null {
   if (points.length === 0) {
     return null;
   }
@@ -803,7 +890,9 @@ function includesTomorrow(points: DynamicPricePointRecord[]): boolean {
   tomorrow.setDate(tomorrow.getDate() + 1);
   const tomorrowKey = tomorrow.toDateString();
 
-  return points.some((point) => new Date(point.startsAt).toDateString() === tomorrowKey);
+  return points.some(
+    (point) => new Date(point.startsAt).toDateString() === tomorrowKey,
+  );
 }
 
 function formatCoverageLabel(value: string): string {
@@ -880,7 +969,11 @@ function DestructiveConfirmButton({
 
   return (
     <>
-      <button className={triggerClassName} onClick={() => setIsOpen(true)} type="button">
+      <button
+        className={triggerClassName}
+        onClick={() => setIsOpen(true)}
+        type="button"
+      >
         {children}
       </button>
 
@@ -892,17 +985,32 @@ function DestructiveConfirmButton({
                 <p className="text-sm font-semibold uppercase tracking-[0.22em] text-rose-300">
                   Confirm delete
                 </p>
-                <h3 className="mt-3 text-xl font-semibold text-white">{title}</h3>
-                <p className="mt-3 text-sm leading-6 text-slate-300">{description}</p>
+                <h3 className="mt-3 text-xl font-semibold text-white">
+                  {title}
+                </h3>
+                <p className="mt-3 text-sm leading-6 text-slate-300">
+                  {description}
+                </p>
                 <div className="mt-5 flex flex-wrap justify-end gap-3">
-                  <Button onClick={() => setIsOpen(false)} type="button" variant="ghost">
+                  <Button
+                    onClick={() => setIsOpen(false)}
+                    type="button"
+                    variant="ghost"
+                  >
                     Cancel
                   </Button>
                   <form action={action}>
                     {hiddenFields.map((field) => (
-                      <input key={field.name} name={field.name} type="hidden" value={field.value} />
+                      <input
+                        key={field.name}
+                        name={field.name}
+                        type="hidden"
+                        value={field.value}
+                      />
                     ))}
-                    <SubmitButton className={dangerButtonClass}>{confirmLabel}</SubmitButton>
+                    <SubmitButton className={dangerButtonClass}>
+                      {confirmLabel}
+                    </SubmitButton>
                   </form>
                 </div>
               </div>
@@ -917,7 +1025,10 @@ function DestructiveConfirmButton({
 function ResourceSection({
   title,
   children,
-}: { title: string; children: ReactNode }) {
+}: {
+  title: string;
+  children: ReactNode;
+}) {
   return (
     <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-violet-300/30 to-transparent" />
@@ -930,7 +1041,10 @@ function ResourceSection({
 function DeviceList({
   site,
   kind,
-}: { site: SiteSnapshot; kind: "battery" | "meter" }) {
+}: {
+  site: SiteSnapshot;
+  kind: "battery" | "meter";
+}) {
   const devices = site.devices.filter((device) => device.kind === kind);
 
   if (devices.length === 0) {
@@ -1017,14 +1131,22 @@ function DeviceList({
             </dl>
             <div className="mt-auto pt-4 flex flex-wrap gap-2">
               {kind === "battery" ? (
-                <Button className={secondaryButtonClass} form={`battery-backup-reserve-${device.id}`} type="submit">
+                <Button
+                  className={secondaryButtonClass}
+                  form={`battery-backup-reserve-${device.id}`}
+                  type="submit"
+                >
                   <Save size={14} />
                   Save
                 </Button>
               ) : null}
               <DestructiveConfirmButton
-                action={kind === "battery" ? deleteBatteryAction : deleteMeterAction}
-                confirmLabel={kind === "battery" ? "Delete battery" : "Delete meter"}
+                action={
+                  kind === "battery" ? deleteBatteryAction : deleteMeterAction
+                }
+                confirmLabel={
+                  kind === "battery" ? "Delete battery" : "Delete meter"
+                }
                 description={`This deletes ${device.name}. This cannot be undone.`}
                 hiddenFields={[
                   { name: "siteId", value: site.id },
@@ -1104,15 +1226,19 @@ function SourceList({
         </div>
         {kind === "weather" ? (
           <p className="text-xs text-slate-500">
-            Weather sources default to `open-meteo` using the current site GPS location.
+            Weather sources default to `open-meteo` using the current site GPS
+            location.
           </p>
         ) : kind === "price" ? (
           <p className="text-xs text-slate-500">
-            Dynamic price sources currently use `tibber` and read prices with `TIBBER_ACCESS_TOKEN`, plus optional `TIBBER_HOME_ID`.
+            Dynamic price sources currently use `tibber` and read prices with
+            `TIBBER_ACCESS_TOKEN`, plus optional `TIBBER_HOME_ID`.
           </p>
         ) : null}
         <SubmitButton className={primaryButtonClass}>
-          {kind === "weather" ? "Add solar forecast source" : "Add price source"}
+          {kind === "weather"
+            ? "Add solar forecast source"
+            : "Add price source"}
         </SubmitButton>
       </form>
 
@@ -1178,7 +1304,9 @@ function SourceList({
                       : deleteDynamicPriceSourceAction
                   }
                   confirmLabel={
-                    kind === "weather" ? "Delete forecast source" : "Delete price source"
+                    kind === "weather"
+                      ? "Delete forecast source"
+                      : "Delete price source"
                   }
                   description={
                     kind === "weather"

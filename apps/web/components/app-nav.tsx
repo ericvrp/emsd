@@ -1,8 +1,9 @@
 "use client";
 
-import { Activity, CloudSun, HandCoins } from "lucide-react";
+import { Activity, CloudSun, HandCoins, History as HistoryIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { UI_STYLES } from "../lib/ui-colors";
 import { cn } from "../lib/utils";
 
 export function AppNav() {
@@ -11,6 +12,7 @@ export function AppNav() {
     { href: "/", icon: Activity, label: "Live" },
     { href: "/forecast", icon: CloudSun, label: "Forecast" },
     { href: "/pricing", icon: HandCoins, label: "Pricing" },
+    { href: "/history", icon: HistoryIcon, label: "History" },
   ];
 
   return (
@@ -19,10 +21,10 @@ export function AppNav() {
         <Link
           key={href}
           className={cn(
-            "inline-flex items-center gap-2 border-b-2 border-transparent px-1 py-2 text-sm font-medium text-slate-400 transition",
+            UI_STYLES.tabItem,
             pathname === href
-              ? "border-white text-white"
-              : "hover:border-white/25 hover:text-slate-200",
+              ? UI_STYLES.appNavActive
+              : UI_STYLES.appNavInactive,
           )}
           href={href}
           prefetch

@@ -8,6 +8,7 @@ import {
   createBatteryFromDiscoveryAction,
   createMeterFromDiscoveryAction,
 } from "../app/actions";
+import { UI_STYLES } from "../lib/ui-colors";
 import { SubmitButton } from "./submit-button";
 
 interface DiscoveredDevice {
@@ -31,11 +32,9 @@ interface DiscoveryCachePayload {
 const DISCOVERY_CACHE_PREFIX = "emsd-discovery:";
 const DISCOVERY_CACHE_VERSION = 2;
 
-const primaryButtonClass =
-  "inline-flex h-9 items-center justify-center gap-2 rounded-md bg-gradient-to-r from-indigo-500 via-cyan-500 to-emerald-400 px-4 text-sm font-medium text-slate-950 shadow-[0_18px_50px_rgba(6,182,212,0.18)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60";
+const primaryButtonClass = UI_STYLES.buttonPrimary;
 
-const secondaryButtonClass =
-  "inline-flex h-9 items-center justify-center gap-2 rounded-md border border-white/10 bg-white/6 px-4 text-sm font-medium text-slate-100 transition hover:border-white/20 hover:bg-white/10";
+const secondaryButtonClass = UI_STYLES.buttonSecondary;
 
 export function DiscoveryPanel({
   existingDeviceIds,

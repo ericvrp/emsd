@@ -103,6 +103,78 @@ interface DynamicPriceSnapshotRow {
   site_id: string;
 }
 
+interface DynamicPriceSampleRow {
+  site_id: string;
+  period_start: string;
+  generated_at: string;
+  currency: string;
+  import_price: number;
+}
+
+interface SolarForecastSampleRow {
+  site_id: string;
+  period_start: string;
+  generated_at: string;
+  value: number | null;
+  ghi_wm2: number | null;
+  air_temp_c: number | null;
+  cloud_opacity_percent: number | null;
+}
+
+interface P1MeterSampleRow {
+  site_id: string;
+  meter_id: string;
+  period_start: string;
+  observed_at: string;
+  power_w: number | null;
+}
+
+interface BatteryPowerSampleRow {
+  site_id: string;
+  battery_id: string;
+  period_start: string;
+  observed_at: string;
+  power_w: number | null;
+}
+
+export interface DynamicPriceSampleRecord {
+  siteId: string;
+  periodStart: string;
+  generatedAt: string;
+  currency: string;
+  importPrice: number;
+}
+
+export interface SolarForecastSampleRecord {
+  siteId: string;
+  periodStart: string;
+  generatedAt: string;
+  value: number | null;
+  ghiWm2: number | null;
+  airTempC: number | null;
+  cloudOpacityPercent: number | null;
+}
+
+export interface P1MeterSampleRecord {
+  siteId: string;
+  meterId: string;
+  periodStart: string;
+  observedAt: string;
+  powerW: number | null;
+}
+
+export interface BatteryPowerSampleRecord {
+  siteId: string;
+  batteryId: string;
+  periodStart: string;
+  observedAt: string;
+  powerW: number | null;
+}
+
+const SAMPLE_PERIOD_MINUTES = 15;
+const SAMPLE_RETENTION_DAYS = 30;
+const SAMPLE_RETENTION_MS = SAMPLE_RETENTION_DAYS * 24 * 60 * 60 * 1_000;
+
 export function openDaemonDatabase(databasePath = getDatabasePath()): Database {
   ensureParentDirectory(databasePath);
 
@@ -215,6 +287,68 @@ export function openDaemonDatabase(databasePath = getDatabasePath()): Database {
       FOREIGN KEY(site_id) REFERENCES sites(id)
     );
   `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS dynamic_price_samples (
+      site_id TEXT NOT NULL,
+      period_start TEXT NOT NULL,
+      generated_at TEXT NOT NULL,
+      currency TEXT NOT NULL,
+      import_price REAL NOT NULL,
+      PRIMARY KEY(site_id, period_start),
+      FOREIGN KEY(site_id) REFERENCES sites(id)
+    );
+  `);
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_dynamic_price_samples_site_period
+    ON dynamic_price_samples (site_id, period_start);
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS solar_forecast_samples (
+      site_id TEXT NOT NULL,
+      period_start TEXT NOT NULL,
+      generated_at TEXT NOT NULL,
+      value REAL,
+      ghi_wm2 REAL,
+      air_temp_c REAL,
+      cloud_opacity_percent REAL,
+      PRIMARY KEY(site_id, period_start),
+      FOREIGN KEY(site_id) REFERENCES sites(id)
+    );
+  `);
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_solar_forecast_samples_site_period
+    ON solar_forecast_samples (site_id, period_start);
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS p1_meter_samples (
+      site_id TEXT NOT NULL,
+      meter_id TEXT NOT NULL,
+      period_start TEXT NOT NULL,
+      observed_at TEXT NOT NULL,
+      power_w REAL,
+      PRIMARY KEY(site_id, meter_id, period_start),
+      FOREIGN KEY(site_id) REFERENCES sites(id)
+    );
+  `);
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_p1_meter_samples_site_period
+    ON p1_meter_samples (site_id, period_start);
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS battery_power_samples (
+      site_id TEXT NOT NULL,
+      battery_id TEXT NOT NULL,
+      period_start TEXT NOT NULL,
+      observed_at TEXT NOT NULL,
+      power_w REAL,
+      PRIMARY KEY(site_id, battery_id, period_start),
+      FOREIGN KEY(site_id) REFERENCES sites(id)
+    );
+  `);
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_battery_power_samples_site_period
+    ON battery_power_samples (site_id, period_start);
+  `);
 
   return db;
 }
@@ -315,9 +449,45 @@ export function upsertWeatherForecast(
       VALUES (?1, ?2, ?3)
       ON CONFLICT(site_id) DO UPDATE SET
         generated_at = excluded.generated_at,
-        forecast_json = excluded.forecast_json
+      forecast_json = excluded.forecast_json
     `,
   ).run(siteId, forecast.generatedAt, JSON.stringify(forecast));
+
+  const insertSample = db.query(
+    `
+      INSERT INTO solar_forecast_samples (
+        site_id,
+        period_start,
+        generated_at,
+        value,
+        ghi_wm2,
+        air_temp_c,
+        cloud_opacity_percent
+      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+      ON CONFLICT(site_id, period_start) DO UPDATE SET
+        generated_at = excluded.generated_at,
+        value = excluded.value,
+        ghi_wm2 = excluded.ghi_wm2,
+        air_temp_c = excluded.air_temp_c,
+        cloud_opacity_percent = excluded.cloud_opacity_percent
+    `,
+  );
+
+  db.transaction(() => {
+    for (const point of forecast.points) {
+      insertSample.run(
+        siteId,
+        getPeriodStartFromPeriodEnd(point.periodEnd, forecast.periodMinutes),
+        forecast.generatedAt,
+        point.value,
+        point.ghiWm2,
+        point.airTempC,
+        point.cloudOpacityPercent,
+      );
+    }
+
+    deleteExpiredSamples(db, "solar_forecast_samples");
+  })();
 }
 
 export function readDynamicPriceSnapshot(
@@ -342,6 +512,30 @@ export function readDynamicPriceSnapshot(
   return { ...parsed, generatedAt: row.generated_at };
 }
 
+export function readDynamicPriceSamples(
+  db: Database,
+  siteId: string,
+): DynamicPriceSampleRecord[] {
+  const rows = db
+    .query<DynamicPriceSampleRow, [string]>(
+      `
+        SELECT site_id, period_start, generated_at, currency, import_price
+        FROM dynamic_price_samples
+        WHERE site_id = ?1
+        ORDER BY period_start ASC
+      `,
+    )
+    .all(siteId);
+
+  return rows.map((row) => ({
+    siteId: row.site_id,
+    periodStart: row.period_start,
+    generatedAt: row.generated_at,
+    currency: row.currency,
+    importPrice: row.import_price,
+  }));
+}
+
 export function upsertDynamicPriceSnapshot(
   db: Database,
   siteId: string,
@@ -353,9 +547,39 @@ export function upsertDynamicPriceSnapshot(
       VALUES (?1, ?2, ?3)
       ON CONFLICT(site_id) DO UPDATE SET
         generated_at = excluded.generated_at,
-        price_json = excluded.price_json
+      price_json = excluded.price_json
     `,
   ).run(siteId, snapshot.generatedAt, JSON.stringify(snapshot));
+
+  const insertSample = db.query(
+    `
+      INSERT INTO dynamic_price_samples (
+        site_id,
+        period_start,
+        generated_at,
+        currency,
+        import_price
+      ) VALUES (?1, ?2, ?3, ?4, ?5)
+      ON CONFLICT(site_id, period_start) DO UPDATE SET
+        generated_at = excluded.generated_at,
+        currency = excluded.currency,
+        import_price = excluded.import_price
+    `,
+  );
+
+  db.transaction(() => {
+    for (const point of snapshot.points) {
+      insertSample.run(
+        siteId,
+        normalizePeriodStart(point.startsAt),
+        snapshot.generatedAt,
+        point.currency,
+        point.importPrice,
+      );
+    }
+
+    deleteExpiredSamples(db, "dynamic_price_samples");
+  })();
 }
 
 export function deleteWeatherForecast(db: Database, siteId: string): void {
@@ -365,6 +589,39 @@ export function deleteWeatherForecast(db: Database, siteId: string): void {
       WHERE site_id = ?1
     `,
   ).run(siteId);
+}
+
+export function readSolarForecastSamples(
+  db: Database,
+  siteId: string,
+): SolarForecastSampleRecord[] {
+  const rows = db
+    .query<SolarForecastSampleRow, [string]>(
+      `
+        SELECT
+          site_id,
+          period_start,
+          generated_at,
+          value,
+          ghi_wm2,
+          air_temp_c,
+          cloud_opacity_percent
+        FROM solar_forecast_samples
+        WHERE site_id = ?1
+        ORDER BY period_start ASC
+      `,
+    )
+    .all(siteId);
+
+  return rows.map((row) => ({
+    siteId: row.site_id,
+    periodStart: row.period_start,
+    generatedAt: row.generated_at,
+    value: row.value,
+    ghiWm2: row.ghi_wm2,
+    airTempC: row.air_temp_c,
+    cloudOpacityPercent: row.cloud_opacity_percent,
+  }));
 }
 
 function ensureSiteColumns(db: Database): void {
@@ -730,6 +987,51 @@ export function readManagedDeviceTelemetry(
   }));
 }
 
+export function readP1MeterSamples(db: Database, siteId: string): P1MeterSampleRecord[] {
+  const rows = db
+    .query<P1MeterSampleRow, [string]>(
+      `
+        SELECT site_id, meter_id, period_start, observed_at, power_w
+        FROM p1_meter_samples
+        WHERE site_id = ?1
+        ORDER BY period_start ASC, meter_id ASC
+      `,
+    )
+    .all(siteId);
+
+  return rows.map((row) => ({
+    siteId: row.site_id,
+    meterId: row.meter_id,
+    periodStart: row.period_start,
+    observedAt: row.observed_at,
+    powerW: row.power_w,
+  }));
+}
+
+export function readBatteryPowerSamples(
+  db: Database,
+  siteId: string,
+): BatteryPowerSampleRecord[] {
+  const rows = db
+    .query<BatteryPowerSampleRow, [string]>(
+      `
+        SELECT site_id, battery_id, period_start, observed_at, power_w
+        FROM battery_power_samples
+        WHERE site_id = ?1
+        ORDER BY period_start ASC, battery_id ASC
+      `,
+    )
+    .all(siteId);
+
+  return rows.map((row) => ({
+    siteId: row.site_id,
+    batteryId: row.battery_id,
+    periodStart: row.period_start,
+    observedAt: row.observed_at,
+    powerW: row.power_w,
+  }));
+}
+
 export function upsertManagedDeviceTelemetry(
   db: Database,
   telemetry: ManagedDeviceTelemetryRecord,
@@ -764,5 +1066,99 @@ export function upsertManagedDeviceTelemetry(
     telemetry.gasM3,
     telemetry.state,
     telemetry.observedAt,
+  );
+
+  const periodStart = getBucketPeriodStart(telemetry.observedAt);
+
+  if (telemetry.kind === "meter") {
+    db.query(
+      `
+        INSERT INTO p1_meter_samples (
+          site_id,
+          meter_id,
+          period_start,
+          observed_at,
+          power_w
+        ) VALUES (?1, ?2, ?3, ?4, ?5)
+        ON CONFLICT(site_id, meter_id, period_start) DO UPDATE SET
+          observed_at = excluded.observed_at,
+          power_w = excluded.power_w
+      `,
+    ).run(
+      telemetry.siteId,
+      telemetry.deviceId,
+      periodStart,
+      telemetry.observedAt,
+      telemetry.powerW,
+    );
+    deleteExpiredSamples(db, "p1_meter_samples");
+  }
+
+  if (telemetry.kind === "battery") {
+    db.query(
+      `
+        INSERT INTO battery_power_samples (
+          site_id,
+          battery_id,
+          period_start,
+          observed_at,
+          power_w
+        ) VALUES (?1, ?2, ?3, ?4, ?5)
+        ON CONFLICT(site_id, battery_id, period_start) DO UPDATE SET
+          observed_at = excluded.observed_at,
+          power_w = excluded.power_w
+      `,
+    ).run(
+      telemetry.siteId,
+      telemetry.deviceId,
+      periodStart,
+      telemetry.observedAt,
+      telemetry.powerW,
+    );
+    deleteExpiredSamples(db, "battery_power_samples");
+  }
+}
+
+function getPeriodStartFromPeriodEnd(
+  periodEnd: string,
+  periodMinutes: number,
+): string {
+  const periodEndMs = new Date(periodEnd).getTime();
+
+  if (Number.isNaN(periodEndMs)) {
+    throw new Error(`Invalid forecast period end: ${periodEnd}`);
+  }
+
+  return new Date(periodEndMs - periodMinutes * 60 * 1_000).toISOString();
+}
+
+function getBucketPeriodStart(timestamp: string): string {
+  const timestampMs = new Date(timestamp).getTime();
+
+  if (Number.isNaN(timestampMs)) {
+    throw new Error(`Invalid sample timestamp: ${timestamp}`);
+  }
+
+  const bucketMs = SAMPLE_PERIOD_MINUTES * 60 * 1_000;
+  return new Date(Math.floor(timestampMs / bucketMs) * bucketMs).toISOString();
+}
+
+function normalizePeriodStart(timestamp: string): string {
+  const timestampMs = new Date(timestamp).getTime();
+
+  if (Number.isNaN(timestampMs)) {
+    throw new Error(`Invalid period start timestamp: ${timestamp}`);
+  }
+
+  return new Date(timestampMs).toISOString();
+}
+
+function getSampleRetentionCutoff(now = new Date()): string {
+  return new Date(now.getTime() - SAMPLE_RETENTION_MS).toISOString();
+}
+
+function deleteExpiredSamples(db: Database, tableName: string): void {
+  db.query(`DELETE FROM ${tableName} WHERE period_start < ?1`).run(
+    getSampleRetentionCutoff(),
   );
 }

@@ -3,6 +3,8 @@
 import { Eye, EyeOff } from "lucide-react";
 import { signIn } from "next-auth/react";
 import { useState } from "react";
+import { UI_STYLES } from "../lib/ui-colors";
+import { Input } from "./ui/input";
 
 export function LoginForm({ error }: { error: string | null }) {
   const [password, setPassword] = useState("");
@@ -32,12 +34,13 @@ export function LoginForm({ error }: { error: string | null }) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <label className="block space-y-2">
+      <label className="block space-y-2" htmlFor="login-password">
         <span className="text-sm font-medium text-slate-300">Password</span>
         <div className="relative">
-          <input
+          <Input
             autoComplete="current-password"
-            className="w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 pr-14 text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-cyan-400/50"
+            className="h-auto rounded-2xl bg-slate-950/70 px-4 py-3 pr-14"
+            id="login-password"
             name="password"
             onChange={(event) => setPassword(event.target.value)}
             placeholder="Enter admin password"
@@ -47,7 +50,7 @@ export function LoginForm({ error }: { error: string | null }) {
           />
           <button
             aria-label={showPassword ? "Hide password" : "Show password"}
-            className="absolute right-2 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-xl border border-white/10 bg-white/6 text-slate-200 transition hover:bg-white/10"
+            className={`absolute right-2 top-1/2 -translate-y-1/2 ${UI_STYLES.buttonSecondaryIcon}`}
             onClick={() => setShowPassword((value) => !value)}
             type="button"
           >
@@ -61,7 +64,7 @@ export function LoginForm({ error }: { error: string | null }) {
         </p>
       ) : null}
       <button
-        className="inline-flex w-full items-center justify-center rounded-2xl bg-gradient-to-r from-indigo-500 via-cyan-500 to-emerald-400 px-4 py-3 text-sm font-semibold text-slate-950 shadow-[0_20px_60px_rgba(6,182,212,0.18)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+        className={`w-full ${UI_STYLES.buttonPrimaryLarge}`}
         disabled={isSubmitting}
         type="submit"
       >

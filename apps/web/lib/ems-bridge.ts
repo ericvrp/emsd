@@ -2,6 +2,12 @@ import { execFile } from "node:child_process";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
 import type {
+  BatteryPowerSampleRecord,
+  DynamicPriceSampleRecord,
+  P1MeterSampleRecord,
+  SolarForecastSampleRecord,
+} from "../../daemon/src/database";
+import type {
   BatteryStrategyPlanRecord,
   DynamicPriceSnapshotRecord,
   DynamicPriceSourceRecord,
@@ -70,6 +76,14 @@ export interface BulkDiscoveryAddResult {
   addedBatteries: number;
   addedMeters: number;
   skippedDevices: number;
+}
+
+export interface HistoryArchive {
+  batteryPowerSamples: BatteryPowerSampleRecord[];
+  dynamicPriceSamples: DynamicPriceSampleRecord[];
+  p1MeterSamples: P1MeterSampleRecord[];
+  siteId: string;
+  solarForecastSamples: SolarForecastSampleRecord[];
 }
 
 async function runBridge<T>(
@@ -313,4 +327,8 @@ export function getDynamicPriceSnapshot(input: { siteId: string }) {
 
 export function refreshDynamicPriceSnapshot(input: { siteId: string }) {
   return runBridge<DynamicPriceSnapshotRecord>("price-refresh-snapshot", input);
+}
+
+export function getHistoryArchive(input: { siteId: string }) {
+  return runBridge<HistoryArchive>("history-get-archive", input);
 }

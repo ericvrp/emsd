@@ -18,10 +18,14 @@ import {
 import {
   deleteWeatherForecast,
   openDaemonDatabase,
+  readBatteryPowerSamples,
+  readDynamicPriceSamples,
   readDynamicPriceSnapshot,
   readDynamicPriceSources,
   readManagedDeviceTelemetry,
+  readP1MeterSamples,
   readSites,
+  readSolarForecastSamples,
   readWeatherForecast,
   readWeatherForecastSources,
 } from "../../daemon/src/database";
@@ -448,6 +452,25 @@ async function run(): Promise<void> {
 
     case "live-status": {
       succeed(buildLiveStatus());
+      return;
+    }
+
+    case "history-get-archive": {
+      const input = readInput<{ siteId?: string }>();
+      const siteId = requireString(input.siteId, "siteId");
+      const db = openDaemonDatabase();
+
+      try {
+        succeed({
+          batteryPowerSamples: readBatteryPowerSamples(db, siteId),
+          dynamicPriceSamples: readDynamicPriceSamples(db, siteId),
+          p1MeterSamples: readP1MeterSamples(db, siteId),
+          siteId,
+          solarForecastSamples: readSolarForecastSamples(db, siteId),
+        });
+      } finally {
+        db.close();
+      }
       return;
     }
 
