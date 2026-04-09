@@ -26,18 +26,17 @@ import type { HistoryArchive } from "../lib/ems-bridge";
 import { UI_CHART_STYLES, UI_COLORS, UI_STYLES } from "../lib/ui-colors";
 import { cn } from "../lib/utils";
 import { DateSelect } from "./date-select";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
+import { Card, CardContent, CardHeader } from "./ui/card";
 
 type HistoryTab = "combined" | "price" | "solar" | "grid" | "battery";
 
 type HistoryPageProps = {
   archive: HistoryArchive;
   requestedDay: string | null;
-  siteName: string;
   selectedTab: HistoryTab;
 };
 
-type SingleValuePoint = {
+export type SingleValuePoint = {
   periodStart: string;
   value: number | null;
 };
@@ -47,12 +46,12 @@ type SplitSingleValuePoint = SingleValuePoint & {
   futureValue: number | null;
 };
 
-type SignedValuePoint = SingleValuePoint & {
+export type SignedValuePoint = SingleValuePoint & {
   negativeValue: number | null;
   positiveValue: number | null;
 };
 
-type SplitSignedValuePoint = SignedValuePoint & {
+export type SplitSignedValuePoint = SignedValuePoint & {
   currentNegativeValue: number | null;
   currentPositiveValue: number | null;
   futureNegativeValue: number | null;
@@ -134,7 +133,6 @@ const HISTORY_TABS: Array<{
 export function HistoryPage({
   archive,
   requestedDay,
-  siteName,
   selectedTab,
 }: HistoryPageProps) {
   const router = useRouter();
@@ -208,24 +206,6 @@ export function HistoryPage({
 
   return (
     <section className="space-y-6">
-      <Card className="overflow-hidden border-cyan-400/15 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.14),transparent_38%),radial-gradient(circle_at_top_right,rgba(192,132,252,0.12),transparent_32%),linear-gradient(180deg,rgba(15,23,42,0.94),rgba(2,6,23,0.9))]">
-        <CardHeader className="gap-4 border-b border-white/8 pb-5">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-            <div className="space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-[0.32em] text-cyan-300">
-                History
-              </p>
-              <CardTitle className="text-3xl sm:text-4xl">
-                Daily time-series history for {siteName}
-              </CardTitle>
-              <CardDescription className="max-w-3xl text-base leading-7 text-slate-300">
-                Move between sampled days, then switch between a combined chart and focused per-signal tabs.
-              </CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-      </Card>
-
       <Card className="overflow-hidden border-white/10 bg-slate-950/75">
         <CardHeader className="border-b border-white/8 p-0">
           <div className={`${UI_STYLES.tabBar} pt-2.5 sm:pt-3`}>
@@ -390,15 +370,6 @@ function CombinedHistoryChart({
               y={0}
               yAxisId="power"
             />
-            {nowMarkerPeriodStart ? (
-              <ReferenceLine
-                label={buildNowLabel()}
-                stroke={UI_COLORS.textPrimary}
-                strokeDasharray="4 4"
-                strokeOpacity={0.8}
-                x={nowMarkerPeriodStart}
-              />
-            ) : null}
             <Tooltip
               content={
                 <HistoryTooltip
@@ -535,6 +506,18 @@ function CombinedHistoryChart({
               type="monotone"
               yAxisId="power"
             />
+            {nowMarkerPeriodStart ? (
+              <ReferenceLine
+                ifOverflow="extendDomain"
+                label={buildNowLabel()}
+                stroke={UI_COLORS.textPrimary}
+                strokeDasharray="4 4"
+                strokeOpacity={0.8}
+                strokeWidth={2}
+                x={nowMarkerPeriodStart}
+                yAxisId="power"
+              />
+            ) : null}
           </LineChart>
         </ResponsiveContainer>
       </div>
@@ -646,7 +629,7 @@ function SingleValueHistoryChart({
   );
 }
 
-function SignedHistoryChart({
+export function SignedHistoryChart({
   emptyMessage,
   negativeColor,
   negativeLabel,
@@ -828,7 +811,7 @@ function HistoryTooltip({
             <span className="flex items-center gap-2 text-slate-200">
               <span
                 className="inline-block h-2.5 w-2.5 rounded-full"
-                style={{ backgroundColor: entry.color ?? UI_COLORS.energy }}
+                style={{ backgroundColor: entry.color ?? UI_COLORS.chartSeriesFallback }}
               />
               {entry.name ?? entry.dataKey ?? "Value"}
             </span>
@@ -925,7 +908,7 @@ function createSingleValueSeries(points: SingleValuePoint[]): SingleValuePoint[]
   );
 }
 
-function aggregatePowerSamples(
+export function aggregatePowerSamples(
   samples: Array<{ periodStart: string; powerW: number | null }>,
 ): SingleValuePoint[] {
   const aggregated = new Map<string, { hasValue: boolean; total: number }>();
@@ -952,7 +935,7 @@ function aggregatePowerSamples(
     );
 }
 
-function createSignedSeries(points: SingleValuePoint[]): SignedValuePoint[] {
+export function createSignedSeries(points: SingleValuePoint[]): SignedValuePoint[] {
   return points.map((point) => ({
     ...point,
     negativeValue:
@@ -983,7 +966,7 @@ function splitSingleValueSeriesByTime(
   });
 }
 
-function splitSignedSeriesByTime(
+export function splitSignedSeriesByTime(
   points: SignedValuePoint[],
 ): SplitSignedValuePoint[] {
   const now = Date.now();
@@ -1019,7 +1002,7 @@ function fillSingleValueDay(points: SingleValuePoint[], dayKey: string): SingleV
   }));
 }
 
-function fillSignedDay(points: SignedValuePoint[], dayKey: string): SignedValuePoint[] {
+export function fillSignedDay(points: SignedValuePoint[], dayKey: string): SignedValuePoint[] {
   const valuesByPeriod = new Map(
     points
       .filter((point) => getUtcDayKey(point.periodStart) === dayKey)
@@ -1148,11 +1131,10 @@ function formatTooltipTimestamp(value: string): string {
     hour: "2-digit",
     minute: "2-digit",
     month: "short",
-    timeZone: "UTC",
   }).format(new Date(value));
 }
 
-function formatPowerValue(value: number): string {
+export function formatPowerValue(value: number): string {
   const absoluteValue = Math.abs(value);
 
   if (absoluteValue >= 1000) {
@@ -1162,7 +1144,7 @@ function formatPowerValue(value: number): string {
   return `${Math.round(value)} W`;
 }
 
-function formatShortPowerValue(value: number): string {
+export function formatShortPowerValue(value: number): string {
   const absoluteValue = Math.abs(value);
 
   if (absoluteValue >= 1000) {
@@ -1196,7 +1178,7 @@ function formatCombinedValue(value: number, key?: string): string {
   return formatPowerValue(value);
 }
 
-function getUtcDayKey(value: Date | string): string {
+export function getUtcDayKey(value: Date | string): string {
   return new Date(value).toISOString().slice(0, 10);
 }
 
@@ -1229,7 +1211,7 @@ function getTooltipEntryPriority(entry: TooltipPayloadEntry): number {
   return 0;
 }
 
-function getCurrentPeriodStart(): string {
+export function getCurrentPeriodStart(): string {
   const now = Date.now();
   return new Date(Math.floor(now / HISTORY_STEP_MS) * HISTORY_STEP_MS).toISOString();
 }

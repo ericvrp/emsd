@@ -622,6 +622,8 @@ function PriceChart({
       timeLabel: formatForecastTimeLabel(point.startsAt),
     };
   });
+  const nowPoint = getCurrentPricePoint(chartPoints, now);
+
   return (
     <div className="space-y-3">
       {/* <p className="text-xs leading-5 text-slate-500">
@@ -629,42 +631,52 @@ function PriceChart({
       </p> */}
       <div className="h-[260px] w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart
-            data={chartPoints}
-            margin={{ top: 16, right: 8, left: 8, bottom: 0 }}
-            barCategoryGap="18%"
-          >
-            <XAxis
-              dataKey="timeLabel"
-              tick={UI_CHART_STYLES.axisTick}
-              axisLine={false}
-              tickLine={false}
-              minTickGap={30}
-            />
+            <BarChart
+              data={chartPoints}
+              margin={{ top: 16, right: 8, left: 8, bottom: 0 }}
+              barCategoryGap="18%"
+            >
+              <XAxis
+                dataKey="startsAt"
+                tick={UI_CHART_STYLES.axisTick}
+                tickFormatter={formatForecastTimeLabel}
+                axisLine={false}
+                tickLine={false}
+                minTickGap={30}
+              />
             <YAxis hide domain={[0, "dataMax"]} />
             <Tooltip
               content={
                 <SingleSeriesTooltip
                   formatter={(value) => `${value.toFixed(3)} ${currency}/kWh`}
-                  label="Price"
+                  seriesLabel="Price"
                 />
               }
               contentStyle={UI_CHART_STYLES.tooltipContentStyle}
               itemStyle={{ color: UI_COLORS.priceSection }}
             />
-            {chartPoints
-              .filter((point) => point.isMidnight)
-              .map((point) => (
+              {chartPoints
+                .filter((point) => point.isMidnight)
+                .map((point) => (
+                  <ReferenceLine
+                    key={`price-midnight-${point.startsAt}`}
+                    x={point.startsAt}
+                    stroke={UI_COLORS.chartReference}
+                    strokeDasharray="3 5"
+                  />
+                ))}
+              {nowPoint ? (
                 <ReferenceLine
-                  key={`price-midnight-${point.startsAt}`}
-                  x={point.timeLabel}
-                  stroke={UI_COLORS.chartReference}
-                  strokeDasharray="3 5"
+                  label={buildNowLabel()}
+                  stroke={UI_COLORS.textPrimary}
+                  strokeDasharray="4 4"
+                  strokeOpacity={0.8}
+                  x={nowPoint.startsAt}
                 />
-              ))}
-            <Bar dataKey="importPrice" radius={[2, 2, 0, 0]} maxBarSize={12}>
-              {chartPoints.map((point) => (
-                <Cell
+              ) : null}
+              <Bar dataKey="importPrice" radius={[2, 2, 0, 0]} maxBarSize={12}>
+                {chartPoints.map((point) => (
+                  <Cell
                   key={`price-bar-${point.startsAt}`}
                   fill={
                     point.isPast
@@ -717,6 +729,10 @@ function ForecastChart({
             : null,
     };
   });
+  const nowPoint =
+    transitionIndex === -1
+      ? chartPoints[chartPoints.length - 1] ?? null
+      : chartPoints[transitionIndex] ?? null;
 
   return (
     <div className="space-y-3">
@@ -741,8 +757,9 @@ function ForecastChart({
               </linearGradient>
             </defs>
             <XAxis
-              dataKey="timeLabel"
+              dataKey="periodEnd"
               tick={UI_CHART_STYLES.axisTick}
+              tickFormatter={formatForecastTimeLabel}
               axisLine={false}
               tickLine={false}
               minTickGap={30}
@@ -752,7 +769,7 @@ function ForecastChart({
               content={
                 <SingleSeriesTooltip
                   formatter={(value) => `${value} ${unitLabel}`}
-                  label={metricLabel}
+                  seriesLabel={metricLabel}
                 />
               }
               contentStyle={UI_CHART_STYLES.tooltipContentStyle}
@@ -763,11 +780,20 @@ function ForecastChart({
               .map((point) => (
                 <ReferenceLine
                   key={`forecast-midnight-${point.periodEnd}`}
-                  x={point.timeLabel}
+                  x={point.periodEnd}
                   stroke={UI_COLORS.chartReference}
                   strokeDasharray="3 5"
                 />
               ))}
+            {nowPoint ? (
+              <ReferenceLine
+                label={buildNowLabel()}
+                stroke={UI_COLORS.textPrimary}
+                strokeDasharray="4 4"
+                strokeOpacity={0.8}
+                x={nowPoint.periodEnd}
+              />
+            ) : null}
             <Area
               type="monotone"
               dataKey="value"
@@ -798,11 +824,13 @@ function SingleSeriesTooltip({
   active,
   formatter,
   label,
+  seriesLabel,
   payload,
 }: {
   active?: boolean;
   formatter: (value: number) => string;
-  label: string;
+  label?: string | number;
+  seriesLabel: string;
   payload?: Array<{
     color?: string;
     dataKey?: string;
@@ -825,7 +853,12 @@ function SingleSeriesTooltip({
 
   return (
     <div className={UI_STYLES.tooltipPanel}>
-      <p className="font-medium">{label}</p>
+      {typeof label === "string" ? (
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+          {formatGraphTooltipTimestamp(label)}
+        </p>
+      ) : null}
+      <p className="font-medium">{seriesLabel}</p>
       <p className="text-slate-300">{formatter(selectedEntry.value)}</p>
     </div>
   );
@@ -862,6 +895,32 @@ function selectPricePoints(input: {
   return input.points.filter(
     (point) => new Date(point.startsAt).getTime() <= cutoff,
   );
+}
+
+function getCurrentPricePoint(
+  points: DynamicPricePointRecord[],
+  now: number,
+): DynamicPricePointRecord | null {
+  let currentPoint: DynamicPricePointRecord | null = null;
+
+  for (const point of points) {
+    if (new Date(point.startsAt).getTime() <= now) {
+      currentPoint = point;
+    } else {
+      break;
+    }
+  }
+
+  return currentPoint ?? points[0] ?? null;
+}
+
+function buildNowLabel() {
+  return {
+    fill: UI_COLORS.textPrimary,
+    fontSize: 12,
+    position: "top" as const,
+    value: "Now",
+  };
 }
 
 function formatPriceCoverageSummary(
@@ -918,9 +977,18 @@ function buildTickIndexes(length: number, count: number): number[] {
 function formatForecastTimeLabel(value: string): string {
   return new Intl.DateTimeFormat(undefined, {
     day: "numeric",
-    month: "short",
     hour: "2-digit",
     minute: "2-digit",
+    month: "short",
+  }).format(new Date(value));
+}
+
+function formatGraphTooltipTimestamp(value: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    month: "short",
   }).format(new Date(value));
 }
 
