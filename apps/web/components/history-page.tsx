@@ -994,6 +994,7 @@ function HistoryTabButton({
 }) {
   return (
     <button
+      aria-label={label}
       className={cn(
         UI_STYLES.tabItem,
         active ? UI_STYLES.tabItemActive : UI_STYLES.tabItemInactive,
@@ -1002,7 +1003,7 @@ function HistoryTabButton({
       type="button"
     >
       <Icon className="h-4 w-4" />
-      {label}
+      <span className="hidden sm:inline">{label}</span>
     </button>
   );
 }

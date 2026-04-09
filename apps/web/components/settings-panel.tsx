@@ -55,6 +55,7 @@ import { cn } from "../lib/utils";
 import { DiscoveryPanel } from "./discovery-panel";
 import { SubmitButton } from "./submit-button";
 import { Button } from "./ui/button";
+import { Card, CardContent, CardHeader } from "./ui/card";
 import { DialogPortal } from "./ui/dialog-portal";
 
 type SettingsTab = "devices" | "site" | "discover";
@@ -79,9 +80,9 @@ export function SettingsPanel({
   );
 
   return (
-    <div className="space-y-4">
-      <section className={`${UI_STYLES.panel} p-3`}>
-        <div className={UI_STYLES.tabBar}>
+    <Card className="overflow-hidden border-white/10 bg-slate-950/75">
+      <CardHeader className="border-b border-white/8 p-0">
+        <div className={`${UI_STYLES.tabBar} pt-2.5 sm:pt-3`}>
           {(["site", "discover", "devices"] as SettingsTab[]).map((tab) => {
             const isDisabled = !hasSite && tab !== "site";
 
@@ -116,18 +117,11 @@ export function SettingsPanel({
             );
           })}
         </div>
-      </section>
+      </CardHeader>
 
-      {activeTab === "devices" ? (
-        currentSite ? (
-          <>
-            <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
-              <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-emerald-300/40 to-transparent" />
-              <h2 className="text-2xl font-semibold text-white">
-                {currentSite.name}
-              </h2>
-            </section>
-
+      <CardContent className="space-y-5 pt-5">
+        {activeTab === "devices" ? (
+          currentSite ? (
             <section className="grid gap-4 xl:grid-cols-3">
               <ResourceSection title="Batteries">
                 <DeviceList kind="battery" site={currentSite} />
@@ -139,39 +133,42 @@ export function SettingsPanel({
                 <DeviceList kind="meter" site={currentSite} />
               </ResourceSection>
             </section>
-          </>
-        ) : (
-          <SiteSetupPanel />
-        )
-      ) : null}
-      {activeTab === "site" ? <SitePanel site={currentSite} /> : null}
+          ) : (
+            <SiteSetupPanel embedded />
+          )
+        ) : null}
+        {activeTab === "site" ? (
+          <SitePanel embedded site={currentSite} />
+        ) : null}
 
-      {activeTab === "discover" ? (
-        currentSite ? (
-          <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
-            <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-300/40 to-transparent" />
-            <div className="mb-5">
-              <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan-300/90">
-                <ScanSearch size={13} />
-                Discover
-              </p>
-              <h2 className="mt-2 text-2xl font-semibold text-white">
-                Find and add batteries, meters, and solar providers
-              </h2>
-              <p className="mt-2 text-sm leading-6 text-slate-400">
-                Scan once and add devices one by one or all at once.
-              </p>
-            </div>
-            <DiscoveryPanel
-              existingDeviceIds={currentSite.devices.map((device) => device.id)}
-              selectedSiteId={currentSite.id}
-            />
-          </section>
-        ) : (
-          <SiteSetupPanel />
-        )
-      ) : null}
-    </div>
+        {activeTab === "discover" ? (
+          currentSite ? (
+            <section className="space-y-5">
+              <div>
+                <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan-300/90">
+                  <ScanSearch size={13} />
+                  Discover
+                </p>
+                <h2 className="mt-2 text-2xl font-semibold text-white">
+                  Find and add batteries, meters, and solar providers
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-slate-400">
+                  Scan once and add devices one by one or all at once.
+                </p>
+              </div>
+              <DiscoveryPanel
+                existingDeviceIds={currentSite.devices.map(
+                  (device) => device.id,
+                )}
+                selectedSiteId={currentSite.id}
+              />
+            </section>
+          ) : (
+            <SiteSetupPanel embedded />
+          )
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -194,10 +191,18 @@ function formatGpsCoordinate(latitude: number, longitude: number): string {
   return `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
 }
 
-export function SiteSetupPanel() {
+export function SiteSetupPanel({ embedded = false }: { embedded?: boolean }) {
   return (
-    <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-emerald-300/40 to-transparent" />
+    <section
+      className={cn(
+        embedded
+          ? "space-y-5"
+          : "relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur",
+      )}
+    >
+      {embedded ? null : (
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-emerald-300/40 to-transparent" />
+      )}
       <div className="mb-5">
         <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-300/90">
           Site Setup
@@ -234,9 +239,15 @@ export function SiteSetupPanel() {
   );
 }
 
-function SitePanel({ site }: { site: SiteSnapshot | null }) {
+function SitePanel({
+  site,
+  embedded = false,
+}: {
+  site: SiteSnapshot | null;
+  embedded?: boolean;
+}) {
   if (!site) {
-    return <SiteSetupPanel />;
+    return <SiteSetupPanel embedded={embedded} />;
   }
 
   const batteries = site.devices.filter((device) => device.kind === "battery");
@@ -268,13 +279,17 @@ function SitePanel({ site }: { site: SiteSnapshot | null }) {
   ].filter((value): value is string => value !== null);
 
   return (
-    <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-emerald-300/40 to-transparent" />
-      <div>
-        <h2 className="text-2xl font-semibold text-white">{site.name}</h2>
-      </div>
-
-      <div className="mt-5 space-y-4">
+    <section
+      className={cn(
+        embedded
+          ? "space-y-4"
+          : "relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur",
+      )}
+    >
+      {embedded ? null : (
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-emerald-300/40 to-transparent" />
+      )}
+      <div className={embedded ? "space-y-4" : "space-y-4"}>
         <form
           action={updateSiteAction}
           className="space-y-4 rounded-[1.4rem] border border-white/10 bg-white/5 p-4"
