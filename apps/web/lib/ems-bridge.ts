@@ -207,7 +207,7 @@ export function setBatteryStrategy(input: {
   manualPowerW: number | null;
   manualState: "idle" | "charging" | "discharging" | null;
   manualTargetSoc: number | null;
-  nowModeActive?: boolean;
+  manualModeActive?: boolean;
   siteId: string;
   strategyMode: "auto" | "manual" | "self-consumption";
 }) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, CloudSun, HandCoins, History as HistoryIcon } from "lucide-react";
+import { CloudSun, HandCoins, History as HistoryIcon, Zap } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { UI_STYLES } from "../lib/ui-colors";
@@ -9,9 +9,9 @@ import { cn } from "../lib/utils";
 export function AppNav() {
   const pathname = usePathname();
   const navItems = [
-    { href: "/", icon: Activity, label: "Live" },
-    { href: "/forecast", icon: CloudSun, label: "Forecast" },
-    { href: "/pricing", icon: HandCoins, label: "Pricing" },
+    { href: "/", icon: Zap, label: "Battery" },
+    { href: "/forecast", icon: CloudSun, label: "Solar Forecast" },
+    { href: "/pricing", icon: HandCoins, label: "Price" },
     { href: "/history", icon: HistoryIcon, label: "History" },
   ];
 

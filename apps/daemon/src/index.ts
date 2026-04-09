@@ -30,7 +30,7 @@ import {
   readSites,
   readWeatherForecast,
   readWeatherForecastSources,
-  updateBatteryNowModeStarted,
+  updateBatteryManualModeStarted,
   updateBatteryStrategyRuntime,
   updateBatteryStrategyState,
   upsertDynamicPriceSnapshot,
@@ -179,11 +179,11 @@ function main(): void {
             return;
           }
 
-          if (shouldMarkNowModeStarted(battery, sample)) {
-            updateBatteryNowModeStarted(db, {
+          if (shouldMarkManualModeStarted(battery, sample)) {
+            updateBatteryManualModeStarted(db, {
               batteryId: battery.id,
               siteId: battery.siteId,
-              nowModeStarted: true,
+              manualModeStarted: true,
             });
           }
 
@@ -195,7 +195,7 @@ function main(): void {
 
             logVerbose(
               options.verbose,
-              `restoring default strategy for ${battery.id} after now mode completed: ${describeStrategyPlanItem(battery.strategyPlan[0])}`,
+              `restoring default strategy for ${battery.id} after manual mode completed: ${describeStrategyPlanItem(battery.strategyPlan[0])}`,
             );
 
             await createBatteryPlugin(battery)
@@ -204,8 +204,8 @@ function main(): void {
                 updateBatteryStrategyState(db, {
                   batteryId: battery.id,
                   siteId: battery.siteId,
-                  nowModeActive: false,
-                  nowModeStarted: false,
+                  manualModeActive: false,
+                  manualModeStarted: false,
                   strategy: fallbackStrategy,
                 });
                 updateBatteryStrategyRuntime(db, {
@@ -223,7 +223,7 @@ function main(): void {
               });
           }
 
-          if (!battery.nowModeActive) {
+          if (!battery.manualModeActive) {
             await runScheduledStrategy(
               db,
               battery,
@@ -234,7 +234,7 @@ function main(): void {
           } else {
             logVerbose(
               options.verbose,
-              `skipping scheduled strategy for ${battery.id} because now mode is active`,
+              `skipping scheduled strategy for ${battery.id} because manual mode is active`,
             );
           }
 
@@ -431,13 +431,13 @@ function shouldRefreshDynamicPrice(
   return now.getTime() - generatedAt >= DYNAMIC_PRICE_REFRESH_INTERVAL_MS;
 }
 
-function shouldMarkNowModeStarted(
+function shouldMarkManualModeStarted(
   battery: BatteryRecord,
   sample: NormalizedBatteryInfo,
 ): boolean {
   return (
-    battery.nowModeActive &&
-    !battery.nowModeStarted &&
+    battery.manualModeActive &&
+    !battery.manualModeStarted &&
     ((battery.manualState === "charging" && sample.status === "charging") ||
       (battery.manualState === "discharging" &&
         sample.status === "discharging"))
@@ -449,8 +449,8 @@ function shouldRestoreDefaultStrategy(
   sample: NormalizedBatteryInfo,
 ): boolean {
   if (
-    !battery.nowModeActive ||
-    !battery.nowModeStarted ||
+    !battery.manualModeActive ||
+    !battery.manualModeStarted ||
     battery.strategyMode !== "manual"
   ) {
     return false;
@@ -632,8 +632,8 @@ async function runScheduledStrategy(
     updateBatteryStrategyState(db, {
       batteryId: battery.id,
       siteId: battery.siteId,
-      nowModeActive: false,
-      nowModeStarted: false,
+      manualModeActive: false,
+      manualModeStarted: false,
       strategy,
     });
     updateBatteryStrategyRuntime(db, {
@@ -678,8 +678,8 @@ async function restoreFallbackStrategy(
   updateBatteryStrategyState(db, {
     batteryId: battery.id,
     siteId: battery.siteId,
-    nowModeActive: false,
-    nowModeStarted: false,
+    manualModeActive: false,
+    manualModeStarted: false,
     strategy: fallbackStrategy,
   });
   updateBatteryStrategyRuntime(db, {

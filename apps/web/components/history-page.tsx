@@ -1,10 +1,10 @@
 "use client";
 
 import {
+  CloudSun,
   Gauge,
   HandCoins,
   Layers3,
-  SunMedium,
   Zap,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -42,9 +42,21 @@ type SingleValuePoint = {
   value: number | null;
 };
 
+type SplitSingleValuePoint = SingleValuePoint & {
+  currentValue: number | null;
+  futureValue: number | null;
+};
+
 type SignedValuePoint = SingleValuePoint & {
   negativeValue: number | null;
   positiveValue: number | null;
+};
+
+type SplitSignedValuePoint = SignedValuePoint & {
+  currentNegativeValue: number | null;
+  currentPositiveValue: number | null;
+  futureNegativeValue: number | null;
+  futurePositiveValue: number | null;
 };
 
 type CombinedPoint = {
@@ -55,6 +67,21 @@ type CombinedPoint = {
   periodStart: string;
   price: number | null;
   solar: number | null;
+};
+
+type SplitCombinedPoint = CombinedPoint & {
+  currentBatteryCharge: number | null;
+  currentBatteryDischarge: number | null;
+  currentGridExport: number | null;
+  currentGridImport: number | null;
+  currentPrice: number | null;
+  currentSolar: number | null;
+  futureBatteryCharge: number | null;
+  futureBatteryDischarge: number | null;
+  futureGridExport: number | null;
+  futureGridImport: number | null;
+  futurePrice: number | null;
+  futureSolar: number | null;
 };
 
 type TooltipPayloadEntry = {
@@ -79,28 +106,28 @@ const HISTORY_TABS: Array<{
     value: "combined",
   },
   {
+    description: "Review combined battery charge and discharge power.",
+    icon: Zap,
+    label: "Battery",
+    value: "battery",
+  },
+  {
+    description: "Review the solar forecast aligned to each 15-minute period.",
+    icon: CloudSun,
+    label: "Solar Forecast",
+    value: "solar",
+  },
+  {
     description: "Review the Tibber 15-minute import prices.",
     icon: HandCoins,
     label: "Price",
     value: "price",
   },
   {
-    description: "Review the solar forecast aligned to each 15-minute period.",
-    icon: SunMedium,
-    label: "Solar",
-    value: "solar",
-  },
-  {
     description: "Review P1 grid import and export power.",
     icon: Gauge,
     label: "Grid",
     value: "grid",
-  },
-  {
-    description: "Review combined battery charge and discharge power.",
-    icon: Zap,
-    label: "Battery",
-    value: "battery",
   },
 ];
 
@@ -120,6 +147,10 @@ export function HistoryPage({
       : lastDay;
   const selectedDayIndex =
     selectedDay === null ? -1 : availableDays.indexOf(selectedDay);
+  const nowMarkerPeriodStart =
+    selectedDay !== null && selectedDay === getUtcDayKey(new Date())
+      ? getCurrentPeriodStart()
+      : null;
 
   const priceSeries = createSingleValueSeries(
     archive.dynamicPriceSamples.map((sample) => ({
@@ -153,6 +184,7 @@ export function HistoryPage({
     price: dailyPriceSeries,
     solar: dailySolarSeries,
   });
+  const splitCombinedDailySeries = splitCombinedSeriesByTime(combinedDailySeries);
 
   const canGoBackward = selectedDayIndex > 0;
   const canGoForward = selectedDayIndex >= 0 && selectedDayIndex < availableDays.length - 1;
@@ -196,7 +228,7 @@ export function HistoryPage({
 
       <Card className="overflow-hidden border-white/10 bg-slate-950/75">
         <CardHeader className="border-b border-white/8 p-0">
-          <div className={`${UI_STYLES.tabBar} pt-3 sm:pt-4`}>
+          <div className={`${UI_STYLES.tabBar} pt-2.5 sm:pt-3`}>
             {HISTORY_TABS.map((tab) => (
               <HistoryTabButton
                 active={selectedTab === tab.value}
@@ -208,7 +240,7 @@ export function HistoryPage({
             ))}
           </div>
         </CardHeader>
-        <CardContent className="space-y-6 pt-6">
+        <CardContent className="space-y-3 pt-3">
           <DateSelect
             availableDays={availableDays}
             canGoBackward={canGoBackward}
@@ -234,14 +266,16 @@ export function HistoryPage({
             </p>
           ) : selectedTab === "combined" ? (
             <CombinedHistoryChart
-              points={combinedDailySeries}
+              nowMarkerPeriodStart={nowMarkerPeriodStart}
+              points={splitCombinedDailySeries}
             />
           ) : selectedTab === "price" ? (
             <SingleValueHistoryChart
               accentColor={UI_COLORS.price}
               emptyMessage="No dynamic price samples were available for this range."
-              label="Dynamic Price"
-              points={dailyPriceSeries}
+              label="Price"
+              nowMarkerPeriodStart={nowMarkerPeriodStart}
+              points={splitSingleValueSeriesByTime(dailyPriceSeries)}
               valueFormatter={formatPriceValue}
               yAxisFormatter={formatShortPriceValue}
             />
@@ -250,7 +284,8 @@ export function HistoryPage({
               accentColor={UI_COLORS.forecast}
               emptyMessage="No solar forecast samples were available for this range."
               label="Solar Forecast"
-              points={dailySolarSeries}
+              nowMarkerPeriodStart={nowMarkerPeriodStart}
+              points={splitSingleValueSeriesByTime(dailySolarSeries)}
               valueFormatter={formatWholeNumberValue}
               yAxisFormatter={formatShortPowerValue}
             />
@@ -259,7 +294,8 @@ export function HistoryPage({
               emptyMessage="No P1 meter samples were available for this range."
               negativeColor={UI_COLORS.gridExport}
               negativeLabel="Return to grid"
-              points={dailyGridSeries}
+              nowMarkerPeriodStart={nowMarkerPeriodStart}
+              points={splitSignedSeriesByTime(dailyGridSeries)}
               positiveColor={UI_COLORS.gridImport}
               positiveLabel="Take from grid"
               valueFormatter={formatPowerValue}
@@ -270,7 +306,8 @@ export function HistoryPage({
               emptyMessage="No battery power samples were available for this range."
               negativeColor={UI_COLORS.batteryCharge}
               negativeLabel="Battery charge"
-              points={dailyBatterySeries}
+              nowMarkerPeriodStart={nowMarkerPeriodStart}
+              points={splitSignedSeriesByTime(dailyBatterySeries)}
               positiveColor={UI_COLORS.batteryDischarge}
               positiveLabel="Battery discharge"
               valueFormatter={formatPowerValue}
@@ -284,18 +321,26 @@ export function HistoryPage({
 }
 
 function CombinedHistoryChart({
+  nowMarkerPeriodStart,
   points,
 }: {
-  points: CombinedPoint[];
+  nowMarkerPeriodStart: string | null;
+  points: SplitCombinedPoint[];
 }) {
   const hasValues = points.some((point) =>
     [
-      point.price,
-      point.solar,
-      point.gridImport,
-      point.gridExport,
-      point.batteryCharge,
-      point.batteryDischarge,
+      point.currentPrice,
+      point.futurePrice,
+      point.currentSolar,
+      point.futureSolar,
+      point.currentGridImport,
+      point.futureGridImport,
+      point.currentGridExport,
+      point.futureGridExport,
+      point.currentBatteryCharge,
+      point.futureBatteryCharge,
+      point.currentBatteryDischarge,
+      point.futureBatteryDischarge,
     ].some((value) => typeof value === "number"),
   );
 
@@ -308,14 +353,14 @@ function CombinedHistoryChart({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-2.5">
       <div className="flex flex-wrap gap-2 text-xs font-medium text-slate-300">
-        <LegendChip color={UI_COLORS.price} label="Price" />
-        <LegendChip color={UI_COLORS.forecast} label="Solar" />
-        <LegendChip color={UI_COLORS.gridImport} label="Take from grid" />
-        <LegendChip color={UI_COLORS.gridExport} label="Return to grid" />
         <LegendChip color={UI_COLORS.batteryDischarge} label="Battery discharge" />
         <LegendChip color={UI_COLORS.batteryCharge} label="Battery charge" />
+        <LegendChip color={UI_COLORS.forecast} label="Solar Forecast" />
+        <LegendChip color={UI_COLORS.price} label="Price" />
+        <LegendChip color={UI_COLORS.gridImport} label="Take from grid" />
+        <LegendChip color={UI_COLORS.gridExport} label="Return to grid" />
       </div>
       <div className="h-[360px] w-full">
         <ResponsiveContainer width="100%" height="100%">
@@ -345,6 +390,15 @@ function CombinedHistoryChart({
               y={0}
               yAxisId="power"
             />
+            {nowMarkerPeriodStart ? (
+              <ReferenceLine
+                label={buildNowLabel()}
+                stroke={UI_COLORS.textPrimary}
+                strokeDasharray="4 4"
+                strokeOpacity={0.8}
+                x={nowMarkerPeriodStart}
+              />
+            ) : null}
             <Tooltip
               content={
                 <HistoryTooltip
@@ -354,7 +408,28 @@ function CombinedHistoryChart({
               }
             />
             <Line
-              dataKey="price"
+              dataKey="currentSolar"
+              dot={false}
+              isAnimationActive={false}
+              name="Solar Forecast"
+              stroke={UI_COLORS.forecast}
+              strokeWidth={2.2}
+              type="monotone"
+              yAxisId="solar"
+            />
+            <Line
+              dataKey="futureSolar"
+              dot={false}
+              isAnimationActive={false}
+              name="Solar Forecast"
+              stroke={UI_COLORS.forecast}
+              strokeOpacity={0.35}
+              strokeWidth={2.2}
+              type="monotone"
+              yAxisId="solar"
+            />
+            <Line
+              dataKey="currentPrice"
               dot={false}
               isAnimationActive={false}
               name="Price"
@@ -365,17 +440,19 @@ function CombinedHistoryChart({
               yAxisId="price"
             />
             <Line
-              dataKey="solar"
+              dataKey="futurePrice"
               dot={false}
               isAnimationActive={false}
-              name="Solar"
-              stroke={UI_COLORS.forecast}
-              strokeWidth={2.2}
+              name="Price"
+              stroke={UI_COLORS.price}
+              strokeDasharray="5 4"
+              strokeOpacity={0.35}
+              strokeWidth={2}
               type="monotone"
-              yAxisId="solar"
+              yAxisId="price"
             />
             <Line
-              dataKey="gridImport"
+              dataKey="currentGridImport"
               dot={false}
               isAnimationActive={false}
               name="Take from grid"
@@ -385,7 +462,18 @@ function CombinedHistoryChart({
               yAxisId="power"
             />
             <Line
-              dataKey="gridExport"
+              dataKey="futureGridImport"
+              dot={false}
+              isAnimationActive={false}
+              name="Take from grid"
+              stroke={UI_COLORS.gridImport}
+              strokeOpacity={0.35}
+              strokeWidth={2.1}
+              type="monotone"
+              yAxisId="power"
+            />
+            <Line
+              dataKey="currentGridExport"
               dot={false}
               isAnimationActive={false}
               name="Return to grid"
@@ -395,7 +483,18 @@ function CombinedHistoryChart({
               yAxisId="power"
             />
             <Line
-              dataKey="batteryDischarge"
+              dataKey="futureGridExport"
+              dot={false}
+              isAnimationActive={false}
+              name="Return to grid"
+              stroke={UI_COLORS.gridExport}
+              strokeOpacity={0.35}
+              strokeWidth={2.1}
+              type="monotone"
+              yAxisId="power"
+            />
+            <Line
+              dataKey="currentBatteryDischarge"
               dot={false}
               isAnimationActive={false}
               name="Battery discharge"
@@ -405,11 +504,33 @@ function CombinedHistoryChart({
               yAxisId="power"
             />
             <Line
-              dataKey="batteryCharge"
+              dataKey="futureBatteryDischarge"
+              dot={false}
+              isAnimationActive={false}
+              name="Battery discharge"
+              stroke={UI_COLORS.batteryDischarge}
+              strokeOpacity={0.35}
+              strokeWidth={2.1}
+              type="monotone"
+              yAxisId="power"
+            />
+            <Line
+              dataKey="currentBatteryCharge"
               dot={false}
               isAnimationActive={false}
               name="Battery charge"
               stroke={UI_COLORS.batteryCharge}
+              strokeWidth={2.1}
+              type="monotone"
+              yAxisId="power"
+            />
+            <Line
+              dataKey="futureBatteryCharge"
+              dot={false}
+              isAnimationActive={false}
+              name="Battery charge"
+              stroke={UI_COLORS.batteryCharge}
+              strokeOpacity={0.35}
               strokeWidth={2.1}
               type="monotone"
               yAxisId="power"
@@ -425,6 +546,7 @@ function SingleValueHistoryChart({
   accentColor,
   emptyMessage,
   label,
+  nowMarkerPeriodStart,
   points,
   valueFormatter,
   yAxisFormatter,
@@ -432,19 +554,23 @@ function SingleValueHistoryChart({
   accentColor: string;
   emptyMessage: string;
   label: string;
-  points: SingleValuePoint[];
+  nowMarkerPeriodStart: string | null;
+  points: SplitSingleValuePoint[];
   valueFormatter: (value: number) => string;
   yAxisFormatter: (value: number) => string;
 }) {
-  const hasValues = points.some((point) => typeof point.value === "number");
+  const hasValues = points.some(
+    (point) => typeof point.currentValue === "number" || typeof point.futureValue === "number",
+  );
   const gradientId = `${label.toLowerCase().replace(/\s+/g, "-")}-gradient`;
+  const mutedGradientId = `${label.toLowerCase().replace(/\s+/g, "-")}-muted-gradient`;
 
   if (!hasValues) {
     return <p className="text-sm leading-6 text-slate-400">{emptyMessage}</p>;
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-2.5">
       <div className="flex flex-wrap gap-2 text-xs font-medium text-slate-300">
         <LegendChip color={accentColor} label={label} />
       </div>
@@ -455,6 +581,10 @@ function SingleValueHistoryChart({
               <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor={accentColor} stopOpacity={0.38} />
                 <stop offset="95%" stopColor={accentColor} stopOpacity={0.04} />
+              </linearGradient>
+              <linearGradient id={mutedGradientId} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor={accentColor} stopOpacity={0.16} />
+                <stop offset="95%" stopColor={accentColor} stopOpacity={0.02} />
               </linearGradient>
             </defs>
             <CartesianGrid stroke={UI_COLORS.chartGrid} strokeDasharray="3 6" vertical={false} />
@@ -481,12 +611,31 @@ function SingleValueHistoryChart({
                 />
               }
             />
+            {nowMarkerPeriodStart ? (
+              <ReferenceLine
+                label={buildNowLabel()}
+                stroke={UI_COLORS.textPrimary}
+                strokeDasharray="4 4"
+                strokeOpacity={0.8}
+                x={nowMarkerPeriodStart}
+              />
+            ) : null}
             <Area
-              dataKey="value"
+              dataKey="currentValue"
               fill={`url(#${gradientId})`}
               isAnimationActive={false}
               name={label}
               stroke={accentColor}
+              strokeWidth={3}
+              type="monotone"
+            />
+            <Area
+              dataKey="futureValue"
+              fill={`url(#${mutedGradientId})`}
+              isAnimationActive={false}
+              name={label}
+              stroke={accentColor}
+              strokeOpacity={0.35}
               strokeWidth={3}
               type="monotone"
             />
@@ -501,6 +650,7 @@ function SignedHistoryChart({
   emptyMessage,
   negativeColor,
   negativeLabel,
+  nowMarkerPeriodStart,
   points,
   positiveColor,
   positiveLabel,
@@ -510,22 +660,31 @@ function SignedHistoryChart({
   emptyMessage: string;
   negativeColor: string;
   negativeLabel: string;
-  points: SignedValuePoint[];
+  nowMarkerPeriodStart: string | null;
+  points: SplitSignedValuePoint[];
   positiveColor: string;
   positiveLabel: string;
   valueFormatter: (value: number) => string;
   yAxisFormatter: (value: number) => string;
 }) {
-  const hasValues = points.some((point) => typeof point.value === "number");
+  const hasValues = points.some(
+    (point) =>
+      typeof point.currentPositiveValue === "number" ||
+      typeof point.futurePositiveValue === "number" ||
+      typeof point.currentNegativeValue === "number" ||
+      typeof point.futureNegativeValue === "number",
+  );
   const positiveGradientId = `${positiveLabel.toLowerCase().replace(/\s+/g, "-")}-gradient`;
   const negativeGradientId = `${negativeLabel.toLowerCase().replace(/\s+/g, "-")}-gradient`;
+  const positiveMutedGradientId = `${positiveLabel.toLowerCase().replace(/\s+/g, "-")}-muted-gradient`;
+  const negativeMutedGradientId = `${negativeLabel.toLowerCase().replace(/\s+/g, "-")}-muted-gradient`;
 
   if (!hasValues) {
     return <p className="text-sm leading-6 text-slate-400">{emptyMessage}</p>;
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-2.5">
       <div className="flex flex-wrap gap-2 text-xs font-medium text-slate-300">
         <LegendChip color={positiveColor} label={positiveLabel} />
         <LegendChip color={negativeColor} label={negativeLabel} />
@@ -538,9 +697,17 @@ function SignedHistoryChart({
                 <stop offset="5%" stopColor={positiveColor} stopOpacity={0.34} />
                 <stop offset="95%" stopColor={positiveColor} stopOpacity={0.04} />
               </linearGradient>
+              <linearGradient id={positiveMutedGradientId} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor={positiveColor} stopOpacity={0.16} />
+                <stop offset="95%" stopColor={positiveColor} stopOpacity={0.02} />
+              </linearGradient>
               <linearGradient id={negativeGradientId} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor={negativeColor} stopOpacity={0.3} />
                 <stop offset="95%" stopColor={negativeColor} stopOpacity={0.04} />
+              </linearGradient>
+              <linearGradient id={negativeMutedGradientId} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor={negativeColor} stopOpacity={0.16} />
+                <stop offset="95%" stopColor={negativeColor} stopOpacity={0.02} />
               </linearGradient>
             </defs>
             <CartesianGrid stroke={UI_COLORS.chartGrid} strokeDasharray="3 6" vertical={false} />
@@ -560,6 +727,15 @@ function SignedHistoryChart({
               width={60}
             />
             <ReferenceLine stroke={UI_COLORS.chartZeroLine} strokeDasharray="4 6" y={0} />
+            {nowMarkerPeriodStart ? (
+              <ReferenceLine
+                label={buildNowLabel()}
+                stroke={UI_COLORS.textPrimary}
+                strokeDasharray="4 4"
+                strokeOpacity={0.8}
+                x={nowMarkerPeriodStart}
+              />
+            ) : null}
             <Tooltip
               content={
                 <HistoryTooltip
@@ -569,7 +745,7 @@ function SignedHistoryChart({
               }
             />
             <Area
-              dataKey="positiveValue"
+              dataKey="currentPositiveValue"
               fill={`url(#${positiveGradientId})`}
               isAnimationActive={false}
               name={positiveLabel}
@@ -578,11 +754,31 @@ function SignedHistoryChart({
               type="monotone"
             />
             <Area
-              dataKey="negativeValue"
+              dataKey="futurePositiveValue"
+              fill={`url(#${positiveMutedGradientId})`}
+              isAnimationActive={false}
+              name={positiveLabel}
+              stroke={positiveColor}
+              strokeOpacity={0.35}
+              strokeWidth={2.6}
+              type="monotone"
+            />
+            <Area
+              dataKey="currentNegativeValue"
               fill={`url(#${negativeGradientId})`}
               isAnimationActive={false}
               name={negativeLabel}
               stroke={negativeColor}
+              strokeWidth={2.6}
+              type="monotone"
+            />
+            <Area
+              dataKey="futureNegativeValue"
+              fill={`url(#${negativeMutedGradientId})`}
+              isAnimationActive={false}
+              name={negativeLabel}
+              stroke={negativeColor}
+              strokeOpacity={0.35}
               strokeWidth={2.6}
               type="monotone"
             />
@@ -615,7 +811,9 @@ function HistoryTooltip({
       typeof entry.value === "number",
   );
 
-  if (numericEntries.length === 0) {
+  const deduplicatedEntries = deduplicateTooltipEntries(numericEntries);
+
+  if (deduplicatedEntries.length === 0) {
     return null;
   }
 
@@ -625,7 +823,7 @@ function HistoryTooltip({
         {labelFormatter(label)}
       </p>
       <div className="space-y-1.5">
-        {numericEntries.map((entry) => (
+        {deduplicatedEntries.map((entry) => (
           <div key={`${entry.dataKey}-${entry.name}`} className="flex items-center justify-between gap-4">
             <span className="flex items-center gap-2 text-slate-200">
               <span
@@ -764,6 +962,50 @@ function createSignedSeries(points: SingleValuePoint[]): SignedValuePoint[] {
   }));
 }
 
+function splitSingleValueSeriesByTime(
+  points: SingleValuePoint[],
+): SplitSingleValuePoint[] {
+  const now = Date.now();
+  const firstFutureIndex = points.findIndex(
+    (point) => new Date(point.periodStart).getTime() > now,
+  );
+
+  return points.map((point, index) => {
+    const isFuture = firstFutureIndex !== -1 && index >= firstFutureIndex;
+    const includeInFutureSeries =
+      firstFutureIndex !== -1 && index >= Math.max(0, firstFutureIndex - 1);
+
+    return {
+      ...point,
+      currentValue: isFuture ? null : point.value,
+      futureValue: includeInFutureSeries ? point.value : null,
+    };
+  });
+}
+
+function splitSignedSeriesByTime(
+  points: SignedValuePoint[],
+): SplitSignedValuePoint[] {
+  const now = Date.now();
+  const firstFutureIndex = points.findIndex(
+    (point) => new Date(point.periodStart).getTime() > now,
+  );
+
+  return points.map((point, index) => {
+    const isFuture = firstFutureIndex !== -1 && index >= firstFutureIndex;
+    const includeInFutureSeries =
+      firstFutureIndex !== -1 && index >= Math.max(0, firstFutureIndex - 1);
+
+    return {
+      ...point,
+      currentNegativeValue: isFuture ? null : point.negativeValue,
+      currentPositiveValue: isFuture ? null : point.positiveValue,
+      futureNegativeValue: includeInFutureSeries ? point.negativeValue : null,
+      futurePositiveValue: includeInFutureSeries ? point.positiveValue : null,
+    };
+  });
+}
+
 function fillSingleValueDay(points: SingleValuePoint[], dayKey: string): SingleValuePoint[] {
   const valuesByPeriod = new Map(
     points
@@ -842,6 +1084,37 @@ function createCombinedSeries(input: {
   );
 }
 
+function splitCombinedSeriesByTime(
+  points: CombinedPoint[],
+): SplitCombinedPoint[] {
+  const now = Date.now();
+  const firstFutureIndex = points.findIndex(
+    (point) => new Date(point.periodStart).getTime() > now,
+  );
+
+  return points.map((point, index) => {
+    const isFuture = firstFutureIndex !== -1 && index >= firstFutureIndex;
+    const includeInFutureSeries =
+      firstFutureIndex !== -1 && index >= Math.max(0, firstFutureIndex - 1);
+
+    return {
+      ...point,
+      currentBatteryCharge: isFuture ? null : point.batteryCharge,
+      currentBatteryDischarge: isFuture ? null : point.batteryDischarge,
+      currentGridExport: isFuture ? null : point.gridExport,
+      currentGridImport: isFuture ? null : point.gridImport,
+      currentPrice: isFuture ? null : point.price,
+      currentSolar: isFuture ? null : point.solar,
+      futureBatteryCharge: includeInFutureSeries ? point.batteryCharge : null,
+      futureBatteryDischarge: includeInFutureSeries ? point.batteryDischarge : null,
+      futureGridExport: includeInFutureSeries ? point.gridExport : null,
+      futureGridImport: includeInFutureSeries ? point.gridImport : null,
+      futurePrice: includeInFutureSeries ? point.price : null,
+      futureSolar: includeInFutureSeries ? point.solar : null,
+    };
+  });
+}
+
 function createEmptyCombinedPoint(periodStart: string): CombinedPoint {
   return {
     batteryCharge: null,
@@ -912,11 +1185,11 @@ function formatWholeNumberValue(value: number): string {
 }
 
 function formatCombinedValue(value: number, key?: string): string {
-  if (key === "price") {
+  if (key === "price" || key === "currentPrice" || key === "futurePrice") {
     return formatPriceValue(value);
   }
 
-  if (key === "solar") {
+  if (key === "solar" || key === "currentSolar" || key === "futureSolar") {
     return formatWholeNumberValue(value);
   }
 
@@ -925,4 +1198,47 @@ function formatCombinedValue(value: number, key?: string): string {
 
 function getUtcDayKey(value: Date | string): string {
   return new Date(value).toISOString().slice(0, 10);
+}
+
+function deduplicateTooltipEntries(
+  entries: Array<TooltipPayloadEntry & { value: number }>,
+): Array<TooltipPayloadEntry & { value: number }> {
+  const entriesByName = new Map<string, TooltipPayloadEntry & { value: number }>();
+
+  for (const entry of entries) {
+    const key = entry.name ?? entry.dataKey ?? "Value";
+    const existing = entriesByName.get(key);
+
+    if (!existing || getTooltipEntryPriority(entry) > getTooltipEntryPriority(existing)) {
+      entriesByName.set(key, entry);
+    }
+  }
+
+  return [...entriesByName.values()];
+}
+
+function getTooltipEntryPriority(entry: TooltipPayloadEntry): number {
+  if (entry.dataKey?.startsWith("current")) {
+    return 2;
+  }
+
+  if (entry.dataKey?.startsWith("future")) {
+    return 1;
+  }
+
+  return 0;
+}
+
+function getCurrentPeriodStart(): string {
+  const now = Date.now();
+  return new Date(Math.floor(now / HISTORY_STEP_MS) * HISTORY_STEP_MS).toISOString();
+}
+
+function buildNowLabel() {
+  return {
+    fill: UI_COLORS.textPrimary,
+    fontSize: 12,
+    position: "top" as const,
+    value: "Now",
+  };
 }

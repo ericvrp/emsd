@@ -43,8 +43,8 @@ interface BatteryRow {
   manual_charge_target_soc: BatteryRecord["manualChargeTargetSoc"];
   manual_discharge_target_soc: BatteryRecord["manualDischargeTargetSoc"];
   manual_target_soc: BatteryRecord["manualTargetSoc"];
-  now_mode_active: number;
-  now_mode_started: number;
+  manual_mode_active: number;
+  manual_mode_started: number;
   strategy_plan_json: string | null;
   strategy_runtime_json: string | null;
   updated_at: string;
@@ -209,8 +209,8 @@ export function openDaemonDatabase(databasePath = getDatabasePath()): Database {
       manual_charge_target_soc REAL,
       manual_discharge_target_soc REAL,
       manual_target_soc REAL,
-      now_mode_active INTEGER NOT NULL DEFAULT 0,
-      now_mode_started INTEGER NOT NULL DEFAULT 0,
+      manual_mode_active INTEGER NOT NULL DEFAULT 0,
+      manual_mode_started INTEGER NOT NULL DEFAULT 0,
       strategy_plan_json TEXT,
       strategy_runtime_json TEXT,
       updated_at TEXT NOT NULL,
@@ -715,8 +715,8 @@ export function readBatteries(db: Database): BatteryRecord[] {
           manual_charge_target_soc,
           manual_discharge_target_soc,
           manual_target_soc,
-          now_mode_active,
-          now_mode_started,
+          manual_mode_active,
+          manual_mode_started,
           strategy_plan_json,
           strategy_runtime_json,
           updated_at
@@ -743,8 +743,8 @@ export function readBatteries(db: Database): BatteryRecord[] {
     manualChargeTargetSoc: row.manual_charge_target_soc,
     manualDischargeTargetSoc: row.manual_discharge_target_soc,
     manualTargetSoc: row.manual_target_soc,
-    nowModeActive: row.now_mode_active === 1,
-    nowModeStarted: row.now_mode_started === 1,
+    manualModeActive: row.manual_mode_active === 1,
+    manualModeStarted: row.manual_mode_started === 1,
     strategyPlan: parseBatteryStrategyPlanJson({
       minimumDischargePercent: row.minimum_discharge_percent,
       strategy: {
@@ -817,16 +817,28 @@ function ensureBatteryColumns(db: Database): void {
     );
   }
 
-  if (!columns.includes("now_mode_active")) {
+  if (!columns.includes("manual_mode_active")) {
     db.exec(
-      "ALTER TABLE batteries ADD COLUMN now_mode_active INTEGER NOT NULL DEFAULT 0;",
+      "ALTER TABLE batteries ADD COLUMN manual_mode_active INTEGER NOT NULL DEFAULT 0;",
     );
+
+    if (columns.includes("now_mode_active")) {
+      db.exec(
+        "UPDATE batteries SET manual_mode_active = now_mode_active WHERE manual_mode_active IS NULL OR manual_mode_active = 0;",
+      );
+    }
   }
 
-  if (!columns.includes("now_mode_started")) {
+  if (!columns.includes("manual_mode_started")) {
     db.exec(
-      "ALTER TABLE batteries ADD COLUMN now_mode_started INTEGER NOT NULL DEFAULT 0;",
+      "ALTER TABLE batteries ADD COLUMN manual_mode_started INTEGER NOT NULL DEFAULT 0;",
     );
+
+    if (columns.includes("now_mode_started")) {
+      db.exec(
+        "UPDATE batteries SET manual_mode_started = now_mode_started WHERE manual_mode_started IS NULL OR manual_mode_started = 0;",
+      );
+    }
   }
 
   if (!columns.includes("strategy_plan_json")) {
@@ -846,8 +858,8 @@ export function updateBatteryStrategyState(
   input: {
     batteryId: string;
     siteId: string;
-    nowModeActive: boolean;
-    nowModeStarted?: boolean;
+    manualModeActive: boolean;
+    manualModeStarted?: boolean;
     strategy: BatteryStrategyRecord;
   },
 ): void {
@@ -861,8 +873,8 @@ export function updateBatteryStrategyState(
         manual_charge_target_soc = ?6,
         manual_discharge_target_soc = ?7,
         manual_target_soc = ?8,
-        now_mode_active = ?9,
-        now_mode_started = ?10,
+        manual_mode_active = ?9,
+        manual_mode_started = ?10,
         updated_at = ?11
       WHERE id = ?1 AND site_id = ?2
     `,
@@ -875,26 +887,26 @@ export function updateBatteryStrategyState(
     input.strategy.manualChargeTargetSoc,
     input.strategy.manualDischargeTargetSoc,
     input.strategy.manualTargetSoc,
-    input.nowModeActive ? 1 : 0,
-    input.nowModeStarted === true ? 1 : 0,
+    input.manualModeActive ? 1 : 0,
+    input.manualModeStarted === true ? 1 : 0,
     new Date().toISOString(),
   );
 }
 
-export function updateBatteryNowModeStarted(
+export function updateBatteryManualModeStarted(
   db: Database,
-  input: { batteryId: string; siteId: string; nowModeStarted: boolean },
+  input: { batteryId: string; siteId: string; manualModeStarted: boolean },
 ): void {
   db.query(
     `
       UPDATE batteries
-      SET now_mode_started = ?3, updated_at = ?4
+      SET manual_mode_started = ?3, updated_at = ?4
       WHERE id = ?1 AND site_id = ?2
     `,
   ).run(
     input.batteryId,
     input.siteId,
-    input.nowModeStarted ? 1 : 0,
+    input.manualModeStarted ? 1 : 0,
     new Date().toISOString(),
   );
 }

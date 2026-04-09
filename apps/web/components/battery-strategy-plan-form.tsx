@@ -109,14 +109,6 @@ export function BatteryStrategyPlanForm({
         value={JSON.stringify(items)}
       />
 
-      <div className="rounded-2xl border border-white/8 bg-white/4 p-4 text-sm text-slate-300">
-        <p className="font-medium text-white">Strategy schedule</p>
-        <p className="mt-1 text-slate-400">
-          The first entry is the fallback strategy. Daily entries run in order
-          and can be rearranged.
-        </p>
-      </div>
-
       <div className="overflow-x-auto rounded-2xl border border-white/8 bg-slate-950/40">
         <table className="min-w-[980px] w-full border-collapse text-sm">
           <thead>
@@ -425,7 +417,7 @@ export function BatteryStrategyPlanForm({
         </Button>
         <SubmitButton>
           <Save size={14} />
-          Save schedule
+          Apply
         </SubmitButton>
       </div>
     </form>

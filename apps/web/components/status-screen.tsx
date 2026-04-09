@@ -114,7 +114,7 @@ export async function StatusScreen({
                           manualTargetSoc: 100,
                         }
                       }
-                      nowModeActive={battery.batteryNowModeActive}
+                      manualModeActive={battery.batteryManualModeActive}
                       strategyPlan={battery.batteryStrategyPlan ?? []}
                     />
                   </div>

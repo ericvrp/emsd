@@ -231,8 +231,8 @@ export interface BatteryRecord extends BatteryStrategyRecord {
   status: BatteryStatus;
   connected: boolean;
   minimumDischargePercent: number;
-  nowModeActive: boolean;
-  nowModeStarted: boolean;
+  manualModeActive: boolean;
+  manualModeStarted: boolean;
   strategyPlan: BatteryStrategyPlanRecord;
   strategyRuntime: BatteryStrategyRuntimeRecord;
   updatedAt: string;
@@ -271,7 +271,7 @@ export interface ManagedDeviceRecord {
   state: ManagedDeviceState;
   batteryStrategy: BatteryStrategyRecord | null;
   batteryStrategyPlan: BatteryStrategyPlanRecord | null;
-  batteryNowModeActive: boolean;
+  batteryManualModeActive: boolean;
   minimumDischargePercent: number | null;
   note: string | null;
   updatedAt: string;

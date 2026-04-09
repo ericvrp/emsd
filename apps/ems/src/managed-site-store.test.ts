@@ -81,8 +81,8 @@ test("setBatteryStrategy clears active scheduled runtime on manual change", () =
           manual_charge_target_soc,
           manual_discharge_target_soc,
           manual_target_soc,
-          now_mode_active,
-          now_mode_started,
+          manual_mode_active,
+          manual_mode_started,
           strategy_plan_json,
           strategy_runtime_json,
           updated_at
@@ -139,7 +139,7 @@ test("setBatteryStrategy clears active scheduled runtime on manual change", () =
         manualChargeTargetSoc: 90,
         manualDischargeTargetSoc: 10,
         manualTargetSoc: 90,
-        nowModeActive: true,
+        manualModeActive: true,
       },
       "home",
       databasePath,
@@ -227,8 +227,8 @@ test("setBatteryStrategyPlan clears stale scheduled runtime history", () => {
           manual_charge_target_soc,
           manual_discharge_target_soc,
           manual_target_soc,
-          now_mode_active,
-          now_mode_started,
+          manual_mode_active,
+          manual_mode_started,
           strategy_plan_json,
           strategy_runtime_json,
           updated_at
@@ -299,6 +299,7 @@ test("setBatteryStrategyPlan clears stale scheduled runtime history", () => {
     );
 
     expect(updated).not.toBeNull();
+    expect(updated?.manualModeActive).toBe(false);
     expect(updated?.strategyRuntime).toEqual(createBatteryStrategyRuntime());
   } finally {
     db.close();

@@ -47,8 +47,8 @@ const BATTERY_REQUIRED_COLUMNS = [
   "manual_charge_target_soc",
   "manual_discharge_target_soc",
   "manual_target_soc",
-  "now_mode_active",
-  "now_mode_started",
+  "manual_mode_active",
+  "manual_mode_started",
   "strategy_plan_json",
   "strategy_runtime_json",
   "updated_at",
@@ -106,8 +106,8 @@ interface BatteryRow {
   manual_charge_target_soc: number | null;
   manual_discharge_target_soc: number | null;
   manual_target_soc: number | null;
-  now_mode_active: number;
-  now_mode_started: number;
+  manual_mode_active: number;
+  manual_mode_started: number;
   strategy_plan_json: string | null;
   strategy_runtime_json: string | null;
   updated_at: string;
@@ -160,7 +160,7 @@ interface UpdateBatteryStrategyInput {
   manualChargeTargetSoc?: number | null;
   manualDischargeTargetSoc?: number | null;
   manualTargetSoc?: number | null;
-  nowModeActive?: boolean;
+  manualModeActive?: boolean;
 }
 
 interface UpdateBatteryStrategyPlanInput {
@@ -425,8 +425,8 @@ export function createBattery(
           manual_charge_target_soc,
           manual_discharge_target_soc,
           manual_target_soc,
-          now_mode_active,
-          now_mode_started,
+          manual_mode_active,
+          manual_mode_started,
           strategy_plan_json,
           strategy_runtime_json,
           updated_at
@@ -615,8 +615,8 @@ export function setBatteryStrategy(
           manual_charge_target_soc = ?5,
           manual_discharge_target_soc = ?6,
           manual_target_soc = ?7,
-          now_mode_active = ?8,
-          now_mode_started = ?9,
+          manual_mode_active = ?8,
+          manual_mode_started = ?9,
           strategy_runtime_json = ?10,
           updated_at = ?11
         WHERE id = ?1 AND site_id = ?12
@@ -629,7 +629,7 @@ export function setBatteryStrategy(
       input.manualChargeTargetSoc ?? null,
       input.manualDischargeTargetSoc ?? null,
       input.manualTargetSoc ?? null,
-      input.nowModeActive === true ? 1 : 0,
+      input.manualModeActive === true ? 1 : 0,
       0,
       nextRuntime,
       new Date().toISOString(),
@@ -668,7 +668,7 @@ export function setBatteryStrategyPlan(
     db.query(
       `
         UPDATE batteries
-        SET strategy_plan_json = ?2, strategy_runtime_json = ?3, updated_at = ?4
+        SET strategy_plan_json = ?2, strategy_runtime_json = ?3, manual_mode_active = 0, manual_mode_started = 0, updated_at = ?4
         WHERE id = ?1 AND site_id = ?5
       `,
     ).run(
@@ -1171,8 +1171,8 @@ function ensureSchema(db: Database): void {
       manual_charge_target_soc REAL,
       manual_discharge_target_soc REAL,
       manual_target_soc REAL,
-      now_mode_active INTEGER NOT NULL DEFAULT 0,
-      now_mode_started INTEGER NOT NULL DEFAULT 0,
+      manual_mode_active INTEGER NOT NULL DEFAULT 0,
+      manual_mode_started INTEGER NOT NULL DEFAULT 0,
       strategy_plan_json TEXT,
       strategy_runtime_json TEXT,
       updated_at TEXT NOT NULL,
@@ -1292,16 +1292,28 @@ function ensureBatteryColumns(db: Database): void {
     );
   }
 
-  if (!columns.includes("now_mode_active")) {
+  if (!columns.includes("manual_mode_active")) {
     db.exec(
-      "ALTER TABLE batteries ADD COLUMN now_mode_active INTEGER NOT NULL DEFAULT 0;",
+      "ALTER TABLE batteries ADD COLUMN manual_mode_active INTEGER NOT NULL DEFAULT 0;",
     );
+
+    if (columns.includes("now_mode_active")) {
+      db.exec(
+        "UPDATE batteries SET manual_mode_active = now_mode_active WHERE manual_mode_active IS NULL OR manual_mode_active = 0;",
+      );
+    }
   }
 
-  if (!columns.includes("now_mode_started")) {
+  if (!columns.includes("manual_mode_started")) {
     db.exec(
-      "ALTER TABLE batteries ADD COLUMN now_mode_started INTEGER NOT NULL DEFAULT 0;",
+      "ALTER TABLE batteries ADD COLUMN manual_mode_started INTEGER NOT NULL DEFAULT 0;",
     );
+
+    if (columns.includes("now_mode_started")) {
+      db.exec(
+        "UPDATE batteries SET manual_mode_started = now_mode_started WHERE manual_mode_started IS NULL OR manual_mode_started = 0;",
+      );
+    }
   }
 
   if (!columns.includes("strategy_plan_json")) {
@@ -1547,8 +1559,8 @@ function readBatteries(db: Database, siteId: string): BatteryRecord[] {
           manual_charge_target_soc,
           manual_discharge_target_soc,
           manual_target_soc,
-          now_mode_active,
-          now_mode_started,
+          manual_mode_active,
+          manual_mode_started,
           strategy_plan_json,
           strategy_runtime_json,
           updated_at
@@ -1641,8 +1653,8 @@ function getBatteryById(
           manual_charge_target_soc,
           manual_discharge_target_soc,
           manual_target_soc,
-          now_mode_active,
-          now_mode_started,
+          manual_mode_active,
+          manual_mode_started,
           strategy_plan_json,
           strategy_runtime_json,
           updated_at
@@ -1779,8 +1791,8 @@ function mapBatteryRow(row: BatteryRow): BatteryRecord {
     manualChargeTargetSoc: row.manual_charge_target_soc,
     manualDischargeTargetSoc: row.manual_discharge_target_soc,
     manualTargetSoc: row.manual_target_soc,
-    nowModeActive: row.now_mode_active === 1,
-    nowModeStarted: row.now_mode_started === 1,
+    manualModeActive: row.manual_mode_active === 1,
+    manualModeStarted: row.manual_mode_started === 1,
     strategyPlan: parseBatteryStrategyPlanJson({
       minimumDischargePercent: row.minimum_discharge_percent,
       strategy: {

@@ -146,8 +146,8 @@ function createBattery(overrides: Partial<BatteryRecord> = {}): BatteryRecord {
     manualChargeTargetSoc: 100,
     manualDischargeTargetSoc: 10,
     manualTargetSoc: 100,
-    nowModeActive: false,
-    nowModeStarted: false,
+    manualModeActive: false,
+    manualModeStarted: false,
     strategyPlan: [],
     strategyRuntime: {
       activeItemId: null,

@@ -335,7 +335,7 @@ export async function setBatteryStrategyAction(
         formData,
         "manualDischargeTargetSoc",
       );
-      const nowModeActiveRaw = optionalStringValue(formData, "nowModeActive");
+      const manualModeActiveRaw = optionalStringValue(formData, "manualModeActive");
       const manualTargetSocRaw = optionalStringValue(
         formData,
         "manualTargetSoc",
@@ -366,7 +366,7 @@ export async function setBatteryStrategyAction(
           manualTargetSocRaw === null || manualTargetSocRaw.length === 0
             ? null
             : Number(manualTargetSocRaw),
-        nowModeActive: nowModeActiveRaw === "true",
+        manualModeActive: manualModeActiveRaw === "true",
         siteId,
         strategyMode:
           strategyMode === "manual" ||
@@ -376,7 +376,10 @@ export async function setBatteryStrategyAction(
             : "auto",
       });
       return {
-        notice: `Updated strategy for ${batteryName}.`,
+        notice:
+          manualModeActiveRaw === "true"
+            ? `Applied manual mode for ${batteryName}.`
+            : `Updated strategy for ${batteryName}.`,
         path: returnPath,
         tab: null,
       };
@@ -420,7 +423,7 @@ export async function setBatteryStrategyPlanAction(
       });
 
       return {
-        notice: `Updated strategy schedule for ${batteryName}.`,
+        notice: `Applied schedule for ${batteryName}.`,
         path: returnPath,
         tab: null,
       };

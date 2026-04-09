@@ -226,7 +226,7 @@ function toManagedDeviceRecord(
         strategyMode: record.strategyMode,
       },
       batteryStrategyPlan: record.strategyPlan,
-      batteryNowModeActive: record.nowModeActive,
+      batteryManualModeActive: record.manualModeActive,
       minimumDischargePercent: record.minimumDischargePercent,
       note: record.plugin,
       updatedAt: record.updatedAt,
@@ -245,7 +245,7 @@ function toManagedDeviceRecord(
     state: record.connected ? "connected" : "offline",
     batteryStrategy: null,
     batteryStrategyPlan: null,
-    batteryNowModeActive: false,
+    batteryManualModeActive: false,
     minimumDischargePercent: null,
     note: record.details || null,
     updatedAt: record.updatedAt,
@@ -610,7 +610,7 @@ async function run(): Promise<void> {
         manualPowerW?: number | null;
         manualState?: BatteryManualState | null;
         manualTargetSoc?: number | null;
-        nowModeActive?: boolean;
+        manualModeActive?: boolean;
         siteId?: string;
         strategyMode?: BatteryStrategyMode;
       }>();
@@ -675,7 +675,7 @@ async function run(): Promise<void> {
           manualPowerW,
           manualState,
           manualTargetSoc,
-          nowModeActive: input.nowModeActive === true,
+          manualModeActive: input.manualModeActive === true,
           strategyMode,
         },
         siteId,
