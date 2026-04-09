@@ -285,6 +285,16 @@ export function createBatteryStrategyRuntime(): BatteryStrategyRuntimeRecord {
   };
 }
 
+export function clearActiveBatteryStrategyRuntime(
+  value: BatteryStrategyRuntimeRecord,
+): BatteryStrategyRuntimeRecord {
+  return {
+    ...normalizeBatteryStrategyRuntime(value),
+    activeItemId: null,
+    activeStartedAt: null,
+  };
+}
+
 export function resolveBatteryStrategyFromPlanItem(input: {
   item: BatteryStrategyPlanItem | null | undefined;
   minimumDischargePercent: number;

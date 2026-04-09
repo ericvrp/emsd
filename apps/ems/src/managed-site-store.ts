@@ -9,14 +9,16 @@ import {
   type DynamicPriceSourceRecord,
   type MeterRecord,
   type SiteRecord,
+  type WeatherForecastSourceRecord,
   type WeatherForecastSurface,
   type WeatherProvider,
-  type WeatherForecastSourceRecord,
+  clearActiveBatteryStrategyRuntime,
+  createBatteryStrategyRuntime,
   ensureParentDirectory,
   getDatabasePath,
-  parseGpsCoordinate,
   parseBatteryStrategyPlanJson,
   parseBatteryStrategyRuntimeJson,
+  parseGpsCoordinate,
   stringifyBatteryStrategyPlan,
   stringifyBatteryStrategyRuntime,
 } from "@emsd/core";
@@ -593,9 +595,15 @@ export function setBatteryStrategy(
       BATTERY_REQUIRED_COLUMNS,
     );
 
-    if (!getBatteryById(db, id, siteId)) {
+    const existing = getBatteryById(db, id, siteId);
+
+    if (!existing) {
       return null;
     }
+
+    const nextRuntime = stringifyBatteryStrategyRuntime(
+      clearActiveBatteryStrategyRuntime(existing.strategyRuntime),
+    );
 
     db.query(
       `
@@ -609,8 +617,9 @@ export function setBatteryStrategy(
           manual_target_soc = ?7,
           now_mode_active = ?8,
           now_mode_started = ?9,
-          updated_at = ?10
-        WHERE id = ?1 AND site_id = ?11
+          strategy_runtime_json = ?10,
+          updated_at = ?11
+        WHERE id = ?1 AND site_id = ?12
       `,
     ).run(
       id,
@@ -622,6 +631,7 @@ export function setBatteryStrategy(
       input.manualTargetSoc ?? null,
       input.nowModeActive === true ? 1 : 0,
       0,
+      nextRuntime,
       new Date().toISOString(),
       siteId,
     );
@@ -658,8 +668,8 @@ export function setBatteryStrategyPlan(
     db.query(
       `
         UPDATE batteries
-        SET strategy_plan_json = ?2, updated_at = ?3
-        WHERE id = ?1 AND site_id = ?4
+        SET strategy_plan_json = ?2, strategy_runtime_json = ?3, updated_at = ?4
+        WHERE id = ?1 AND site_id = ?5
       `,
     ).run(
       id,
@@ -675,6 +685,7 @@ export function setBatteryStrategyPlan(
         },
         existing.minimumDischargePercent,
       ),
+      stringifyBatteryStrategyRuntime(createBatteryStrategyRuntime()),
       new Date().toISOString(),
       siteId,
     );
@@ -1057,7 +1068,9 @@ function updateSource(
       ).run(
         id,
         input.name,
-        normalizeDynamicPriceProvider((existing as DynamicPriceSourceRecord).provider),
+        normalizeDynamicPriceProvider(
+          (existing as DynamicPriceSourceRecord).provider,
+        ),
         null,
         new Date().toISOString(),
         siteId,
@@ -1350,7 +1363,9 @@ function normalizeWeatherSurface(
   return "open-meteo-shortwave-radiation";
 }
 
-function normalizeDynamicPriceProvider(provider: string | null | undefined): "tibber" {
+function normalizeDynamicPriceProvider(
+  provider: string | null | undefined,
+): "tibber" {
   void provider;
   return "tibber";
 }
@@ -1806,7 +1821,9 @@ function mapSourceRow(
       id: row.id,
       siteId: row.site_id,
       name: row.name,
-      provider: normalizeWeatherProvider(row.provider as WeatherProvider | null),
+      provider: normalizeWeatherProvider(
+        row.provider as WeatherProvider | null,
+      ),
       surface: normalizeWeatherSurface(
         row.surface as WeatherForecastSurface | null,
         row.provider as WeatherProvider | null,

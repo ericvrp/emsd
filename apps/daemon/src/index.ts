@@ -4,13 +4,13 @@ import {
   type BatteryStrategyPlanItem,
   type DynamicPriceSnapshotRecord,
   type DynamicPriceSourceRecord,
-  type SiteRecord,
-  type WeatherForecastRecord,
-  type WeatherForecastSourceRecord,
   EMSD_NAME,
   type ManagedDeviceTelemetryRecord,
   type NormalizedBatteryInfo,
-  createBatteryStrategyRuntime,
+  type SiteRecord,
+  type WeatherForecastRecord,
+  type WeatherForecastSourceRecord,
+  clearActiveBatteryStrategyRuntime,
   ensureParentDirectory,
   getDaemonLockPath,
   getDatabasePath,
@@ -26,17 +26,28 @@ import {
   readBatteries,
   readDynamicPriceSnapshot,
   readDynamicPriceSources,
+  readMeters,
   readSites,
   readWeatherForecast,
   readWeatherForecastSources,
-  readMeters,
   updateBatteryNowModeStarted,
   updateBatteryStrategyRuntime,
   updateBatteryStrategyState,
   upsertDynamicPriceSnapshot,
-  upsertWeatherForecast,
   upsertManagedDeviceTelemetry,
+  upsertWeatherForecast,
 } from "./database";
+import {
+  describeStrategyPlanItem,
+  formatDaemonLogTimestamp,
+  getDaemonTimeZoneLabel,
+  getTodayTriggerAt,
+  isItemAlreadyTriggeredToday,
+  needsCompletionTracking,
+  shouldCompleteScheduledItem,
+  shouldSkipDelayedSocItemBecauseLaterItemIsDue,
+  shouldSkipScheduledItem,
+} from "./strategy-scheduler";
 
 const lockPath = getDaemonLockPath();
 const POLL_INTERVAL_MS = 5_000;
@@ -45,7 +56,7 @@ const DYNAMIC_PRICE_REFRESH_INTERVAL_MS = 15 * 60 * 1_000;
 const FORECAST_HOURS = 48;
 const FORECAST_PERIOD_MINUTES = 15;
 
-class DaemonStartupError extends Error { }
+class DaemonStartupError extends Error {}
 
 function acquireDaemonLock(): void {
   ensureParentDirectory(lockPath);
@@ -93,17 +104,16 @@ function main(): void {
   const batteries = readBatteries(db);
   const meters = readMeters(db);
 
-  console.log(`${EMSD_NAME} daemon started.`);
-  console.log(`SQLite database: ${getDatabasePath()}`);
-  console.log(`Connected batteries: ${batteries.length}`);
-  console.log(`Connected meters: ${meters.length}`);
-  console.log(
-    `Polling managed devices every ${POLL_INTERVAL_MS / 1000} seconds.`,
-  );
-  console.log(
+  logInfo(`${EMSD_NAME} daemon started.`);
+  logInfo(`SQLite database: ${getDatabasePath()}`);
+  logInfo(`Connected batteries: ${batteries.length}`);
+  logInfo(`Connected meters: ${meters.length}`);
+  logInfo(`Daemon local time zone: ${getDaemonTimeZoneLabel()}`);
+  logInfo(`Polling managed devices every ${POLL_INTERVAL_MS / 1000} seconds.`);
+  logInfo(
     `Refreshing solar forecasts at most every ${FORECAST_REFRESH_INTERVAL_MS / 60_000} minutes.`,
   );
-  console.log(
+  logInfo(
     `Refreshing dynamic prices at most every ${DYNAMIC_PRICE_REFRESH_INTERVAL_MS / 60_000} minutes.`,
   );
 
@@ -122,8 +132,20 @@ function main(): void {
       const dynamicPriceSources = readDynamicPriceSources(db);
       const weatherSources = readWeatherForecastSources(db);
 
-      await refreshWeatherForecasts(db, sites, weatherSources, options.verbose, forceRefresh);
-      await refreshDynamicPrices(db, sites, dynamicPriceSources, options.verbose, forceRefresh);
+      await refreshWeatherForecasts(
+        db,
+        sites,
+        weatherSources,
+        options.verbose,
+        forceRefresh,
+      );
+      await refreshDynamicPrices(
+        db,
+        sites,
+        dynamicPriceSources,
+        options.verbose,
+        forceRefresh,
+      );
     } finally {
       refreshInFlight = false;
     }
@@ -147,8 +169,8 @@ function main(): void {
           const sample = await createBatteryPlugin(battery)
             .getNormalizedInfo()
             .catch((error: unknown) => {
-              console.error(
-                `[${new Date().toISOString()}] battery telemetry poll failed for ${battery.id} at ${battery.ipAddress}: ${error instanceof Error ? error.message : String(error)}`,
+              logError(
+                `battery telemetry poll failed for ${battery.id} at ${battery.ipAddress}: ${error instanceof Error ? error.message : String(error)}`,
               );
               return null;
             });
@@ -186,10 +208,17 @@ function main(): void {
                   nowModeStarted: false,
                   strategy: fallbackStrategy,
                 });
+                updateBatteryStrategyRuntime(db, {
+                  batteryId: battery.id,
+                  siteId: battery.siteId,
+                  strategyRuntime: clearActiveBatteryStrategyRuntime(
+                    battery.strategyRuntime,
+                  ),
+                });
               })
               .catch((error: unknown) => {
-                console.error(
-                  `[${new Date().toISOString()}] failed to restore default strategy for ${battery.id}: ${error instanceof Error ? error.message : String(error)}`,
+                logError(
+                  `failed to restore default strategy for ${battery.id}: ${error instanceof Error ? error.message : String(error)}`,
                 );
               });
           }
@@ -223,8 +252,8 @@ function main(): void {
         ...polledMeters.map(async (meter) => {
           const sample = await fetchMeterTelemetry(meter.ipAddress).catch(
             (error: unknown) => {
-              console.error(
-                `[${new Date().toISOString()}] meter telemetry poll failed for ${meter.id} at ${meter.ipAddress}: ${error instanceof Error ? error.message : String(error)}`,
+              logError(
+                `meter telemetry poll failed for ${meter.id} at ${meter.ipAddress}: ${error instanceof Error ? error.message : String(error)}`,
               );
               return null;
             },
@@ -247,8 +276,8 @@ function main(): void {
         }),
       ]);
     } catch (error) {
-      console.error(
-        `[${new Date().toISOString()}] telemetry poll failed: ${error instanceof Error ? error.message : String(error)}`,
+      logError(
+        `telemetry poll failed: ${error instanceof Error ? error.message : String(error)}`,
       );
     } finally {
       pollInFlight = false;
@@ -256,9 +285,9 @@ function main(): void {
   }
 
   // Initial refresh of forecast and price info on daemon start
-  console.log(`[${new Date().toISOString()}] Polling solar forecasts at startup...`);
+  logInfo("Polling solar forecasts at startup...");
   void refreshSiteData(true);
-  console.log(`[${new Date().toISOString()}] Polling dynamic prices at startup...`);
+  logInfo("Polling dynamic prices at startup...");
 
   void pollTelemetry();
 
@@ -276,7 +305,7 @@ function main(): void {
   }, DYNAMIC_PRICE_REFRESH_INTERVAL_MS);
 
   process.on("SIGUSR1", () => {
-    console.log(`[${new Date().toISOString()}] received on-demand refresh request`);
+    logInfo("received on-demand refresh request");
     void refreshSiteData(true);
   });
 
@@ -287,7 +316,7 @@ function main(): void {
     clearInterval(pricePoller);
     db.close();
     rmSync(lockPath, { force: true });
-    console.log(`${EMSD_NAME} daemon stopped after ${signal}.`);
+    logInfo(`${EMSD_NAME} daemon stopped after ${signal}.`);
     process.exit(0);
   }
 
@@ -305,11 +334,15 @@ async function refreshWeatherForecasts(
   for (const site of sites) {
     const cachedForecast = readWeatherForecast(db, site.id);
 
-    if (!forceRefresh && !shouldRefreshWeatherForecast(cachedForecast, new Date())) {
+    if (
+      !forceRefresh &&
+      !shouldRefreshWeatherForecast(cachedForecast, new Date())
+    ) {
       continue;
     }
 
-    const source = weatherSources.find((entry) => entry.siteId === site.id) ?? null;
+    const source =
+      weatherSources.find((entry) => entry.siteId === site.id) ?? null;
 
     try {
       const forecast = await getWeatherForecast({
@@ -320,12 +353,10 @@ async function refreshWeatherForecasts(
       });
 
       upsertWeatherForecast(db, site.id, forecast);
-      console.log(
-        `[${new Date().toISOString()}] refreshed solar forecast for ${site.id}`,
-      );
+      logInfo(`refreshed solar forecast for ${site.id}`);
     } catch (error) {
-      console.error(
-        `[${new Date().toISOString()}] solar forecast refresh failed for ${site.id}: ${error instanceof Error ? error.message : String(error)}`,
+      logError(
+        `solar forecast refresh failed for ${site.id}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }
@@ -347,19 +378,20 @@ async function refreshDynamicPrices(
 
     const cachedSnapshot = readDynamicPriceSnapshot(db, site.id);
 
-    if (!forceRefresh && !shouldRefreshDynamicPrice(cachedSnapshot, new Date())) {
+    if (
+      !forceRefresh &&
+      !shouldRefreshDynamicPrice(cachedSnapshot, new Date())
+    ) {
       continue;
     }
 
     try {
       const snapshot = await getDynamicPriceSnapshot({ site, source });
       upsertDynamicPriceSnapshot(db, site.id, snapshot);
-      console.log(
-        `[${new Date().toISOString()}] refreshed dynamic price snapshot for ${site.id}`,
-      );
+      logInfo(`refreshed dynamic price snapshot for ${site.id}`);
     } catch (error) {
-      console.error(
-        `[${new Date().toISOString()}] dynamic price refresh failed for ${site.id}: ${error instanceof Error ? error.message : String(error)}`,
+      logError(
+        `dynamic price refresh failed for ${site.id}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }
@@ -495,26 +527,71 @@ async function runScheduledStrategy(
   const dueItems = battery.strategyPlan.slice(1);
   let runtime = battery.strategyRuntime;
 
-  for (const item of dueItems) {
+  for (const [index, item] of dueItems.entries()) {
     const triggerAt = getTodayTriggerAt(item, now);
 
-    if (!triggerAt || now.getTime() < triggerAt.getTime()) {
+    if (!triggerAt) {
+      logVerbose(
+        verbose,
+        `ignoring non-executable strategy item for ${battery.id}: ${describeStrategyPlanItem(item)}`,
+      );
       continue;
     }
 
-    const lastTriggeredAt = runtime.lastTriggeredAtByItemId[item.id];
+    if (now.getTime() < triggerAt.getTime()) {
+      logVerbose(
+        verbose,
+        `strategy item not due yet for ${battery.id}: ${describeStrategyPlanItem(item)} triggerAt=${formatDaemonLogTimestamp(triggerAt)} now=${formatDaemonLogTimestamp(now)}`,
+      );
+      continue;
+    }
 
     if (
-      lastTriggeredAt &&
-      new Date(lastTriggeredAt).getTime() >= triggerAt.getTime()
+      isItemAlreadyTriggeredToday({
+        runtime,
+        itemId: item.id,
+        triggerAt,
+      })
     ) {
+      logVerbose(
+        verbose,
+        `strategy item already triggered today for ${battery.id}: ${describeStrategyPlanItem(item)} triggerAt=${formatDaemonLogTimestamp(triggerAt)}`,
+      );
+      continue;
+    }
+
+    if (
+      shouldSkipDelayedSocItemBecauseLaterItemIsDue({
+        items: dueItems,
+        currentIndex: index,
+        currentTriggerAt: triggerAt,
+        now,
+        runtime,
+      })
+    ) {
+      logVerbose(
+        verbose,
+        `skipping delayed strategy item for ${battery.id} because a later item is already due: ${describeStrategyPlanItem(item)} triggerAt=${formatDaemonLogTimestamp(triggerAt)} now=${formatDaemonLogTimestamp(now)}`,
+      );
+      runtime = {
+        ...runtime,
+        lastTriggeredAtByItemId: {
+          ...runtime.lastTriggeredAtByItemId,
+          [item.id]: triggerAt.toISOString(),
+        },
+      };
+      updateBatteryStrategyRuntime(db, {
+        batteryId: battery.id,
+        siteId: battery.siteId,
+        strategyRuntime: runtime,
+      });
       continue;
     }
 
     if (shouldSkipScheduledItem(item, triggerAt, now)) {
       logVerbose(
         verbose,
-        `skipping expired strategy item for ${battery.id}: ${describeStrategyPlanItem(item)}`,
+        `skipping expired strategy item for ${battery.id}: ${describeStrategyPlanItem(item)} triggerAt=${formatDaemonLogTimestamp(triggerAt)} now=${formatDaemonLogTimestamp(now)}`,
       );
       runtime = {
         ...runtime,
@@ -580,134 +657,6 @@ function getActiveStrategyPlanItem(
   return battery.strategyPlan.find((item) => item.id === activeItemId) ?? null;
 }
 
-function shouldCompleteScheduledItem(input: {
-  battery: BatteryRecord;
-  item: BatteryStrategyPlanItem;
-  now: Date;
-  sample: NormalizedBatteryInfo;
-}): boolean {
-  const { battery, item, now, sample } = input;
-  const startedAt = battery.strategyRuntime.activeStartedAt;
-
-  if (!startedAt) {
-    return true;
-  }
-
-  if (item.targetMethod === "duration") {
-    if (item.targetDurationMinutes === null) {
-      return true;
-    }
-
-    return (
-      now.getTime() >=
-      new Date(startedAt).getTime() + item.targetDurationMinutes * 60000
-    );
-  }
-
-  if (item.targetMethod === "end-time") {
-    const endAt = getScheduledEndAt(item, startedAt);
-    return endAt === null ? true : now.getTime() >= endAt.getTime();
-  }
-
-  if (battery.manualState === "charging") {
-    if (
-      sample.socPercent !== null &&
-      battery.manualChargeTargetSoc !== null &&
-      sample.socPercent >= battery.manualChargeTargetSoc
-    ) {
-      return true;
-    }
-
-    return sample.status !== "charging";
-  }
-
-  if (battery.manualState === "discharging") {
-    if (
-      sample.socPercent !== null &&
-      battery.manualDischargeTargetSoc !== null &&
-      sample.socPercent <= battery.manualDischargeTargetSoc
-    ) {
-      return true;
-    }
-
-    return sample.status !== "discharging";
-  }
-
-  return false;
-}
-
-function shouldSkipScheduledItem(
-  item: BatteryStrategyPlanItem,
-  triggerAt: Date,
-  now: Date,
-): boolean {
-  if (item.targetMethod === "duration") {
-    return (
-      item.targetDurationMinutes !== null &&
-      now.getTime() >= triggerAt.getTime() + item.targetDurationMinutes * 60000
-    );
-  }
-
-  if (item.targetMethod === "end-time") {
-    const endAt = getScheduledEndAt(item, triggerAt.toISOString());
-    return endAt !== null && now.getTime() >= endAt.getTime();
-  }
-
-  return false;
-}
-
-function getTodayTriggerAt(
-  item: BatteryStrategyPlanItem,
-  now: Date,
-): Date | null {
-  if (
-    item.kind !== "daily" ||
-    item.triggerKind !== "daily-time" ||
-    !item.startTime
-  ) {
-    return null;
-  }
-
-  const [hoursPart, minutesPart] = item.startTime.split(":");
-  const triggerAt = new Date(now);
-  triggerAt.setHours(
-    Number(hoursPart ?? "0"),
-    Number(minutesPart ?? "0"),
-    0,
-    0,
-  );
-  return triggerAt;
-}
-
-function getScheduledEndAt(
-  item: BatteryStrategyPlanItem,
-  startedAt: string,
-): Date | null {
-  if (item.targetEndTime === null) {
-    return null;
-  }
-
-  const [hoursPart, minutesPart] = item.targetEndTime.split(":");
-  const startDate = new Date(startedAt);
-  const endAt = new Date(startDate);
-  endAt.setHours(Number(hoursPart ?? "0"), Number(minutesPart ?? "0"), 0, 0);
-
-  if (endAt.getTime() <= startDate.getTime()) {
-    endAt.setDate(endAt.getDate() + 1);
-  }
-
-  return endAt;
-}
-
-function needsCompletionTracking(item: BatteryStrategyPlanItem): boolean {
-  return (
-    item.strategyMode === "manual" &&
-    item.manualState !== null &&
-    item.manualState !== "idle" &&
-    item.targetMethod !== null
-  );
-}
-
 async function restoreFallbackStrategy(
   db: ReturnType<typeof openDaemonDatabase>,
   battery: BatteryRecord,
@@ -737,9 +686,7 @@ async function restoreFallbackStrategy(
     batteryId: battery.id,
     siteId: battery.siteId,
     strategyRuntime: {
-      ...battery.strategyRuntime,
-      activeItemId: null,
-      activeStartedAt: null,
+      ...clearActiveBatteryStrategyRuntime(battery.strategyRuntime),
       lastTriggeredAtByItemId: {
         ...battery.strategyRuntime.lastTriggeredAtByItemId,
         [completedItemId]:
@@ -755,59 +702,15 @@ function logVerbose(enabled: boolean, message: string): void {
     return;
   }
 
-  console.log(`[${new Date().toISOString()}] ${message}`);
+  console.log(`[${formatDaemonLogTimestamp()}] ${message}`);
 }
 
-function describeStrategyPlanItem(
-  item: BatteryStrategyPlanItem | null | undefined,
-): string {
-  if (!item) {
-    return "<none>";
-  }
+function logInfo(message: string): void {
+  console.log(`[${formatDaemonLogTimestamp()}] ${message}`);
+}
 
-  const parts = [
-    `id=${item.id}`,
-    `kind=${item.kind}`,
-    `mode=${item.strategyMode}`,
-  ];
-
-  if (item.triggerKind) {
-    parts.push(`trigger=${item.triggerKind}`);
-  }
-
-  if (item.startTime) {
-    parts.push(`start=${item.startTime}`);
-  }
-
-  if (item.manualState) {
-    parts.push(`state=${item.manualState}`);
-  }
-
-  if (item.targetMethod) {
-    parts.push(`target=${item.targetMethod}`);
-  }
-
-  if (item.targetDurationMinutes !== null) {
-    parts.push(`duration=${item.targetDurationMinutes}m`);
-  }
-
-  if (item.targetEndTime) {
-    parts.push(`end=${item.targetEndTime}`);
-  }
-
-  if (item.manualChargeTargetSoc !== null) {
-    parts.push(`chargeSoc=${item.manualChargeTargetSoc}`);
-  }
-
-  if (item.manualDischargeTargetSoc !== null) {
-    parts.push(`dischargeSoc=${item.manualDischargeTargetSoc}`);
-  }
-
-  if (item.manualPowerW !== null) {
-    parts.push(`powerW=${item.manualPowerW}`);
-  }
-
-  return parts.join(" ");
+function logError(message: string): void {
+  console.error(`[${formatDaemonLogTimestamp()}] ${message}`);
 }
 
 try {
