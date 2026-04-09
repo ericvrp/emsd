@@ -3,6 +3,7 @@
 EMSD is a local energy management system for a single household. The long-term plan is a Bun + TypeScript daemon with an EMS-first command surface, SQLite persistence, and a lower-priority Next.js web UI.
 
 This repository currently contains an initial runnable scaffold:
+
 - `apps/daemon`: daemon that owns and initializes the SQLite database
 - `apps/ems`: EMS command app that currently exposes `battery list`
 - `apps/web`: Next.js app with an under-construction page
@@ -131,5 +132,4 @@ bun run daemon:stop
 - The web app should not gain capabilities before the EMS command app exposes them.
 - Shared reusable domain types belong in `packages/core`.
 
-See `plans/EMSD-plan.md` for the broader product direction and intended delivery phases.
 See `docs/README.md` for the documentation index, including plugin authoring guides.

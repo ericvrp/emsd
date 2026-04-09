@@ -38,7 +38,7 @@ Add a dynamic price information resource, such as Nordpool or Tibber, in a way t
    Cover price source CRUD, validation, and any shared type additions.
 
 9. Plan the first consumer.
-   Make sure the chosen normalized price output will fit future `price sync`, simulation, and dynamic-pricing strategy work from `plans/EMSD-plan.md`.
+   Make sure the chosen normalized price output will fit future `price sync`, simulation, and dynamic-pricing strategy work
 
 ## Good First Scope
 
