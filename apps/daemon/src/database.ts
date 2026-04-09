@@ -1,12 +1,17 @@
 import { Database } from "bun:sqlite";
 import {
+  type BatteryPowerSampleRecord,
   type BatteryRecord,
   type BatteryStrategyRecord,
   type BatteryStrategyRuntimeRecord,
+  type DynamicPriceSampleRecord,
   type DynamicPriceSnapshotRecord,
   type DynamicPriceSourceRecord,
   type ManagedDeviceTelemetryRecord,
   type MeterRecord,
+  type P1MeterSampleRecord,
+  type SolarEnergyProviderSampleRecord,
+  type SolarForecastSampleRecord,
   type SiteRecord,
   type SolarEnergyProviderRecord,
   type WeatherForecastRecord,
@@ -157,48 +162,6 @@ interface SolarEnergyProviderSampleRow {
   observed_at: string;
   power_w: number | null;
   sample_count: number;
-}
-
-export interface DynamicPriceSampleRecord {
-  siteId: string;
-  periodStart: string;
-  generatedAt: string;
-  currency: string;
-  importPrice: number;
-}
-
-export interface SolarForecastSampleRecord {
-  siteId: string;
-  periodStart: string;
-  generatedAt: string;
-  value: number | null;
-  ghiWm2: number | null;
-  airTempC: number | null;
-  cloudOpacityPercent: number | null;
-}
-
-export interface P1MeterSampleRecord {
-  siteId: string;
-  meterId: string;
-  periodStart: string;
-  observedAt: string;
-  powerW: number | null;
-}
-
-export interface BatteryPowerSampleRecord {
-  siteId: string;
-  batteryId: string;
-  periodStart: string;
-  observedAt: string;
-  powerW: number | null;
-}
-
-export interface SolarEnergyProviderSampleRecord {
-  siteId: string;
-  providerId: string;
-  periodStart: string;
-  observedAt: string;
-  powerW: number | null;
 }
 
 const SAMPLE_PERIOD_MINUTES = 15;

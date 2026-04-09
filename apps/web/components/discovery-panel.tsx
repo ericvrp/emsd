@@ -16,7 +16,7 @@ import {
   createMeterFromDiscoveryAction,
   createSolarEnergyProviderFromDiscoveryAction,
 } from "../app/actions";
-import type { SignedDiscoveredDevice } from "../lib/ems-bridge";
+import type { SignedDiscoveredDevice } from "../lib/discovery-proof";
 import { UI_STYLES } from "../lib/ui-colors";
 import { SubmitButton } from "./submit-button";
 

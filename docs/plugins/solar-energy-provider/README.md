@@ -17,7 +17,7 @@ The current real-world target is Enphase residential systems with microinverters
 - `apps/ems/src/managed-site-store.ts`: solar energy provider CRUD
 - `apps/daemon/src/database.ts`: `solar_energy_providers` and `solar_energy_provider_samples`
 - `apps/daemon/src/index.ts`: daemon-owned polling and sample persistence
-- `apps/web/server/ems-web-api.ts`: create from discovery, read normalized info, and delete flows
+- `apps/ems/src/api.ts`: CLI-backed create from discovery, read normalized info, and delete flows for the web backend
 
 ## Enphase Notes
 

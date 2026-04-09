@@ -10,7 +10,10 @@ import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { redirect } from "next/navigation";
 import { authOptions } from "../auth";
 import {
-  type SignedDiscoveredDevice,
+  isSignedDiscoveredDevice,
+  verifySignedDiscoveredDevice,
+} from "../lib/discovery-proof";
+import {
   addAllFromDiscovery,
   createBatteryFromDiscovery,
   createDynamicPriceSource,
@@ -108,7 +111,7 @@ function optionalStringValue(formData: FormData, key: string): string | null {
 function readDiscoveredDevice(
   formData: FormData,
   key: string,
-): SignedDiscoveredDevice {
+): ReturnType<typeof verifySignedDiscoveredDevice> {
   const rawValue = stringValue(formData, key);
   const parsed = JSON.parse(rawValue) as unknown;
 
@@ -116,13 +119,13 @@ function readDiscoveredDevice(
     throw new Error(`Invalid discovered device payload: ${key}`);
   }
 
-  return parsed;
+  return verifySignedDiscoveredDevice(parsed);
 }
 
 function readDiscoveredDeviceList(
   formData: FormData,
   key: string,
-): SignedDiscoveredDevice[] {
+): Array<ReturnType<typeof verifySignedDiscoveredDevice>> {
   const rawValue = stringValue(formData, key);
   const parsed = JSON.parse(rawValue) as unknown;
 
@@ -133,40 +136,7 @@ function readDiscoveredDeviceList(
     throw new Error(`Invalid discovered device list payload: ${key}`);
   }
 
-  return parsed;
-}
-
-function isSignedDiscoveredDevice(
-  value: unknown,
-): value is SignedDiscoveredDevice {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-
-  const candidate = value as Record<string, unknown>;
-
-  return (
-    (candidate.category === "battery" ||
-      candidate.category === "meter" ||
-      candidate.category === "solar-energy-provider") &&
-    typeof candidate.details === "string" &&
-    typeof candidate.discoveryId === "string" &&
-    typeof candidate.ipAddress === "string" &&
-    typeof candidate.model === "string" &&
-    typeof candidate.name === "string" &&
-    typeof candidate.discoveryExpiresAt === "string" &&
-    typeof candidate.discoveryIssuedAt === "string" &&
-    typeof candidate.discoveryProof === "string" &&
-    (typeof candidate.powerW === "number" || candidate.powerW === null) &&
-    (typeof candidate.socPercent === "number" ||
-      candidate.socPercent === null) &&
-    (candidate.state === "idle" ||
-      candidate.state === "charging" ||
-      candidate.state === "discharging" ||
-      candidate.state === "connected" ||
-      candidate.state === "offline" ||
-      candidate.state === null)
-  );
+  return parsed.map((value) => verifySignedDiscoveredDevice(value));
 }
 
 function buildSiteId(name: string, existingSiteIds: string[]): string {

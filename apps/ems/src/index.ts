@@ -1,4 +1,5 @@
 import { EMSD_NAME } from "@emsd/core";
+import { runApiCommand } from "./api";
 import { formatBatteryHelpText, runBatteryCommand } from "./battery";
 import {
   formatHelpText as formatDiscoverHelpText,
@@ -95,6 +96,10 @@ export async function runEms(args = process.argv.slice(2)): Promise<number> {
     }
 
     return runPriceCommand(args.slice(1));
+  }
+
+  if (args[0] === "api") {
+    return runApiCommand(args.slice(1));
   }
 
   console.log(formatHelpText());

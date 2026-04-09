@@ -1,30 +1,34 @@
 import { execFile } from "node:child_process";
-import { resolve } from "node:path";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { promisify } from "node:util";
 import type {
+  BulkDiscoveryAddResult,
   BatteryStrategyPlanRecord,
+  DashboardSnapshot,
   DynamicPriceSnapshotRecord,
-  DynamicPriceSourceRecord,
-  ManagedDeviceRecord,
-  ManagedDeviceStatusRecord,
-  SiteRecord,
-  WeatherForecastRecord,
-  WeatherForecastSourceRecord,
-} from "@emsd/core";
-import type {
-  BatteryPowerSampleRecord,
   DynamicPriceSampleRecord,
+  DynamicPriceSourceRecord,
+  HistoryArchive,
+  LiveStatusSnapshot,
+  ManagedDeviceRecord,
+  SiteRecord,
+  BatteryPowerSampleRecord,
   P1MeterSampleRecord,
   SolarEnergyProviderSampleRecord,
   SolarForecastSampleRecord,
-} from "../../daemon/src/database";
+  WeatherForecastRecord,
+  WeatherForecastSourceRecord,
+} from "@emsd/core";
+import { getRepoRoot as resolveRepoRoot } from "@emsd/core";
 import type {
   DiscoveredDevice,
-  SignedDiscoveredDevice,
 } from "./discovery-proof";
 
 const execFileAsync = promisify(execFile);
-const bridgeScriptPath = resolve(process.cwd(), "server/ems-web-api.ts");
+const repoRootPath = resolveRepoRoot();
+const BRIDGE_MAX_BUFFER_BYTES = 10 * 1024 * 1024;
 
 interface BridgeSuccess<T> {
   ok: true;
@@ -38,97 +42,95 @@ interface BridgeFailure {
 
 type BridgeResponse<T> = BridgeSuccess<T> | BridgeFailure;
 
-export interface DashboardSnapshot {
-  generatedAt: string;
-  sites: Array<
-    SiteRecord & {
-      devices: ManagedDeviceStatusRecord[];
-      dynamicPriceSources: DynamicPriceSourceRecord[];
-      weatherSources: WeatherForecastSourceRecord[];
-    }
-  >;
-}
-
-export interface LiveStatusSnapshot {
-  daemon: {
-    pid: number | null;
-    running: boolean;
-  };
-  generatedAt: string;
-  sites: Array<
-    SiteRecord & {
-      devices: ManagedDeviceStatusRecord[];
-      dynamicPriceSources: DynamicPriceSourceRecord[];
-      weatherSources: WeatherForecastSourceRecord[];
-    }
-  >;
-}
-
-export interface BulkDiscoveryAddResult {
-  addedBatteries: number;
-  addedMeters: number;
-  addedSolarEnergyProviders: number;
-  skippedDevices: number;
-}
-
-export interface HistoryArchive {
-  batteryPowerSamples: BatteryPowerSampleRecord[];
-  dynamicPriceSamples: DynamicPriceSampleRecord[];
-  p1MeterSamples: P1MeterSampleRecord[];
-  siteId: string;
-  solarEnergyProviderSamples: SolarEnergyProviderSampleRecord[];
-  solarForecastSamples: SolarForecastSampleRecord[];
-}
+export type {
+  BatteryPowerSampleRecord,
+  BulkDiscoveryAddResult,
+  DashboardSnapshot,
+  DynamicPriceSampleRecord,
+  HistoryArchive,
+  LiveStatusSnapshot,
+  P1MeterSampleRecord,
+  SolarEnergyProviderSampleRecord,
+  SolarForecastSampleRecord,
+};
 
 async function runBridge<T>(
   action: string,
   input: Record<string, unknown> = {},
 ): Promise<T> {
+  const tempDirectoryPath = mkdtempSync(join(tmpdir(), "emsd-web-bridge-"));
+  const outputFilePath = join(tempDirectoryPath, "response.json");
   let stdout = "";
   let stderr = "";
+  let output = "";
 
   try {
-    const result = await execFileAsync(
-      "bun",
-      ["run", bridgeScriptPath, action, JSON.stringify(input)],
-      {
-        cwd: process.cwd(),
-        env: process.env,
-      },
-    );
+    try {
+      const result = await execFileAsync(
+        "bun",
+        [
+          "run",
+          "ems",
+          "--",
+          "api",
+          action,
+          JSON.stringify(input),
+          outputFilePath,
+        ],
+        {
+          cwd: repoRootPath,
+          env: process.env,
+          maxBuffer: BRIDGE_MAX_BUFFER_BYTES,
+        },
+      );
 
-    stdout = result.stdout;
-    stderr = result.stderr;
-  } catch (error) {
-    stdout =
-      typeof (error as { stdout?: unknown }).stdout === "string"
-        ? (error as { stdout: string }).stdout
-        : "";
-    stderr =
-      typeof (error as { stderr?: unknown }).stderr === "string"
-        ? (error as { stderr: string }).stderr
-        : "";
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } catch (error) {
+      stdout =
+        typeof (error as { stdout?: unknown }).stdout === "string"
+          ? (error as { stdout: string }).stdout
+          : "";
+      stderr =
+        typeof (error as { stderr?: unknown }).stderr === "string"
+          ? (error as { stderr: string }).stderr
+          : "";
 
-    if (!stdout.trim()) {
-      throw error;
+      if (!stdout.trim() && !existsSync(outputFilePath)) {
+        throw error;
+      }
     }
+
+    output = existsSync(outputFilePath)
+      ? readFileSync(outputFilePath, "utf8").trim()
+      : stdout.trim();
+
+    if (!output) {
+      throw new Error(
+        stderr.trim() || `Bridge action '${action}' returned no output.`,
+      );
+    }
+
+    let response: BridgeResponse<T>;
+
+    try {
+      response = JSON.parse(output) as BridgeResponse<T>;
+    } catch (error) {
+      throw new Error(
+        `Bridge action '${action}' returned invalid JSON (${output.length} bytes). ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
+    if (!response.ok) {
+      throw new Error(response.error);
+    }
+
+    return response.data;
+  } finally {
+    rmSync(tempDirectoryPath, { recursive: true, force: true });
   }
-
-  const output = stdout.trim();
-
-  if (!output) {
-    throw new Error(
-      stderr.trim() || `Bridge action '${action}' returned no output.`,
-    );
-  }
-
-  const response = JSON.parse(output) as BridgeResponse<T>;
-
-  if (!response.ok) {
-    throw new Error(response.error);
-  }
-
-  return response.data;
 }
 
 export function getDashboardSnapshot(): Promise<DashboardSnapshot> {
@@ -166,7 +168,7 @@ export function deleteSite(input: { id: string }) {
 }
 
 export function createBatteryFromDiscovery(input: {
-  device: SignedDiscoveredDevice;
+  device: DiscoveredDevice;
   siteId: string;
 }) {
   return runBridge<ManagedDeviceRecord>("battery-create", input);
@@ -218,27 +220,27 @@ export function setBatteryStrategyPlan(input: {
 }
 
 export function createMeterFromDiscovery(input: {
-  device: SignedDiscoveredDevice;
+  device: DiscoveredDevice;
   siteId: string;
 }) {
   return runBridge<ManagedDeviceRecord>("meter-create", input);
 }
 
 export function createSolarEnergyProviderFromDiscovery(input: {
-  device: SignedDiscoveredDevice;
+  device: DiscoveredDevice;
   siteId: string;
 }) {
   return runBridge<ManagedDeviceRecord>("solar-energy-provider-create", input);
 }
 
 export function addAllFromDiscovery(input: {
-  devices: SignedDiscoveredDevice[];
+  devices: DiscoveredDevice[];
   siteId: string;
 }) {
   return runBridge<BulkDiscoveryAddResult>("discovery-add-all", input);
 }
 
-export type { DiscoveredDevice, SignedDiscoveredDevice };
+export type { DiscoveredDevice };
 
 export function setMeterEnabled(input: {
   enabled: boolean;

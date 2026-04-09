@@ -28,7 +28,6 @@ import {
   BarChart,
   Cell,
   ReferenceLine,
-  ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
@@ -53,6 +52,7 @@ import {
 import { UI_CHART_STYLES, UI_COLORS, UI_STYLES } from "../lib/ui-colors";
 import { cn } from "../lib/utils";
 import { DiscoveryPanel } from "./discovery-panel";
+import { MeasuredChartContainer } from "./measured-chart-container";
 import { SubmitButton } from "./submit-button";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader } from "./ui/card";
@@ -648,69 +648,68 @@ function PriceChart({
 
   return (
     <div className="space-y-3">
-      {/* <p className="text-xs leading-5 text-slate-500">
-        Shows the full 15-minute series across today and tomorrow.
-      </p> */}
-      <div className="h-[260px] w-full">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart
-            data={chartPoints}
-            margin={{ top: 16, right: 8, left: 8, bottom: 0 }}
-            barCategoryGap="18%"
-          >
-            <XAxis
-              dataKey="startsAt"
-              tick={UI_CHART_STYLES.axisTick}
-              tickFormatter={formatForecastTimeLabel}
-              axisLine={false}
-              tickLine={false}
-              minTickGap={30}
-            />
-            <YAxis hide domain={[0, "dataMax"]} />
-            <Tooltip
-              content={
-                <SingleSeriesTooltip
-                  formatter={(value) => `${value.toFixed(3)} ${currency}/kWh`}
-                  seriesLabel="Price"
-                />
-              }
-              contentStyle={UI_CHART_STYLES.tooltipContentStyle}
-              itemStyle={{ color: UI_COLORS.priceSection }}
-            />
-            {chartPoints
-              .filter((point) => point.isMidnight)
-              .map((point) => (
-                <ReferenceLine
-                  key={`price-midnight-${point.startsAt}`}
-                  x={point.startsAt}
-                  stroke={UI_COLORS.chartReference}
-                  strokeDasharray="3 5"
-                />
-              ))}
-            {nowPoint ? (
-              <ReferenceLine
-                label={buildNowLabel()}
-                stroke={UI_COLORS.textPrimary}
-                strokeDasharray="4 4"
-                strokeOpacity={0.8}
-                x={nowPoint.startsAt}
+      <MeasuredChartContainer className="h-[260px] min-w-0 w-full">
+        {({ height, width }) => (
+            <BarChart
+              data={chartPoints}
+              height={height}
+              margin={{ top: 16, right: 8, left: 8, bottom: 0 }}
+              barCategoryGap="18%"
+              width={width}
+            >
+              <XAxis
+                dataKey="startsAt"
+                tick={UI_CHART_STYLES.axisTick}
+                tickFormatter={formatForecastTimeLabel}
+                axisLine={false}
+                tickLine={false}
+                minTickGap={30}
               />
-            ) : null}
-            <Bar dataKey="importPrice" radius={[2, 2, 0, 0]} maxBarSize={12}>
-              {chartPoints.map((point) => (
-                <Cell
-                  key={`price-bar-${point.startsAt}`}
-                  fill={
-                    point.isPast
-                      ? `${UI_COLORS.price}59`
-                      : `${UI_COLORS.price}D1`
-                  }
+              <YAxis hide domain={[0, "dataMax"]} />
+              <Tooltip
+                content={
+                  <SingleSeriesTooltip
+                    formatter={(value) => `${value.toFixed(3)} ${currency}/kWh`}
+                    seriesLabel="Price"
+                  />
+                }
+                contentStyle={UI_CHART_STYLES.tooltipContentStyle}
+                itemStyle={{ color: UI_COLORS.priceSection }}
+              />
+              {chartPoints
+                .filter((point) => point.isMidnight)
+                .map((point) => (
+                  <ReferenceLine
+                    key={`price-midnight-${point.startsAt}`}
+                    x={point.startsAt}
+                    stroke={UI_COLORS.chartReference}
+                    strokeDasharray="3 5"
+                  />
+                ))}
+              {nowPoint ? (
+                <ReferenceLine
+                  label={buildNowLabel()}
+                  stroke={UI_COLORS.textPrimary}
+                  strokeDasharray="4 4"
+                  strokeOpacity={0.8}
+                  x={nowPoint.startsAt}
                 />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
+              ) : null}
+              <Bar dataKey="importPrice" radius={[2, 2, 0, 0]} maxBarSize={12}>
+                {chartPoints.map((point) => (
+                  <Cell
+                    key={`price-bar-${point.startsAt}`}
+                    fill={
+                      point.isPast
+                        ? `${UI_COLORS.price}59`
+                        : `${UI_COLORS.price}D1`
+                    }
+                  />
+                ))}
+              </Bar>
+            </BarChart>
+        )}
+      </MeasuredChartContainer>
     </div>
   );
 }
@@ -758,86 +757,88 @@ function ForecastChart({
 
   return (
     <div className="space-y-3">
-      <div className="h-[260px] w-full">
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart
-            data={chartPoints}
-            margin={{ top: 16, right: 8, left: 8, bottom: 0 }}
-          >
-            <defs>
-              <linearGradient id="colorForecast" x1="0" y1="0" x2="0" y2="1">
-                <stop
-                  offset="5%"
-                  stopColor={UI_COLORS.forecast}
-                  stopOpacity={0.3}
-                />
-                <stop
-                  offset="95%"
-                  stopColor={UI_COLORS.forecast}
-                  stopOpacity={0}
-                />
-              </linearGradient>
-            </defs>
-            <XAxis
-              dataKey="periodEnd"
-              tick={UI_CHART_STYLES.axisTick}
-              tickFormatter={formatForecastTimeLabel}
-              axisLine={false}
-              tickLine={false}
-              minTickGap={30}
-            />
-            <YAxis hide domain={[0, "dataMax"]} />
-            <Tooltip
-              content={
-                <SingleSeriesTooltip
-                  formatter={(value) => `${value} ${unitLabel}`}
-                  seriesLabel={metricLabel}
-                />
-              }
-              contentStyle={UI_CHART_STYLES.tooltipContentStyle}
-              itemStyle={{ color: UI_COLORS.forecast }}
-            />
-            {chartPoints
-              .filter((point) => point.isMidnight)
-              .map((point) => (
-                <ReferenceLine
-                  key={`forecast-midnight-${point.periodEnd}`}
-                  x={point.periodEnd}
-                  stroke={UI_COLORS.chartReference}
-                  strokeDasharray="3 5"
-                />
-              ))}
-            {nowPoint ? (
-              <ReferenceLine
-                label={buildNowLabel()}
-                stroke={UI_COLORS.textPrimary}
-                strokeDasharray="4 4"
-                strokeOpacity={0.8}
-                x={nowPoint.periodEnd}
+      <MeasuredChartContainer className="h-[260px] min-w-0 w-full">
+        {({ height, width }) => (
+            <AreaChart
+              data={chartPoints}
+              height={height}
+              margin={{ top: 16, right: 8, left: 8, bottom: 0 }}
+              width={width}
+            >
+              <defs>
+                <linearGradient id="colorForecast" x1="0" y1="0" x2="0" y2="1">
+                  <stop
+                    offset="5%"
+                    stopColor={UI_COLORS.forecast}
+                    stopOpacity={0.3}
+                  />
+                  <stop
+                    offset="95%"
+                    stopColor={UI_COLORS.forecast}
+                    stopOpacity={0}
+                  />
+                </linearGradient>
+              </defs>
+              <XAxis
+                dataKey="periodEnd"
+                tick={UI_CHART_STYLES.axisTick}
+                tickFormatter={formatForecastTimeLabel}
+                axisLine={false}
+                tickLine={false}
+                minTickGap={30}
               />
-            ) : null}
-            <Area
-              type="monotone"
-              dataKey="value"
-              stroke={UI_COLORS.forecast}
-              strokeOpacity={0.35}
-              strokeWidth={3}
-              fillOpacity={0.2}
-              fill="url(#colorForecast)"
-              connectNulls={false}
-            />
-            <Area
-              type="monotone"
-              dataKey="futureValue"
-              stroke={UI_COLORS.forecast}
-              strokeWidth={3}
-              fillOpacity={1}
-              fill="url(#colorForecast)"
-              connectNulls={false}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
+              <YAxis hide domain={[0, "dataMax"]} />
+              <Tooltip
+                content={
+                  <SingleSeriesTooltip
+                    formatter={(value) => `${value} ${unitLabel}`}
+                    seriesLabel={metricLabel}
+                  />
+                }
+                contentStyle={UI_CHART_STYLES.tooltipContentStyle}
+                itemStyle={{ color: UI_COLORS.forecast }}
+              />
+              {chartPoints
+                .filter((point) => point.isMidnight)
+                .map((point) => (
+                  <ReferenceLine
+                    key={`forecast-midnight-${point.periodEnd}`}
+                    x={point.periodEnd}
+                    stroke={UI_COLORS.chartReference}
+                    strokeDasharray="3 5"
+                  />
+                ))}
+              {nowPoint ? (
+                <ReferenceLine
+                  label={buildNowLabel()}
+                  stroke={UI_COLORS.textPrimary}
+                  strokeDasharray="4 4"
+                  strokeOpacity={0.8}
+                  x={nowPoint.periodEnd}
+                />
+              ) : null}
+              <Area
+                type="monotone"
+                dataKey="value"
+                stroke={UI_COLORS.forecast}
+                strokeOpacity={0.35}
+                strokeWidth={3}
+                fillOpacity={0.2}
+                fill="url(#colorForecast)"
+                connectNulls={false}
+              />
+              <Area
+                type="monotone"
+                dataKey="futureValue"
+                stroke={UI_COLORS.forecast}
+                strokeWidth={3}
+                fillOpacity={1}
+                fill="url(#colorForecast)"
+                connectNulls={false}
+              />
+            </AreaChart>
+        )}
+      </MeasuredChartContainer>
     </div>
   );
 }

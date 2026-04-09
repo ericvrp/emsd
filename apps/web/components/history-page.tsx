@@ -17,7 +17,6 @@ import {
   Line,
   LineChart,
   ReferenceLine,
-  ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
@@ -27,6 +26,7 @@ import type { HistoryArchive } from "../lib/ems-bridge";
 import { UI_CHART_STYLES, UI_COLORS, UI_STYLES } from "../lib/ui-colors";
 import { cn } from "../lib/utils";
 import { DateSelect } from "./date-select";
+import { MeasuredChartContainer } from "./measured-chart-container";
 import { Card, CardContent, CardHeader } from "./ui/card";
 
 type HistoryTab =
@@ -393,11 +393,13 @@ function CombinedHistoryChart({
         <LegendChip color={UI_COLORS.gridImport} label="Take from grid" />
         <LegendChip color={UI_COLORS.gridExport} label="Return to grid" />
       </div>
-      <div className="h-[360px] w-full">
-        <ResponsiveContainer width="100%" height="100%">
+      <MeasuredChartContainer className="h-[360px] min-w-0 w-full">
+        {({ height, width }) => (
           <LineChart
             data={points}
+            height={height}
             margin={{ top: 12, right: 16, bottom: 0, left: 0 }}
+            width={width}
           >
             <CartesianGrid
               stroke={UI_COLORS.chartGrid}
@@ -598,8 +600,8 @@ function CombinedHistoryChart({
               />
             ) : null}
           </LineChart>
-        </ResponsiveContainer>
-      </div>
+        )}
+      </MeasuredChartContainer>
     </div>
   );
 }
@@ -638,11 +640,13 @@ export function SingleValueHistoryChart({
       <div className="flex flex-wrap gap-2 text-xs font-medium text-slate-300">
         <LegendChip color={accentColor} label={label} />
       </div>
-      <div className="h-[360px] w-full">
-        <ResponsiveContainer width="100%" height="100%">
+      <MeasuredChartContainer className="h-[360px] min-w-0 w-full">
+        {({ height, width }) => (
           <AreaChart
             data={points}
+            height={height}
             margin={{ top: 12, right: 16, bottom: 0, left: 0 }}
+            width={width}
           >
             <defs>
               <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
@@ -711,8 +715,8 @@ export function SingleValueHistoryChart({
               type="monotone"
             />
           </AreaChart>
-        </ResponsiveContainer>
-      </div>
+        )}
+      </MeasuredChartContainer>
     </div>
   );
 }
@@ -760,11 +764,13 @@ export function SignedHistoryChart({
         <LegendChip color={positiveColor} label={positiveLabel} />
         <LegendChip color={negativeColor} label={negativeLabel} />
       </div>
-      <div className="h-[360px] w-full">
-        <ResponsiveContainer width="100%" height="100%">
+      <MeasuredChartContainer className="h-[360px] min-w-0 w-full">
+        {({ height, width }) => (
           <AreaChart
             data={points}
+            height={height}
             margin={{ top: 12, right: 16, bottom: 0, left: 0 }}
+            width={width}
           >
             <defs>
               <linearGradient
@@ -917,8 +923,8 @@ export function SignedHistoryChart({
               type="monotone"
             />
           </AreaChart>
-        </ResponsiveContainer>
-      </div>
+        )}
+      </MeasuredChartContainer>
     </div>
   );
 }

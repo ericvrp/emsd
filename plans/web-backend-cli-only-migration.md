@@ -18,6 +18,7 @@ Ensure `apps/web` reaches daemon-backed functionality only through the EMS CLI s
 - `apps/web` does not import from `apps/daemon/src/*`.
 - `apps/web` does not import from `apps/ems/src/*` internals.
 - All server-side web actions use stable CLI commands that return structured JSON.
+- Shared request/response schemas, validators, and types live in `packages/core` when they are used across daemon, EMS, and web.
 - Database ownership remains with the daemon; the web app never opens the database file directly.
 
 ## Proposed Approach
@@ -38,6 +39,8 @@ Add the missing read and control capabilities to the EMS CLI first, then switch 
 ### 2. Define a CLI contract for web consumption
 
 - Decide on a consistent machine-readable output format for CLI commands, likely JSON only for web-facing commands.
+- Define shared `zod` schemas for CLI inputs and outputs where the same contract is used across layers.
+- Keep those shared schemas and derived TypeScript types in `packages/core` rather than duplicating them in `apps/web` or `apps/daemon`.
 - Prefer extending existing command groups such as `site`, `battery`, `meter`, `weather`, and `price` before inventing new top-level groups.
 - Add dedicated read-side commands for data the web needs but the CLI does not currently expose, for example:
   - dashboard snapshot or equivalent site/device/status listing
@@ -64,7 +67,7 @@ Add the missing read and control capabilities to the EMS CLI first, then switch 
 - Replace `apps/web/lib/ems-bridge.ts` execution of `server/ems-web-api.ts` with direct `bun run ems -- ...` calls.
 - Keep the bridge thin: build args, execute the CLI, parse JSON, surface errors.
 - Remove type imports in `apps/web` that come from daemon internals.
-- If shared response types are needed by both web and EMS, move them into `packages/core`.
+- Move any shared response types and `zod` schemas needed by web, EMS, and daemon into `packages/core`.
 
 ### 6. Remove the custom web bridge implementation
 
@@ -103,7 +106,7 @@ Add the missing read and control capabilities to the EMS CLI first, then switch 
 
 - CLI output intended for humans may conflict with structured web parsing unless JSON output is explicitly standardized.
 - Some current web bridge actions combine multiple internal operations; those may need carefully designed CLI commands rather than a one-to-one port.
-- If response types currently depend on daemon-only types, shared contracts may need to move into `packages/core`.
+- If response types currently depend on daemon-only types, shared contracts and `zod` schemas may need to move into `packages/core`.
 - Refresh commands that currently use direct polling against the database may need a clearer CLI-side completion model.
 
 ## Done When

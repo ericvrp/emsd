@@ -711,12 +711,89 @@ export interface ManagedDeviceStatusRecord extends ManagedDeviceRecord {
   telemetry: ManagedDeviceTelemetryRecord | null;
 }
 
+export interface DynamicPriceSampleRecord {
+  siteId: string;
+  periodStart: string;
+  generatedAt: string;
+  currency: string;
+  importPrice: number;
+}
+
+export interface SolarForecastSampleRecord {
+  siteId: string;
+  periodStart: string;
+  generatedAt: string;
+  value: number | null;
+  ghiWm2: number | null;
+  airTempC: number | null;
+  cloudOpacityPercent: number | null;
+}
+
+export interface P1MeterSampleRecord {
+  siteId: string;
+  meterId: string;
+  periodStart: string;
+  observedAt: string;
+  powerW: number | null;
+}
+
+export interface BatteryPowerSampleRecord {
+  siteId: string;
+  batteryId: string;
+  periodStart: string;
+  observedAt: string;
+  powerW: number | null;
+}
+
+export interface SolarEnergyProviderSampleRecord {
+  siteId: string;
+  providerId: string;
+  periodStart: string;
+  observedAt: string;
+  powerW: number | null;
+}
+
+export interface DashboardSiteRecord extends SiteRecord {
+  devices: ManagedDeviceStatusRecord[];
+  dynamicPriceSources: DynamicPriceSourceRecord[];
+  weatherSources: WeatherForecastSourceRecord[];
+}
+
+export interface DashboardSnapshot {
+  generatedAt: string;
+  sites: DashboardSiteRecord[];
+}
+
+export interface LiveStatusSnapshot extends DashboardSnapshot {
+  daemon: {
+    pid: number | null;
+    running: boolean;
+  };
+}
+
+export interface BulkDiscoveryAddResult {
+  addedBatteries: number;
+  addedMeters: number;
+  addedSolarEnergyProviders: number;
+  skippedDevices: number;
+}
+
+export interface HistoryArchive {
+  batteryPowerSamples: BatteryPowerSampleRecord[];
+  dynamicPriceSamples: DynamicPriceSampleRecord[];
+  p1MeterSamples: P1MeterSampleRecord[];
+  siteId: string;
+  solarEnergyProviderSamples: SolarEnergyProviderSampleRecord[];
+  solarForecastSamples: SolarForecastSampleRecord[];
+}
+
 export function getRepoRoot(): string {
   if (process.env.EMSD_REPO_ROOT) {
     return resolve(process.env.EMSD_REPO_ROOT);
   }
 
-  return resolve(fileURLToPath(new URL(".", import.meta.url)), "../../../");
+  const modulePath = fileURLToPath(import.meta.url);
+  return resolve(dirname(modulePath), "../../..");
 }
 
 export function getDatabasePath(): string {
