@@ -1,125 +1,71 @@
-import type { WeatherForecastPointRecord, WeatherProvider } from "@emsd/core";
-import type { WeatherForecastRequest, WeatherPlugin } from "./index";
-import {
-  createWeatherForecastRecord,
-  normalizeWeatherForecastPoints,
-  parseNullableNumber,
-  parseSiteCoordinates,
-} from "./index";
+# Solar Forecast Plugins
 
-const OPEN_METEO_BASE_URL = "https://api.open-meteo.com/v1/forecast";
-const OPEN_METEO_PROVIDER: WeatherProvider = "open-meteo";
+## Goal
 
-interface OpenMeteoResponse {
-  hourly?: {
-    cloud_cover?: Array<number | null>;
-    global_tilted_irradiance?: Array<number | null>;
-    shortwave_radiation?: Array<number | null>;
-    temperature_2m?: Array<number | null>;
-    time?: string[];
-  };
-  minutely_15?: {
-    cloud_cover?: Array<number | null>;
-    global_tilted_irradiance?: Array<number | null>;
-    shortwave_radiation?: Array<number | null>;
-    temperature_2m?: Array<number | null>;
-    time?: string[];
-  };
-}
+Add or extend a forecast provider that gives EMSD a normalized forward-looking solar signal for scheduling, simulation, and dashboard use.
 
-export const openMeteoWeatherPlugin: WeatherPlugin = {
-  id: OPEN_METEO_PROVIDER,
-  name: "Open-Meteo",
-  async fetchForecast(input: WeatherForecastRequest) {
-    const { latitude, longitude } = parseSiteCoordinates(input.site);
-    const use15Minute = input.periodMinutes <= 15;
-    const response = await fetch(
-      buildOpenMeteoUrl({
-        hours: input.hours,
-        latitude,
-        longitude,
-        use15Minute,
-      }),
-      { headers: { accept: "application/json" } },
-    );
+In the current codebase, these sources are managed through `weather` commands and shared `Weather*` types, even though the product-facing purpose is solar forecasting.
 
-    if (!response.ok) {
-      throw new Error(
-        `Open-Meteo forecast request failed with HTTP ${response.status}: ${await response.text()}`,
-      );
-    }
+## Current Supported Provider
 
-    const payload = (await response.json()) as OpenMeteoResponse;
-    const points = normalizeWeatherForecastPoints(
-      mapOpenMeteoPoints(payload, use15Minute),
-    );
+- `open-meteo`
 
-    return createWeatherForecastRecord(input, {
-      metricLabel: "Ground sunlight",
-      periodMinutes: use15Minute ? 15 : 60,
-      points,
-      provider: OPEN_METEO_PROVIDER,
-      providerLabel: this.name,
-      sourceName: input.source?.name ?? this.name,
-      unitLabel: "W/m²",
-    });
-  },
-};
+## Current Touchpoints
 
-function buildOpenMeteoUrl(input: {
-  hours: number;
-  latitude: number;
-  longitude: number;
-  use15Minute: boolean;
-}): string {
-  const params = new URLSearchParams({
-    latitude: input.latitude.toFixed(6),
-    longitude: input.longitude.toFixed(6),
-    timezone: "GMT",
-  });
+- `packages/core/src/index.ts`: `WeatherForecastSourceRecord`, `WeatherForecastRecord`, and `WeatherForecastPointRecord`
+- `apps/ems/src/plugins/solar-forecast/`: provider-specific forecast fetching and normalization
+- `apps/ems/src/weather.ts`: source list, add, update, and remove commands
+- `apps/ems/src/managed-site-store.ts`: weather source CRUD
+- `apps/daemon/src/database.ts`: `weather_sources`, `weather_forecasts`, and `solar_forecast_samples`
+- `apps/daemon/src/index.ts`: daemon refresh loop for forecast snapshots and samples
 
-  if (input.use15Minute) {
-    params.set(
-      "minutely_15",
-      "shortwave_radiation,temperature_2m,cloud_cover",
-    );
-    params.set(
-      "forecast_minutely_15",
-      String(Math.max(1, Math.min(16 * 24 * 4, input.hours * 4))),
-    );
-  } else {
-    params.set(
-      "hourly",
-      "shortwave_radiation,temperature_2m,cloud_cover",
-    );
-    params.set(
-      "forecast_hours",
-      String(Math.max(1, Math.min(16 * 24, input.hours))),
-    );
-  }
+## Open-Meteo Notes
 
-  return `${OPEN_METEO_BASE_URL}?${params.toString()}`;
-}
+- The current provider is `open-meteo`.
+- It uses site GPS coordinates from `SiteRecord.location`.
+- It returns normalized points with `ghiWm2`, `airTempC`, `cloudOpacityPercent`, `period`, and `periodEnd`.
+- EMSD currently requests `shortwave_radiation`, `temperature_2m`, and `cloud_cover`.
+- The implementation uses 15-minute data for requests at `15` minutes or below and hourly data otherwise.
 
-function mapOpenMeteoPoints(
-  payload: OpenMeteoResponse,
-  use15Minute: boolean,
-): WeatherForecastPointRecord[] {
-  const bucket = use15Minute ? payload.minutely_15 : payload.hourly;
-  const times = bucket?.time ?? [];
+For provider-specific details, see `docs/reference/solar-forecast/open-meteo.md`.
 
-  return times.map((periodEnd, index) => {
-    const temperature = parseNullableNumber(bucket?.temperature_2m?.[index]);
-    const cloudOpacity = parseNullableNumber(bucket?.cloud_cover?.[index]);
-    const ghi = parseNullableNumber(bucket?.shortwave_radiation?.[index]);
+## Implementation Steps
 
-    return {
-      airTempC: temperature,
-      cloudOpacityPercent: cloudOpacity,
-      ghiWm2: ghi,
-      period: use15Minute ? "PT15M" : "PT60M",
-      periodEnd: `${periodEnd}:00Z`.replace("+00:00:00Z", "+00:00"),
-      value: ghi,
-    };
-  });
-}
+1. Lock down the forecast contract.
+   Decide what downstream code actually needs from the provider, such as irradiance, forecast interval, and timestamp boundaries.
+
+2. Keep the managed source record small.
+   Persist source identity and durable provider settings in `weather_sources`. Forecast snapshots and derived samples remain daemon-owned runtime data.
+
+3. Reuse the normalized point shape first.
+   Map provider output into `WeatherForecastPointRecord` before adding new shared fields. Add new shared fields only when they are required across process boundaries.
+
+4. Validate site coordinates early.
+   Forecast plugins should fail clearly when a site does not have a usable `latitude, longitude` location string.
+
+5. Keep provider-specific payload handling inside the plugin module.
+   Parse raw API responses in `apps/ems/src/plugins/solar-forecast/` and return normalized forecast records to the rest of the system.
+
+6. Keep refresh and retention daemon-owned.
+   Periodic sync, retries, snapshot writes, and time-series storage belong in the daemon.
+
+7. Add targeted tests.
+   Cover coordinate parsing, response normalization, malformed payload handling, and provider-specific interval logic.
+
+8. Verify the forecast is usable by downstream consumers.
+   Confirm the stored output works for daemon refresh, history views, and future strategy work.
+
+## Suggested Test Scope
+
+- `apps/ems/src/weather.test.ts`: CLI parsing and weather source CRUD
+- plugin tests under `apps/ems/src/plugins/solar-forecast/` or nearby EMS tests for normalization and provider errors
+- `apps/daemon/src/database.test.ts`: only if forecast persistence changes
+- `packages/core/src/index.test.ts`: only if shared weather types or helpers change
+
+## Definition Of Done
+
+- A forecast source can be added, listed, updated, and removed through EMS.
+- The provider returns normalized forecast points for a valid site.
+- The daemon can refresh and persist forecast output.
+- Provider failures are actionable.
+- Tests cover the new or changed provider behavior.

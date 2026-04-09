@@ -2,10 +2,7 @@
   "name": "emsd",
   "version": "0.1.0",
   "private": true,
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
+  "workspaces": ["apps/*", "packages/*"],
   "scripts": {
     "build": "bun run build:core && bun run build:daemon && bun run build:ems && bun run web:build",
     "build:core": "bun run --cwd packages/core build",
@@ -26,7 +23,7 @@
     "daemon:start": "bun run scripts/start-daemon.ts",
     "daemon:stop": "bun run scripts/stop-daemon.ts",
     "daemon:start:pm2": "pm2 start ecosystem.config.cjs --only emsd",
-    "daemon:restart:pm2": "pm2 restart ecosystem.config.cjs --only emsd",
+    "daemon:restart:pm2": "pm2 restart ecosystem.config.cjs --only emsd --update-env",
     "daemon:stop:pm2": "pm2 delete emsd",
     "daemon:logs:pm2": "pm2 logs emsd",
     "ems": "bun run --cwd apps/ems ems --",

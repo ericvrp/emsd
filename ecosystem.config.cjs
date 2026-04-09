@@ -11,6 +11,8 @@ module.exports = {
       instances: 1,
       env: {
         EMSD_REPO_ROOT: __dirname,
+        ENPHASE_ENLIGHTEN_USERNAME: process.env.ENPHASE_ENLIGHTEN_USERNAME,
+        ENPHASE_ENLIGHTEN_PASSWORD: process.env.ENPHASE_ENLIGHTEN_PASSWORD,
       },
     },
   ],

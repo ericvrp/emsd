@@ -1,13 +1,13 @@
 import { formatManagedDeviceState } from "@emsd/core";
 import { BatteryCharging, Zap } from "lucide-react";
-import {
-  getBatteryNormalizedInfo,
-} from "../lib/ems-bridge";
 import { UI_STYLES } from "../lib/ui-colors";
 import { BatteryStrategyDialog } from "./battery-strategy-dialog";
-import { loadDashboardPageData, type SearchParams } from "./dashboard-page-data";
-import { DashboardPageFrame } from "./dashboard-page-frame";
 import { DaemonOfflineState } from "./daemon-offline-state";
+import {
+  type SearchParams,
+  loadDashboardPageData,
+} from "./dashboard-page-data";
+import { DashboardPageFrame } from "./dashboard-page-frame";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 
 export async function StatusScreen({
@@ -21,39 +21,15 @@ export async function StatusScreen({
     return <DaemonOfflineState />;
   }
 
-  const {
-    currentSite,
-    generatedAt,
-  } = dashboardData;
+  const { currentSite, generatedAt } = dashboardData;
 
   const batteries = currentSite
     ? currentSite.devices.filter((device) => device.kind === "battery")
     : [];
   const currentSiteId = currentSite?.id ?? null;
 
-  const normalizedBatteryInfoById = new Map<
-    string,
-    Awaited<ReturnType<typeof getBatteryNormalizedInfo>>
-  >(
-    await Promise.all(
-      batteries.map(
-        async (battery) =>
-          [
-            battery.id,
-            await getBatteryNormalizedInfo({
-              id: battery.id,
-              siteId: currentSiteId ?? "",
-            }),
-          ] as const,
-      ),
-    ),
-  );
-
   return (
-    <DashboardPageFrame
-      currentSite={currentSite}
-      generatedAt={generatedAt}
-    >
+    <DashboardPageFrame currentSite={currentSite} generatedAt={generatedAt}>
       {currentSite === null ? (
         <Card className="border-white/12 bg-slate-950/70">
           <CardContent className="px-6 py-10 text-center sm:px-8 sm:py-12">
@@ -78,8 +54,6 @@ export async function StatusScreen({
             const currentState = battery.telemetry?.state ?? battery.state;
             const currentPower = battery.telemetry?.powerW ?? null;
             const socPercent = battery.telemetry?.socPercent ?? null;
-            const capacityWh =
-              normalizedBatteryInfoById.get(battery.id)?.capacityWh ?? null;
 
             return (
               <Card
@@ -97,7 +71,7 @@ export async function StatusScreen({
                       batteryId={battery.id}
                       batteryName={battery.name}
                       className="shrink-0 self-start px-3 sm:px-4"
-                      capacityWh={capacityWh}
+                      capacityWh={null}
                       currentSocPercent={socPercent}
                       minimumDischargePercent={
                         battery.minimumDischargePercent ?? 10

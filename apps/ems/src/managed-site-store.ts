@@ -9,6 +9,7 @@ import {
   type DynamicPriceSourceRecord,
   type MeterRecord,
   type SiteRecord,
+  type SolarEnergyProviderRecord,
   type WeatherForecastSourceRecord,
   type WeatherForecastSurface,
   type WeatherProvider,
@@ -62,6 +63,17 @@ const METER_REQUIRED_COLUMNS = [
   "enabled",
   "connected",
   "details",
+  "updated_at",
+];
+const SOLAR_ENERGY_PROVIDER_REQUIRED_COLUMNS = [
+  "id",
+  "site_id",
+  "name",
+  "plugin",
+  "ip_address",
+  "enabled",
+  "connected",
+  "serial_number",
   "updated_at",
 ];
 const WEATHER_SOURCE_REQUIRED_COLUMNS = [
@@ -125,6 +137,18 @@ interface MeterRow {
   updated_at: string;
 }
 
+interface SolarEnergyProviderRow {
+  id: string;
+  site_id: string;
+  name: string;
+  plugin: string;
+  ip_address: string;
+  enabled: number;
+  connected: number;
+  serial_number: string | null;
+  updated_at: string;
+}
+
 interface SourceRow {
   home_id: string | null;
   id: string;
@@ -179,6 +203,16 @@ interface CreateMeterInput {
   enabled?: boolean;
   connected?: boolean;
   details?: string;
+}
+
+interface CreateSolarEnergyProviderInput {
+  id: string;
+  name: string;
+  plugin: string;
+  ipAddress: string;
+  enabled?: boolean;
+  connected?: boolean;
+  serialNumber?: string | null;
 }
 
 interface CreateSiteInput {
@@ -389,6 +423,36 @@ export function listMeters(
   }
 }
 
+export function listSolarEnergyProviders(
+  siteId: string,
+  databasePath = getDatabasePath(),
+): SolarEnergyProviderRecord[] {
+  assertKnownSiteId(siteId, databasePath);
+
+  if (!existsSync(databasePath)) {
+    return [];
+  }
+
+  const db = new Database(databasePath, { readonly: true });
+
+  try {
+    if (
+      !hasTable(db, "solar_energy_providers") ||
+      !hasColumns(
+        db,
+        "solar_energy_providers",
+        SOLAR_ENERGY_PROVIDER_REQUIRED_COLUMNS,
+      )
+    ) {
+      return [];
+    }
+
+    return readSolarEnergyProviders(db, siteId);
+  } finally {
+    db.close();
+  }
+}
+
 export function createBattery(
   input: CreateBatteryInput,
   siteId: string,
@@ -516,6 +580,90 @@ export function createMeter(
   }
 }
 
+export function createSolarEnergyProvider(
+  input: CreateSolarEnergyProviderInput,
+  siteId: string,
+  databasePath = getDatabasePath(),
+): SolarEnergyProviderRecord {
+  assertKnownSiteId(siteId, databasePath);
+  const db = openWritableDatabase(databasePath);
+
+  try {
+    assertWritableSchema(
+      db,
+      databasePath,
+      "solar_energy_providers",
+      SOLAR_ENERGY_PROVIDER_REQUIRED_COLUMNS,
+    );
+    const now = new Date().toISOString();
+    const columns = getTableColumns(db, "solar_energy_providers");
+    const usesLegacyColumns =
+      columns.includes("model") && columns.includes("details");
+
+    if (usesLegacyColumns) {
+      db.query(
+        `
+          INSERT INTO solar_energy_providers (
+            id,
+            site_id,
+            name,
+            plugin,
+            model,
+            ip_address,
+            enabled,
+            connected,
+            details,
+            serial_number,
+            updated_at
+          ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+        `,
+      ).run(
+        input.id,
+        siteId,
+        input.name,
+        input.plugin,
+        input.plugin,
+        input.ipAddress,
+        input.enabled === false ? 0 : 1,
+        input.connected === false ? 0 : 1,
+        input.serialNumber ? `serial ${input.serialNumber}` : "",
+        input.serialNumber ?? null,
+        now,
+      );
+    } else {
+      db.query(
+        `
+          INSERT INTO solar_energy_providers (
+            id,
+            site_id,
+            name,
+            plugin,
+            ip_address,
+            enabled,
+            connected,
+            serial_number,
+            updated_at
+          ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+        `,
+      ).run(
+        input.id,
+        siteId,
+        input.name,
+        input.plugin,
+        input.ipAddress,
+        input.enabled === false ? 0 : 1,
+        input.connected === false ? 0 : 1,
+        input.serialNumber ?? null,
+        now,
+      );
+    }
+
+    return getSolarEnergyProviderByIdOrThrow(db, input.id, siteId);
+  } finally {
+    db.close();
+  }
+}
+
 export function setBatteryEnabled(
   id: string,
   enabled: boolean,
@@ -573,6 +721,37 @@ export function getBattery(
     }
 
     return getBatteryById(db, id, siteId);
+  } finally {
+    db.close();
+  }
+}
+
+export function getSolarEnergyProvider(
+  id: string,
+  siteId: string,
+  databasePath = getDatabasePath(),
+): SolarEnergyProviderRecord | null {
+  assertKnownSiteId(siteId, databasePath);
+
+  if (!existsSync(databasePath)) {
+    return null;
+  }
+
+  const db = new Database(databasePath, { readonly: true });
+
+  try {
+    if (
+      !hasTable(db, "solar_energy_providers") ||
+      !hasColumns(
+        db,
+        "solar_energy_providers",
+        SOLAR_ENERGY_PROVIDER_REQUIRED_COLUMNS,
+      )
+    ) {
+      return null;
+    }
+
+    return getSolarEnergyProviderById(db, id, siteId);
   } finally {
     db.close();
   }
@@ -817,6 +996,36 @@ export function deleteMeter(
       id,
       siteId,
     );
+    return existing;
+  } finally {
+    db.close();
+  }
+}
+
+export function deleteSolarEnergyProvider(
+  id: string,
+  siteId: string,
+  databasePath = getDatabasePath(),
+): SolarEnergyProviderRecord | null {
+  assertKnownSiteId(siteId, databasePath);
+  const db = openWritableDatabase(databasePath);
+
+  try {
+    assertWritableSchema(
+      db,
+      databasePath,
+      "solar_energy_providers",
+      SOLAR_ENERGY_PROVIDER_REQUIRED_COLUMNS,
+    );
+    const existing = getSolarEnergyProviderById(db, id, siteId);
+
+    if (!existing) {
+      return null;
+    }
+
+    db.query(
+      "DELETE FROM solar_energy_providers WHERE id = ?1 AND site_id = ?2",
+    ).run(id, siteId);
     return existing;
   } finally {
     db.close();
@@ -1197,6 +1406,22 @@ function ensureSchema(db: Database): void {
     );
   `);
   db.exec(`
+    CREATE TABLE IF NOT EXISTS solar_energy_providers (
+      id TEXT PRIMARY KEY,
+      site_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      plugin TEXT NOT NULL,
+      ip_address TEXT NOT NULL,
+      enabled INTEGER NOT NULL,
+      connected INTEGER NOT NULL,
+      serial_number TEXT,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY(site_id) REFERENCES sites(id),
+      UNIQUE(site_id, plugin, ip_address)
+    );
+  `);
+  ensureSolarEnergyProviderColumns(db);
+  db.exec(`
     CREATE TABLE IF NOT EXISTS weather_sources (
       id TEXT PRIMARY KEY,
       site_id TEXT NOT NULL,
@@ -1360,6 +1585,47 @@ function ensureWeatherSourceColumns(db: Database): void {
   `);
 }
 
+function ensureSolarEnergyProviderColumns(db: Database): void {
+  if (!hasTable(db, "solar_energy_providers")) {
+    return;
+  }
+
+  const columns = getTableColumns(db, "solar_energy_providers");
+
+  if (!columns.includes("plugin")) {
+    db.exec(
+      "ALTER TABLE solar_energy_providers ADD COLUMN plugin TEXT NOT NULL DEFAULT 'enphase-local';",
+    );
+  }
+
+  if (!columns.includes("serial_number")) {
+    db.exec(
+      "ALTER TABLE solar_energy_providers ADD COLUMN serial_number TEXT;",
+    );
+
+    if (columns.includes("details")) {
+      db.exec(`
+        UPDATE solar_energy_providers
+        SET serial_number = NULLIF(
+          TRIM(
+            SUBSTR(
+              details,
+              INSTR(details, 'serial ') + LENGTH('serial '),
+              CASE
+                WHEN INSTR(SUBSTR(details, INSTR(details, 'serial ') + LENGTH('serial ')), ',') > 0
+                  THEN INSTR(SUBSTR(details, INSTR(details, 'serial ') + LENGTH('serial ')), ',') - 1
+                ELSE LENGTH(details)
+              END
+            )
+          ),
+          ''
+        )
+        WHERE details LIKE '%serial %' AND (serial_number IS NULL OR serial_number = '')
+      `);
+    }
+  }
+}
+
 function normalizeWeatherProvider(
   provider: WeatherProvider | null | undefined,
 ): WeatherProvider {
@@ -1477,8 +1743,14 @@ function deleteLinkedSiteResources(db: Database, siteId: string): void {
     "device_telemetry",
     "weather_forecasts",
     "dynamic_price_snapshots",
+    "dynamic_price_samples",
+    "solar_forecast_samples",
+    "p1_meter_samples",
+    "battery_power_samples",
+    "solar_energy_provider_samples",
     "batteries",
     "meters",
+    "solar_energy_providers",
     "weather_sources",
     "dynamic_price_sources",
   ] as const;
@@ -1587,6 +1859,23 @@ function readMeters(db: Database, siteId: string): MeterRecord[] {
     .map(mapMeterRow);
 }
 
+function readSolarEnergyProviders(
+  db: Database,
+  siteId: string,
+): SolarEnergyProviderRecord[] {
+  return db
+    .query<SolarEnergyProviderRow, [string]>(
+      `
+        SELECT id, site_id, name, plugin, ip_address, enabled, connected, serial_number, updated_at
+        FROM solar_energy_providers
+        WHERE site_id = ?1
+        ORDER BY name ASC, id ASC
+      `,
+    )
+    .all(siteId)
+    .map(mapSolarEnergyProviderRow);
+}
+
 type SourceRecord = WeatherForecastSourceRecord | DynamicPriceSourceRecord;
 
 function readSources(
@@ -1685,6 +1974,24 @@ function getMeterById(
   return row ? mapMeterRow(row) : null;
 }
 
+function getSolarEnergyProviderById(
+  db: Database,
+  id: string,
+  siteId: string,
+): SolarEnergyProviderRecord | null {
+  const row = db
+    .query<SolarEnergyProviderRow, [string, string]>(
+      `
+        SELECT id, site_id, name, plugin, ip_address, enabled, connected, serial_number, updated_at
+        FROM solar_energy_providers
+        WHERE id = ?1 AND site_id = ?2
+      `,
+    )
+    .get(id, siteId);
+
+  return row ? mapSolarEnergyProviderRow(row) : null;
+}
+
 function getSourceById(
   db: Database,
   tableName: "weather_sources" | "dynamic_price_sources",
@@ -1746,6 +2053,22 @@ function getMeterByIdOrThrow(
   }
 
   return meter;
+}
+
+function getSolarEnergyProviderByIdOrThrow(
+  db: Database,
+  id: string,
+  siteId: string,
+): SolarEnergyProviderRecord {
+  const provider = getSolarEnergyProviderById(db, id, siteId);
+
+  if (!provider) {
+    throw new Error(
+      `Managed solar energy provider not found after write: ${id}`,
+    );
+  }
+
+  return provider;
 }
 
 function getSourceByIdOrThrow(
@@ -1820,6 +2143,22 @@ function mapMeterRow(row: MeterRow): MeterRecord {
     enabled: row.enabled === 1,
     connected: row.connected === 1,
     details: row.details,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapSolarEnergyProviderRow(
+  row: SolarEnergyProviderRow,
+): SolarEnergyProviderRecord {
+  return {
+    id: row.id,
+    siteId: row.site_id,
+    name: row.name,
+    plugin: row.plugin,
+    ipAddress: row.ip_address,
+    enabled: row.enabled === 1,
+    connected: row.connected === 1,
+    serialNumber: row.serial_number,
     updatedAt: row.updated_at,
   };
 }

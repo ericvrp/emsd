@@ -9,8 +9,8 @@ import {
   type ManagedDeviceStatusRecord,
   type ManagedDeviceTelemetryRecord,
   type MeterRecord,
-  type NormalizedBatteryInfo,
   type SiteRecord,
+  type SolarEnergyProviderRecord,
   type WeatherForecastRecord,
   type WeatherForecastSourceRecord,
   getDaemonLockPath,
@@ -25,6 +25,8 @@ import {
   readManagedDeviceTelemetry,
   readP1MeterSamples,
   readSites,
+  readSolarEnergyProviderSamples,
+  readSolarEnergyProviders,
   readSolarForecastSamples,
   readWeatherForecast,
   readWeatherForecastSources,
@@ -41,17 +43,20 @@ import {
   createDynamicPriceSource,
   createMeter,
   createSite,
+  createSolarEnergyProvider,
   createWeatherForecastSource,
   deleteBattery,
   deleteDynamicPriceSource,
   deleteMeter,
   deleteSite,
+  deleteSolarEnergyProvider,
   deleteWeatherForecastSource,
   getBattery,
   listBatteries,
   listDynamicPriceSources,
   listMeters,
   listSites,
+  listSolarEnergyProviders,
   listWeatherForecastSources,
   setBatteryEnabled,
   setBatteryMinimumDischargePercent,
@@ -62,6 +67,10 @@ import {
   updateSite,
   updateWeatherForecastSource,
 } from "../../ems/src/managed-site-store";
+import {
+  type SignedDiscoveredDevice,
+  verifySignedDiscoveredDevice,
+} from "../lib/discovery-proof";
 
 interface BridgeSuccess<T> {
   ok: true;
@@ -110,6 +119,58 @@ function optionalString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function readSignedDiscoveredDevice(value: unknown): DiscoveredDevice {
+  if (!isSignedDiscoveredDevice(value)) {
+    throw new Error("Invalid discovered device payload.");
+  }
+
+  return verifySignedDiscoveredDevice(value);
+}
+
+function readSignedDiscoveredDeviceList(value: unknown): DiscoveredDevice[] {
+  if (
+    !Array.isArray(value) ||
+    value.some((entry) => !isSignedDiscoveredDevice(entry))
+  ) {
+    throw new Error("Invalid discovered device list payload.");
+  }
+
+  return value.map((entry) => verifySignedDiscoveredDevice(entry));
+}
+
+function isSignedDiscoveredDevice(
+  value: unknown,
+): value is SignedDiscoveredDevice {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+
+  return (
+    (candidate.category === "battery" ||
+      candidate.category === "meter" ||
+      candidate.category === "solar-energy-provider") &&
+    typeof candidate.details === "string" &&
+    typeof candidate.discoveryId === "string" &&
+    typeof candidate.ipAddress === "string" &&
+    typeof candidate.model === "string" &&
+    typeof candidate.name === "string" &&
+    typeof candidate.discoveryExpiresAt === "string" &&
+    typeof candidate.discoveryIssuedAt === "string" &&
+    typeof candidate.discoveryProof === "string" &&
+    (typeof candidate.powerW === "number" || candidate.powerW === null) &&
+    (typeof candidate.socPercent === "number" ||
+      candidate.socPercent === null) &&
+    (candidate.state === "idle" ||
+      candidate.state === "charging" ||
+      candidate.state === "discharging" ||
+      candidate.state === "connected" ||
+      candidate.state === "offline" ||
+      candidate.state === null)
+  );
+}
+
 function inferBatteryStatus(details: string): BatteryRecord["status"] {
   const matchedState = details.match(/state\s+([^,]+)/i)?.[1]?.trim();
 
@@ -149,10 +210,16 @@ function inferBatteryPowerW(details: string): number | null {
   return Number.isFinite(parsed) ? Math.abs(parsed) : null;
 }
 
+function parseDiscoverySerialNumber(details: string): string | null {
+  const matched = details.match(/serial\s+(\d{6,})/i)?.[1] ?? null;
+  return matched && matched.length > 0 ? matched : null;
+}
+
 function getExistingManagedDeviceIds(siteId: string): Set<string> {
   return new Set([
     ...listBatteries(siteId).map((battery) => battery.id),
     ...listMeters(siteId).map((meter) => meter.id),
+    ...listSolarEnergyProviders(siteId).map((provider) => provider.id),
   ]);
 }
 
@@ -203,10 +270,47 @@ function createManagedMeterFromDiscovered(
   );
 }
 
+function createManagedSolarEnergyProviderFromDiscovered(
+  discovered: DiscoveredDevice,
+  siteId: string,
+) {
+  return createSolarEnergyProvider(
+    {
+      connected: true,
+      enabled: true,
+      id: discovered.discoveryId,
+      ipAddress: discovered.ipAddress,
+      name: discovered.name,
+      plugin: discovered.model,
+      serialNumber: parseDiscoverySerialNumber(discovered.details),
+    },
+    siteId,
+  );
+}
+
 function toManagedDeviceRecord(
-  record: BatteryRecord | MeterRecord,
+  record: BatteryRecord | MeterRecord | SolarEnergyProviderRecord,
 ): ManagedDeviceRecord {
   if ("plugin" in record) {
+    if (!("minimumDischargePercent" in record)) {
+      return {
+        id: record.id,
+        siteId: record.siteId,
+        kind: "solar-energy-provider",
+        name: record.name,
+        model: record.name,
+        address: record.ipAddress,
+        enabled: record.enabled,
+        connected: record.connected,
+        state: record.connected ? "connected" : "offline",
+        batteryStrategy: null,
+        batteryStrategyPlan: null,
+        batteryManualModeActive: false,
+        minimumDischargePercent: null,
+        updatedAt: record.updatedAt,
+      };
+    }
+
     return {
       id: record.id,
       siteId: record.siteId,
@@ -228,7 +332,6 @@ function toManagedDeviceRecord(
       batteryStrategyPlan: record.strategyPlan,
       batteryManualModeActive: record.manualModeActive,
       minimumDischargePercent: record.minimumDischargePercent,
-      note: record.plugin,
       updatedAt: record.updatedAt,
     };
   }
@@ -247,7 +350,6 @@ function toManagedDeviceRecord(
     batteryStrategyPlan: null,
     batteryManualModeActive: false,
     minimumDischargePercent: null,
-    note: record.details || null,
     updatedAt: record.updatedAt,
   };
 }
@@ -323,6 +425,7 @@ function buildSnapshot(): {
       devices: [
         ...listBatteries(site.id).map(toManagedDeviceRecord),
         ...listMeters(site.id).map(toManagedDeviceRecord),
+        ...listSolarEnergyProviders(site.id).map(toManagedDeviceRecord),
       ].map(
         (device): ManagedDeviceStatusRecord => ({
           ...device,
@@ -466,6 +569,10 @@ async function run(): Promise<void> {
           dynamicPriceSamples: readDynamicPriceSamples(db, siteId),
           p1MeterSamples: readP1MeterSamples(db, siteId),
           siteId,
+          solarEnergyProviderSamples: readSolarEnergyProviderSamples(
+            db,
+            siteId,
+          ),
           solarForecastSamples: readSolarForecastSamples(db, siteId),
         });
       } finally {
@@ -532,18 +639,15 @@ async function run(): Promise<void> {
     }
 
     case "battery-create": {
-      const input = readInput<{
-        discoveryId?: string;
-        host?: string | null;
-        siteId?: string;
-      }>();
-      const discoveryId = requireString(input.discoveryId, "discoveryId");
+      const input = readInput<{ device?: DiscoveredDevice; siteId?: string }>();
       const siteId = requireString(input.siteId, "siteId");
-      const discovered = await resolveDiscoveredDevice({
-        category: "battery",
-        discoveryId,
-        host: optionalString(input.host ?? null),
-      });
+      const discovered = readSignedDiscoveredDevice(input.device);
+
+      if (discovered.category !== "battery") {
+        throw new Error(
+          `Discovery id ${discovered.discoveryId} is a ${discovered.category}, not a battery.`,
+        );
+      }
 
       succeed(
         toManagedDeviceRecord(
@@ -715,20 +819,6 @@ async function run(): Promise<void> {
       return;
     }
 
-    case "battery-get-normalized-info": {
-      const input = readInput<{ id?: string; siteId?: string }>();
-      const batteryId = requireString(input.id, "id");
-      const siteId = requireString(input.siteId, "siteId");
-      const battery = getBattery(batteryId, siteId);
-
-      if (!battery) {
-        throw new Error(`Managed battery not found: ${batteryId}`);
-      }
-
-      succeed(await createBatteryPlugin(battery).getNormalizedInfo());
-      return;
-    }
-
     case "battery-delete": {
       const input = readInput<{ id?: string; siteId?: string }>();
       const battery = deleteBattery(
@@ -747,18 +837,15 @@ async function run(): Promise<void> {
     }
 
     case "meter-create": {
-      const input = readInput<{
-        discoveryId?: string;
-        host?: string | null;
-        siteId?: string;
-      }>();
-      const discoveryId = requireString(input.discoveryId, "discoveryId");
+      const input = readInput<{ device?: DiscoveredDevice; siteId?: string }>();
       const siteId = requireString(input.siteId, "siteId");
-      const discovered = await resolveDiscoveredDevice({
-        category: "meter",
-        discoveryId,
-        host: optionalString(input.host ?? null),
-      });
+      const discovered = readSignedDiscoveredDevice(input.device);
+
+      if (discovered.category !== "meter") {
+        throw new Error(
+          `Discovery id ${discovered.discoveryId} is a ${discovered.category}, not a meter.`,
+        );
+      }
 
       succeed(
         toManagedDeviceRecord(
@@ -768,43 +855,49 @@ async function run(): Promise<void> {
       return;
     }
 
+    case "solar-energy-provider-create": {
+      const input = readInput<{ device?: DiscoveredDevice; siteId?: string }>();
+      const siteId = requireString(input.siteId, "siteId");
+      const discovered = readSignedDiscoveredDevice(input.device);
+
+      if (discovered.category !== "solar-energy-provider") {
+        throw new Error(
+          `Discovery id ${discovered.discoveryId} is a ${discovered.category}, not a solar-energy-provider.`,
+        );
+      }
+
+      succeed(
+        toManagedDeviceRecord(
+          createManagedSolarEnergyProviderFromDiscovered(discovered, siteId),
+        ),
+      );
+      return;
+    }
+
     case "discovery-add-all": {
       const input = readInput<{
-        discoveryIds?: string[];
-        host?: string | null;
+        devices?: DiscoveredDevice[];
         siteId?: string;
       }>();
       const siteId = requireString(input.siteId, "siteId");
-      const discoveryIds = Array.isArray(input.discoveryIds)
-        ? input.discoveryIds.filter(
-            (value): value is string =>
-              typeof value === "string" && value.trim().length > 0,
-          )
-        : [];
+      const discoveredDevices = readSignedDiscoveredDeviceList(
+        input.devices ?? [],
+      );
 
-      if (discoveryIds.length === 0) {
+      if (discoveredDevices.length === 0) {
         throw new Error("No discovered devices were selected.");
       }
 
-      const discoveredDevices = await discoverForSelection(
-        optionalString(input.host ?? null),
-      );
       const existingIds = getExistingManagedDeviceIds(siteId);
       let addedBatteries = 0;
       let addedMeters = 0;
+      let addedSolarEnergyProviders = 0;
       let skippedDevices = 0;
 
-      for (const candidateId of discoveryIds) {
+      for (const discovered of discoveredDevices) {
+        const candidateId = discovered.discoveryId;
+
         if (existingIds.has(candidateId)) {
-          skippedDevices += 1;
-          continue;
-        }
-
-        const discovered = discoveredDevices.find(
-          (device) => device.discoveryId === candidateId,
-        );
-
-        if (!discovered) {
           skippedDevices += 1;
           continue;
         }
@@ -812,15 +905,23 @@ async function run(): Promise<void> {
         if (discovered.category === "battery") {
           createManagedBatteryFromDiscovered(discovered, siteId);
           addedBatteries += 1;
-        } else {
+        } else if (discovered.category === "meter") {
           createManagedMeterFromDiscovered(discovered, siteId);
           addedMeters += 1;
+        } else {
+          createManagedSolarEnergyProviderFromDiscovered(discovered, siteId);
+          addedSolarEnergyProviders += 1;
         }
 
         existingIds.add(candidateId);
       }
 
-      succeed({ addedBatteries, addedMeters, skippedDevices });
+      succeed({
+        addedBatteries,
+        addedMeters,
+        addedSolarEnergyProviders,
+        skippedDevices,
+      });
       return;
     }
 
@@ -860,6 +961,23 @@ async function run(): Promise<void> {
       }
 
       succeed(toManagedDeviceRecord(meter));
+      return;
+    }
+
+    case "solar-energy-provider-delete": {
+      const input = readInput<{ id?: string; siteId?: string }>();
+      const provider = deleteSolarEnergyProvider(
+        requireString(input.id, "id"),
+        requireString(input.siteId, "siteId"),
+      );
+
+      if (!provider) {
+        throw new Error(
+          `Managed solar energy provider not found: ${requireString(input.id, "id")}`,
+        );
+      }
+
+      succeed(toManagedDeviceRecord(provider));
       return;
     }
 
@@ -975,8 +1093,9 @@ async function run(): Promise<void> {
         }
 
         const source =
-          readWeatherForecastSources(db).find((entry) => entry.siteId === siteId) ??
-          null;
+          readWeatherForecastSources(db).find(
+            (entry) => entry.siteId === siteId,
+          ) ?? null;
 
         if (source === null) {
           deleteWeatherForecast(db, siteId);
@@ -985,7 +1104,8 @@ async function run(): Promise<void> {
           );
         }
 
-        previousGeneratedAt = readWeatherForecast(db, siteId)?.generatedAt ?? null;
+        previousGeneratedAt =
+          readWeatherForecast(db, siteId)?.generatedAt ?? null;
       } finally {
         db.close();
       }
@@ -1093,7 +1213,9 @@ async function run(): Promise<void> {
         }
 
         const source =
-          readDynamicPriceSources(db).find((entry) => entry.siteId === siteId) ?? null;
+          readDynamicPriceSources(db).find(
+            (entry) => entry.siteId === siteId,
+          ) ?? null;
 
         if (source === null) {
           throw new Error(
@@ -1101,7 +1223,8 @@ async function run(): Promise<void> {
           );
         }
 
-        previousGeneratedAt = readDynamicPriceSnapshot(db, siteId)?.generatedAt ?? null;
+        previousGeneratedAt =
+          readDynamicPriceSnapshot(db, siteId)?.generatedAt ?? null;
       } finally {
         db.close();
       }

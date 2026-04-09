@@ -4,19 +4,20 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  readBatteryPowerSamples,
   openDaemonDatabase,
   readBatteries,
+  readBatteryPowerSamples,
   readDynamicPriceSamples,
-  readP1MeterSamples,
-  readWeatherForecast,
-  readSolarForecastSamples,
   readManagedDeviceTelemetry,
   readMeters,
+  readP1MeterSamples,
   readSites,
+  readSolarEnergyProviderSamples,
+  readSolarForecastSamples,
+  readWeatherForecast,
   upsertDynamicPriceSnapshot,
-  upsertWeatherForecast,
   upsertManagedDeviceTelemetry,
+  upsertWeatherForecast,
 } from "./database";
 
 test("openDaemonDatabase creates the SQLite file and empty managed tables", () => {
@@ -49,7 +50,6 @@ test("managed device telemetry can be upserted and read back", () => {
     kind: "battery",
     powerW: -950,
     socPercent: 62,
-    gasM3: null,
     state: "discharging",
     observedAt: "2026-04-05T16:45:00.000Z",
   });
@@ -65,7 +65,6 @@ test("managed device telemetry can be upserted and read back", () => {
       kind: "battery",
       powerW: -950,
       socPercent: 62,
-      gasM3: null,
       state: "discharging",
       observedAt: "2026-04-05T16:45:00.000Z",
     },
@@ -243,7 +242,7 @@ test("solar forecast samples use the beginning of the forecast period", () => {
   rmSync(tempDir, { recursive: true, force: true });
 });
 
-test("meter and battery power samples are bucketed by 15-minute period", () => {
+test("meter and battery samples keep the latest bucket value while solar provider samples store a 15-minute average", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "emsd-daemon-test-"));
   const databasePath = join(tempDir, "emsd.sqlite");
   const db = openDaemonDatabase(databasePath);
@@ -254,8 +253,7 @@ test("meter and battery power samples are bucketed by 15-minute period", () => {
     kind: "meter",
     powerW: -420,
     socPercent: null,
-    gasM3: null,
-    state: "connected",
+    state: null,
     observedAt: "2026-04-05T16:46:00.000Z",
   });
   upsertManagedDeviceTelemetry(db, {
@@ -264,8 +262,7 @@ test("meter and battery power samples are bucketed by 15-minute period", () => {
     kind: "meter",
     powerW: -390,
     socPercent: null,
-    gasM3: null,
-    state: "connected",
+    state: null,
     observedAt: "2026-04-05T16:59:00.000Z",
   });
   upsertManagedDeviceTelemetry(db, {
@@ -274,13 +271,34 @@ test("meter and battery power samples are bucketed by 15-minute period", () => {
     kind: "battery",
     powerW: 950,
     socPercent: 62,
-    gasM3: null,
     state: "charging",
     observedAt: "2026-04-05T16:47:00.000Z",
+  });
+  upsertManagedDeviceTelemetry(db, {
+    deviceId: "solar-provider-1",
+    siteId: "main-house",
+    kind: "solar-energy-provider",
+    powerW: 2200,
+    socPercent: null,
+    state: null,
+    observedAt: "2026-04-05T16:52:00.000Z",
+  });
+  upsertManagedDeviceTelemetry(db, {
+    deviceId: "solar-provider-1",
+    siteId: "main-house",
+    kind: "solar-energy-provider",
+    powerW: 1600,
+    socPercent: null,
+    state: null,
+    observedAt: "2026-04-05T16:58:00.000Z",
   });
 
   const meterSamples = readP1MeterSamples(db, "main-house");
   const batterySamples = readBatteryPowerSamples(db, "main-house");
+  const solarEnergyProviderSamples = readSolarEnergyProviderSamples(
+    db,
+    "main-house",
+  );
 
   db.close();
 
@@ -300,6 +318,15 @@ test("meter and battery power samples are bucketed by 15-minute period", () => {
       periodStart: "2026-04-05T16:45:00.000Z",
       observedAt: "2026-04-05T16:47:00.000Z",
       powerW: 950,
+    },
+  ]);
+  expect(solarEnergyProviderSamples).toEqual([
+    {
+      siteId: "main-house",
+      providerId: "solar-provider-1",
+      periodStart: "2026-04-05T16:45:00.000Z",
+      observedAt: "2026-04-05T16:58:00.000Z",
+      powerW: 1900,
     },
   ]);
 

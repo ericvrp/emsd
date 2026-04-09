@@ -6,8 +6,8 @@ import type {
   DynamicPriceSourceRecord,
   ManagedDeviceStatusRecord,
   SiteRecord,
-  WeatherForecastRecord,
   WeatherForecastPointRecord,
+  WeatherForecastRecord,
   WeatherForecastSourceRecord,
 } from "@emsd/core";
 import {
@@ -33,14 +33,8 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { toast } from "sonner";
 import type { ValueType } from "recharts/types/component/DefaultTooltipContent";
-import {
-  UI_CHART_STYLES,
-  UI_COLORS,
-  UI_STYLES,
-} from "../lib/ui-colors";
-import { cn } from "../lib/utils";
+import { toast } from "sonner";
 import {
   createDynamicPriceSourceAction,
   createSiteAction,
@@ -49,16 +43,19 @@ import {
   deleteDynamicPriceSourceAction,
   deleteMeterAction,
   deleteSiteAction,
+  deleteSolarEnergyProviderAction,
   deleteWeatherForecastSourceAction,
   setBatteryMinimumDischargePercentAction,
   updateDynamicPriceSourceAction,
   updateSiteAction,
   updateWeatherForecastSourceAction,
 } from "../app/actions";
+import { UI_CHART_STYLES, UI_COLORS, UI_STYLES } from "../lib/ui-colors";
+import { cn } from "../lib/utils";
 import { DiscoveryPanel } from "./discovery-panel";
 import { SubmitButton } from "./submit-button";
-import { DialogPortal } from "./ui/dialog-portal";
 import { Button } from "./ui/button";
+import { DialogPortal } from "./ui/dialog-portal";
 
 type SettingsTab = "devices" | "site" | "discover";
 
@@ -131,9 +128,12 @@ export function SettingsPanel({
               </h2>
             </section>
 
-            <section className="grid gap-4 xl:grid-cols-2">
+            <section className="grid gap-4 xl:grid-cols-3">
               <ResourceSection title="Batteries">
                 <DeviceList kind="battery" site={currentSite} />
+              </ResourceSection>
+              <ResourceSection title="Solar Providers">
+                <DeviceList kind="solar-energy-provider" site={currentSite} />
               </ResourceSection>
               <ResourceSection title="Meters">
                 <DeviceList kind="meter" site={currentSite} />
@@ -156,7 +156,7 @@ export function SettingsPanel({
                 Discover
               </p>
               <h2 className="mt-2 text-2xl font-semibold text-white">
-                Find and add batteries and meters
+                Find and add batteries, meters, and solar providers
               </h2>
               <p className="mt-2 text-sm leading-6 text-slate-400">
                 Scan once and add devices one by one or all at once.
@@ -241,6 +241,9 @@ function SitePanel({ site }: { site: SiteSnapshot | null }) {
 
   const batteries = site.devices.filter((device) => device.kind === "battery");
   const meters = site.devices.filter((device) => device.kind === "meter");
+  const solarEnergyProviders = site.devices.filter(
+    (device) => device.kind === "solar-energy-provider",
+  );
   const deletionWarning = [
     formatNamedBlocker(
       "battery",
@@ -249,6 +252,10 @@ function SitePanel({ site }: { site: SiteSnapshot | null }) {
     formatNamedBlocker(
       "meter",
       meters.map((device) => device.name),
+    ),
+    formatNamedBlocker(
+      "solar energy provider",
+      solarEnergyProviders.map((device) => device.name),
     ),
     formatNamedBlocker(
       "solar forecast source",
@@ -301,8 +308,8 @@ function SitePanel({ site }: { site: SiteSnapshot | null }) {
             confirmLabel="Delete site"
             description={
               deletionWarning.length > 0
-                ? `This deletes ${site.name}, ${joinWithAnd(deletionWarning)}, and the stored forecast and price snapshots for this site. This cannot be undone.`
-                : `This deletes ${site.name} and the stored forecast and price snapshots for this site. This cannot be undone.`
+                ? `This deletes ${site.name}, ${joinWithAnd(deletionWarning)}, and the stored telemetry, forecast, and price history for this site. This cannot be undone.`
+                : `This deletes ${site.name} and the stored telemetry, forecast, and price history for this site. This cannot be undone.`
             }
             hiddenFields={[
               { name: "siteId", value: site.id },
@@ -631,19 +638,19 @@ function PriceChart({
       </p> */}
       <div className="h-[260px] w-full">
         <ResponsiveContainer width="100%" height="100%">
-            <BarChart
-              data={chartPoints}
-              margin={{ top: 16, right: 8, left: 8, bottom: 0 }}
-              barCategoryGap="18%"
-            >
-              <XAxis
-                dataKey="startsAt"
-                tick={UI_CHART_STYLES.axisTick}
-                tickFormatter={formatForecastTimeLabel}
-                axisLine={false}
-                tickLine={false}
-                minTickGap={30}
-              />
+          <BarChart
+            data={chartPoints}
+            margin={{ top: 16, right: 8, left: 8, bottom: 0 }}
+            barCategoryGap="18%"
+          >
+            <XAxis
+              dataKey="startsAt"
+              tick={UI_CHART_STYLES.axisTick}
+              tickFormatter={formatForecastTimeLabel}
+              axisLine={false}
+              tickLine={false}
+              minTickGap={30}
+            />
             <YAxis hide domain={[0, "dataMax"]} />
             <Tooltip
               content={
@@ -655,28 +662,28 @@ function PriceChart({
               contentStyle={UI_CHART_STYLES.tooltipContentStyle}
               itemStyle={{ color: UI_COLORS.priceSection }}
             />
-              {chartPoints
-                .filter((point) => point.isMidnight)
-                .map((point) => (
-                  <ReferenceLine
-                    key={`price-midnight-${point.startsAt}`}
-                    x={point.startsAt}
-                    stroke={UI_COLORS.chartReference}
-                    strokeDasharray="3 5"
-                  />
-                ))}
-              {nowPoint ? (
+            {chartPoints
+              .filter((point) => point.isMidnight)
+              .map((point) => (
                 <ReferenceLine
-                  label={buildNowLabel()}
-                  stroke={UI_COLORS.textPrimary}
-                  strokeDasharray="4 4"
-                  strokeOpacity={0.8}
-                  x={nowPoint.startsAt}
+                  key={`price-midnight-${point.startsAt}`}
+                  x={point.startsAt}
+                  stroke={UI_COLORS.chartReference}
+                  strokeDasharray="3 5"
                 />
-              ) : null}
-              <Bar dataKey="importPrice" radius={[2, 2, 0, 0]} maxBarSize={12}>
-                {chartPoints.map((point) => (
-                  <Cell
+              ))}
+            {nowPoint ? (
+              <ReferenceLine
+                label={buildNowLabel()}
+                stroke={UI_COLORS.textPrimary}
+                strokeDasharray="4 4"
+                strokeOpacity={0.8}
+                x={nowPoint.startsAt}
+              />
+            ) : null}
+            <Bar dataKey="importPrice" radius={[2, 2, 0, 0]} maxBarSize={12}>
+              {chartPoints.map((point) => (
+                <Cell
                   key={`price-bar-${point.startsAt}`}
                   fill={
                     point.isPast
@@ -731,8 +738,8 @@ function ForecastChart({
   });
   const nowPoint =
     transitionIndex === -1
-      ? chartPoints[chartPoints.length - 1] ?? null
-      : chartPoints[transitionIndex] ?? null;
+      ? (chartPoints[chartPoints.length - 1] ?? null)
+      : (chartPoints[transitionIndex] ?? null);
 
   return (
     <div className="space-y-3">
@@ -1111,27 +1118,34 @@ function DeviceList({
   kind,
 }: {
   site: SiteSnapshot;
-  kind: "battery" | "meter";
+  kind: "battery" | "meter" | "solar-energy-provider";
 }) {
   const devices = site.devices.filter((device) => device.kind === kind);
 
   if (devices.length === 0) {
     return (
       <p className="text-sm leading-6 text-slate-400">
-        No {kind === "battery" ? "batteries" : "meters"} configured yet.
+        No{" "}
+        {kind === "battery"
+          ? "batteries"
+          : kind === "meter"
+            ? "meters"
+            : "solar energy providers"}{" "}
+        configured yet.
       </p>
     );
   }
 
   return (
-    <div className="space-y-3">
+    <div className="grid gap-3">
       {devices.map((device) => {
         const currentState = device.telemetry?.state ?? device.state;
+        const showState = kind === "battery";
 
         return (
           <article
             key={device.id}
-            className={`flex min-h-[220px] flex-col rounded-[1.4rem] border border-white/10 bg-white/5 p-4 ${kind === "battery" ? "ring-1 ring-cyan-300/5" : "ring-1 ring-violet-300/5"}`}
+            className={`flex h-[420px] flex-col rounded-[1.4rem] border border-white/10 bg-white/5 p-4 ${kind === "battery" ? "ring-1 ring-cyan-300/5" : kind === "meter" ? "ring-1 ring-violet-300/5" : "ring-1 ring-amber-300/5"}`}
           >
             <div className="min-w-0">
               <h4 className="truncate text-base font-semibold text-white">
@@ -1141,13 +1155,15 @@ function DeviceList({
                 {device.id}
               </p>
             </div>
-            <dl className="mt-4 grid gap-3 text-sm text-slate-300 sm:grid-cols-2">
+            <dl className="mt-4 grid flex-1 content-start gap-3 text-sm text-slate-300 sm:grid-cols-2">
               <MetaItem label="Model" value={device.model} />
               <MetaItem label="Address" value={device.address} />
-              <MetaItem
-                label="State"
-                value={formatManagedDeviceState(currentState)}
-              />
+              {showState ? (
+                <MetaItem
+                  label="State"
+                  value={formatManagedDeviceState(currentState)}
+                />
+              ) : null}
               {kind === "battery" ? (
                 <MetaItem
                   label="SoC"
@@ -1210,16 +1226,29 @@ function DeviceList({
               ) : null}
               <DestructiveConfirmButton
                 action={
-                  kind === "battery" ? deleteBatteryAction : deleteMeterAction
+                  kind === "battery"
+                    ? deleteBatteryAction
+                    : kind === "meter"
+                      ? deleteMeterAction
+                      : deleteSolarEnergyProviderAction
                 }
                 confirmLabel={
-                  kind === "battery" ? "Delete battery" : "Delete meter"
+                  kind === "battery"
+                    ? "Delete battery"
+                    : kind === "meter"
+                      ? "Delete meter"
+                      : "Delete solar provider"
                 }
                 description={`This deletes ${device.name}. This cannot be undone.`}
                 hiddenFields={[
                   { name: "siteId", value: site.id },
                   {
-                    name: kind === "battery" ? "batteryId" : "meterId",
+                    name:
+                      kind === "battery"
+                        ? "batteryId"
+                        : kind === "meter"
+                          ? "meterId"
+                          : "solarEnergyProviderId",
                     value: device.id,
                   },
                 ]}

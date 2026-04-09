@@ -19,7 +19,5 @@ export interface BatteryTelemetrySample {
 }
 
 export interface MeterTelemetrySample {
-  gasM3: number | null;
   powerW: number | null;
-  state: Extract<ManagedDeviceState, "connected" | "offline">;
 }

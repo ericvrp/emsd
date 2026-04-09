@@ -73,6 +73,11 @@ Important caveats from the Home Assistant integration:
 - multi-factor authentication is not supported by that flow
 - initial bootstrap is therefore not fully local on newer firmware
 
+For EMSD, set these daemon environment variables when local auth is required:
+
+- `ENPHASE_ENLIGHTEN_USERNAME`
+- `ENPHASE_ENLIGHTEN_PASSWORD`
+
 ## Main Local Endpoints
 
 The endpoints below are the most useful local surfaces for EMSD. Stability varies.

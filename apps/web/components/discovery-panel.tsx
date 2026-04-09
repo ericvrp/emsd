@@ -1,36 +1,33 @@
 "use client";
 
-import { BatteryCharging, Gauge, LoaderCircle, Plus, ScanSearch } from "lucide-react";
+import {
+  BatteryCharging,
+  Gauge,
+  LoaderCircle,
+  Plus,
+  ScanSearch,
+  SunMedium,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   createAllFromDiscoveryAction,
   createBatteryFromDiscoveryAction,
   createMeterFromDiscoveryAction,
+  createSolarEnergyProviderFromDiscoveryAction,
 } from "../app/actions";
+import type { SignedDiscoveredDevice } from "../lib/ems-bridge";
 import { UI_STYLES } from "../lib/ui-colors";
 import { SubmitButton } from "./submit-button";
 
-interface DiscoveredDevice {
-  category: "battery" | "meter";
-  details: string;
-  discoveryId: string;
-  ipAddress: string;
-  model: string;
-  name: string;
-  powerW: number | null;
-  socPercent: number | null;
-  state: "idle" | "charging" | "discharging" | "connected" | "offline" | null;
-}
-
 interface DiscoveryCachePayload {
   version: number;
-  devices: DiscoveredDevice[];
+  devices: SignedDiscoveredDevice[];
   host: string;
 }
 
 const DISCOVERY_CACHE_PREFIX = "emsd-discovery:";
-const DISCOVERY_CACHE_VERSION = 2;
+const DISCOVERY_CACHE_VERSION = 3;
 
 const primaryButtonClass = UI_STYLES.buttonPrimary;
 
@@ -46,7 +43,7 @@ export function DiscoveryPanel({
   const [host, setHost] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [devices, setDevices] = useState<DiscoveredDevice[]>([]);
+  const [devices, setDevices] = useState<SignedDiscoveredDevice[]>([]);
   const existingIdSet = useMemo(
     () => new Set(existingDeviceIds),
     [existingDeviceIds],
@@ -93,7 +90,10 @@ export function DiscoveryPanel({
     }
   }, [selectedSiteId]);
 
-  function persistDiscovery(nextDevices: DiscoveredDevice[], nextHost: string) {
+  function persistDiscovery(
+    nextDevices: SignedDiscoveredDevice[],
+    nextHost: string,
+  ) {
     if (!selectedSiteId) {
       return;
     }
@@ -139,7 +139,7 @@ export function DiscoveryPanel({
         throw new Error(payload?.error ?? "Discovery request failed.");
       }
 
-      const payload = (await response.json()) as DiscoveredDevice[];
+      const payload = (await response.json()) as SignedDiscoveredDevice[];
       setDevices(payload);
       persistDiscovery(payload, host.trim());
 
@@ -191,7 +191,10 @@ export function DiscoveryPanel({
         >
           {isLoading ? (
             <>
-              <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin" />
+              <LoaderCircle
+                aria-hidden="true"
+                className="h-4 w-4 animate-spin"
+              />
               Scanning...
             </>
           ) : (
@@ -220,7 +223,7 @@ export function DiscoveryPanel({
           {isLoading
             ? "Scanning the network for EMS-compatible devices..."
             : selectedSiteId
-              ? "Run discovery to see reachable batteries and meters."
+              ? "Run discovery to see reachable batteries, meters, and solar energy providers."
               : "Create a site to unlock discovery."}
         </div>
       ) : (
@@ -231,17 +234,18 @@ export function DiscoveryPanel({
               className="flex justify-start"
             >
               <input type="hidden" name="siteId" value={selectedSiteId} />
-              <input type="hidden" name="host" value={host.trim()} />
               <input
                 type="hidden"
-                name="discoveryIds"
-                value={JSON.stringify(addableDiscoveryIds)}
+                name="discoveryDevices"
+                value={JSON.stringify(
+                  devices.filter((device) =>
+                    addableDiscoveryIds.includes(device.discoveryId),
+                  ),
+                )}
               />
-              <SubmitButton
-                className={primaryButtonClass}
-              >
+              <SubmitButton className={primaryButtonClass}>
                 <Plus aria-hidden="true" className="h-4 w-4" />
-                {`Add all (${addableDiscoveryIds.length})`}
+                {`Add all discovered (${addableDiscoveryIds.length})`}
               </SubmitButton>
             </form>
           ) : (
@@ -271,7 +275,7 @@ function DiscoveryDeviceCard({
   host,
   selectedSiteId,
 }: {
-  device: DiscoveredDevice;
+  device: SignedDiscoveredDevice;
   existingIdSet: Set<string>;
   host: string;
   selectedSiteId: string | null;
@@ -279,9 +283,15 @@ function DiscoveryDeviceCard({
   const alreadyAdded = existingIdSet.has(device.discoveryId);
 
   return (
-    <article className="relative flex h-full flex-col overflow-hidden rounded-[1.6rem] border border-white/10 bg-slate-950/60 p-4 shadow-[0_16px_60px_rgba(0,0,0,0.22)]">
+    <article
+      className={`relative flex h-full flex-col overflow-hidden rounded-[1.6rem] border p-4 shadow-[0_16px_60px_rgba(0,0,0,0.22)] ${
+        alreadyAdded
+          ? "border-white/6 bg-slate-950/35 opacity-60"
+          : "border-white/10 bg-slate-950/60"
+      }`}
+    >
       <div
-        className={`pointer-events-none absolute inset-x-0 top-0 h-px ${device.category === "battery" ? "bg-gradient-to-r from-transparent via-cyan-300/40 to-transparent" : "bg-gradient-to-r from-transparent via-violet-300/40 to-transparent"}`}
+        className={`pointer-events-none absolute inset-x-0 top-0 h-px ${device.category === "battery" ? "bg-gradient-to-r from-transparent via-cyan-300/40 to-transparent" : device.category === "meter" ? "bg-gradient-to-r from-transparent via-violet-300/40 to-transparent" : "bg-gradient-to-r from-transparent via-amber-300/40 to-transparent"}`}
       />
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -293,13 +303,19 @@ function DiscoveryDeviceCard({
           </p>
         </div>
         <span
-          className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${device.category === "battery" ? "border-cyan-400/20 bg-cyan-500/10 text-cyan-100" : "border-violet-400/20 bg-violet-500/10 text-violet-100"}`}
+          className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${device.category === "battery" ? "border-cyan-400/20 bg-cyan-500/10 text-cyan-100" : device.category === "meter" ? "border-violet-400/20 bg-violet-500/10 text-violet-100" : "border-amber-400/20 bg-amber-500/10 text-amber-100"}`}
         >
-          {device.category}
+          {formatDiscoveryCategoryLabel(device.category)}
         </span>
       </div>
 
-      <div className="mt-4 flex-1 space-y-2 rounded-2xl border border-white/8 bg-white/4 p-3 text-sm text-slate-300">
+      <div
+        className={`mt-4 flex-1 space-y-2 rounded-2xl border p-3 text-sm ${
+          alreadyAdded
+            ? "border-white/6 bg-white/3 text-slate-400"
+            : "border-white/8 bg-white/4 text-slate-300"
+        }`}
+      >
         <p>
           <span className="text-slate-500">Model:</span> {device.model}
         </p>
@@ -332,26 +348,32 @@ function DiscoveryDeviceCard({
             action={
               device.category === "battery"
                 ? createBatteryFromDiscoveryAction
-                : createMeterFromDiscoveryAction
+                : device.category === "meter"
+                  ? createMeterFromDiscoveryAction
+                  : createSolarEnergyProviderFromDiscoveryAction
             }
           >
             <input type="hidden" name="siteId" value={selectedSiteId} />
             <input
               type="hidden"
-              name="discoveryId"
-              value={device.discoveryId}
+              name="discoveryDevice"
+              value={JSON.stringify(device)}
             />
-            <input type="hidden" name="host" value={host} />
             <SubmitButton className={secondaryButtonClass}>
               {device.category === "battery" ? (
                 <>
                   <BatteryCharging aria-hidden="true" className="h-4 w-4" />
                   Add battery
                 </>
-              ) : (
+              ) : device.category === "meter" ? (
                 <>
                   <Gauge aria-hidden="true" className="h-4 w-4" />
                   Add meter
+                </>
+              ) : (
+                <>
+                  <SunMedium aria-hidden="true" className="h-4 w-4" />
+                  Add solar energy provider
                 </>
               )}
             </SubmitButton>
@@ -370,4 +392,14 @@ function formatDiscoveryState(
   state: "idle" | "charging" | "discharging" | "connected" | "offline" | null,
 ): string {
   return state ? state.replace(/-/g, " ") : "";
+}
+
+function formatDiscoveryCategoryLabel(
+  category: SignedDiscoveredDevice["category"],
+): string {
+  if (category === "solar-energy-provider") {
+    return "solar provider";
+  }
+
+  return category;
 }

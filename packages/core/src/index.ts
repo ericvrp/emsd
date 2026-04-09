@@ -56,7 +56,7 @@ export interface NormalizedBatteryInfo extends BatteryStrategyRecord {
   status: BatteryStatus;
 }
 
-export type DiscoveryCategory = "battery" | "meter";
+export type DiscoveryCategory = "battery" | "meter" | "solar-energy-provider";
 
 export interface DiscoverReportDevice {
   discoveryId: string;
@@ -197,7 +197,7 @@ export const discoverReportJsonSchema = {
           },
           category: {
             type: "string",
-            enum: ["battery", "meter"],
+            enum: ["battery", "meter", "solar-energy-provider"],
           },
           model: {
             type: "string",
@@ -250,7 +250,19 @@ export interface MeterRecord {
   updatedAt: string;
 }
 
-export type ManagedDeviceKind = "battery" | "meter";
+export interface SolarEnergyProviderRecord {
+  id: string;
+  siteId: string;
+  name: string;
+  plugin: string;
+  ipAddress: string;
+  enabled: boolean;
+  connected: boolean;
+  serialNumber: string | null;
+  updatedAt: string;
+}
+
+export type ManagedDeviceKind = "battery" | "meter" | "solar-energy-provider";
 
 export type ManagedDeviceState =
   | "idle"
@@ -273,8 +285,12 @@ export interface ManagedDeviceRecord {
   batteryStrategyPlan: BatteryStrategyPlanRecord | null;
   batteryManualModeActive: boolean;
   minimumDischargePercent: number | null;
-  note: string | null;
   updatedAt: string;
+}
+
+export interface NormalizedSolarEnergyProviderInfo {
+  currentPowerW: number | null;
+  status: Extract<ManagedDeviceState, "connected" | "offline">;
 }
 
 export function createBatteryStrategyRuntime(): BatteryStrategyRuntimeRecord {
@@ -687,7 +703,6 @@ export interface ManagedDeviceTelemetryRecord {
   kind: ManagedDeviceKind;
   powerW: number | null;
   socPercent: number | null;
-  gasM3: number | null;
   state: ManagedDeviceState | null;
   observedAt: string;
 }

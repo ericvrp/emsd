@@ -5,7 +5,12 @@ import type {
   MeterTelemetrySample,
 } from "../discovery-types";
 
-export type PluginType = "battery" | "meter" | "weather" | "price";
+export type PluginType =
+  | "battery"
+  | "meter"
+  | "weather"
+  | "price"
+  | "solar-energy-provider";
 
 export interface DiscoveryRequestDefinition {
   path: string;

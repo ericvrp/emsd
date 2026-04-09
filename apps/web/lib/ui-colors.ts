@@ -15,6 +15,7 @@ export const UI_COLORS = {
   gridImport: "#407BA7",
   price: "#ca8a04",
   priceSection: "#f59e0b",
+  solarEnergy: "#f97316",
   textPrimary: "#f8fafc",
 } as const;
 
@@ -46,8 +47,7 @@ export const UI_STYLES = {
     "inline-flex h-9 items-center justify-center gap-2 rounded-md border border-white/10 bg-white/6 px-4 text-sm font-medium text-slate-100 transition hover:border-white/20 hover:bg-white/10",
   buttonSecondaryIcon:
     "inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/6 text-slate-200 transition hover:bg-white/10",
-  card:
-    "rounded-3xl border border-white/10 bg-slate-950/60 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur",
+  card: "rounded-3xl border border-white/10 bg-slate-950/60 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur",
   input:
     "flex h-11 w-full rounded-xl border border-white/10 bg-slate-950/80 px-3 py-2 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-cyan-400/50 disabled:cursor-not-allowed disabled:opacity-60",
   panel:

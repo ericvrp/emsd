@@ -1,19 +1,16 @@
 import { createHash } from "node:crypto";
 import { type NetworkInterfaceInfo, networkInterfaces } from "node:os";
-import type {
-  DiscoverReport,
-  DiscoverReportDevice,
-} from "@emsd/core";
+import type { DiscoverReport, DiscoverReportDevice } from "@emsd/core";
 import type {
   BatteryTelemetrySample,
   DiscoveredDevice,
   MeterTelemetrySample,
 } from "./discovery-types";
 import {
-  discoveryPlugins,
   type DiscoveryPlugin,
   type DiscoveryRequestDefinition,
   type DiscoverySignatureDefinition,
+  discoveryPlugins,
 } from "./plugins";
 
 export type {
@@ -268,7 +265,9 @@ function formatConciseDetails(device: DiscoveredDevice): string {
   const preferredPrefixes =
     device.category === "battery"
       ? ["SOC ", "power ", "state "]
-      : ["SMR ", "power ", "gas "];
+      : device.category === "solar-energy-provider"
+        ? ["power ", "serial ", "firmware "]
+        : ["SMR ", "power ", "gas "];
   const conciseParts = preferredPrefixes
     .map((prefix) => detailParts.find((part) => part.startsWith(prefix)))
     .filter((part): part is string => part !== undefined);
@@ -338,8 +337,8 @@ export async function runDiscoverCommand(args: string[] = []): Promise<number> {
 
   if (options.verbose) {
     console.error(
-        `Using ${discoveryPlugins.length} discovery fingerprint(s): ${discoveryPlugins.map((plugin) => plugin.model).join(", ")}`,
-      );
+      `Using ${discoveryPlugins.length} discovery fingerprint(s): ${discoveryPlugins.map((plugin) => plugin.model).join(", ")}`,
+    );
   }
 
   const devices = await discoverDevices([target.subnet], options);

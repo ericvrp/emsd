@@ -8,6 +8,7 @@ import {
   type ManagedDeviceTelemetryRecord,
   type MeterRecord,
   type SiteRecord,
+  type SolarEnergyProviderRecord,
   type WeatherForecastRecord,
   type WeatherForecastSourceRecord,
   createBatteryStrategyRuntime,
@@ -59,6 +60,18 @@ interface MeterRow {
   enabled: number;
   connected: number;
   details: string;
+  updated_at: string;
+}
+
+interface SolarEnergyProviderRow {
+  id: string;
+  site_id: string;
+  name: string;
+  plugin: string;
+  ip_address: string;
+  enabled: number;
+  connected: number;
+  serial_number: string | null;
   updated_at: string;
 }
 
@@ -137,6 +150,15 @@ interface BatteryPowerSampleRow {
   power_w: number | null;
 }
 
+interface SolarEnergyProviderSampleRow {
+  site_id: string;
+  provider_id: string;
+  period_start: string;
+  observed_at: string;
+  power_w: number | null;
+  sample_count: number;
+}
+
 export interface DynamicPriceSampleRecord {
   siteId: string;
   periodStart: string;
@@ -166,6 +188,14 @@ export interface P1MeterSampleRecord {
 export interface BatteryPowerSampleRecord {
   siteId: string;
   batteryId: string;
+  periodStart: string;
+  observedAt: string;
+  powerW: number | null;
+}
+
+export interface SolarEnergyProviderSampleRecord {
+  siteId: string;
+  providerId: string;
   periodStart: string;
   observedAt: string;
   powerW: number | null;
@@ -234,6 +264,22 @@ export function openDaemonDatabase(databasePath = getDatabasePath()): Database {
       UNIQUE(site_id, model, ip_address)
     );
   `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS solar_energy_providers (
+      id TEXT PRIMARY KEY,
+      site_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      plugin TEXT NOT NULL,
+      ip_address TEXT NOT NULL,
+      enabled INTEGER NOT NULL,
+      connected INTEGER NOT NULL,
+      serial_number TEXT,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY(site_id) REFERENCES sites(id),
+      UNIQUE(site_id, plugin, ip_address)
+    );
+  `);
+  ensureSolarEnergyProviderColumns(db);
   db.exec(`
     CREATE TABLE IF NOT EXISTS weather_sources (
       id TEXT PRIMARY KEY,
@@ -349,6 +395,23 @@ export function openDaemonDatabase(databasePath = getDatabasePath()): Database {
     CREATE INDEX IF NOT EXISTS idx_battery_power_samples_site_period
     ON battery_power_samples (site_id, period_start);
   `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS solar_energy_provider_samples (
+      site_id TEXT NOT NULL,
+      provider_id TEXT NOT NULL,
+      period_start TEXT NOT NULL,
+      observed_at TEXT NOT NULL,
+      power_w REAL,
+      sample_count INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY(site_id, provider_id, period_start),
+      FOREIGN KEY(site_id) REFERENCES sites(id)
+    );
+  `);
+  ensureSolarEnergyProviderSampleColumns(db);
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_solar_energy_provider_samples_site_period
+    ON solar_energy_provider_samples (site_id, period_start);
+  `);
 
   return db;
 }
@@ -396,7 +459,9 @@ export function readWeatherForecastSources(
   }));
 }
 
-export function readDynamicPriceSources(db: Database): DynamicPriceSourceRecord[] {
+export function readDynamicPriceSources(
+  db: Database,
+): DynamicPriceSourceRecord[] {
   const rows = db
     .query<DynamicPriceSourceRow, []>(
       `
@@ -412,6 +477,32 @@ export function readDynamicPriceSources(db: Database): DynamicPriceSourceRecord[
     siteId: row.site_id,
     name: row.name,
     provider: row.provider,
+    updatedAt: row.updated_at,
+  }));
+}
+
+export function readSolarEnergyProviders(
+  db: Database,
+): SolarEnergyProviderRecord[] {
+  const rows = db
+    .query<SolarEnergyProviderRow, []>(
+      `
+        SELECT id, site_id, name, plugin, ip_address, enabled, connected, serial_number, updated_at
+        FROM solar_energy_providers
+        ORDER BY name ASC, id ASC
+      `,
+    )
+    .all();
+
+  return rows.map((row) => ({
+    id: row.id,
+    siteId: row.site_id,
+    name: row.name,
+    plugin: row.plugin,
+    ipAddress: row.ip_address,
+    enabled: row.enabled === 1,
+    connected: row.connected === 1,
+    serialNumber: row.serial_number,
     updatedAt: row.updated_at,
   }));
 }
@@ -669,6 +760,46 @@ function ensureWeatherSourceColumns(db: Database): void {
   `);
 }
 
+function ensureSolarEnergyProviderColumns(db: Database): void {
+  const columns = db
+    .query<{ name: string }, []>("PRAGMA table_info(solar_energy_providers)")
+    .all()
+    .map((column) => column.name);
+
+  if (!columns.includes("plugin")) {
+    db.exec(
+      "ALTER TABLE solar_energy_providers ADD COLUMN plugin TEXT NOT NULL DEFAULT 'enphase-local';",
+    );
+  }
+
+  if (!columns.includes("serial_number")) {
+    db.exec(
+      "ALTER TABLE solar_energy_providers ADD COLUMN serial_number TEXT;",
+    );
+
+    if (columns.includes("details")) {
+      db.exec(`
+        UPDATE solar_energy_providers
+        SET serial_number = NULLIF(
+          TRIM(
+            SUBSTR(
+              details,
+              INSTR(details, 'serial ') + LENGTH('serial '),
+              CASE
+                WHEN INSTR(SUBSTR(details, INSTR(details, 'serial ') + LENGTH('serial ')), ',') > 0
+                  THEN INSTR(SUBSTR(details, INSTR(details, 'serial ') + LENGTH('serial ')), ',') - 1
+                ELSE LENGTH(details)
+              END
+            )
+          ),
+          ''
+        )
+        WHERE details LIKE '%serial %' AND (serial_number IS NULL OR serial_number = '')
+      `);
+    }
+  }
+}
+
 function ensureDynamicPriceSourceColumns(db: Database): void {
   const columns = db
     .query<{ name: string }, []>("PRAGMA table_info(dynamic_price_sources)")
@@ -692,6 +823,28 @@ function ensureDynamicPriceSourceColumns(db: Database): void {
       ELSE 'tibber'
     END
   `);
+}
+
+function ensureSolarEnergyProviderSampleColumns(db: Database): void {
+  const columns = db
+    .query<{ name: string }, []>(
+      "PRAGMA table_info(solar_energy_provider_samples)",
+    )
+    .all()
+    .map((column) => column.name);
+
+  if (!columns.includes("sample_count")) {
+    db.exec(
+      "ALTER TABLE solar_energy_provider_samples ADD COLUMN sample_count INTEGER NOT NULL DEFAULT 0;",
+    );
+    db.exec(`
+      UPDATE solar_energy_provider_samples
+      SET sample_count = CASE
+        WHEN power_w IS NULL THEN 0
+        ELSE 1
+      END
+    `);
+  }
 }
 
 export function readBatteries(db: Database): BatteryRecord[] {
@@ -978,7 +1131,6 @@ export function readManagedDeviceTelemetry(
           kind,
           power_w,
           soc_percent,
-          gas_m3,
           state,
           observed_at
         FROM device_telemetry
@@ -993,13 +1145,15 @@ export function readManagedDeviceTelemetry(
     kind: row.kind,
     powerW: row.power_w,
     socPercent: row.soc_percent,
-    gasM3: row.gas_m3,
     state: row.state,
     observedAt: row.observed_at,
   }));
 }
 
-export function readP1MeterSamples(db: Database, siteId: string): P1MeterSampleRecord[] {
+export function readP1MeterSamples(
+  db: Database,
+  siteId: string,
+): P1MeterSampleRecord[] {
   const rows = db
     .query<P1MeterSampleRow, [string]>(
       `
@@ -1044,6 +1198,30 @@ export function readBatteryPowerSamples(
   }));
 }
 
+export function readSolarEnergyProviderSamples(
+  db: Database,
+  siteId: string,
+): SolarEnergyProviderSampleRecord[] {
+  const rows = db
+    .query<SolarEnergyProviderSampleRow, [string]>(
+      `
+        SELECT site_id, provider_id, period_start, observed_at, power_w, sample_count
+        FROM solar_energy_provider_samples
+        WHERE site_id = ?1
+        ORDER BY period_start ASC, provider_id ASC
+      `,
+    )
+    .all(siteId);
+
+  return rows.map((row) => ({
+    siteId: row.site_id,
+    providerId: row.provider_id,
+    periodStart: row.period_start,
+    observedAt: row.observed_at,
+    powerW: row.power_w,
+  }));
+}
+
 export function upsertManagedDeviceTelemetry(
   db: Database,
   telemetry: ManagedDeviceTelemetryRecord,
@@ -1056,16 +1234,14 @@ export function upsertManagedDeviceTelemetry(
         kind,
         power_w,
         soc_percent,
-        gas_m3,
         state,
         observed_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(device_id) DO UPDATE SET
         site_id = excluded.site_id,
         kind = excluded.kind,
         power_w = excluded.power_w,
         soc_percent = excluded.soc_percent,
-        gas_m3 = excluded.gas_m3,
         state = excluded.state,
         observed_at = excluded.observed_at
     `,
@@ -1075,7 +1251,6 @@ export function upsertManagedDeviceTelemetry(
     telemetry.kind,
     telemetry.powerW,
     telemetry.socPercent,
-    telemetry.gasM3,
     telemetry.state,
     telemetry.observedAt,
   );
@@ -1128,6 +1303,37 @@ export function upsertManagedDeviceTelemetry(
       telemetry.powerW,
     );
     deleteExpiredSamples(db, "battery_power_samples");
+  }
+
+  if (telemetry.kind === "solar-energy-provider") {
+    db.query(
+      `
+        INSERT INTO solar_energy_provider_samples (
+          site_id,
+          provider_id,
+          period_start,
+          observed_at,
+          power_w,
+          sample_count
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+        ON CONFLICT(site_id, provider_id, period_start) DO UPDATE SET
+          observed_at = excluded.observed_at,
+          power_w = CASE
+            WHEN excluded.sample_count = 0 THEN solar_energy_provider_samples.power_w
+            WHEN solar_energy_provider_samples.sample_count = 0 THEN excluded.power_w
+            ELSE ((solar_energy_provider_samples.power_w * solar_energy_provider_samples.sample_count) + excluded.power_w) / (solar_energy_provider_samples.sample_count + excluded.sample_count)
+          END,
+          sample_count = solar_energy_provider_samples.sample_count + excluded.sample_count
+      `,
+    ).run(
+      telemetry.siteId,
+      telemetry.deviceId,
+      periodStart,
+      telemetry.observedAt,
+      telemetry.powerW,
+      telemetry.powerW === null ? 0 : 1,
+    );
+    deleteExpiredSamples(db, "solar_energy_provider_samples");
   }
 }
 

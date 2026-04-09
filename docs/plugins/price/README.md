@@ -2,59 +2,67 @@
 
 ## Goal
 
-Add a dynamic price information resource, such as Nordpool or Tibber, in a way that is manageable through EMS first and ready for later daemon-side strategy use.
+Add or extend a dynamic electricity price provider in a way that is manageable through EMS first and ready for daemon-owned refresh and strategy use.
+
+## Current Supported Provider
+
+- `tibber`
 
 ## Current Touchpoints
 
-- `packages/core/src/index.ts`: `DynamicPriceSourceRecord`
-- `apps/ems/src/price.ts`: price source list, add, update, and remove commands
+- `packages/core/src/index.ts`: `DynamicPriceSourceRecord`, `DynamicPriceSnapshotRecord`, and `DynamicPricePointRecord`
+- `apps/ems/src/plugins/price/`: provider-specific price fetch and normalization logic
+- `apps/ems/src/price.ts`: source list, add, update, and remove commands
 - `apps/ems/src/managed-site-store.ts`: dynamic price source CRUD
-- `apps/daemon/src/database.ts`: `dynamic_price_sources` table
+- `apps/daemon/src/database.ts`: `dynamic_price_sources`, `dynamic_price_snapshots`, and `dynamic_price_samples`
+- `apps/daemon/src/index.ts`: daemon refresh loop for price snapshots and samples
+
+## Tibber Notes
+
+- Authentication currently uses `TIBBER_ACCESS_TOKEN`.
+- `TIBBER_HOME_ID` is optional and selects a specific Tibber home when an account has more than one.
+- The current query reads quarter-hourly `current`, `today`, and `tomorrow` price points from Tibber's GraphQL API.
+- EMSD normalizes those responses into timestamped import price points with `currency`, `startsAt`, and `importPrice`.
+
+For provider-specific details, see `docs/reference/price/tibber.md`.
 
 ## Implementation Steps
 
-1. Pick the provider contract.
-   Define the provider ID, required credentials or region settings, refresh cadence, and whether the provider offers import prices, export prices, or both.
+1. Define the provider contract.
+   Be explicit about authentication, regional selection, refresh cadence, and whether the provider exposes import prices, export prices, or both.
 
-2. Decide the normalized pricing model.
-   Define the minimum downstream shape the daemon and strategy engine will need, such as timestamped import and export price points. Keep that normalized contract separate from provider-specific response payloads.
+2. Normalize only the downstream pricing data EMSD needs.
+   Keep provider payload shapes local to the plugin and return a stable normalized snapshot record.
 
-3. Keep the managed record focused on configuration.
-   The `dynamic_price_sources` table should store provider identity and durable configuration. Time-series price data itself should be a daemon concern and should not be stuffed into the managed record.
+3. Keep managed source records configuration-only.
+   Store provider identity and durable configuration in `dynamic_price_sources`. Refreshed price data belongs in daemon-owned snapshot and sample tables.
 
-4. Extend shared types if configuration needs to grow.
-   Add shared fields in `packages/core/src/index.ts` only when those fields are needed across daemon and EMS boundaries.
+4. Extend shared types only when they are reused across boundaries.
+   Avoid adding provider-specific fields to shared records unless the daemon, EMS, or web server all need them.
 
-5. Update daemon schema when needed.
-   Add the necessary columns to `dynamic_price_sources` in `apps/daemon/src/database.ts`. Prefer small explicit columns over opaque blobs when the fields are stable.
+5. Keep runtime refresh daemon-owned.
+   Scheduled sync, retries, deduplication, and retention should stay in daemon code.
 
-6. Update EMS store and commands.
-   Mirror schema changes in `apps/ems/src/managed-site-store.ts` and `apps/ems/src/price.ts`. Keep the CLI readable and explicit about any credentials, market region, or tariff parameters.
+6. Fail clearly on provider auth and account selection issues.
+   Errors should name missing environment variables, missing homes, or malformed provider responses.
 
-7. Reserve runtime syncing for the daemon.
-   Scheduled sync, retries, provider rate limiting, and durable price history belong in daemon code, not in ad hoc EMS management commands.
+7. Add targeted tests.
+   Cover source CRUD, provider normalization, deduping, and auth or response validation behavior.
 
-8. Add tests.
-   Cover price source CRUD, validation, and any shared type additions.
-
-9. Plan the first consumer.
-   Make sure the chosen normalized price output will fit future `price sync`, simulation, and dynamic-pricing strategy work
-
-## Good First Scope
-
-- Support creating a managed source record for one provider.
-- Persist only the configuration required to authenticate and identify the relevant market.
-- Defer scheduled syncing and price history tables until daemon strategy work needs them.
+8. Validate the first consumer.
+   Confirm the normalized output is usable for dashboard display and future strategy logic before expanding the provider surface.
 
 ## Suggested Test Scope
 
-- `apps/ems/src/price.test.ts`: CLI parsing, CRUD, and validation
-- `apps/daemon/src/database.test.ts`: only if `dynamic_price_sources` schema changes
-- `packages/core/src/index.test.ts`: only if shared price types or helpers are added
+- `apps/ems/src/price.test.ts`: CLI parsing and source CRUD
+- `apps/ems/src/price-plugin.test.ts`: provider normalization, auth handling, and malformed payloads
+- `apps/daemon/src/database.test.ts`: only if schema or snapshot persistence changes
+- `packages/core/src/index.test.ts`: only if shared price types change
 
 ## Definition Of Done
 
 - A dynamic price source can be added, listed, updated, and removed through EMS.
-- Durable provider configuration persists correctly.
-- The integration is ready for future daemon-owned price syncing.
-- Tests cover the new command and persistence behavior.
+- The provider returns normalized price points.
+- The daemon can refresh and persist price snapshots.
+- Auth and provider errors are actionable.
+- Tests cover the provider-specific behavior.

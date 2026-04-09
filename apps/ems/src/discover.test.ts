@@ -103,6 +103,21 @@ test("getDiscoverySignatures exposes the discovery plugin catalog", () => {
         ],
       },
     },
+    {
+      pluginType: "solar-energy-provider",
+      category: "solar-energy-provider",
+      model: "enphase-local",
+      name: "Enphase IQ Gateway",
+      port: 80,
+      schemes: ["http"],
+      request: {
+        path: "/info.xml",
+        method: "GET",
+      },
+      response: {
+        match: ["<sn>\\d+</sn>", "<(software|pn)>"],
+      },
+    },
   ]);
 });
 
@@ -316,7 +331,10 @@ test("discoverHostDevices matches a sonnen battery from the status endpoint", as
   globalThis.fetch = (async (input: string | URL | Request) => {
     const url = String(input);
 
-    if (url === "http://192.168.1.88:8080/rpc/Indevolt.GetData?config=%7B%22t%22%3A%5B0%2C1118%2C6000%2C6001%2C6002%2C7101%5D%7D") {
+    if (
+      url ===
+      "http://192.168.1.88:8080/rpc/Indevolt.GetData?config=%7B%22t%22%3A%5B0%2C1118%2C6000%2C6001%2C6002%2C7101%5D%7D"
+    ) {
       return new Response("not found", { status: 404 });
     }
 
@@ -375,16 +393,78 @@ test("discoverHostDevices matches a sonnen battery from the status endpoint", as
   }
 });
 
+test("discoverHostDevices matches an Enphase IQ Gateway from info.xml", async () => {
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+
+    if (url === "http://192.168.1.40:80/info.xml") {
+      return new Response(
+        `
+          <envoy_info>
+            <device>
+              <software>D8.2.4222</software>
+              <pn>IQ Gateway</pn>
+              <sn>123456789012</sn>
+            </device>
+          </envoy_info>
+        `,
+        { status: 200 },
+      );
+    }
+
+    if (url === "http://192.168.1.40:80/api/v1/production") {
+      return new Response(
+        JSON.stringify({
+          wattHoursLifetime: 1100000,
+          wattHoursToday: 12400,
+          wattsNow: 2550,
+        }),
+        { status: 200 },
+      );
+    }
+
+    throw new Error(`Unexpected URL: ${url}`);
+  }) as typeof fetch;
+
+  try {
+    const devices = await discoverHostDevices("192.168.1.40", {
+      verbose: false,
+      host: "192.168.1.40",
+    });
+
+    expect(devices).toHaveLength(1);
+    expect(devices[0]).toMatchObject({
+      category: "solar-energy-provider",
+      model: "enphase-local",
+      name: "Enphase IQ Gateway",
+      ipAddress: "192.168.1.40",
+      powerW: 2550,
+      state: "connected",
+    });
+    expect(devices[0]?.details).toContain("serial 123456789012");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("discoverHostDevices matches a HomeWizard battery controller", async () => {
   const originalFetch = globalThis.fetch;
   const originalToken = process.env.HOMEWIZARD_BATTERY_AUTH_TOKEN;
 
   process.env.HOMEWIZARD_BATTERY_AUTH_TOKEN = "hw-token";
 
-  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+  globalThis.fetch = (async (
+    input: string | URL | Request,
+    init?: RequestInit,
+  ) => {
     const url = String(input);
 
-    if (url === "http://192.168.1.44:8080/rpc/Indevolt.GetData?config=%7B%22t%22%3A%5B0%2C1118%2C6000%2C6001%2C6002%2C7101%5D%7D") {
+    if (
+      url ===
+      "http://192.168.1.44:8080/rpc/Indevolt.GetData?config=%7B%22t%22%3A%5B0%2C1118%2C6000%2C6001%2C6002%2C7101%5D%7D"
+    ) {
       return new Response("not found", { status: 404 });
     }
 

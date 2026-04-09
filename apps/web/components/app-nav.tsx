@@ -1,6 +1,13 @@
 "use client";
 
-import { CloudSun, Gauge, HandCoins, History as HistoryIcon, Zap } from "lucide-react";
+import {
+  CloudSun,
+  Gauge,
+  HandCoins,
+  History as HistoryIcon,
+  SunMedium,
+  Zap,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { UI_STYLES } from "../lib/ui-colors";
@@ -10,6 +17,7 @@ export function AppNav() {
   const pathname = usePathname();
   const navItems = [
     { href: "/", icon: Zap, label: "Battery" },
+    { href: "/solar", icon: SunMedium, label: "Solar Energy" },
     { href: "/forecast", icon: CloudSun, label: "Solar Forecast" },
     { href: "/pricing", icon: HandCoins, label: "Price" },
     { href: "/grid", icon: Gauge, label: "Grid" },
@@ -20,6 +28,7 @@ export function AppNav() {
     <nav className="flex flex-wrap items-center gap-6" aria-label="Primary">
       {navItems.map(({ href, icon: Icon, label }) => (
         <Link
+          aria-label={label}
           key={href}
           className={cn(
             UI_STYLES.tabItem,
@@ -32,7 +41,7 @@ export function AppNav() {
           scroll={false}
         >
           <Icon size={14} />
-          {label}
+          <span className="hidden sm:inline">{label}</span>
         </Link>
       ))}
     </nav>

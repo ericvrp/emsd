@@ -5,6 +5,7 @@ import {
   Gauge,
   HandCoins,
   Layers3,
+  SunMedium,
   Zap,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -28,7 +29,13 @@ import { cn } from "../lib/utils";
 import { DateSelect } from "./date-select";
 import { Card, CardContent, CardHeader } from "./ui/card";
 
-type HistoryTab = "combined" | "price" | "solar" | "grid" | "battery";
+type HistoryTab =
+  | "combined"
+  | "price"
+  | "solar"
+  | "solar-energy"
+  | "grid"
+  | "battery";
 
 type HistoryPageProps = {
   archive: HistoryArchive;
@@ -65,6 +72,7 @@ type CombinedPoint = {
   gridImport: number | null;
   periodStart: string;
   price: number | null;
+  solarEnergy: number | null;
   solar: number | null;
 };
 
@@ -74,12 +82,14 @@ type SplitCombinedPoint = CombinedPoint & {
   currentGridExport: number | null;
   currentGridImport: number | null;
   currentPrice: number | null;
+  currentSolarEnergy: number | null;
   currentSolar: number | null;
   futureBatteryCharge: number | null;
   futureBatteryDischarge: number | null;
   futureGridExport: number | null;
   futureGridImport: number | null;
   futurePrice: number | null;
+  futureSolarEnergy: number | null;
   futureSolar: number | null;
 };
 
@@ -109,6 +119,12 @@ const HISTORY_TABS: Array<{
     icon: Zap,
     label: "Battery",
     value: "battery",
+  },
+  {
+    description: "Review generated wattage measured by the local provider.",
+    icon: SunMedium,
+    label: "Solar Energy",
+    value: "solar-energy",
   },
   {
     description: "Review the solar forecast aligned to each 15-minute period.",
@@ -162,7 +178,12 @@ export function HistoryPage({
       value: sample.value,
     })),
   );
-  const gridSeries = createSignedSeries(aggregatePowerSamples(archive.p1MeterSamples));
+  const solarEnergySeries = createSingleValueSeries(
+    aggregatePowerSamples(archive.solarEnergyProviderSamples),
+  );
+  const gridSeries = createSignedSeries(
+    aggregatePowerSamples(archive.p1MeterSamples),
+  );
   const batterySeries = createSignedSeries(
     aggregatePowerSamples(archive.batteryPowerSamples),
   );
@@ -171,6 +192,10 @@ export function HistoryPage({
     selectedDay === null ? [] : fillSingleValueDay(priceSeries, selectedDay);
   const dailySolarSeries =
     selectedDay === null ? [] : fillSingleValueDay(solarSeries, selectedDay);
+  const dailySolarEnergySeries =
+    selectedDay === null
+      ? []
+      : fillSingleValueDay(solarEnergySeries, selectedDay);
   const dailyGridSeries =
     selectedDay === null ? [] : fillSignedDay(gridSeries, selectedDay);
   const dailyBatterySeries =
@@ -180,12 +205,15 @@ export function HistoryPage({
     battery: dailyBatterySeries,
     grid: dailyGridSeries,
     price: dailyPriceSeries,
+    solarEnergy: dailySolarEnergySeries,
     solar: dailySolarSeries,
   });
-  const splitCombinedDailySeries = splitCombinedSeriesByTime(combinedDailySeries);
+  const splitCombinedDailySeries =
+    splitCombinedSeriesByTime(combinedDailySeries);
 
   const canGoBackward = selectedDayIndex > 0;
-  const canGoForward = selectedDayIndex >= 0 && selectedDayIndex < availableDays.length - 1;
+  const canGoForward =
+    selectedDayIndex >= 0 && selectedDayIndex < availableDays.length - 1;
 
   function navigate(next: {
     day?: string | null;
@@ -232,17 +260,24 @@ export function HistoryPage({
             onSelectLastDay={() => navigate({ day: lastDay })}
             onSelectNextDay={() =>
               navigate({
-                day: canGoForward ? availableDays[selectedDayIndex + 1] ?? null : null,
-              })}
+                day: canGoForward
+                  ? (availableDays[selectedDayIndex + 1] ?? null)
+                  : null,
+              })
+            }
             onSelectPreviousDay={() =>
               navigate({
-                day: canGoBackward ? availableDays[selectedDayIndex - 1] ?? null : null,
-              })}
+                day: canGoBackward
+                  ? (availableDays[selectedDayIndex - 1] ?? null)
+                  : null,
+              })
+            }
             selectedDay={selectedDay}
           />
           {selectedDay === null ? (
             <p className="py-4 text-center text-slate-300">
-              History will appear here once the daemon has collected at least one sampled day.
+              History will appear here once the daemon has collected at least
+              one sampled day.
             </p>
           ) : selectedTab === "combined" ? (
             <CombinedHistoryChart
@@ -267,6 +302,16 @@ export function HistoryPage({
               nowMarkerPeriodStart={nowMarkerPeriodStart}
               points={splitSingleValueSeriesByTime(dailySolarSeries)}
               valueFormatter={formatWholeNumberValue}
+              yAxisFormatter={formatShortPowerValue}
+            />
+          ) : selectedTab === "solar-energy" ? (
+            <SingleValueHistoryChart
+              accentColor={UI_COLORS.solarEnergy}
+              emptyMessage="No generated wattage samples were available for this range."
+              label="Solar Energy"
+              nowMarkerPeriodStart={nowMarkerPeriodStart}
+              points={splitSingleValueSeriesByTime(dailySolarEnergySeries)}
+              valueFormatter={formatPowerValue}
               yAxisFormatter={formatShortPowerValue}
             />
           ) : selectedTab === "grid" ? (
@@ -313,6 +358,8 @@ function CombinedHistoryChart({
       point.futurePrice,
       point.currentSolar,
       point.futureSolar,
+      point.currentSolarEnergy,
+      point.futureSolarEnergy,
       point.currentGridImport,
       point.futureGridImport,
       point.currentGridExport,
@@ -335,8 +382,12 @@ function CombinedHistoryChart({
   return (
     <div className="space-y-2.5">
       <div className="flex flex-wrap gap-2 text-xs font-medium text-slate-300">
-        <LegendChip color={UI_COLORS.batteryDischarge} label="Battery discharge" />
+        <LegendChip
+          color={UI_COLORS.batteryDischarge}
+          label="Battery discharge"
+        />
         <LegendChip color={UI_COLORS.batteryCharge} label="Battery charge" />
+        <LegendChip color={UI_COLORS.solarEnergy} label="Solar Energy" />
         <LegendChip color={UI_COLORS.forecast} label="Solar Forecast" />
         <LegendChip color={UI_COLORS.price} label="Price" />
         <LegendChip color={UI_COLORS.gridImport} label="Take from grid" />
@@ -344,8 +395,15 @@ function CombinedHistoryChart({
       </div>
       <div className="h-[360px] w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={points} margin={{ top: 12, right: 16, bottom: 0, left: 0 }}>
-            <CartesianGrid stroke={UI_COLORS.chartGrid} strokeDasharray="3 6" vertical={false} />
+          <LineChart
+            data={points}
+            margin={{ top: 12, right: 16, bottom: 0, left: 0 }}
+          >
+            <CartesianGrid
+              stroke={UI_COLORS.chartGrid}
+              strokeDasharray="3 6"
+              vertical={false}
+            />
             <XAxis
               axisLine={false}
               dataKey="periodStart"
@@ -377,6 +435,27 @@ function CombinedHistoryChart({
                   labelFormatter={formatTooltipTimestamp}
                 />
               }
+            />
+            <Line
+              dataKey="currentSolarEnergy"
+              dot={false}
+              isAnimationActive={false}
+              name="Solar Energy"
+              stroke={UI_COLORS.solarEnergy}
+              strokeWidth={2.2}
+              type="monotone"
+              yAxisId="power"
+            />
+            <Line
+              dataKey="futureSolarEnergy"
+              dot={false}
+              isAnimationActive={false}
+              name="Solar Energy"
+              stroke={UI_COLORS.solarEnergy}
+              strokeOpacity={0.35}
+              strokeWidth={2.2}
+              type="monotone"
+              yAxisId="power"
             />
             <Line
               dataKey="currentSolar"
@@ -525,7 +604,7 @@ function CombinedHistoryChart({
   );
 }
 
-function SingleValueHistoryChart({
+export function SingleValueHistoryChart({
   accentColor,
   emptyMessage,
   label,
@@ -543,7 +622,9 @@ function SingleValueHistoryChart({
   yAxisFormatter: (value: number) => string;
 }) {
   const hasValues = points.some(
-    (point) => typeof point.currentValue === "number" || typeof point.futureValue === "number",
+    (point) =>
+      typeof point.currentValue === "number" ||
+      typeof point.futureValue === "number",
   );
   const gradientId = `${label.toLowerCase().replace(/\s+/g, "-")}-gradient`;
   const mutedGradientId = `${label.toLowerCase().replace(/\s+/g, "-")}-muted-gradient`;
@@ -559,7 +640,10 @@ function SingleValueHistoryChart({
       </div>
       <div className="h-[360px] w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={points} margin={{ top: 12, right: 16, bottom: 0, left: 0 }}>
+          <AreaChart
+            data={points}
+            margin={{ top: 12, right: 16, bottom: 0, left: 0 }}
+          >
             <defs>
               <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor={accentColor} stopOpacity={0.38} />
@@ -570,7 +654,11 @@ function SingleValueHistoryChart({
                 <stop offset="95%" stopColor={accentColor} stopOpacity={0.02} />
               </linearGradient>
             </defs>
-            <CartesianGrid stroke={UI_COLORS.chartGrid} strokeDasharray="3 6" vertical={false} />
+            <CartesianGrid
+              stroke={UI_COLORS.chartGrid}
+              strokeDasharray="3 6"
+              vertical={false}
+            />
             <XAxis
               axisLine={false}
               dataKey="periodStart"
@@ -674,26 +762,85 @@ export function SignedHistoryChart({
       </div>
       <div className="h-[360px] w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={points} margin={{ top: 12, right: 16, bottom: 0, left: 0 }}>
+          <AreaChart
+            data={points}
+            margin={{ top: 12, right: 16, bottom: 0, left: 0 }}
+          >
             <defs>
-              <linearGradient id={positiveGradientId} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={positiveColor} stopOpacity={0.34} />
-                <stop offset="95%" stopColor={positiveColor} stopOpacity={0.04} />
+              <linearGradient
+                id={positiveGradientId}
+                x1="0"
+                y1="0"
+                x2="0"
+                y2="1"
+              >
+                <stop
+                  offset="5%"
+                  stopColor={positiveColor}
+                  stopOpacity={0.34}
+                />
+                <stop
+                  offset="95%"
+                  stopColor={positiveColor}
+                  stopOpacity={0.04}
+                />
               </linearGradient>
-              <linearGradient id={positiveMutedGradientId} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={positiveColor} stopOpacity={0.16} />
-                <stop offset="95%" stopColor={positiveColor} stopOpacity={0.02} />
+              <linearGradient
+                id={positiveMutedGradientId}
+                x1="0"
+                y1="0"
+                x2="0"
+                y2="1"
+              >
+                <stop
+                  offset="5%"
+                  stopColor={positiveColor}
+                  stopOpacity={0.16}
+                />
+                <stop
+                  offset="95%"
+                  stopColor={positiveColor}
+                  stopOpacity={0.02}
+                />
               </linearGradient>
-              <linearGradient id={negativeGradientId} x1="0" y1="0" x2="0" y2="1">
+              <linearGradient
+                id={negativeGradientId}
+                x1="0"
+                y1="0"
+                x2="0"
+                y2="1"
+              >
                 <stop offset="5%" stopColor={negativeColor} stopOpacity={0.3} />
-                <stop offset="95%" stopColor={negativeColor} stopOpacity={0.04} />
+                <stop
+                  offset="95%"
+                  stopColor={negativeColor}
+                  stopOpacity={0.04}
+                />
               </linearGradient>
-              <linearGradient id={negativeMutedGradientId} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={negativeColor} stopOpacity={0.16} />
-                <stop offset="95%" stopColor={negativeColor} stopOpacity={0.02} />
+              <linearGradient
+                id={negativeMutedGradientId}
+                x1="0"
+                y1="0"
+                x2="0"
+                y2="1"
+              >
+                <stop
+                  offset="5%"
+                  stopColor={negativeColor}
+                  stopOpacity={0.16}
+                />
+                <stop
+                  offset="95%"
+                  stopColor={negativeColor}
+                  stopOpacity={0.02}
+                />
               </linearGradient>
             </defs>
-            <CartesianGrid stroke={UI_COLORS.chartGrid} strokeDasharray="3 6" vertical={false} />
+            <CartesianGrid
+              stroke={UI_COLORS.chartGrid}
+              strokeDasharray="3 6"
+              vertical={false}
+            />
             <XAxis
               axisLine={false}
               dataKey="periodStart"
@@ -709,7 +856,11 @@ export function SignedHistoryChart({
               tickLine={false}
               width={60}
             />
-            <ReferenceLine stroke={UI_COLORS.chartZeroLine} strokeDasharray="4 6" y={0} />
+            <ReferenceLine
+              stroke={UI_COLORS.chartZeroLine}
+              strokeDasharray="4 6"
+              y={0}
+            />
             {nowMarkerPeriodStart ? (
               <ReferenceLine
                 label={buildNowLabel()}
@@ -807,11 +958,16 @@ function HistoryTooltip({
       </p>
       <div className="space-y-1.5">
         {deduplicatedEntries.map((entry) => (
-          <div key={`${entry.dataKey}-${entry.name}`} className="flex items-center justify-between gap-4">
+          <div
+            key={`${entry.dataKey}-${entry.name}`}
+            className="flex items-center justify-between gap-4"
+          >
             <span className="flex items-center gap-2 text-slate-200">
               <span
                 className="inline-block h-2.5 w-2.5 rounded-full"
-                style={{ backgroundColor: entry.color ?? UI_COLORS.chartSeriesFallback }}
+                style={{
+                  backgroundColor: entry.color ?? UI_COLORS.chartSeriesFallback,
+                }}
               />
               {entry.name ?? entry.dataKey ?? "Value"}
             </span>
@@ -840,9 +996,7 @@ function HistoryTabButton({
     <button
       className={cn(
         UI_STYLES.tabItem,
-        active
-          ? UI_STYLES.tabItemActive
-          : UI_STYLES.tabItemInactive,
+        active ? UI_STYLES.tabItemActive : UI_STYLES.tabItemInactive,
       )}
       onClick={onClick}
       type="button"
@@ -856,7 +1010,10 @@ function HistoryTabButton({
 function LegendChip({ color, label }: { color: string; label: string }) {
   return (
     <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5">
-      <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
+      <span
+        className="inline-block h-2.5 w-2.5 rounded-full"
+        style={{ backgroundColor: color }}
+      />
       {label}
     </span>
   );
@@ -875,6 +1032,14 @@ function getAvailableDays(archive: HistoryArchive): string[] {
   }
 
   for (const sample of archive.solarForecastSamples) {
+    const dayKey = getUtcDayKey(sample.periodStart);
+
+    if (dayKey <= todayKey) {
+      dayKeys.add(dayKey);
+    }
+  }
+
+  for (const sample of archive.solarEnergyProviderSamples) {
     const dayKey = getUtcDayKey(sample.periodStart);
 
     if (dayKey <= todayKey) {
@@ -901,10 +1066,13 @@ function getAvailableDays(archive: HistoryArchive): string[] {
   return [...dayKeys].sort();
 }
 
-function createSingleValueSeries(points: SingleValuePoint[]): SingleValuePoint[] {
+function createSingleValueSeries(
+  points: SingleValuePoint[],
+): SingleValuePoint[] {
   return [...points].sort(
     (left, right) =>
-      new Date(left.periodStart).getTime() - new Date(right.periodStart).getTime(),
+      new Date(left.periodStart).getTime() -
+      new Date(right.periodStart).getTime(),
   );
 }
 
@@ -914,7 +1082,10 @@ export function aggregatePowerSamples(
   const aggregated = new Map<string, { hasValue: boolean; total: number }>();
 
   for (const sample of samples) {
-    const bucket = aggregated.get(sample.periodStart) ?? { hasValue: false, total: 0 };
+    const bucket = aggregated.get(sample.periodStart) ?? {
+      hasValue: false,
+      total: 0,
+    };
 
     if (typeof sample.powerW === "number") {
       bucket.hasValue = true;
@@ -931,11 +1102,14 @@ export function aggregatePowerSamples(
     }))
     .sort(
       (left, right) =>
-        new Date(left.periodStart).getTime() - new Date(right.periodStart).getTime(),
+        new Date(left.periodStart).getTime() -
+        new Date(right.periodStart).getTime(),
     );
 }
 
-export function createSignedSeries(points: SingleValuePoint[]): SignedValuePoint[] {
+export function createSignedSeries(
+  points: SingleValuePoint[],
+): SignedValuePoint[] {
   return points.map((point) => ({
     ...point,
     negativeValue:
@@ -945,7 +1119,7 @@ export function createSignedSeries(points: SingleValuePoint[]): SignedValuePoint
   }));
 }
 
-function splitSingleValueSeriesByTime(
+export function splitSingleValueSeriesByTime(
   points: SingleValuePoint[],
 ): SplitSingleValuePoint[] {
   const now = Date.now();
@@ -989,7 +1163,10 @@ export function splitSignedSeriesByTime(
   });
 }
 
-function fillSingleValueDay(points: SingleValuePoint[], dayKey: string): SingleValuePoint[] {
+export function fillSingleValueDay(
+  points: SingleValuePoint[],
+  dayKey: string,
+): SingleValuePoint[] {
   const valuesByPeriod = new Map(
     points
       .filter((point) => getUtcDayKey(point.periodStart) === dayKey)
@@ -1002,7 +1179,10 @@ function fillSingleValueDay(points: SingleValuePoint[], dayKey: string): SingleV
   }));
 }
 
-export function fillSignedDay(points: SignedValuePoint[], dayKey: string): SignedValuePoint[] {
+export function fillSignedDay(
+  points: SignedValuePoint[],
+  dayKey: string,
+): SignedValuePoint[] {
   const valuesByPeriod = new Map(
     points
       .filter((point) => getUtcDayKey(point.periodStart) === dayKey)
@@ -1012,12 +1192,14 @@ export function fillSignedDay(points: SignedValuePoint[], dayKey: string): Signe
   return createDayPeriods(dayKey).map((periodStart) => {
     const existing = valuesByPeriod.get(periodStart);
 
-    return existing ?? {
-      negativeValue: null,
-      periodStart,
-      positiveValue: null,
-      value: null,
-    };
+    return (
+      existing ?? {
+        negativeValue: null,
+        periodStart,
+        positiveValue: null,
+        value: null,
+      }
+    );
   });
 }
 
@@ -1025,6 +1207,7 @@ function createCombinedSeries(input: {
   battery: SignedValuePoint[];
   grid: SignedValuePoint[];
   price: SingleValuePoint[];
+  solarEnergy: SingleValuePoint[];
   solar: SingleValuePoint[];
 }): CombinedPoint[] {
   const combined = new Map<string, CombinedPoint>();
@@ -1037,25 +1220,40 @@ function createCombinedSeries(input: {
       gridImport: null,
       periodStart: point.periodStart,
       price: point.value,
+      solarEnergy: null,
       solar: null,
     });
   }
 
+  for (const point of input.solarEnergy) {
+    const existing =
+      combined.get(point.periodStart) ??
+      createEmptyCombinedPoint(point.periodStart);
+    existing.solarEnergy = point.value;
+    combined.set(point.periodStart, existing);
+  }
+
   for (const point of input.solar) {
-    const existing = combined.get(point.periodStart) ?? createEmptyCombinedPoint(point.periodStart);
+    const existing =
+      combined.get(point.periodStart) ??
+      createEmptyCombinedPoint(point.periodStart);
     existing.solar = point.value;
     combined.set(point.periodStart, existing);
   }
 
   for (const point of input.grid) {
-    const existing = combined.get(point.periodStart) ?? createEmptyCombinedPoint(point.periodStart);
+    const existing =
+      combined.get(point.periodStart) ??
+      createEmptyCombinedPoint(point.periodStart);
     existing.gridExport = point.negativeValue;
     existing.gridImport = point.positiveValue;
     combined.set(point.periodStart, existing);
   }
 
   for (const point of input.battery) {
-    const existing = combined.get(point.periodStart) ?? createEmptyCombinedPoint(point.periodStart);
+    const existing =
+      combined.get(point.periodStart) ??
+      createEmptyCombinedPoint(point.periodStart);
     existing.batteryCharge = point.negativeValue;
     existing.batteryDischarge = point.positiveValue;
     combined.set(point.periodStart, existing);
@@ -1063,7 +1261,8 @@ function createCombinedSeries(input: {
 
   return [...combined.values()].sort(
     (left, right) =>
-      new Date(left.periodStart).getTime() - new Date(right.periodStart).getTime(),
+      new Date(left.periodStart).getTime() -
+      new Date(right.periodStart).getTime(),
   );
 }
 
@@ -1087,12 +1286,16 @@ function splitCombinedSeriesByTime(
       currentGridExport: isFuture ? null : point.gridExport,
       currentGridImport: isFuture ? null : point.gridImport,
       currentPrice: isFuture ? null : point.price,
+      currentSolarEnergy: isFuture ? null : point.solarEnergy,
       currentSolar: isFuture ? null : point.solar,
       futureBatteryCharge: includeInFutureSeries ? point.batteryCharge : null,
-      futureBatteryDischarge: includeInFutureSeries ? point.batteryDischarge : null,
+      futureBatteryDischarge: includeInFutureSeries
+        ? point.batteryDischarge
+        : null,
       futureGridExport: includeInFutureSeries ? point.gridExport : null,
       futureGridImport: includeInFutureSeries ? point.gridImport : null,
       futurePrice: includeInFutureSeries ? point.price : null,
+      futureSolarEnergy: includeInFutureSeries ? point.solarEnergy : null,
       futureSolar: includeInFutureSeries ? point.solar : null,
     };
   });
@@ -1106,6 +1309,7 @@ function createEmptyCombinedPoint(periodStart: string): CombinedPoint {
     gridImport: null,
     periodStart,
     price: null,
+    solarEnergy: null,
     solar: null,
   };
 }
@@ -1175,6 +1379,14 @@ function formatCombinedValue(value: number, key?: string): string {
     return formatWholeNumberValue(value);
   }
 
+  if (
+    key === "solarEnergy" ||
+    key === "currentSolarEnergy" ||
+    key === "futureSolarEnergy"
+  ) {
+    return formatPowerValue(value);
+  }
+
   return formatPowerValue(value);
 }
 
@@ -1185,13 +1397,19 @@ export function getUtcDayKey(value: Date | string): string {
 function deduplicateTooltipEntries(
   entries: Array<TooltipPayloadEntry & { value: number }>,
 ): Array<TooltipPayloadEntry & { value: number }> {
-  const entriesByName = new Map<string, TooltipPayloadEntry & { value: number }>();
+  const entriesByName = new Map<
+    string,
+    TooltipPayloadEntry & { value: number }
+  >();
 
   for (const entry of entries) {
     const key = entry.name ?? entry.dataKey ?? "Value";
     const existing = entriesByName.get(key);
 
-    if (!existing || getTooltipEntryPriority(entry) > getTooltipEntryPriority(existing)) {
+    if (
+      !existing ||
+      getTooltipEntryPriority(entry) > getTooltipEntryPriority(existing)
+    ) {
       entriesByName.set(key, entry);
     }
   }
@@ -1213,7 +1431,9 @@ function getTooltipEntryPriority(entry: TooltipPayloadEntry): number {
 
 export function getCurrentPeriodStart(): string {
   const now = Date.now();
-  return new Date(Math.floor(now / HISTORY_STEP_MS) * HISTORY_STEP_MS).toISOString();
+  return new Date(
+    Math.floor(now / HISTORY_STEP_MS) * HISTORY_STEP_MS,
+  ).toISOString();
 }
 
 function buildNowLabel() {

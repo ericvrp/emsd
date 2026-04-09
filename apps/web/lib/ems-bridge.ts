@@ -2,22 +2,26 @@ import { execFile } from "node:child_process";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
 import type {
-  BatteryPowerSampleRecord,
-  DynamicPriceSampleRecord,
-  P1MeterSampleRecord,
-  SolarForecastSampleRecord,
-} from "../../daemon/src/database";
-import type {
   BatteryStrategyPlanRecord,
   DynamicPriceSnapshotRecord,
   DynamicPriceSourceRecord,
   ManagedDeviceRecord,
   ManagedDeviceStatusRecord,
-  NormalizedBatteryInfo,
   SiteRecord,
   WeatherForecastRecord,
   WeatherForecastSourceRecord,
 } from "@emsd/core";
+import type {
+  BatteryPowerSampleRecord,
+  DynamicPriceSampleRecord,
+  P1MeterSampleRecord,
+  SolarEnergyProviderSampleRecord,
+  SolarForecastSampleRecord,
+} from "../../daemon/src/database";
+import type {
+  DiscoveredDevice,
+  SignedDiscoveredDevice,
+} from "./discovery-proof";
 
 const execFileAsync = promisify(execFile);
 const bridgeScriptPath = resolve(process.cwd(), "server/ems-web-api.ts");
@@ -60,21 +64,10 @@ export interface LiveStatusSnapshot {
   >;
 }
 
-export interface DiscoveredDevice {
-  category: "battery" | "meter";
-  details: string;
-  discoveryId: string;
-  ipAddress: string;
-  model: string;
-  name: string;
-  powerW: number | null;
-  socPercent: number | null;
-  state: "idle" | "charging" | "discharging" | "connected" | "offline" | null;
-}
-
 export interface BulkDiscoveryAddResult {
   addedBatteries: number;
   addedMeters: number;
+  addedSolarEnergyProviders: number;
   skippedDevices: number;
 }
 
@@ -83,6 +76,7 @@ export interface HistoryArchive {
   dynamicPriceSamples: DynamicPriceSampleRecord[];
   p1MeterSamples: P1MeterSampleRecord[];
   siteId: string;
+  solarEnergyProviderSamples: SolarEnergyProviderSampleRecord[];
   solarForecastSamples: SolarForecastSampleRecord[];
 }
 
@@ -106,12 +100,14 @@ async function runBridge<T>(
     stdout = result.stdout;
     stderr = result.stderr;
   } catch (error) {
-    stdout = typeof (error as { stdout?: unknown }).stdout === "string"
-      ? ((error as { stdout: string }).stdout)
-      : "";
-    stderr = typeof (error as { stderr?: unknown }).stderr === "string"
-      ? ((error as { stderr: string }).stderr)
-      : "";
+    stdout =
+      typeof (error as { stdout?: unknown }).stdout === "string"
+        ? (error as { stdout: string }).stdout
+        : "";
+    stderr =
+      typeof (error as { stderr?: unknown }).stderr === "string"
+        ? (error as { stderr: string }).stderr
+        : "";
 
     if (!stdout.trim()) {
       throw error;
@@ -170,8 +166,7 @@ export function deleteSite(input: { id: string }) {
 }
 
 export function createBatteryFromDiscovery(input: {
-  discoveryId: string;
-  host: string | null;
+  device: SignedDiscoveredDevice;
   siteId: string;
 }) {
   return runBridge<ManagedDeviceRecord>("battery-create", input);
@@ -222,28 +217,28 @@ export function setBatteryStrategyPlan(input: {
   return runBridge<ManagedDeviceRecord>("battery-set-strategy-plan", input);
 }
 
-export function getBatteryNormalizedInfo(input: {
-  id: string;
-  siteId: string;
-}) {
-  return runBridge<NormalizedBatteryInfo>("battery-get-normalized-info", input);
-}
-
 export function createMeterFromDiscovery(input: {
-  discoveryId: string;
-  host: string | null;
+  device: SignedDiscoveredDevice;
   siteId: string;
 }) {
   return runBridge<ManagedDeviceRecord>("meter-create", input);
 }
 
+export function createSolarEnergyProviderFromDiscovery(input: {
+  device: SignedDiscoveredDevice;
+  siteId: string;
+}) {
+  return runBridge<ManagedDeviceRecord>("solar-energy-provider-create", input);
+}
+
 export function addAllFromDiscovery(input: {
-  discoveryIds: string[];
-  host: string | null;
+  devices: SignedDiscoveredDevice[];
   siteId: string;
 }) {
   return runBridge<BulkDiscoveryAddResult>("discovery-add-all", input);
 }
+
+export type { DiscoveredDevice, SignedDiscoveredDevice };
 
 export function setMeterEnabled(input: {
   enabled: boolean;
@@ -255,6 +250,13 @@ export function setMeterEnabled(input: {
 
 export function deleteMeter(input: { id: string; siteId: string }) {
   return runBridge<ManagedDeviceRecord>("meter-delete", input);
+}
+
+export function deleteSolarEnergyProvider(input: {
+  id: string;
+  siteId: string;
+}) {
+  return runBridge<ManagedDeviceRecord>("solar-energy-provider-delete", input);
 }
 
 export function createWeatherForecastSource(input: {

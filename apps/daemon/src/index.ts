@@ -19,6 +19,7 @@ import {
 import { createBatteryPlugin } from "../../ems/src/battery-plugins";
 import { fetchMeterTelemetry } from "../../ems/src/discover";
 import { getDynamicPriceSnapshot } from "../../ems/src/plugins/price";
+import { getSolarEnergyProviderNormalizedInfo } from "../../ems/src/plugins/solar-energy-provider";
 import { getWeatherForecast } from "../../ems/src/plugins/solar-forecast";
 import { formatDaemonHelpText, parseDaemonOptions } from "./daemon-options";
 import {
@@ -28,6 +29,7 @@ import {
   readDynamicPriceSources,
   readMeters,
   readSites,
+  readSolarEnergyProviders,
   readWeatherForecast,
   readWeatherForecastSources,
   updateBatteryManualModeStarted,
@@ -51,7 +53,8 @@ import {
 
 const lockPath = getDaemonLockPath();
 const POLL_INTERVAL_MS = 5_000;
-const FORECAST_REFRESH_INTERVAL_MS = 10 * 60 * 1_000;
+const SOLAR_ENERGY_PROVIDER_POLL_INTERVAL_MS = 60 * 1_000;
+const FORECAST_REFRESH_INTERVAL_MS = 15 * 60 * 1_000;
 const DYNAMIC_PRICE_REFRESH_INTERVAL_MS = 15 * 60 * 1_000;
 const FORECAST_HOURS = 48;
 const FORECAST_PERIOD_MINUTES = 15;
@@ -103,13 +106,18 @@ function main(): void {
   const db = openDaemonDatabase();
   const batteries = readBatteries(db);
   const meters = readMeters(db);
+  const solarEnergyProviders = readSolarEnergyProviders(db);
 
   logInfo(`${EMSD_NAME} daemon started.`);
   logInfo(`SQLite database: ${getDatabasePath()}`);
   logInfo(`Connected batteries: ${batteries.length}`);
   logInfo(`Connected meters: ${meters.length}`);
+  logInfo(`Connected solar energy providers: ${solarEnergyProviders.length}`);
   logInfo(`Daemon local time zone: ${getDaemonTimeZoneLabel()}`);
   logInfo(`Polling managed devices every ${POLL_INTERVAL_MS / 1000} seconds.`);
+  logInfo(
+    `Polling solar energy providers every ${SOLAR_ENERGY_PROVIDER_POLL_INTERVAL_MS / 60_000} minute(s).`,
+  );
   logInfo(
     `Refreshing solar forecasts at most every ${FORECAST_REFRESH_INTERVAL_MS / 60_000} minutes.`,
   );
@@ -118,6 +126,7 @@ function main(): void {
   );
 
   let pollInFlight = false;
+  let solarEnergyProviderPollInFlight = false;
   let refreshInFlight = false;
 
   async function refreshSiteData(forceRefresh = false): Promise<void> {
@@ -244,7 +253,6 @@ function main(): void {
             kind: "battery",
             powerW: sample.currentW,
             socPercent: sample.socPercent,
-            gasM3: null,
             state: sample.status,
             observedAt: new Date().toISOString(),
           } satisfies ManagedDeviceTelemetryRecord);
@@ -269,8 +277,7 @@ function main(): void {
             kind: "meter",
             powerW: sample.powerW,
             socPercent: null,
-            gasM3: sample.gasM3,
-            state: sample.state,
+            state: null,
             observedAt: new Date().toISOString(),
           } satisfies ManagedDeviceTelemetryRecord);
         }),
@@ -284,12 +291,58 @@ function main(): void {
     }
   }
 
+  async function pollSolarEnergyProviders(): Promise<void> {
+    if (solarEnergyProviderPollInFlight) {
+      return;
+    }
+
+    solarEnergyProviderPollInFlight = true;
+
+    try {
+      const providers = readSolarEnergyProviders(db);
+
+      await Promise.all(
+        providers.map(async (provider) => {
+          const sample = await getSolarEnergyProviderNormalizedInfo(
+            provider,
+          ).catch((error: unknown) => {
+            logError(
+              `solar energy provider telemetry poll failed for ${provider.id} at ${provider.ipAddress}: ${error instanceof Error ? error.message : String(error)}`,
+            );
+            return null;
+          });
+
+          if (!sample) {
+            return;
+          }
+
+          upsertManagedDeviceTelemetry(db, {
+            deviceId: provider.id,
+            siteId: provider.siteId,
+            kind: "solar-energy-provider",
+            powerW: sample.currentPowerW,
+            socPercent: null,
+            state: null,
+            observedAt: new Date().toISOString(),
+          } satisfies ManagedDeviceTelemetryRecord);
+        }),
+      );
+    } catch (error) {
+      logError(
+        `solar energy provider poll failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    } finally {
+      solarEnergyProviderPollInFlight = false;
+    }
+  }
+
   // Initial refresh of forecast and price info on daemon start
   logInfo("Polling solar forecasts at startup...");
   void refreshSiteData(true);
   logInfo("Polling dynamic prices at startup...");
 
   void pollTelemetry();
+  void pollSolarEnergyProviders();
 
   // const heartbeat = setInterval(() => {
   //   console.log(`[${new Date().toISOString()}] daemon heartbeat`);
@@ -297,6 +350,9 @@ function main(): void {
   const poller = setInterval(() => {
     void pollTelemetry();
   }, POLL_INTERVAL_MS);
+  const solarEnergyProviderPoller = setInterval(() => {
+    void pollSolarEnergyProviders();
+  }, SOLAR_ENERGY_PROVIDER_POLL_INTERVAL_MS);
   const forecastPoller = setInterval(() => {
     void refreshSiteData();
   }, FORECAST_REFRESH_INTERVAL_MS);
@@ -312,6 +368,7 @@ function main(): void {
   function shutdown(signal: string): void {
     // clearInterval(heartbeat);
     clearInterval(poller);
+    clearInterval(solarEnergyProviderPoller);
     clearInterval(forecastPoller);
     clearInterval(pricePoller);
     db.close();

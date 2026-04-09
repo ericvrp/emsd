@@ -10,16 +10,19 @@ import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { redirect } from "next/navigation";
 import { authOptions } from "../auth";
 import {
+  type SignedDiscoveredDevice,
   addAllFromDiscovery,
   createBatteryFromDiscovery,
   createDynamicPriceSource,
   createMeterFromDiscovery,
   createSite,
+  createSolarEnergyProviderFromDiscovery,
   createWeatherForecastSource,
   deleteBattery,
   deleteDynamicPriceSource,
   deleteMeter,
   deleteSite,
+  deleteSolarEnergyProvider,
   deleteWeatherForecastSource,
   getDashboardSnapshot,
   refreshDynamicPriceSnapshot,
@@ -42,7 +45,9 @@ async function requireSession(): Promise<void> {
   }
 }
 
-async function ensureDefaultWeatherForecastSource(siteId: string): Promise<boolean> {
+async function ensureDefaultWeatherForecastSource(
+  siteId: string,
+): Promise<boolean> {
   const snapshot = await getDashboardSnapshot();
   const site = snapshot.sites.find((entry) => entry.id === siteId);
 
@@ -60,7 +65,9 @@ async function ensureDefaultWeatherForecastSource(siteId: string): Promise<boole
   return true;
 }
 
-async function ensureDefaultDynamicPriceSource(siteId: string): Promise<boolean> {
+async function ensureDefaultDynamicPriceSource(
+  siteId: string,
+): Promise<boolean> {
   const snapshot = await getDashboardSnapshot();
   const site = snapshot.sites.find((entry) => entry.id === siteId);
 
@@ -96,6 +103,70 @@ function optionalStringValue(formData: FormData, key: string): string | null {
 
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function readDiscoveredDevice(
+  formData: FormData,
+  key: string,
+): SignedDiscoveredDevice {
+  const rawValue = stringValue(formData, key);
+  const parsed = JSON.parse(rawValue) as unknown;
+
+  if (!isSignedDiscoveredDevice(parsed)) {
+    throw new Error(`Invalid discovered device payload: ${key}`);
+  }
+
+  return parsed;
+}
+
+function readDiscoveredDeviceList(
+  formData: FormData,
+  key: string,
+): SignedDiscoveredDevice[] {
+  const rawValue = stringValue(formData, key);
+  const parsed = JSON.parse(rawValue) as unknown;
+
+  if (
+    !Array.isArray(parsed) ||
+    parsed.some((value) => !isSignedDiscoveredDevice(value))
+  ) {
+    throw new Error(`Invalid discovered device list payload: ${key}`);
+  }
+
+  return parsed;
+}
+
+function isSignedDiscoveredDevice(
+  value: unknown,
+): value is SignedDiscoveredDevice {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+
+  return (
+    (candidate.category === "battery" ||
+      candidate.category === "meter" ||
+      candidate.category === "solar-energy-provider") &&
+    typeof candidate.details === "string" &&
+    typeof candidate.discoveryId === "string" &&
+    typeof candidate.ipAddress === "string" &&
+    typeof candidate.model === "string" &&
+    typeof candidate.name === "string" &&
+    typeof candidate.discoveryExpiresAt === "string" &&
+    typeof candidate.discoveryIssuedAt === "string" &&
+    typeof candidate.discoveryProof === "string" &&
+    (typeof candidate.powerW === "number" || candidate.powerW === null) &&
+    (typeof candidate.socPercent === "number" ||
+      candidate.socPercent === null) &&
+    (candidate.state === "idle" ||
+      candidate.state === "charging" ||
+      candidate.state === "discharging" ||
+      candidate.state === "connected" ||
+      candidate.state === "offline" ||
+      candidate.state === null)
+  );
 }
 
 function buildSiteId(name: string, existingSiteIds: string[]): string {
@@ -226,13 +297,12 @@ export async function createBatteryFromDiscoveryAction(
   const siteId = stringValue(formData, "siteId");
 
   return runAction(async () => {
-    const discoveryId = stringValue(formData, "discoveryId");
+    const device = readDiscoveredDevice(formData, "discoveryDevice");
     await createBatteryFromDiscovery({
-      discoveryId,
+      device,
       siteId,
-      host: optionalStringValue(formData, "host"),
     });
-    return { notice: `Added battery ${discoveryId}.`, tab: "discover" };
+    return { notice: `Added battery ${device.discoveryId}.`, tab: "discover" };
   }, "discover");
 }
 
@@ -240,26 +310,19 @@ export async function createAllFromDiscoveryAction(
   formData: FormData,
 ): Promise<void> {
   return runAction(async () => {
-    const rawDiscoveryIds = stringValue(formData, "discoveryIds");
-    const discoveryIds = JSON.parse(rawDiscoveryIds) as unknown;
-
-    if (
-      !Array.isArray(discoveryIds) ||
-      discoveryIds.some((value) => typeof value !== "string")
-    ) {
-      throw new Error("Discovery selection payload is invalid.");
-    }
+    const devices = readDiscoveredDeviceList(formData, "discoveryDevices");
 
     const result = await addAllFromDiscovery({
-      discoveryIds,
-      host: optionalStringValue(formData, "host"),
+      devices,
       siteId: stringValue(formData, "siteId"),
     });
 
     const summary =
-      result.addedBatteries === 0 && result.addedMeters === 0
+      result.addedBatteries === 0 &&
+      result.addedMeters === 0 &&
+      result.addedSolarEnergyProviders === 0
         ? "No new devices were added."
-        : `Added ${result.addedBatteries} batterie(s) and ${result.addedMeters} meter(s).${result.skippedDevices > 0 ? ` Skipped ${result.skippedDevices}.` : ""}`;
+        : `Added ${result.addedBatteries} batterie(s), ${result.addedMeters} meter(s), and ${result.addedSolarEnergyProviders} solar provider(s).${result.skippedDevices > 0 ? ` Skipped ${result.skippedDevices}.` : ""}`;
 
     return { notice: summary, tab: "discover" };
   }, "discover");
@@ -298,7 +361,8 @@ export async function setBatteryMinimumDischargePercentAction(
 
   return runAction(async () => {
     const batteryId = stringValue(formData, "batteryId");
-    const batteryName = optionalStringValue(formData, "batteryName") ?? batteryId;
+    const batteryName =
+      optionalStringValue(formData, "batteryName") ?? batteryId;
     const minimumDischargePercent = Number(
       stringValue(formData, "minimumDischargePercent"),
     );
@@ -322,7 +386,8 @@ export async function setBatteryStrategyAction(
   return runAction(
     async () => {
       const batteryId = stringValue(formData, "batteryId");
-      const batteryName = optionalStringValue(formData, "batteryName") ?? batteryId;
+      const batteryName =
+        optionalStringValue(formData, "batteryName") ?? batteryId;
       const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
       const strategyMode = stringValue(formData, "strategyMode");
       const manualState = optionalStringValue(formData, "manualState");
@@ -335,7 +400,10 @@ export async function setBatteryStrategyAction(
         formData,
         "manualDischargeTargetSoc",
       );
-      const manualModeActiveRaw = optionalStringValue(formData, "manualModeActive");
+      const manualModeActiveRaw = optionalStringValue(
+        formData,
+        "manualModeActive",
+      );
       const manualTargetSocRaw = optionalStringValue(
         formData,
         "manualTargetSoc",
@@ -397,7 +465,8 @@ export async function setBatteryStrategyPlanAction(
   return runAction(
     async () => {
       const batteryId = stringValue(formData, "batteryId");
-      const batteryName = optionalStringValue(formData, "batteryName") ?? batteryId;
+      const batteryName =
+        optionalStringValue(formData, "batteryName") ?? batteryId;
       const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
       const minimumDischargePercent = Number(
         stringValue(formData, "minimumDischargePercent"),
@@ -439,13 +508,30 @@ export async function createMeterFromDiscoveryAction(
   const siteId = stringValue(formData, "siteId");
 
   return runAction(async () => {
-    const discoveryId = stringValue(formData, "discoveryId");
+    const device = readDiscoveredDevice(formData, "discoveryDevice");
     await createMeterFromDiscovery({
-      discoveryId,
+      device,
       siteId,
-      host: optionalStringValue(formData, "host"),
     });
-    return { notice: `Added meter ${discoveryId}.`, tab: "discover" };
+    return { notice: `Added meter ${device.discoveryId}.`, tab: "discover" };
+  }, "discover");
+}
+
+export async function createSolarEnergyProviderFromDiscoveryAction(
+  formData: FormData,
+): Promise<void> {
+  const siteId = stringValue(formData, "siteId");
+
+  return runAction(async () => {
+    const device = readDiscoveredDevice(formData, "discoveryDevice");
+    await createSolarEnergyProviderFromDiscovery({
+      device,
+      siteId,
+    });
+    return {
+      notice: `Added solar energy provider ${device.discoveryId}.`,
+      tab: "discover",
+    };
   }, "discover");
 }
 
@@ -473,6 +559,21 @@ export async function deleteMeterAction(formData: FormData): Promise<void> {
   }, "devices");
 }
 
+export async function deleteSolarEnergyProviderAction(
+  formData: FormData,
+): Promise<void> {
+  const siteId = stringValue(formData, "siteId");
+
+  return runAction(async () => {
+    const providerId = stringValue(formData, "solarEnergyProviderId");
+    await deleteSolarEnergyProvider({ id: providerId, siteId });
+    return {
+      notice: `Deleted solar energy provider ${providerId}.`,
+      tab: "devices",
+    };
+  }, "devices");
+}
+
 export async function createWeatherForecastSourceAction(
   formData: FormData,
 ): Promise<void> {
@@ -488,7 +589,10 @@ export async function createWeatherForecastSourceAction(
       surface: "open-meteo-shortwave-radiation",
     });
     await refreshWeatherForecast({ siteId });
-    return { notice: `Added solar forecast source ${sourceId}.`, tab: "forecast" };
+    return {
+      notice: `Added solar forecast source ${sourceId}.`,
+      tab: "forecast",
+    };
   }, "forecast");
 }
 
@@ -507,7 +611,10 @@ export async function updateWeatherForecastSourceAction(
       surface: "open-meteo-shortwave-radiation",
     });
     await refreshWeatherForecast({ siteId });
-    return { notice: `Updated solar forecast source ${sourceId}.`, tab: "forecast" };
+    return {
+      notice: `Updated solar forecast source ${sourceId}.`,
+      tab: "forecast",
+    };
   }, "forecast");
 }
 
@@ -519,7 +626,10 @@ export async function deleteWeatherForecastSourceAction(
   return runAction(async () => {
     const sourceId = stringValue(formData, "sourceId");
     await deleteWeatherForecastSource({ id: sourceId, siteId });
-    return { notice: `Deleted solar forecast source ${sourceId}.`, tab: "forecast" };
+    return {
+      notice: `Deleted solar forecast source ${sourceId}.`,
+      tab: "forecast",
+    };
   }, "forecast");
 }
 

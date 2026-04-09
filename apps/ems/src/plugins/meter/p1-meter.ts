@@ -88,9 +88,7 @@ export const p1MeterPlugin: DiscoveryPlugin = {
     const payload = parseJsonObject(responseText);
 
     return {
-      gasM3: parseNullableNumber(payload?.total_gas_m3),
       powerW: parseNullableNumber(payload?.active_power_w),
-      state: payload ? "connected" : "offline",
     } satisfies MeterTelemetrySample;
   },
 };
