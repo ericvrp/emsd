@@ -1442,15 +1442,24 @@ export function SegmentedLineHistoryChart({
       typeof point.futureValue === "number",
   );
 
-  const chartPoints = buildSegmentedLineChartPoints(points);
+  const chartPoints = points.map((point) => ({
+    currentValue: point.currentValue,
+    futureValue: point.futureValue,
+    rightAxisValue: point.currentValue ?? point.futureValue,
+    timestampMs: new Date(point.periodStart).getTime(),
+  }));
   const axisConfig = buildMirroredYAxis(
-    chartPoints.flatMap((point) => [
-      point.currentPositiveValue,
-      point.currentNegativeValue,
-      point.futurePositiveValue,
-      point.futureNegativeValue,
-    ]),
+    chartPoints.flatMap((point) => [point.currentValue, point.futureValue]),
   );
+  const [min, max] = axisConfig.domain;
+  let offset = 0;
+  if (max <= 0) {
+    offset = 0;
+  } else if (min >= 0) {
+    offset = 1;
+  } else {
+    offset = max / (max - min);
+  }
   const chartId = useId();
   return (
     <div className="space-y-2.5">
@@ -1591,214 +1600,7 @@ export function SegmentedLineHistoryChart({
                 />
                 <Line
                   activeDot={false}
-                  connectNulls={true}
-                  dataKey="currentPositiveValue"
-                  dot={false}
-                  isAnimationActive={false}
-                  legendType="none"
-                  stroke={positiveColor}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2.8}
-                  type="monotone"
-                  yAxisId="left"
-                />
-                <Line
-                  activeDot={false}
-                  connectNulls={true}
-                  dataKey="currentNegativeValue"
-                  dot={false}
-                  isAnimationActive={false}
-                  legendType="none"
-                  stroke={negativeColor}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2.8}
-                  type="monotone"
-                  yAxisId="left"
-                />
-                <Line
-                  activeDot={false}
-                  connectNulls={true}
-                  dataKey="futurePositiveValue"
-                  dot={false}
-                  isAnimationActive={false}
-                  legendType="none"
-                  stroke={positiveColor}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeOpacity={0.35}
-                  strokeWidth={2.8}
-                  type="monotone"
-                  yAxisId="left"
-                />
-                <Line
-                  activeDot={false}
-                  connectNulls={true}
-                  dataKey="futureNegativeValue"
-                  dot={false}
-                  isAnimationActive={false}
-                  legendType="none"
-                  stroke={negativeColor}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeOpacity={0.35}
-                  strokeWidth={2.8}
-                  type="monotone"
-                  yAxisId="left"
-                />
-              </LineChart>
-            );
-          }}
-        </MeasuredChartContainer>
-        {!hasValues ? <EmptyChartMessage message={emptyMessage} /> : null}
-      </div>
-    </div>
-  );
-
-            return (
-              <LineChart
-                data={chartPoints}
-                height={height}
-                margin={{
-                  top: 12,
-                  right: STANDARD_RIGHT_AXIS_MARGIN,
-                  bottom: 0,
-                  left: STANDARD_LEFT_AXIS_MARGIN,
-                }}
-                width={width}
-              >
-                <CartesianGrid
-                  stroke={UI_COLORS.chartGrid}
-                  strokeDasharray="3 6"
-                  vertical={false}
-                />
-                <XAxis
-                  axisLine={false}
-                  dataKey="timestampMs"
-                  domain={["dataMin", "dataMax"]}
-                  interval={0}
-                  minTickGap={28}
-                  tick={UI_CHART_STYLES.axisTick}
-                  tickFormatter={formatDayTick}
-                  tickLine={false}
-                  ticks={xAxisTicks}
-                  type="number"
-                />
-                <YAxis
-                  axisLine={false}
-                  domain={axisConfig.domain}
-                  label={buildYAxisLabel(yAxisLabel ?? "", "insideLeft")}
-                  tick={UI_CHART_STYLES.axisTickMuted}
-                  tickFormatter={yAxisFormatter}
-                  tickLine={false}
-                  tickMargin={8}
-                  ticks={axisConfig.ticks}
-                  width={LEFT_Y_AXIS_WIDTH}
-                  yAxisId="left"
-                />
-                <YAxis
-                  axisLine={false}
-                  domain={axisConfig.domain}
-                  orientation="right"
-                  label={buildYAxisLabel(yAxisLabel ?? "", "right")}
-                  tick={UI_CHART_STYLES.axisTickMuted}
-                  tickFormatter={yAxisFormatter}
-                  tickLine={false}
-                  tickMargin={8}
-                  ticks={axisConfig.ticks}
-                  width={RIGHT_Y_AXIS_WIDTH}
-                  yAxisId="right"
-                />
-                <ReferenceLine
-                  stroke={UI_COLORS.chartZeroLine}
-                  strokeDasharray="4 6"
-                  y={0}
-                  yAxisId="left"
-                />
-                {nowMarkerPeriodStart ? (
-                  <ReferenceLine
-                    label={buildNowLabel()}
-                    stroke={UI_COLORS.textPrimary}
-                    strokeDasharray="4 4"
-                    strokeOpacity={0.8}
-                    x={new Date(nowMarkerPeriodStart).getTime()}
-                    yAxisId="left"
-                  />
-                ) : null}
-                <Tooltip
-                  content={
-                    <SegmentedHistoryTooltip
-                      labelFormatter={formatTooltipTimestamp}
-                      negativeColor={negativeColor}
-                      negativeLabel={negativeLabel}
-                      positiveColor={positiveColor}
-                      positiveLabel={positiveLabel}
-                      valueFormatter={valueFormatter}
-                    />
-                  }
-                />
-                <Line
-                  activeDot={false}
                   connectNulls={false}
-                  dataKey="currentPositiveValue"
-                  dot={false}
-                  isAnimationActive={false}
-                  legendType="none"
-                  stroke={positiveColor}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2.8}
-                  type="monotone"
-                  yAxisId="left"
-                />
-                <Line
-                  activeDot={false}
-                  connectNulls={false}
-                  dataKey="currentNegativeValue"
-                  dot={false}
-                  isAnimationActive={false}
-                  legendType="none"
-                  stroke={negativeColor}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2.8}
-                  type="monotone"
-                  yAxisId="left"
-                />
-                <Line
-                  activeDot={false}
-                  connectNulls={false}
-                  dataKey="futurePositiveValue"
-                  dot={false}
-                  isAnimationActive={false}
-                  legendType="none"
-                  stroke={positiveColor}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeOpacity={0.35}
-                  strokeWidth={2.8}
-                  type="monotone"
-                  yAxisId="left"
-                />
-                <Line
-                  activeDot={false}
-                  connectNulls={false}
-                  dataKey="futureNegativeValue"
-                  dot={false}
-                  isAnimationActive={false}
-                  legendType="none"
-                  stroke={negativeColor}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeOpacity={0.35}
-                  strokeWidth={2.8}
-                  type="monotone"
-                  yAxisId="left"
-                />
-                <Line
-                  activeDot={false}
-                  connectNulls={true}
                   dataKey="currentValue"
                   dot={false}
                   isAnimationActive={false}
@@ -1810,7 +1612,7 @@ export function SegmentedLineHistoryChart({
                 />
                 <Line
                   activeDot={false}
-                  connectNulls={true}
+                  connectNulls={false}
                   dataKey="futureValue"
                   dot={false}
                   isAnimationActive={false}
@@ -1819,6 +1621,18 @@ export function SegmentedLineHistoryChart({
                   strokeWidth={2.8}
                   type="monotone"
                   yAxisId="left"
+                />
+                <Line
+                  activeDot={false}
+                  connectNulls={false}
+                  dataKey="rightAxisValue"
+                  dot={false}
+                  isAnimationActive={false}
+                  legendType="none"
+                  stroke="transparent"
+                  strokeWidth={1}
+                  type="monotone"
+                  yAxisId="right"
                 />
               </LineChart>
             );
@@ -1836,138 +1650,6 @@ function EmptyChartMessage({ message }: { message: string }) {
       <p className="max-w-md text-sm leading-6 text-slate-400">{message}</p>
     </div>
   );
-}
-
-function buildSegmentedLineChartPoints(
-  points: SplitSingleValuePoint[],
-): SegmentedLineChartPoint[] {
-  const chartPoints = new Map<number, SegmentedLineChartPoint>();
-
-  for (let index = 0; index < points.length; index += 1) {
-    const point = points[index];
-
-    if (!point) {
-      continue;
-    }
-
-    const timestampMs = new Date(point.periodStart).getTime();
-    mergeSegmentedLineChartPoint(chartPoints, {
-      currentNegativeValue:
-        typeof point.currentValue === "number" && point.currentValue < 0
-          ? point.currentValue
-          : null,
-      currentPositiveValue:
-        typeof point.currentValue === "number" && point.currentValue >= 0
-          ? point.currentValue
-          : null,
-      futureNegativeValue:
-        typeof point.futureValue === "number" && point.futureValue < 0
-          ? point.futureValue
-          : null,
-      futurePositiveValue:
-        typeof point.futureValue === "number" && point.futureValue >= 0
-          ? point.futureValue
-          : null,
-      rightAxisValue: point.currentValue ?? point.futureValue,
-      timestampMs,
-    });
-
-    const nextPoint = points[index + 1];
-
-    if (!nextPoint) {
-      continue;
-    }
-
-    const currentCrossingPoint = buildZeroCrossingPoint({
-      endTimestampMs: new Date(nextPoint.periodStart).getTime(),
-      endValue: nextPoint.currentValue,
-      startTimestampMs: timestampMs,
-      startValue: point.currentValue,
-      type: "current",
-    });
-
-    if (currentCrossingPoint) {
-      mergeSegmentedLineChartPoint(chartPoints, currentCrossingPoint);
-    }
-
-    const futureCrossingPoint = buildZeroCrossingPoint({
-      endTimestampMs: new Date(nextPoint.periodStart).getTime(),
-      endValue: nextPoint.futureValue,
-      startTimestampMs: timestampMs,
-      startValue: point.futureValue,
-      type: "future",
-    });
-
-    if (futureCrossingPoint) {
-      mergeSegmentedLineChartPoint(chartPoints, futureCrossingPoint);
-    }
-  }
-
-  return [...chartPoints.values()].sort(
-    (left, right) => left.timestampMs - right.timestampMs,
-  );
-}
-
-function mergeSegmentedLineChartPoint(
-  chartPoints: Map<number, SegmentedLineChartPoint>,
-  point: SegmentedLineChartPoint,
-) {
-  const existing = chartPoints.get(point.timestampMs);
-
-  if (!existing) {
-    chartPoints.set(point.timestampMs, point);
-    return;
-  }
-
-  chartPoints.set(point.timestampMs, {
-    currentNegativeValue:
-      point.currentNegativeValue ?? existing.currentNegativeValue,
-    currentPositiveValue:
-      point.currentPositiveValue ?? existing.currentPositiveValue,
-    futureNegativeValue:
-      point.futureNegativeValue ?? existing.futureNegativeValue,
-    futurePositiveValue:
-      point.futurePositiveValue ?? existing.futurePositiveValue,
-    rightAxisValue: point.rightAxisValue ?? existing.rightAxisValue,
-    timestampMs: point.timestampMs,
-  });
-}
-
-function buildZeroCrossingPoint({
-  endTimestampMs,
-  endValue,
-  startTimestampMs,
-  startValue,
-  type,
-}: {
-  endTimestampMs: number;
-  endValue: number | null;
-  startTimestampMs: number;
-  startValue: number | null;
-  type: "current" | "future";
-}): SegmentedLineChartPoint | null {
-  if (
-    typeof startValue !== "number" ||
-    typeof endValue !== "number" ||
-    startValue === 0 ||
-    endValue === 0 ||
-    Math.sign(startValue) === Math.sign(endValue)
-  ) {
-    return null;
-  }
-
-  const crossingRatio = startValue / (startValue - endValue);
-  const timestampMs =
-    startTimestampMs + (endTimestampMs - startTimestampMs) * crossingRatio;
-
-  return {
-    currentNegativeValue: type === "current" ? 0 : null,
-    currentPositiveValue: type === "current" ? 0 : null,
-    futureNegativeValue: type === "future" ? 0 : null,
-    futurePositiveValue: type === "future" ? 0 : null,
-    rightAxisValue: 0,
-    timestampMs,
-  };
 }
 
 export function SignedHistoryChart({
@@ -2137,6 +1819,7 @@ export function SignedHistoryChart({
               dataKey="currentPositiveValue"
               fill={`url(#${positiveGradientId})`}
               isAnimationActive={false}
+              connectNulls={true}
               name={positiveLabel}
               stroke={positiveColor}
               strokeWidth={2.6}
@@ -2146,6 +1829,7 @@ export function SignedHistoryChart({
               dataKey="futurePositiveValue"
               fill={`url(#${positiveMutedGradientId})`}
               isAnimationActive={false}
+              connectNulls={true}
               name={positiveLabel}
               stroke={positiveColor}
               strokeOpacity={0.35}
@@ -2156,6 +1840,7 @@ export function SignedHistoryChart({
               dataKey="currentNegativeValue"
               fill={`url(#${negativeGradientId})`}
               isAnimationActive={false}
+              connectNulls={true}
               name={negativeLabel}
               stroke={negativeColor}
               strokeWidth={2.6}
@@ -2165,6 +1850,7 @@ export function SignedHistoryChart({
               dataKey="futureNegativeValue"
               fill={`url(#${negativeMutedGradientId})`}
               isAnimationActive={false}
+              connectNulls={true}
               name={negativeLabel}
               stroke={negativeColor}
               strokeOpacity={0.35}
@@ -2183,15 +1869,6 @@ type SegmentedLineSeries = {
   key: string;
   points: Array<{ timestampMs: number; value: number }>;
   strokeOpacity: number;
-};
-
-type SegmentedLineChartPoint = {
-  currentNegativeValue: number | null;
-  currentPositiveValue: number | null;
-  futureNegativeValue: number | null;
-  futurePositiveValue: number | null;
-  rightAxisValue: number | null;
-  timestampMs: number;
 };
 
 function SegmentedHistoryTooltip({
