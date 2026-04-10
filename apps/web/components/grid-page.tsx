@@ -4,14 +4,14 @@ import type { HistoryArchive } from "../lib/ems-bridge";
 import { UI_COLORS } from "../lib/ui-colors";
 import {
   aggregatePowerSamples,
-  createSignedSeries,
-  fillSignedDay,
-  formatPowerValue,
+  fillSingleValueDay,
+  formatAbsolutePowerValue,
   formatShortPowerValue,
   getCurrentPeriodStart,
   getUtcDayKey,
-  SignedHistoryChart,
-  splitSignedSeriesByTime,
+  invertSingleValueSeries,
+  SegmentedLineHistoryChart,
+  splitSingleValueSeriesByTime,
 } from "./history-page";
 
 type GridPageProps = {
@@ -23,8 +23,8 @@ export function GridPage({ archive, siteName }: GridPageProps) {
   const todayKey = getUtcDayKey(new Date());
   const currentPeriodStart = getCurrentPeriodStart();
   const currentPeriodMs = new Date(currentPeriodStart).getTime();
-  const todayGridSeries = fillSignedDay(
-    createSignedSeries(aggregatePowerSamples(archive.p1MeterSamples)),
+  const todayGridSeries = fillSingleValueDay(
+    invertSingleValueSeries(aggregatePowerSamples(archive.p1MeterSamples)),
     todayKey,
   ).filter((point) => new Date(point.periodStart).getTime() <= currentPeriodMs);
 
@@ -39,20 +39,23 @@ export function GridPage({ archive, siteName }: GridPageProps) {
           <h3 className="mt-2 text-xl font-semibold text-white">
             P1 values for {siteName}
           </h3>
+          <p className="mt-2 text-sm leading-6 text-slate-400">
+            Measured import and export power from the connected P1 meter.
+          </p>
         </div>
         <p className="text-xs leading-5 text-slate-500">{formatTodayLabel(todayKey)}</p>
       </div>
 
       <div className="mt-5 space-y-4 rounded-[1.4rem] border border-white/10 bg-white/5 p-4">
-          <SignedHistoryChart
+          <SegmentedLineHistoryChart
             emptyMessage="No P1 meter samples have been collected for today yet."
-            negativeColor={UI_COLORS.gridExport}
-            negativeLabel="Return to grid"
+            negativeColor={UI_COLORS.gridImport}
+            negativeLabel="Take from grid"
             nowMarkerPeriodStart={currentPeriodStart}
-            points={splitSignedSeriesByTime(todayGridSeries)}
-            positiveColor={UI_COLORS.gridImport}
-            positiveLabel="Take from grid"
-            valueFormatter={formatPowerValue}
+            points={splitSingleValueSeriesByTime(todayGridSeries)}
+            positiveColor={UI_COLORS.gridExport}
+            positiveLabel="Return to grid"
+            valueFormatter={formatAbsolutePowerValue}
             yAxisFormatter={formatShortPowerValue}
           />
       </div>

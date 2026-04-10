@@ -193,6 +193,10 @@ test("api history archive returns stored battery, price, and forecast data", asy
 
   expect(archive.siteId).toBe("home");
   expect(archive.batteryPowerSamples).toHaveLength(1);
+  expect(archive.batteryPowerSamples[0]).toMatchObject({
+    powerW: -950,
+    socPercent: 62,
+  });
   expect(archive.p1MeterSamples).toHaveLength(1);
   expect(archive.solarEnergyProviderSamples).toHaveLength(1);
   expect(archive.solarForecastSamples).toHaveLength(1);

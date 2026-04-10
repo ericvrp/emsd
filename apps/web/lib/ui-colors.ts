@@ -1,6 +1,7 @@
 export const UI_COLORS = {
-  batteryCharge: "#D0577F",
-  batteryDischarge: "#459E96",
+  batteryChargeLevel: "#f8fafc",
+  batteryPowerCharging: "#34d399",
+  batteryPowerDischarging: "#38bdf8",
   cardBorder: "rgba(255,255,255,0.1)",
   cardBorderSoft: "rgba(255,255,255,0.08)",
   chartGrid: "rgba(148,163,184,0.12)",

@@ -153,6 +153,7 @@ interface BatteryPowerSampleRow {
   period_start: string;
   observed_at: string;
   power_w: number | null;
+  soc_percent: number | null;
 }
 
 interface SolarEnergyProviderSampleRow {
@@ -350,10 +351,12 @@ export function openDaemonDatabase(databasePath = getDatabasePath()): Database {
       period_start TEXT NOT NULL,
       observed_at TEXT NOT NULL,
       power_w REAL,
+      soc_percent REAL,
       PRIMARY KEY(site_id, battery_id, period_start),
       FOREIGN KEY(site_id) REFERENCES sites(id)
     );
   `);
+  ensureBatteryPowerSampleColumns(db);
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_battery_power_samples_site_period
     ON battery_power_samples (site_id, period_start);
@@ -810,6 +813,17 @@ function ensureSolarEnergyProviderSampleColumns(db: Database): void {
   }
 }
 
+function ensureBatteryPowerSampleColumns(db: Database): void {
+  const columns = db
+    .query<{ name: string }, []>("PRAGMA table_info(battery_power_samples)")
+    .all()
+    .map((column) => column.name);
+
+  if (!columns.includes("soc_percent")) {
+    db.exec("ALTER TABLE battery_power_samples ADD COLUMN soc_percent REAL;");
+  }
+}
+
 export function readBatteries(db: Database): BatteryRecord[] {
   const rows = db
     .query<BatteryRow, []>(
@@ -1144,7 +1158,7 @@ export function readBatteryPowerSamples(
   const rows = db
     .query<BatteryPowerSampleRow, [string]>(
       `
-        SELECT site_id, battery_id, period_start, observed_at, power_w
+        SELECT site_id, battery_id, period_start, observed_at, power_w, soc_percent
         FROM battery_power_samples
         WHERE site_id = ?1
         ORDER BY period_start ASC, battery_id ASC
@@ -1158,6 +1172,7 @@ export function readBatteryPowerSamples(
     periodStart: row.period_start,
     observedAt: row.observed_at,
     powerW: row.power_w,
+    socPercent: row.soc_percent,
   }));
 }
 
@@ -1252,11 +1267,13 @@ export function upsertManagedDeviceTelemetry(
           battery_id,
           period_start,
           observed_at,
-          power_w
-        ) VALUES (?1, ?2, ?3, ?4, ?5)
+          power_w,
+          soc_percent
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
         ON CONFLICT(site_id, battery_id, period_start) DO UPDATE SET
           observed_at = excluded.observed_at,
-          power_w = excluded.power_w
+          power_w = excluded.power_w,
+          soc_percent = excluded.soc_percent
       `,
     ).run(
       telemetry.siteId,
@@ -1264,6 +1281,7 @@ export function upsertManagedDeviceTelemetry(
       periodStart,
       telemetry.observedAt,
       telemetry.powerW,
+      telemetry.socPercent,
     );
     deleteExpiredSamples(db, "battery_power_samples");
   }

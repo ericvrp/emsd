@@ -751,6 +751,7 @@ export interface BatteryPowerSampleRecord {
   periodStart: string;
   observedAt: string;
   powerW: number | null;
+  socPercent: number | null;
 }
 
 export interface SolarEnergyProviderSampleRecord {

@@ -665,7 +665,15 @@ function PriceChart({
                 tickLine={false}
                 minTickGap={30}
               />
-              <YAxis hide domain={[0, "dataMax"]} />
+              <YAxis
+                axisLine={false}
+                domain={[0, "dataMax"]}
+                label={buildYAxisLabel(`${currency}/kWh`, "insideLeft")}
+                tick={UI_CHART_STYLES.axisTickMuted}
+                tickFormatter={formatShortPriceAxisValue}
+                tickLine={false}
+                width={66}
+              />
               <Tooltip
                 content={
                   <SingleSeriesTooltip
@@ -787,7 +795,15 @@ function ForecastChart({
                 tickLine={false}
                 minTickGap={30}
               />
-              <YAxis hide domain={[0, "dataMax"]} />
+              <YAxis
+                axisLine={false}
+                domain={[0, "dataMax"]}
+                label={buildYAxisLabel(unitLabel, "insideLeft")}
+                tick={UI_CHART_STYLES.axisTickMuted}
+                tickFormatter={formatShortForecastAxisValue}
+                tickLine={false}
+                width={60}
+              />
               <Tooltip
                 content={
                   <SingleSeriesTooltip
@@ -946,6 +962,19 @@ function buildNowLabel() {
   };
 }
 
+function buildYAxisLabel(
+  value: string,
+  position: "insideLeft" | "insideRight",
+) {
+  return {
+    angle: position === "insideLeft" ? -90 : 90,
+    fill: UI_COLORS.chartTickMuted,
+    fontSize: 12,
+    position,
+    value,
+  };
+}
+
 function formatPriceCoverageSummary(
   points: DynamicPricePointRecord[],
 ): string | null {
@@ -963,7 +992,7 @@ function formatPriceCoverageSummary(
     return `Showing available prices through ${formatCoverageLabel(lastPoint.startsAt)}.`;
   }
 
-  return "Tomorrow's prices are not available from Tibber yet.";
+  return null;
 }
 
 function includesTomorrow(points: DynamicPricePointRecord[]): boolean {
@@ -1004,6 +1033,14 @@ function formatForecastTimeLabel(value: string): string {
     minute: "2-digit",
     month: "short",
   }).format(new Date(value));
+}
+
+function formatShortPriceAxisValue(value: number): string {
+  return value.toFixed(2);
+}
+
+function formatShortForecastAxisValue(value: number): string {
+  return `${Math.round(value)}`;
 }
 
 function formatGraphTooltipTimestamp(value: string): string {

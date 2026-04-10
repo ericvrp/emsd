@@ -94,7 +94,9 @@ export function SolarEnergyPage({
           label="Generated Wattage"
           nowMarkerPeriodStart={currentPeriodStart}
           points={splitSingleValueSeriesByTime(todaySolarSeries)}
+          showLegend={false}
           valueFormatter={formatPowerValue}
+          yAxisLabel="Power (W)"
           yAxisFormatter={formatShortPowerValue}
         />
       </div>

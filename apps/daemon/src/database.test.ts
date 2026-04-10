@@ -318,6 +318,7 @@ test("meter and battery samples keep the latest bucket value while solar provide
       periodStart: "2026-04-05T16:45:00.000Z",
       observedAt: "2026-04-05T16:47:00.000Z",
       powerW: 950,
+      socPercent: 62,
     },
   ]);
   expect(solarEnergyProviderSamples).toEqual([

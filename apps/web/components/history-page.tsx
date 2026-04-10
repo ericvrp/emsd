@@ -67,6 +67,7 @@ export type SplitSignedValuePoint = SignedValuePoint & {
 
 type CombinedPoint = {
   batteryCharge: number | null;
+  batteryLevel: number | null;
   batteryDischarge: number | null;
   gridExport: number | null;
   gridImport: number | null;
@@ -78,6 +79,7 @@ type CombinedPoint = {
 
 type SplitCombinedPoint = CombinedPoint & {
   currentBatteryCharge: number | null;
+  currentBatteryLevel: number | null;
   currentBatteryDischarge: number | null;
   currentGridExport: number | null;
   currentGridImport: number | null;
@@ -85,12 +87,23 @@ type SplitCombinedPoint = CombinedPoint & {
   currentSolarEnergy: number | null;
   currentSolar: number | null;
   futureBatteryCharge: number | null;
+  futureBatteryLevel: number | null;
   futureBatteryDischarge: number | null;
   futureGridExport: number | null;
   futureGridImport: number | null;
   futurePrice: number | null;
   futureSolarEnergy: number | null;
   futureSolar: number | null;
+};
+
+type BatteryHistoryPoint = {
+  currentChargePercent: number | null;
+  currentChargingPower: number | null;
+  currentDischargingPower: number | null;
+  futureChargePercent: number | null;
+  futureChargingPower: number | null;
+  futureDischargingPower: number | null;
+  periodStart: string;
 };
 
 type TooltipPayloadEntry = {
@@ -101,6 +114,8 @@ type TooltipPayloadEntry = {
 };
 
 const HISTORY_STEP_MS = 15 * 60 * 1_000;
+const CHARGE_AXIS_DOMAIN: [number, number] = [0, 100];
+const CHARGE_AXIS_TICKS = [0, 20, 40, 60, 80, 100];
 
 const HISTORY_TABS: Array<{
   description: string;
@@ -115,7 +130,7 @@ const HISTORY_TABS: Array<{
     value: "combined",
   },
   {
-    description: "Review combined battery charge and discharge power.",
+    description: "Review battery power and charge history.",
     icon: Zap,
     label: "Battery",
     value: "battery",
@@ -181,11 +196,15 @@ export function HistoryPage({
   const solarEnergySeries = createSingleValueSeries(
     aggregatePowerSamples(archive.solarEnergyProviderSamples),
   );
-  const gridSeries = createSignedSeries(
+  const gridValueSeries = invertSingleValueSeries(
     aggregatePowerSamples(archive.p1MeterSamples),
   );
+  const gridSeries = createSignedSeries(gridValueSeries);
   const batterySeries = createSignedSeries(
-    aggregatePowerSamples(archive.batteryPowerSamples),
+    invertSingleValueSeries(aggregatePowerSamples(archive.batteryPowerSamples)),
+  );
+  const batteryChargeSeries = createSingleValueSeries(
+    aggregateBatteryChargeSamples(archive.batteryPowerSamples),
   );
 
   const dailyPriceSeries =
@@ -196,13 +215,28 @@ export function HistoryPage({
     selectedDay === null
       ? []
       : fillSingleValueDay(solarEnergySeries, selectedDay);
+  const dailyGridValueSeries =
+    selectedDay === null ? [] : fillSingleValueDay(gridValueSeries, selectedDay);
   const dailyGridSeries =
     selectedDay === null ? [] : fillSignedDay(gridSeries, selectedDay);
   const dailyBatterySeries =
     selectedDay === null ? [] : fillSignedDay(batterySeries, selectedDay);
+  const dailyBatteryChargeSeries =
+    selectedDay === null
+      ? []
+      : fillSingleValueDay(batteryChargeSeries, selectedDay);
+  const splitDailyBatterySeries = splitSignedSeriesByTime(dailyBatterySeries);
+  const splitDailyBatteryChargeSeries = splitSingleValueSeriesByTime(
+    dailyBatteryChargeSeries,
+  );
+  const batteryHistoryPoints = combineBatteryHistorySeries({
+    charge: splitDailyBatteryChargeSeries,
+    power: splitDailyBatterySeries,
+  });
 
   const combinedDailySeries = createCombinedSeries({
     battery: dailyBatterySeries,
+    batteryCharge: dailyBatteryChargeSeries,
     grid: dailyGridSeries,
     price: dailyPriceSeries,
     solarEnergy: dailySolarEnergySeries,
@@ -315,28 +349,22 @@ export function HistoryPage({
               yAxisFormatter={formatShortPowerValue}
             />
           ) : selectedTab === "grid" ? (
-            <SignedHistoryChart
+            <SegmentedLineHistoryChart
               emptyMessage="No P1 meter samples were available for this range."
-              negativeColor={UI_COLORS.gridExport}
-              negativeLabel="Return to grid"
+              negativeColor={UI_COLORS.gridImport}
+              negativeLabel="Take from grid"
               nowMarkerPeriodStart={nowMarkerPeriodStart}
-              points={splitSignedSeriesByTime(dailyGridSeries)}
-              positiveColor={UI_COLORS.gridImport}
-              positiveLabel="Take from grid"
-              valueFormatter={formatPowerValue}
+              points={splitSingleValueSeriesByTime(dailyGridValueSeries)}
+              positiveColor={UI_COLORS.gridExport}
+              positiveLabel="Return to grid"
+              valueFormatter={formatAbsolutePowerValue}
               yAxisFormatter={formatShortPowerValue}
             />
           ) : (
-            <SignedHistoryChart
-              emptyMessage="No battery power samples were available for this range."
-              negativeColor={UI_COLORS.batteryCharge}
-              negativeLabel="Battery charge"
+            <BatteryHistoryChart
+              emptyMessage="No battery power or charge samples were available for this range."
               nowMarkerPeriodStart={nowMarkerPeriodStart}
-              points={splitSignedSeriesByTime(dailyBatterySeries)}
-              positiveColor={UI_COLORS.batteryDischarge}
-              positiveLabel="Battery discharge"
-              valueFormatter={formatPowerValue}
-              yAxisFormatter={formatShortPowerValue}
+              points={batteryHistoryPoints}
             />
           )}
         </CardContent>
@@ -360,6 +388,8 @@ function CombinedHistoryChart({
       point.futureSolar,
       point.currentSolarEnergy,
       point.futureSolarEnergy,
+      point.currentBatteryLevel,
+      point.futureBatteryLevel,
       point.currentGridImport,
       point.futureGridImport,
       point.currentGridExport,
@@ -383,22 +413,26 @@ function CombinedHistoryChart({
     <div className="space-y-2.5">
       <div className="flex flex-wrap gap-2 text-xs font-medium text-slate-300">
         <LegendChip
-          color={UI_COLORS.batteryDischarge}
-          label="Battery discharge"
+          color={UI_COLORS.batteryPowerCharging}
+          label="Battery Charging Power"
         />
-        <LegendChip color={UI_COLORS.batteryCharge} label="Battery charge" />
+        <LegendChip
+          color={UI_COLORS.batteryPowerDischarging}
+          label="Battery Discharging Power"
+        />
+        <LegendChip color={UI_COLORS.batteryChargeLevel} label="Battery Charge" />
         <LegendChip color={UI_COLORS.solarEnergy} label="Solar Energy" />
         <LegendChip color={UI_COLORS.forecast} label="Solar Forecast" />
         <LegendChip color={UI_COLORS.price} label="Price" />
-        <LegendChip color={UI_COLORS.gridImport} label="Take from grid" />
         <LegendChip color={UI_COLORS.gridExport} label="Return to grid" />
+        <LegendChip color={UI_COLORS.gridImport} label="Take from grid" />
       </div>
       <MeasuredChartContainer className="h-[360px] min-w-0 w-full">
         {({ height, width }) => (
           <LineChart
             data={points}
             height={height}
-            margin={{ top: 12, right: 16, bottom: 0, left: 0 }}
+            margin={{ top: 12, right: 56, bottom: 0, left: 0 }}
             width={width}
           >
             <CartesianGrid
@@ -421,6 +455,19 @@ function CombinedHistoryChart({
               tickLine={false}
               width={60}
               yAxisId="power"
+            />
+            <YAxis
+              axisLine={false}
+              domain={CHARGE_AXIS_DOMAIN}
+              label={buildYAxisLabel("Charge (%)", "insideRight")}
+              orientation="right"
+              tick={UI_CHART_STYLES.axisTick}
+              tickMargin={8}
+              ticks={CHARGE_AXIS_TICKS}
+              tickFormatter={formatShortPercentValue}
+              tickLine={false}
+              width={76}
+              yAxisId="charge"
             />
             <YAxis hide yAxisId="price" />
             <YAxis hide yAxisId="solar" />
@@ -546,11 +593,32 @@ function CombinedHistoryChart({
               yAxisId="power"
             />
             <Line
+              dataKey="currentBatteryLevel"
+              dot={false}
+              isAnimationActive={false}
+              name="Battery Charge"
+              stroke={UI_COLORS.batteryChargeLevel}
+              strokeWidth={2.2}
+              type="monotone"
+              yAxisId="charge"
+            />
+            <Line
+              dataKey="futureBatteryLevel"
+              dot={false}
+              isAnimationActive={false}
+              name="Battery Charge"
+              stroke={UI_COLORS.batteryChargeLevel}
+              strokeOpacity={0.35}
+              strokeWidth={2.2}
+              type="monotone"
+              yAxisId="charge"
+            />
+            <Line
               dataKey="currentBatteryDischarge"
               dot={false}
               isAnimationActive={false}
-              name="Battery discharge"
-              stroke={UI_COLORS.batteryDischarge}
+              name="Battery Discharging Power"
+              stroke={UI_COLORS.batteryPowerDischarging}
               strokeWidth={2.1}
               type="monotone"
               yAxisId="power"
@@ -559,8 +627,8 @@ function CombinedHistoryChart({
               dataKey="futureBatteryDischarge"
               dot={false}
               isAnimationActive={false}
-              name="Battery discharge"
-              stroke={UI_COLORS.batteryDischarge}
+              name="Battery Discharging Power"
+              stroke={UI_COLORS.batteryPowerDischarging}
               strokeOpacity={0.35}
               strokeWidth={2.1}
               type="monotone"
@@ -570,8 +638,8 @@ function CombinedHistoryChart({
               dataKey="currentBatteryCharge"
               dot={false}
               isAnimationActive={false}
-              name="Battery charge"
-              stroke={UI_COLORS.batteryCharge}
+              name="Battery Charging Power"
+              stroke={UI_COLORS.batteryPowerCharging}
               strokeWidth={2.1}
               type="monotone"
               yAxisId="power"
@@ -580,8 +648,8 @@ function CombinedHistoryChart({
               dataKey="futureBatteryCharge"
               dot={false}
               isAnimationActive={false}
-              name="Battery charge"
-              stroke={UI_COLORS.batteryCharge}
+              name="Battery Charging Power"
+              stroke={UI_COLORS.batteryPowerCharging}
               strokeOpacity={0.35}
               strokeWidth={2.1}
               type="monotone"
@@ -606,13 +674,191 @@ function CombinedHistoryChart({
   );
 }
 
+function BatteryHistoryChart({
+  emptyMessage,
+  nowMarkerPeriodStart,
+  points,
+}: {
+  emptyMessage: string;
+  nowMarkerPeriodStart: string | null;
+  points: BatteryHistoryPoint[];
+}) {
+  const hasValues = points.some((point) =>
+    [
+      point.currentChargingPower,
+      point.futureChargingPower,
+      point.currentDischargingPower,
+      point.futureDischargingPower,
+      point.currentChargePercent,
+      point.futureChargePercent,
+    ].some((value) => typeof value === "number"),
+  );
+
+  if (!hasValues) {
+    return <p className="text-sm leading-6 text-slate-400">{emptyMessage}</p>;
+  }
+
+  return (
+    <div className="space-y-2.5">
+      <div className="flex flex-wrap gap-2 text-xs font-medium text-slate-300">
+        <LegendChip
+          color={UI_COLORS.batteryPowerCharging}
+          label="Battery Charging Power"
+        />
+        <LegendChip
+          color={UI_COLORS.batteryPowerDischarging}
+          label="Battery Discharging Power"
+        />
+        <LegendChip color={UI_COLORS.batteryChargeLevel} label="Battery Charge" />
+      </div>
+      <MeasuredChartContainer className="h-[360px] min-w-0 w-full">
+        {({ height, width }) => (
+          <LineChart
+            data={points}
+            height={height}
+            margin={{ top: 12, right: 56, bottom: 0, left: 0 }}
+            width={width}
+          >
+            <CartesianGrid
+              stroke={UI_COLORS.chartGrid}
+              strokeDasharray="3 6"
+              vertical={false}
+            />
+            <XAxis
+              axisLine={false}
+              dataKey="periodStart"
+              minTickGap={28}
+              tick={UI_CHART_STYLES.axisTick}
+              tickFormatter={formatDayTick}
+              tickLine={false}
+            />
+            <YAxis
+              axisLine={false}
+              label={buildYAxisLabel("Power (W)", "insideLeft")}
+              tick={UI_CHART_STYLES.axisTickMuted}
+              tickFormatter={formatShortPowerValue}
+              tickLine={false}
+              width={72}
+              yAxisId="power"
+            />
+            <YAxis
+              axisLine={false}
+              domain={CHARGE_AXIS_DOMAIN}
+              label={buildYAxisLabel("Charge (%)", "insideRight")}
+              orientation="right"
+              tick={UI_CHART_STYLES.axisTick}
+              tickMargin={8}
+              ticks={CHARGE_AXIS_TICKS}
+              tickFormatter={formatShortPercentValue}
+              tickLine={false}
+              width={76}
+              yAxisId="charge"
+            />
+            <ReferenceLine
+              stroke={UI_COLORS.chartZeroLine}
+              strokeDasharray="4 6"
+              y={0}
+              yAxisId="power"
+            />
+            <Tooltip
+              content={
+                <HistoryTooltip
+                  formatter={formatBatteryHistoryValue}
+                  labelFormatter={formatTooltipTimestamp}
+                />
+              }
+            />
+            <Line
+              dataKey="currentChargingPower"
+              dot={false}
+              isAnimationActive={false}
+              name="Battery Charging Power"
+              stroke={UI_COLORS.batteryPowerCharging}
+              strokeWidth={2.2}
+              type="monotone"
+              yAxisId="power"
+            />
+            <Line
+              dataKey="futureChargingPower"
+              dot={false}
+              isAnimationActive={false}
+              name="Battery Charging Power"
+              stroke={UI_COLORS.batteryPowerCharging}
+              strokeOpacity={0.35}
+              strokeWidth={2.2}
+              type="monotone"
+              yAxisId="power"
+            />
+            <Line
+              dataKey="currentDischargingPower"
+              dot={false}
+              isAnimationActive={false}
+              name="Battery Discharging Power"
+              stroke={UI_COLORS.batteryPowerDischarging}
+              strokeWidth={2.2}
+              type="monotone"
+              yAxisId="power"
+            />
+            <Line
+              dataKey="futureDischargingPower"
+              dot={false}
+              isAnimationActive={false}
+              name="Battery Discharging Power"
+              stroke={UI_COLORS.batteryPowerDischarging}
+              strokeOpacity={0.35}
+              strokeWidth={2.2}
+              type="monotone"
+              yAxisId="power"
+            />
+            <Line
+              dataKey="currentChargePercent"
+              dot={false}
+              isAnimationActive={false}
+              name="Battery Charge"
+              stroke={UI_COLORS.batteryChargeLevel}
+              strokeWidth={2.4}
+              type="monotone"
+              yAxisId="charge"
+            />
+            <Line
+              dataKey="futureChargePercent"
+              dot={false}
+              isAnimationActive={false}
+              name="Battery Charge"
+              stroke={UI_COLORS.batteryChargeLevel}
+              strokeOpacity={0.35}
+              strokeWidth={2.4}
+              type="monotone"
+              yAxisId="charge"
+            />
+            {nowMarkerPeriodStart ? (
+              <ReferenceLine
+                label={buildNowLabel()}
+                stroke={UI_COLORS.textPrimary}
+                strokeDasharray="4 4"
+                strokeOpacity={0.8}
+                strokeWidth={2}
+                x={nowMarkerPeriodStart}
+                yAxisId="power"
+              />
+            ) : null}
+          </LineChart>
+        )}
+      </MeasuredChartContainer>
+    </div>
+  );
+}
+
 export function SingleValueHistoryChart({
   accentColor,
   emptyMessage,
   label,
   nowMarkerPeriodStart,
   points,
+  showLegend = true,
   valueFormatter,
+  yAxisLabel,
+  yAxisDomain,
   yAxisFormatter,
 }: {
   accentColor: string;
@@ -620,7 +866,10 @@ export function SingleValueHistoryChart({
   label: string;
   nowMarkerPeriodStart: string | null;
   points: SplitSingleValuePoint[];
+  showLegend?: boolean;
   valueFormatter: (value: number) => string;
+  yAxisLabel?: string;
+  yAxisDomain?: [number, number];
   yAxisFormatter: (value: number) => string;
 }) {
   const hasValues = points.some(
@@ -637,9 +886,11 @@ export function SingleValueHistoryChart({
 
   return (
     <div className="space-y-2.5">
-      <div className="flex flex-wrap gap-2 text-xs font-medium text-slate-300">
-        <LegendChip color={accentColor} label={label} />
-      </div>
+      {showLegend ? (
+        <div className="flex flex-wrap gap-2 text-xs font-medium text-slate-300">
+          <LegendChip color={accentColor} label={label} />
+        </div>
+      ) : null}
       <MeasuredChartContainer className="h-[360px] min-w-0 w-full">
         {({ height, width }) => (
           <AreaChart
@@ -673,6 +924,10 @@ export function SingleValueHistoryChart({
             />
             <YAxis
               axisLine={false}
+              {...(yAxisLabel
+                ? { label: buildYAxisLabel(yAxisLabel, "insideLeft") }
+                : {})}
+              {...(yAxisDomain ? { domain: yAxisDomain } : {})}
               tick={UI_CHART_STYLES.axisTickMuted}
               tickFormatter={yAxisFormatter}
               tickLine={false}
@@ -715,6 +970,184 @@ export function SingleValueHistoryChart({
               type="monotone"
             />
           </AreaChart>
+        )}
+      </MeasuredChartContainer>
+    </div>
+  );
+}
+
+export function SegmentedLineHistoryChart({
+  emptyMessage,
+  negativeColor,
+  negativeLabel,
+  nowMarkerPeriodStart,
+  points,
+  positiveColor,
+  positiveLabel,
+  valueFormatter,
+  yAxisFormatter,
+}: {
+  emptyMessage: string;
+  negativeColor: string;
+  negativeLabel: string;
+  nowMarkerPeriodStart: string | null;
+  points: SplitSingleValuePoint[];
+  positiveColor: string;
+  positiveLabel: string;
+  valueFormatter: (value: number) => string;
+  yAxisFormatter: (value: number) => string;
+}) {
+  const hasValues = points.some(
+    (point) =>
+      typeof point.currentValue === "number" ||
+      typeof point.futureValue === "number",
+  );
+
+  if (!hasValues) {
+    return <p className="text-sm leading-6 text-slate-400">{emptyMessage}</p>;
+  }
+
+  const chartPoints = points.map((point) => ({
+    currentValue: point.currentValue,
+    futureValue: point.futureValue,
+    timestampMs: new Date(point.periodStart).getTime(),
+  }));
+  const currentSegments = buildSegmentedLineSegments({
+    negativeColor,
+    positiveColor,
+    points: chartPoints.map((point) => ({
+      timestampMs: point.timestampMs,
+      value: point.currentValue,
+    })),
+    strokeOpacity: 1,
+  });
+  const futureSegments = buildSegmentedLineSegments({
+    negativeColor,
+    positiveColor,
+    points: chartPoints.map((point) => ({
+      timestampMs: point.timestampMs,
+      value: point.futureValue,
+    })),
+    strokeOpacity: 0.35,
+  });
+
+  return (
+    <div className="space-y-2.5">
+      <div className="flex flex-wrap gap-2 text-xs font-medium text-slate-300">
+        <LegendChip color={positiveColor} label={positiveLabel} />
+        <LegendChip color={negativeColor} label={negativeLabel} />
+      </div>
+      <MeasuredChartContainer className="h-[360px] min-w-0 w-full">
+        {({ height, width }) => (
+          <LineChart
+            data={chartPoints}
+            height={height}
+            margin={{ top: 12, right: 16, bottom: 0, left: 0 }}
+            width={width}
+          >
+            <CartesianGrid
+              stroke={UI_COLORS.chartGrid}
+              strokeDasharray="3 6"
+              vertical={false}
+            />
+            <XAxis
+              axisLine={false}
+              dataKey="timestampMs"
+              domain={["dataMin", "dataMax"]}
+              minTickGap={28}
+              tick={UI_CHART_STYLES.axisTick}
+              tickFormatter={formatDayTick}
+              tickLine={false}
+              type="number"
+            />
+            <YAxis
+              axisLine={false}
+              tick={UI_CHART_STYLES.axisTickMuted}
+              tickFormatter={yAxisFormatter}
+              tickLine={false}
+              width={60}
+            />
+            <ReferenceLine
+              stroke={UI_COLORS.chartZeroLine}
+              strokeDasharray="4 6"
+              y={0}
+            />
+            {nowMarkerPeriodStart ? (
+              <ReferenceLine
+                label={buildNowLabel()}
+                stroke={UI_COLORS.textPrimary}
+                strokeDasharray="4 4"
+                strokeOpacity={0.8}
+                x={new Date(nowMarkerPeriodStart).getTime()}
+              />
+            ) : null}
+            <Tooltip
+              content={
+                <SegmentedHistoryTooltip
+                  labelFormatter={formatTooltipTimestamp}
+                  negativeColor={negativeColor}
+                  negativeLabel={negativeLabel}
+                  positiveColor={positiveColor}
+                  positiveLabel={positiveLabel}
+                  valueFormatter={valueFormatter}
+                />
+              }
+            />
+            <Line
+              activeDot={false}
+              connectNulls={false}
+              dataKey="currentValue"
+              dot={false}
+              isAnimationActive={false}
+              legendType="none"
+              stroke="transparent"
+              strokeWidth={10}
+              type="linear"
+            />
+            <Line
+              activeDot={false}
+              connectNulls={false}
+              dataKey="futureValue"
+              dot={false}
+              isAnimationActive={false}
+              legendType="none"
+              stroke="transparent"
+              strokeWidth={10}
+              type="linear"
+            />
+            {currentSegments.map((segment) => (
+              <Line
+                key={segment.key}
+                activeDot={false}
+                connectNulls={false}
+                data={segment.points}
+                dataKey="value"
+                dot={false}
+                isAnimationActive={false}
+                legendType="none"
+                stroke={segment.color}
+                strokeOpacity={segment.strokeOpacity}
+                strokeWidth={2.8}
+                type="linear"
+              />
+            ))}
+            {futureSegments.map((segment) => (
+              <Line
+                key={segment.key}
+                activeDot={false}
+                connectNulls={false}
+                data={segment.points}
+                dataKey="value"
+                dot={false}
+                isAnimationActive={false}
+                legendType="none"
+                stroke={segment.color}
+                strokeOpacity={segment.strokeOpacity}
+                strokeWidth={2.8}
+                type="linear"
+              />
+            ))}
+          </LineChart>
         )}
       </MeasuredChartContainer>
     </div>
@@ -929,6 +1362,171 @@ export function SignedHistoryChart({
   );
 }
 
+type SegmentedLinePoint = {
+  timestampMs: number;
+  value: number | null;
+};
+
+type SegmentedLineSeries = {
+  color: string;
+  key: string;
+  points: Array<{ timestampMs: number; value: number }>;
+  strokeOpacity: number;
+};
+
+function SegmentedHistoryTooltip({
+  active,
+  label,
+  labelFormatter,
+  negativeColor,
+  negativeLabel,
+  payload,
+  positiveColor,
+  positiveLabel,
+  valueFormatter,
+}: {
+  active?: boolean;
+  label?: string | number;
+  labelFormatter: (label: string | number) => string;
+  negativeColor: string;
+  negativeLabel: string;
+  payload?: TooltipPayloadEntry[];
+  positiveColor: string;
+  positiveLabel: string;
+  valueFormatter: (value: number) => string;
+}) {
+  if (!active || label === undefined || label === null || !payload || payload.length === 0) {
+    return null;
+  }
+
+  const selectedEntry =
+    payload.find(
+      (entry) =>
+        entry.dataKey === "futureValue" && typeof entry.value === "number",
+    ) ??
+    payload.find(
+      (entry) =>
+        entry.dataKey === "currentValue" && typeof entry.value === "number",
+    ) ??
+    payload.find(
+      (entry) =>
+        entry.dataKey?.startsWith("future") && typeof entry.value === "number",
+    ) ?? payload.find((entry) => typeof entry.value === "number");
+
+  if (!selectedEntry || typeof selectedEntry.value !== "number") {
+    return null;
+  }
+
+  const isPositive = selectedEntry.value >= 0;
+  const seriesColor = isPositive ? positiveColor : negativeColor;
+  const seriesLabel = isPositive ? positiveLabel : negativeLabel;
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-slate-950/95 px-3 py-2 text-sm text-slate-50 shadow-[0_24px_70px_rgba(2,6,23,0.6)] backdrop-blur">
+      <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+        {labelFormatter(label)}
+      </p>
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between gap-4">
+          <span className="flex items-center gap-2 text-slate-200">
+            <span
+              className="h-2.5 w-2.5 rounded-full"
+              style={{ backgroundColor: seriesColor }}
+            />
+            {seriesLabel}
+          </span>
+          <span className="font-medium text-white">
+            {valueFormatter(selectedEntry.value)}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function buildSegmentedLineSegments({
+  negativeColor,
+  positiveColor,
+  points,
+  strokeOpacity,
+}: {
+  negativeColor: string;
+  positiveColor: string;
+  points: SegmentedLinePoint[];
+  strokeOpacity: number;
+}): SegmentedLineSeries[] {
+  const segments: SegmentedLineSeries[] = [];
+
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const current = points[index];
+    const next = points[index + 1];
+
+    if (
+      !current ||
+      !next ||
+      typeof current.value !== "number" ||
+      typeof next.value !== "number"
+    ) {
+      continue;
+    }
+
+    if (current.value === 0 && next.value === 0) {
+      segments.push({
+        color: positiveColor,
+        key: `${current.timestampMs}-${next.timestampMs}-zero`,
+        points: [
+          { timestampMs: current.timestampMs, value: current.value },
+          { timestampMs: next.timestampMs, value: next.value },
+        ],
+        strokeOpacity,
+      });
+      continue;
+    }
+
+    if (current.value === 0 || next.value === 0 || current.value * next.value > 0) {
+      const segmentValue = current.value !== 0 ? current.value : next.value;
+
+      segments.push({
+        color: segmentValue >= 0 ? positiveColor : negativeColor,
+        key: `${current.timestampMs}-${next.timestampMs}-direct`,
+        points: [
+          { timestampMs: current.timestampMs, value: current.value },
+          { timestampMs: next.timestampMs, value: next.value },
+        ],
+        strokeOpacity,
+      });
+      continue;
+    }
+
+    const zeroRatio = Math.abs(current.value) /
+      (Math.abs(current.value) + Math.abs(next.value));
+    const zeroTimestampMs =
+      current.timestampMs +
+      (next.timestampMs - current.timestampMs) * zeroRatio;
+
+    segments.push({
+      color: current.value >= 0 ? positiveColor : negativeColor,
+      key: `${current.timestampMs}-${next.timestampMs}-before-zero`,
+      points: [
+        { timestampMs: current.timestampMs, value: current.value },
+        { timestampMs: zeroTimestampMs, value: 0 },
+      ],
+      strokeOpacity,
+    });
+    segments.push({
+      color: next.value >= 0 ? positiveColor : negativeColor,
+      key: `${current.timestampMs}-${next.timestampMs}-after-zero`,
+      points: [
+        { timestampMs: zeroTimestampMs, value: 0 },
+        { timestampMs: next.timestampMs, value: next.value },
+      ],
+      strokeOpacity,
+    });
+  }
+
+  return segments;
+}
+
 function HistoryTooltip({
   active,
   formatter,
@@ -1114,6 +1712,65 @@ export function aggregatePowerSamples(
     );
 }
 
+export function invertSingleValueSeries(
+  points: SingleValuePoint[],
+): SingleValuePoint[] {
+  return points.map((point) => ({
+    ...point,
+    value: typeof point.value === "number" ? -point.value : null,
+  }));
+}
+
+function aggregateBatteryChargeSamples(
+  samples: Array<{ periodStart: string; socPercent: number | null }>,
+): SingleValuePoint[] {
+  const aggregated = new Map<string, { count: number; total: number }>();
+
+  for (const sample of samples) {
+    const bucket = aggregated.get(sample.periodStart) ?? {
+      count: 0,
+      total: 0,
+    };
+
+    if (typeof sample.socPercent === "number") {
+      bucket.count += 1;
+      bucket.total += sample.socPercent;
+    }
+
+    aggregated.set(sample.periodStart, bucket);
+  }
+
+  return [...aggregated.entries()]
+    .map(([periodStart, entry]) => ({
+      periodStart,
+      value: entry.count > 0 ? entry.total / entry.count : null,
+    }))
+    .sort(
+      (left, right) =>
+        new Date(left.periodStart).getTime() -
+        new Date(right.periodStart).getTime(),
+    );
+}
+
+function combineBatteryHistorySeries(input: {
+  charge: SplitSingleValuePoint[];
+  power: SplitSignedValuePoint[];
+}): BatteryHistoryPoint[] {
+  return input.power.map((powerPoint, index) => {
+    const chargePoint = input.charge[index];
+
+    return {
+      currentChargePercent: chargePoint?.currentValue ?? null,
+      currentChargingPower: powerPoint.currentPositiveValue,
+      currentDischargingPower: powerPoint.currentNegativeValue,
+      futureChargePercent: chargePoint?.futureValue ?? null,
+      futureChargingPower: powerPoint.futurePositiveValue,
+      futureDischargingPower: powerPoint.futureNegativeValue,
+      periodStart: powerPoint.periodStart,
+    };
+  });
+}
+
 export function createSignedSeries(
   points: SingleValuePoint[],
 ): SignedValuePoint[] {
@@ -1212,6 +1869,7 @@ export function fillSignedDay(
 
 function createCombinedSeries(input: {
   battery: SignedValuePoint[];
+  batteryCharge: SingleValuePoint[];
   grid: SignedValuePoint[];
   price: SingleValuePoint[];
   solarEnergy: SingleValuePoint[];
@@ -1222,6 +1880,7 @@ function createCombinedSeries(input: {
   for (const point of input.price) {
     combined.set(point.periodStart, {
       batteryCharge: null,
+      batteryLevel: null,
       batteryDischarge: null,
       gridExport: null,
       gridImport: null,
@@ -1252,8 +1911,8 @@ function createCombinedSeries(input: {
     const existing =
       combined.get(point.periodStart) ??
       createEmptyCombinedPoint(point.periodStart);
-    existing.gridExport = point.negativeValue;
-    existing.gridImport = point.positiveValue;
+    existing.gridExport = point.positiveValue;
+    existing.gridImport = point.negativeValue;
     combined.set(point.periodStart, existing);
   }
 
@@ -1261,8 +1920,16 @@ function createCombinedSeries(input: {
     const existing =
       combined.get(point.periodStart) ??
       createEmptyCombinedPoint(point.periodStart);
-    existing.batteryCharge = point.negativeValue;
-    existing.batteryDischarge = point.positiveValue;
+    existing.batteryCharge = point.positiveValue;
+    existing.batteryDischarge = point.negativeValue;
+    combined.set(point.periodStart, existing);
+  }
+
+  for (const point of input.batteryCharge) {
+    const existing =
+      combined.get(point.periodStart) ??
+      createEmptyCombinedPoint(point.periodStart);
+    existing.batteryLevel = point.value;
     combined.set(point.periodStart, existing);
   }
 
@@ -1289,6 +1956,7 @@ function splitCombinedSeriesByTime(
     return {
       ...point,
       currentBatteryCharge: isFuture ? null : point.batteryCharge,
+      currentBatteryLevel: isFuture ? null : point.batteryLevel,
       currentBatteryDischarge: isFuture ? null : point.batteryDischarge,
       currentGridExport: isFuture ? null : point.gridExport,
       currentGridImport: isFuture ? null : point.gridImport,
@@ -1296,6 +1964,7 @@ function splitCombinedSeriesByTime(
       currentSolarEnergy: isFuture ? null : point.solarEnergy,
       currentSolar: isFuture ? null : point.solar,
       futureBatteryCharge: includeInFutureSeries ? point.batteryCharge : null,
+      futureBatteryLevel: includeInFutureSeries ? point.batteryLevel : null,
       futureBatteryDischarge: includeInFutureSeries
         ? point.batteryDischarge
         : null,
@@ -1311,6 +1980,7 @@ function splitCombinedSeriesByTime(
 function createEmptyCombinedPoint(periodStart: string): CombinedPoint {
   return {
     batteryCharge: null,
+    batteryLevel: null,
     batteryDischarge: null,
     gridExport: null,
     gridImport: null,
@@ -1329,14 +1999,14 @@ function createDayPeriods(dayKey: string): string[] {
   );
 }
 
-function formatDayTick(value: string): string {
+function formatDayTick(value: string | number): string {
   return new Intl.DateTimeFormat(undefined, {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(value));
 }
 
-function formatTooltipTimestamp(value: string): string {
+function formatTooltipTimestamp(value: string | number): string {
   return new Intl.DateTimeFormat(undefined, {
     day: "numeric",
     hour: "2-digit",
@@ -1353,6 +2023,10 @@ export function formatPowerValue(value: number): string {
   }
 
   return `${Math.round(value)} W`;
+}
+
+export function formatAbsolutePowerValue(value: number): string {
+  return formatPowerValue(Math.abs(value));
 }
 
 export function formatShortPowerValue(value: number): string {
@@ -1377,6 +2051,14 @@ function formatWholeNumberValue(value: number): string {
   return `${Math.round(value)} W/m2`;
 }
 
+function formatPercentValue(value: number): string {
+  return `${Math.round(value)}%`;
+}
+
+function formatShortPercentValue(value: number): string {
+  return `${Math.round(value)}%`;
+}
+
 function formatCombinedValue(value: number, key?: string): string {
   if (key === "price" || key === "currentPrice" || key === "futurePrice") {
     return formatPriceValue(value);
@@ -1387,6 +2069,14 @@ function formatCombinedValue(value: number, key?: string): string {
   }
 
   if (
+    key === "batteryLevel" ||
+    key === "currentBatteryLevel" ||
+    key === "futureBatteryLevel"
+  ) {
+    return formatPercentValue(value);
+  }
+
+  if (
     key === "solarEnergy" ||
     key === "currentSolarEnergy" ||
     key === "futureSolarEnergy"
@@ -1394,7 +2084,15 @@ function formatCombinedValue(value: number, key?: string): string {
     return formatPowerValue(value);
   }
 
-  return formatPowerValue(value);
+  return formatAbsolutePowerValue(value);
+}
+
+function formatBatteryHistoryValue(value: number, key?: string): string {
+  if (key?.includes("ChargePercent")) {
+    return formatPercentValue(value);
+  }
+
+  return formatAbsolutePowerValue(value);
 }
 
 export function getUtcDayKey(value: Date | string): string {
@@ -1449,5 +2147,18 @@ function buildNowLabel() {
     fontSize: 12,
     position: "top" as const,
     value: "Now",
+  };
+}
+
+function buildYAxisLabel(
+  value: string,
+  position: "insideLeft" | "insideRight",
+) {
+  return {
+    angle: position === "insideLeft" ? -90 : 90,
+    fill: UI_COLORS.chartTickMuted,
+    fontSize: 12,
+    position,
+    value,
   };
 }
