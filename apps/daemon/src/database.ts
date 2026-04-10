@@ -84,6 +84,7 @@ interface DeviceTelemetryRow {
   device_id: string;
   site_id: string;
   kind: ManagedDeviceTelemetryRecord["kind"];
+  capacity_wh: number | null;
   power_w: number | null;
   soc_percent: number | null;
   gas_m3: number | null;
@@ -175,6 +176,7 @@ export function openDaemonDatabase(databasePath = getDatabasePath()): Database {
   const db = new Database(databasePath);
 
   db.exec("PRAGMA journal_mode = WAL;");
+  db.exec("PRAGMA busy_timeout = 5000;");
   db.exec(`
     CREATE TABLE IF NOT EXISTS sites (
       id TEXT PRIMARY KEY,
@@ -273,6 +275,7 @@ export function openDaemonDatabase(databasePath = getDatabasePath()): Database {
       device_id TEXT PRIMARY KEY,
       site_id TEXT NOT NULL,
       kind TEXT NOT NULL,
+      capacity_wh REAL,
       power_w REAL,
       soc_percent REAL,
       gas_m3 REAL,
@@ -281,6 +284,7 @@ export function openDaemonDatabase(databasePath = getDatabasePath()): Database {
       FOREIGN KEY(site_id) REFERENCES sites(id)
     );
   `);
+  ensureManagedDeviceTelemetryColumns(db);
   db.exec(`
     CREATE TABLE IF NOT EXISTS weather_forecasts (
       site_id TEXT PRIMARY KEY,
@@ -824,6 +828,17 @@ function ensureBatteryPowerSampleColumns(db: Database): void {
   }
 }
 
+function ensureManagedDeviceTelemetryColumns(db: Database): void {
+  const columns = db
+    .query<{ name: string }, []>("PRAGMA table_info(device_telemetry)")
+    .all()
+    .map((column) => column.name);
+
+  if (!columns.includes("capacity_wh")) {
+    db.exec("ALTER TABLE device_telemetry ADD COLUMN capacity_wh REAL;");
+  }
+}
+
 export function readBatteries(db: Database): BatteryRecord[] {
   const rows = db
     .query<BatteryRow, []>(
@@ -1106,6 +1121,7 @@ export function readManagedDeviceTelemetry(
           device_id,
           site_id,
           kind,
+          capacity_wh,
           power_w,
           soc_percent,
           state,
@@ -1120,6 +1136,7 @@ export function readManagedDeviceTelemetry(
     deviceId: row.device_id,
     siteId: row.site_id,
     kind: row.kind,
+    capacityWh: row.capacity_wh,
     powerW: row.power_w,
     socPercent: row.soc_percent,
     state: row.state,
@@ -1210,14 +1227,16 @@ export function upsertManagedDeviceTelemetry(
         device_id,
         site_id,
         kind,
+        capacity_wh,
         power_w,
         soc_percent,
         state,
         observed_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(device_id) DO UPDATE SET
         site_id = excluded.site_id,
         kind = excluded.kind,
+        capacity_wh = excluded.capacity_wh,
         power_w = excluded.power_w,
         soc_percent = excluded.soc_percent,
         state = excluded.state,
@@ -1227,6 +1246,7 @@ export function upsertManagedDeviceTelemetry(
     telemetry.deviceId,
     telemetry.siteId,
     telemetry.kind,
+    telemetry.capacityWh,
     telemetry.powerW,
     telemetry.socPercent,
     telemetry.state,

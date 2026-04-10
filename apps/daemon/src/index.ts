@@ -62,6 +62,11 @@ const FORECAST_PERIOD_MINUTES = 15;
 
 class DaemonStartupError extends Error {}
 
+interface BatteryControlSnapshot {
+  manualSignature: string;
+  strategyPlanSignature: string;
+}
+
 function acquireDaemonLock(): void {
   ensureParentDirectory(lockPath);
 
@@ -129,6 +134,12 @@ function main(): void {
   let pollInFlight = false;
   let solarEnergyProviderPollInFlight = false;
   let refreshInFlight = false;
+  const observedBatteryControls = new Map(
+    batteries.map((battery) => [
+      battery.id,
+      createBatteryControlSnapshot(battery),
+    ]),
+  );
 
   async function refreshSiteData(forceRefresh = false): Promise<void> {
     if (refreshInFlight) {
@@ -171,6 +182,25 @@ function main(): void {
     try {
       const polledBatteries = readBatteries(db);
       const polledMeters = readMeters(db);
+      const pollStartedAt = new Date();
+
+      for (const battery of polledBatteries) {
+        logAppliedBatteryControlChanges(
+          observedBatteryControls.get(battery.id),
+          battery,
+          pollStartedAt,
+        );
+        observedBatteryControls.set(
+          battery.id,
+          createBatteryControlSnapshot(battery),
+        );
+      }
+
+      for (const batteryId of observedBatteryControls.keys()) {
+        if (!polledBatteries.some((battery) => battery.id === batteryId)) {
+          observedBatteryControls.delete(batteryId);
+        }
+      }
 
       await refreshSiteData();
 
@@ -252,6 +282,7 @@ function main(): void {
             deviceId: battery.id,
             siteId: battery.siteId,
             kind: "battery",
+            capacityWh: sample.capacityWh,
             powerW: sample.currentW,
             socPercent: sample.socPercent,
             state: sample.status,
@@ -276,6 +307,7 @@ function main(): void {
             deviceId: meter.id,
             siteId: meter.siteId,
             kind: "meter",
+            capacityWh: null,
             powerW: sample.powerW,
             socPercent: null,
             state: null,
@@ -321,6 +353,7 @@ function main(): void {
             deviceId: provider.id,
             siteId: provider.siteId,
             kind: "solar-energy-provider",
+            capacityWh: null,
             powerW: sample.currentPowerW,
             socPercent: null,
             state: null,
@@ -826,6 +859,131 @@ async function restoreFallbackStrategy(
       },
     },
   });
+}
+
+function createBatteryControlSnapshot(
+  battery: BatteryRecord,
+): BatteryControlSnapshot {
+  return {
+    manualSignature: JSON.stringify({
+      strategyMode: battery.strategyMode,
+      manualState: battery.manualState,
+      manualPowerW: battery.manualPowerW,
+      manualChargeTargetSoc: battery.manualChargeTargetSoc,
+      manualDischargeTargetSoc: battery.manualDischargeTargetSoc,
+      manualTargetSoc: battery.manualTargetSoc,
+      manualModeActive: battery.manualModeActive,
+    }),
+    strategyPlanSignature: JSON.stringify(battery.strategyPlan),
+  };
+}
+
+function logAppliedBatteryControlChanges(
+  previous: BatteryControlSnapshot | undefined,
+  battery: BatteryRecord,
+  now: Date,
+): void {
+  if (!previous) {
+    return;
+  }
+
+  const current = createBatteryControlSnapshot(battery);
+
+  if (previous.strategyPlanSignature !== current.strategyPlanSignature) {
+    logInfo(
+      `strategy plan applied for ${battery.id}: default=${describeStrategyPlanItem(battery.strategyPlan[0])} pastToday=${describeTriggeredStrategyItemsBeforeNow(battery, now)} nextToday=${describeNextStrategyItemForToday(battery, now)}`,
+    );
+  }
+
+  if (
+    previous.manualSignature !== current.manualSignature &&
+    battery.manualModeActive
+  ) {
+    logInfo(
+      `manual strategy applied for ${battery.id}: ${describeCurrentBatteryStrategy(battery)}`,
+    );
+  }
+}
+
+function describeCurrentBatteryStrategy(battery: BatteryRecord): string {
+  const parts = [
+    `mode=${battery.strategyMode}`,
+    `manualModeActive=${battery.manualModeActive}`,
+  ];
+
+  if (battery.manualState) {
+    parts.push(`state=${battery.manualState}`);
+  }
+
+  if (battery.manualPowerW !== null) {
+    parts.push(`powerW=${battery.manualPowerW}`);
+  }
+
+  if (battery.manualChargeTargetSoc !== null) {
+    parts.push(`chargeSoc=${battery.manualChargeTargetSoc}`);
+  }
+
+  if (battery.manualDischargeTargetSoc !== null) {
+    parts.push(`dischargeSoc=${battery.manualDischargeTargetSoc}`);
+  }
+
+  if (battery.manualTargetSoc !== null) {
+    parts.push(`targetSoc=${battery.manualTargetSoc}`);
+  }
+
+  return parts.join(" ");
+}
+
+function describeTriggeredStrategyItemsBeforeNow(
+  battery: BatteryRecord,
+  now: Date,
+): string {
+  const items = battery.strategyPlan.slice(1).flatMap((item) => {
+    const triggerAt = getTodayTriggerAt(item, now);
+
+    if (
+      triggerAt === null ||
+      triggerAt.getTime() >= now.getTime() ||
+      !isItemAlreadyTriggeredToday({
+        runtime: battery.strategyRuntime,
+        itemId: item.id,
+        triggerAt,
+      })
+    ) {
+      return [];
+    }
+
+    return [
+      `${describeStrategyPlanItemWithIndex(battery, item)} triggerAt=${formatDaemonLogTimestamp(triggerAt)}`,
+    ];
+  });
+
+  return items.length > 0 ? items.join(" | ") : "none";
+}
+
+function describeNextStrategyItemForToday(
+  battery: BatteryRecord,
+  now: Date,
+): string {
+  for (const item of battery.strategyPlan.slice(1)) {
+    const triggerAt = getTodayTriggerAt(item, now);
+
+    if (
+      triggerAt === null ||
+      triggerAt.getTime() < now.getTime() ||
+      isItemAlreadyTriggeredToday({
+        runtime: battery.strategyRuntime,
+        itemId: item.id,
+        triggerAt,
+      })
+    ) {
+      continue;
+    }
+
+    return `${describeStrategyPlanItemWithIndex(battery, item)} triggerAt=${formatDaemonLogTimestamp(triggerAt)}`;
+  }
+
+  return "none";
 }
 
 function logVerbose(enabled: boolean, message: string): void {

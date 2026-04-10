@@ -314,6 +314,30 @@ export function clearActiveBatteryStrategyRuntime(
   };
 }
 
+export function createBatteryStrategyRuntimeForPlanApply(
+  plan: BatteryStrategyPlanRecord,
+  now: Date,
+): BatteryStrategyRuntimeRecord {
+  const lastTriggeredAtByItemId: Record<string, string> = {};
+
+  for (const item of plan.slice(1)) {
+    const triggerAt = getBatteryStrategyPlanTriggerAt(item, now);
+
+    if (triggerAt === null || triggerAt.getTime() >= now.getTime()) {
+      continue;
+    }
+
+    lastTriggeredAtByItemId[item.id] = triggerAt.toISOString();
+  }
+
+  return {
+    activeItemId: null,
+    activeStartedAt: null,
+    activeObservedAt: null,
+    lastTriggeredAtByItemId,
+  };
+}
+
 export function resolveBatteryStrategyFromPlanItem(input: {
   item: BatteryStrategyPlanItem | null | undefined;
   minimumDischargePercent: number;
@@ -578,6 +602,29 @@ function normalizeBatteryStrategyPlanItem(
   };
 }
 
+function getBatteryStrategyPlanTriggerAt(
+  item: BatteryStrategyPlanItem,
+  now: Date,
+): Date | null {
+  if (
+    item.kind !== "daily" ||
+    item.triggerKind !== "daily-time" ||
+    !isDailyStartTime(item.startTime)
+  ) {
+    return null;
+  }
+
+  const [hoursPart, minutesPart] = item.startTime.split(":");
+  const triggerAt = new Date(now);
+  triggerAt.setHours(
+    Number(hoursPart ?? "0"),
+    Number(minutesPart ?? "0"),
+    0,
+    0,
+  );
+  return triggerAt;
+}
+
 export function parseBatteryStrategyRuntimeJson(
   value: string | null | undefined,
 ): BatteryStrategyRuntimeRecord {
@@ -709,6 +756,7 @@ export interface ManagedDeviceTelemetryRecord {
   deviceId: string;
   siteId: string;
   kind: ManagedDeviceKind;
+  capacityWh: number | null;
   powerW: number | null;
   socPercent: number | null;
   state: ManagedDeviceState | null;

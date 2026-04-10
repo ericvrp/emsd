@@ -10,9 +10,10 @@ import {
   upsertWeatherForecast,
 } from "../../daemon/src/database";
 import { runApiAction } from "./api";
-import { createBattery, createSite } from "./managed-site-store";
+import { createBattery, createSite, getBattery } from "./managed-site-store";
 
 const originalDatabasePath = process.env.EMSD_DB_PATH;
+const originalFetch = globalThis.fetch;
 let currentTempDir: string | null = null;
 
 afterEach(() => {
@@ -26,6 +27,8 @@ afterEach(() => {
     rmSync(currentTempDir, { recursive: true, force: true });
     currentTempDir = null;
   }
+
+  globalThis.fetch = originalFetch;
 });
 
 function createTempDatabase(): string {
@@ -70,6 +73,7 @@ test("api snapshot returns managed devices with telemetry", async () => {
 
   try {
     upsertManagedDeviceTelemetry(db, {
+      capacityWh: 9600,
       deviceId: "battery-1",
       kind: "battery",
       observedAt: "2026-04-09T08:30:00.000Z",
@@ -91,6 +95,7 @@ test("api snapshot returns managed devices with telemetry", async () => {
     id: "battery-1",
     kind: "battery",
     telemetry: {
+      capacityWh: 9600,
       kind: "battery",
       powerW: -950,
       socPercent: 62,
@@ -115,6 +120,7 @@ test("api history archive returns stored battery, price, and forecast data", asy
 
   try {
     upsertManagedDeviceTelemetry(db, {
+      capacityWh: 9600,
       deviceId: "battery-1",
       kind: "battery",
       observedAt: "2026-04-09T08:30:00.000Z",
@@ -125,6 +131,7 @@ test("api history archive returns stored battery, price, and forecast data", asy
     });
 
     upsertManagedDeviceTelemetry(db, {
+      capacityWh: null,
       deviceId: "meter-1",
       kind: "meter",
       observedAt: "2026-04-09T08:30:00.000Z",
@@ -135,6 +142,7 @@ test("api history archive returns stored battery, price, and forecast data", asy
     });
 
     upsertManagedDeviceTelemetry(db, {
+      capacityWh: null,
       deviceId: "solar-1",
       kind: "solar-energy-provider",
       observedAt: "2026-04-09T08:30:00.000Z",
@@ -202,3 +210,149 @@ test("api history archive returns stored battery, price, and forecast data", asy
   expect(archive.solarForecastSamples).toHaveLength(1);
   expect(archive.dynamicPriceSamples).toHaveLength(1);
 });
+
+test("battery-set-strategy-plan applies the fallback and skips earlier same-day items", async () => {
+  const databasePath = createTempDatabase();
+  const fetchCalls: string[] = [];
+  const now = new Date();
+  const morningTime = formatEarlierTodayTime(now);
+  const eveningTime = formatLaterTodayTime(now);
+
+  globalThis.fetch = Object.assign(
+    async (input: string | URL | Request) => {
+      fetchCalls.push(
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url,
+      );
+
+      return new Response(JSON.stringify({ result: true }), {
+        headers: { "content-type": "application/json" },
+        status: 200,
+      });
+    },
+    {
+      preconnect: originalFetch.preconnect.bind(originalFetch),
+    },
+  ) as typeof fetch;
+
+  createSite(
+    {
+      id: "home",
+      location: "52.367600, 4.904100",
+      name: "Home",
+    },
+    databasePath,
+  );
+  createBattery(
+    {
+      connected: true,
+      enabled: true,
+      id: "battery-1",
+      ipAddress: "192.168.1.10",
+      minimumDischargePercent: 10,
+      model: "indevolt-battery",
+      name: "Battery",
+      plugin: "indevolt-battery",
+      status: "idle",
+    },
+    "home",
+    databasePath,
+  );
+
+  await runApiAction("battery-set-strategy-plan", {
+    id: "battery-1",
+    siteId: "home",
+    strategyPlan: [
+      {
+        id: "default",
+        kind: "default",
+        startTime: null,
+        targetDurationMinutes: null,
+        targetEndTime: null,
+        targetMethod: null,
+        triggerKind: null,
+        strategyMode: "self-consumption",
+        manualState: null,
+        manualPowerW: null,
+        manualChargeTargetSoc: 100,
+        manualDischargeTargetSoc: 10,
+        manualTargetSoc: 100,
+      },
+      {
+        id: "morning",
+        kind: "daily",
+        startTime: morningTime,
+        targetDurationMinutes: null,
+        targetEndTime: null,
+        targetMethod: "soc",
+        triggerKind: "daily-time",
+        strategyMode: "manual",
+        manualState: "discharging",
+        manualPowerW: 2400,
+        manualChargeTargetSoc: null,
+        manualDischargeTargetSoc: 40,
+        manualTargetSoc: 40,
+      },
+      {
+        id: "evening",
+        kind: "daily",
+        startTime: eveningTime,
+        targetDurationMinutes: null,
+        targetEndTime: null,
+        targetMethod: "soc",
+        triggerKind: "daily-time",
+        strategyMode: "manual",
+        manualState: "discharging",
+        manualPowerW: 2400,
+        manualChargeTargetSoc: null,
+        manualDischargeTargetSoc: 20,
+        manualTargetSoc: 20,
+      },
+    ],
+  });
+
+  const updated = getBattery("battery-1", "home", databasePath);
+
+  expect(fetchCalls).toHaveLength(1);
+  expect(updated).not.toBeNull();
+  expect(updated?.strategyMode).toBe("self-consumption");
+  expect(updated?.manualModeActive).toBe(false);
+  expect(
+    Object.keys(updated?.strategyRuntime.lastTriggeredAtByItemId ?? {}),
+  ).toEqual(["morning"]);
+});
+
+function formatEarlierTodayTime(now: Date): string {
+  const value = new Date(now);
+
+  if (value.getMinutes() > 0) {
+    value.setMinutes(value.getMinutes() - 1, 0, 0);
+  } else if (value.getHours() > 0) {
+    value.setHours(value.getHours() - 1, 59, 0, 0);
+  } else {
+    value.setHours(0, 0, 0, 0);
+  }
+
+  return `${pad(value.getHours())}:${pad(value.getMinutes())}`;
+}
+
+function formatLaterTodayTime(now: Date): string {
+  const value = new Date(now);
+
+  if (value.getMinutes() < 59) {
+    value.setMinutes(value.getMinutes() + 1, 0, 0);
+  } else if (value.getHours() < 23) {
+    value.setHours(value.getHours() + 1, 0, 0, 0);
+  } else {
+    value.setHours(23, 59, 0, 0);
+  }
+
+  return `${pad(value.getHours())}:${pad(value.getMinutes())}`;
+}
+
+function pad(value: number): string {
+  return String(value).padStart(2, "0");
+}

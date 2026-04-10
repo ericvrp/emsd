@@ -8,6 +8,7 @@ import {
   ScanSearch,
   SunMedium,
 } from "lucide-react";
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -32,6 +33,7 @@ const DISCOVERY_CACHE_VERSION = 3;
 const primaryButtonClass = UI_STYLES.buttonPrimary;
 
 const secondaryButtonClass = UI_STYLES.buttonSecondary;
+const DEFAULT_BATTERY_BACKUP_RESERVE_PERCENT = 10;
 
 export function DiscoveryPanel({
   existingDeviceIds,
@@ -55,6 +57,15 @@ export function DiscoveryPanel({
         .map((device) => device.discoveryId),
     [devices, existingIdSet],
   );
+  const orderedDevices = useMemo(
+    () => [...devices].sort(compareDiscoveryDevices),
+    [devices],
+  );
+  const batteries = orderedDevices.filter((device) => device.category === "battery");
+  const solarProviders = orderedDevices.filter(
+    (device) => device.category === "solar-energy-provider",
+  );
+  const meters = orderedDevices.filter((device) => device.category === "meter");
 
   useEffect(() => {
     if (!selectedSiteId) {
@@ -238,7 +249,7 @@ export function DiscoveryPanel({
                 type="hidden"
                 name="discoveryDevices"
                 value={JSON.stringify(
-                  devices.filter((device) =>
+                  orderedDevices.filter((device) =>
                     addableDiscoveryIds.includes(device.discoveryId),
                   ),
                 )}
@@ -252,19 +263,89 @@ export function DiscoveryPanel({
             <></>
           )}
 
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {devices.map((device) => (
-              <DiscoveryDeviceCard
-                device={device}
+          <section className="grid gap-4 xl:grid-cols-3">
+            <DiscoveryResourceSection title="Batteries">
+              <DiscoveryDeviceList
+                devices={batteries}
                 existingIdSet={existingIdSet}
                 host={host.trim()}
-                key={device.discoveryId}
+                kind="battery"
                 selectedSiteId={selectedSiteId}
               />
-            ))}
-          </div>
+            </DiscoveryResourceSection>
+            <DiscoveryResourceSection title="Solar Providers">
+              <DiscoveryDeviceList
+                devices={solarProviders}
+                existingIdSet={existingIdSet}
+                host={host.trim()}
+                kind="solar-energy-provider"
+                selectedSiteId={selectedSiteId}
+              />
+            </DiscoveryResourceSection>
+            <DiscoveryResourceSection title="Meters">
+              <DiscoveryDeviceList
+                devices={meters}
+                existingIdSet={existingIdSet}
+                host={host.trim()}
+                kind="meter"
+                selectedSiteId={selectedSiteId}
+              />
+            </DiscoveryResourceSection>
+          </section>
         </div>
       )}
+    </div>
+  );
+}
+
+function DiscoveryResourceSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-violet-300/30 to-transparent" />
+      <h3 className="mb-4 text-xl font-semibold text-white">{title}</h3>
+      {children}
+    </section>
+  );
+}
+
+function DiscoveryDeviceList({
+  devices,
+  existingIdSet,
+  host,
+  kind,
+  selectedSiteId,
+}: {
+  devices: SignedDiscoveredDevice[];
+  existingIdSet: Set<string>;
+  host: string;
+  kind: SignedDiscoveredDevice["category"];
+  selectedSiteId: string | null;
+}) {
+  if (devices.length === 0) {
+    return (
+      <p className="text-sm leading-6 text-slate-400">
+        No {formatDiscoveryEmptyLabel(kind)} discovered in the latest scan.
+      </p>
+    );
+  }
+
+  return (
+    <div className="grid gap-3">
+      {devices.map((device) => (
+        <DiscoveryDeviceCard
+          device={device}
+          existingIdSet={existingIdSet}
+          host={host}
+          key={device.discoveryId}
+          selectedSiteId={selectedSiteId}
+        />
+      ))}
     </div>
   );
 }
@@ -284,10 +365,14 @@ function DiscoveryDeviceCard({
 
   return (
     <article
-      className={`relative flex h-full flex-col overflow-hidden rounded-[1.6rem] border p-4 shadow-[0_16px_60px_rgba(0,0,0,0.22)] ${
+      className={`relative flex min-h-[440px] flex-col overflow-hidden rounded-[1.4rem] border border-white/10 bg-white/5 p-4 ${
         alreadyAdded
-          ? "border-white/6 bg-slate-950/35 opacity-60"
-          : "border-white/10 bg-slate-950/60"
+          ? "opacity-60"
+          : device.category === "battery"
+            ? "ring-1 ring-cyan-300/5"
+            : device.category === "meter"
+              ? "ring-1 ring-violet-300/5"
+              : "ring-1 ring-amber-300/5"
       }`}
     >
       <div
@@ -309,38 +394,37 @@ function DiscoveryDeviceCard({
         </span>
       </div>
 
-      <div
-        className={`mt-4 flex-1 space-y-2 rounded-2xl border p-3 text-sm ${
-          alreadyAdded
-            ? "border-white/6 bg-white/3 text-slate-400"
-            : "border-white/8 bg-white/4 text-slate-300"
-        }`}
-      >
-        <p>
-          <span className="text-slate-500">Model:</span> {device.model}
-        </p>
-        <p>
-          <span className="text-slate-500">Address:</span> {device.ipAddress}
-        </p>
-        {device.state ? (
-          <p>
-            <span className="text-slate-500">State:</span>{" "}
-            {formatDiscoveryState(device.state)}
-          </p>
+      <dl className="mt-4 grid flex-1 content-start gap-3 text-sm text-slate-300 sm:grid-cols-2">
+        <DiscoveryMetaItem label="Model" value={device.model} />
+        <DiscoveryMetaItem label="Address" value={device.ipAddress} />
+        {device.category === "battery" ? (
+          <DiscoveryMetaItem
+            label="SoC"
+            value={
+              isFiniteNumber(device.socPercent)
+                ? `${Math.round(device.socPercent)}%`
+                : "Unavailable"
+            }
+          />
         ) : null}
-        {device.category === "battery" && isFiniteNumber(device.socPercent) ? (
-          <p>
-            <span className="text-slate-500">SoC:</span>{" "}
-            {Math.round(device.socPercent)}%
-          </p>
+        {device.category === "battery" ? (
+          <DiscoveryMetaItem label="Capacity" value="Unavailable" />
         ) : null}
-        {isFiniteNumber(device.powerW) ? (
-          <p>
-            <span className="text-slate-500">Power:</span>{" "}
-            {Math.round(device.powerW)} W
-          </p>
+        <DiscoveryMetaItem
+          label="Power"
+          value={
+            isFiniteNumber(device.powerW)
+              ? `${Math.round(device.powerW)} W`
+              : "Unavailable"
+          }
+        />
+        {device.category === "battery" ? (
+          <DiscoveryMetaItem
+            label="Backup reserve"
+            value={`${DEFAULT_BATTERY_BACKUP_RESERVE_PERCENT}%`}
+          />
         ) : null}
-      </div>
+      </dl>
 
       <div className="mt-4">
         {!alreadyAdded && selectedSiteId ? (
@@ -388,10 +472,21 @@ function isFiniteNumber(value: number | null): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
-function formatDiscoveryState(
-  state: "idle" | "charging" | "discharging" | "connected" | "offline" | null,
-): string {
-  return state ? state.replace(/-/g, " ") : "";
+function DiscoveryMetaItem({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/8 bg-slate-950/55 px-3 py-2">
+      <dt className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+        {label}
+      </dt>
+      <dd className="mt-1 text-sm text-slate-100">{value}</dd>
+    </div>
+  );
 }
 
 function formatDiscoveryCategoryLabel(
@@ -402,4 +497,35 @@ function formatDiscoveryCategoryLabel(
   }
 
   return category;
+}
+
+function compareDiscoveryDevices(
+  left: SignedDiscoveredDevice,
+  right: SignedDiscoveredDevice,
+): number {
+  const order = {
+    battery: 0,
+    "solar-energy-provider": 1,
+    meter: 2,
+  } as const;
+
+  const kindDifference = order[left.category] - order[right.category];
+
+  if (kindDifference !== 0) {
+    return kindDifference;
+  }
+
+  return left.name.localeCompare(right.name);
+}
+
+function formatDiscoveryEmptyLabel(category: SignedDiscoveredDevice["category"]): string {
+  if (category === "battery") {
+    return "batteries";
+  }
+
+  if (category === "solar-energy-provider") {
+    return "solar energy providers";
+  }
+
+  return "meters";
 }

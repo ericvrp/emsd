@@ -4,6 +4,7 @@ import type {
   DynamicPricePointRecord,
   DynamicPriceSnapshotRecord,
   DynamicPriceSourceRecord,
+  HistoryArchive,
   ManagedDeviceStatusRecord,
   SiteRecord,
   WeatherForecastPointRecord,
@@ -21,18 +22,6 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
-import {
-  Area,
-  AreaChart,
-  Bar,
-  BarChart,
-  Cell,
-  ReferenceLine,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-import type { ValueType } from "recharts/types/component/DefaultTooltipContent";
 import { toast } from "sonner";
 import {
   createDynamicPriceSourceAction,
@@ -49,10 +38,18 @@ import {
   updateSiteAction,
   updateWeatherForecastSourceAction,
 } from "../app/actions";
-import { UI_CHART_STYLES, UI_COLORS, UI_STYLES } from "../lib/ui-colors";
+import { UI_COLORS, UI_STYLES } from "../lib/ui-colors";
 import { cn } from "../lib/utils";
+import { DisabledDateSelect } from "./date-select";
 import { DiscoveryPanel } from "./discovery-panel";
-import { LegendChip } from "./history-page";
+import {
+  fillSingleValueDay,
+  getCurrentPeriodStart,
+  getTodayLocalDayKey,
+  SingleValueBarHistoryChart,
+  SingleValueHistoryChart,
+  splitSingleValueSeriesByTime,
+} from "./history-page";
 import { MeasuredChartContainer } from "./measured-chart-container";
 import { SectionSummaryCard } from "./section-summary-card";
 import { SubmitButton } from "./submit-button";
@@ -64,6 +61,14 @@ type SettingsTab = "devices" | "site" | "discover";
 
 function formatManagedDeviceState(state: string): string {
   return state.replace(/-/g, " ");
+}
+
+function formatCapacity(capacityWh: number | null | undefined): string {
+  if (capacityWh === null || capacityWh === undefined) {
+    return "Unavailable";
+  }
+
+  return `${(capacityWh / 1000).toFixed(1)} kWh`;
 }
 
 const primaryButtonClass = UI_STYLES.buttonPrimary;
@@ -152,7 +157,7 @@ export function SettingsPanel({
                   Discover
                 </p>
                 <h2 className="mt-2 text-2xl font-semibold text-white">
-                  Find and add batteries, meters, and solar providers
+                  Find and add batteries, solar providers, and meters
                 </h2>
                 <p className="mt-2 text-sm leading-6 text-slate-400">
                   Scan once and add devices one by one or all at once.
@@ -495,26 +500,34 @@ function SiteLocationFields({ defaultLocation }: { defaultLocation: string }) {
 }
 
 export function WeatherForecastSection({
+  archive,
   site,
   forecast,
   error,
   source,
 }: {
+  archive: HistoryArchive;
   site: SiteSnapshot;
   forecast: WeatherForecastRecord | null;
   error: string | null;
   source: WeatherForecastSourceRecord | null;
 }) {
-  const visiblePoints = forecast
-    ? selectForecastPoints({
-        generatedAt: forecast.generatedAt,
-        horizonHours: 48,
-        points: forecast.points,
-        sampleRateMinutes: 15,
-        sourcePeriodMinutes: forecast.periodMinutes,
-      })
-    : [];
-  const currentForecastPoint = getCurrentForecastPoint(visiblePoints, Date.now());
+  const todayKey = getTodayLocalDayKey();
+  const currentPeriodStart = getCurrentPeriodStart();
+  const todayForecastSeries = fillSingleValueDay(
+    archive.solarForecastSamples.map((sample) => ({
+      periodStart: sample.periodStart,
+      value: sample.value,
+    })),
+    todayKey,
+  );
+  const hasForecastValues = todayForecastSeries.some(
+    (point) => typeof point.value === "number",
+  );
+  const currentForecastPoint = getCurrentForecastPoint(
+    forecast?.points ?? [],
+    Date.now(),
+  );
 
   return (
     <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
@@ -534,7 +547,8 @@ export function WeatherForecastSection({
         </div>
         <SectionSummaryCard title="Current forecast">
           <p className="text-2xl font-semibold text-white sm:text-3xl">
-            {currentForecastPoint === null || currentForecastPoint.value === null
+            {currentForecastPoint === null ||
+            currentForecastPoint.value === null
               ? "Unavailable"
               : formatForecastSummaryValue(
                   currentForecastPoint.value,
@@ -556,20 +570,26 @@ export function WeatherForecastSection({
         <p className="mt-4 rounded-[1.25rem] border border-amber-400/20 bg-amber-500/10 p-4 text-sm text-amber-100">
           {error}
         </p>
-      ) : forecast === null ? (
+      ) : forecast === null && !hasForecastValues ? (
         <p className="mt-4 text-sm leading-6 text-slate-400">
           Forecast data is not available yet.
         </p>
-      ) : visiblePoints.length === 0 ? (
+      ) : !hasForecastValues ? (
         <p className="mt-4 text-sm leading-6 text-slate-400">
-          No forecast points were returned for this time range.
+          No forecast points have been collected for today yet.
         </p>
       ) : (
         <div className="mt-5 space-y-4 rounded-[1.4rem] border border-white/10 bg-white/5 p-4">
-          <ForecastChart
-            metricLabel={forecast.metricLabel}
-            points={visiblePoints}
-            unitLabel={forecast.unitLabel}
+          <SingleValueHistoryChart
+            accentColor={UI_COLORS.forecast}
+            emptyMessage="No forecast points have been collected for today yet."
+            headerAccessory={<DisabledDateSelect day={todayKey} />}
+            label={forecast?.metricLabel ?? "Solar Forecast"}
+            nowMarkerPeriodStart={currentPeriodStart}
+            points={splitSingleValueSeriesByTime(todayForecastSeries)}
+            valueFormatter={(value) => `${value} ${forecast?.unitLabel ?? ""}`}
+            yAxisLabel={forecast?.unitLabel ?? "Forecast"}
+            yAxisFormatter={formatShortForecastAxisValue}
           />
         </div>
       )}
@@ -578,25 +598,32 @@ export function WeatherForecastSection({
 }
 
 export function PricingSection({
+  archive,
   site,
   snapshot,
   error,
 }: {
+  archive: HistoryArchive;
   site: SiteSnapshot;
   snapshot: DynamicPriceSnapshotRecord | null;
   error: string | null;
 }) {
-  const visiblePoints = snapshot
-    ? selectPricePoints({
-        generatedAt: snapshot.generatedAt,
-        horizonHours: 48,
-        points: snapshot.points,
-      })
-    : [];
+  const todayKey = getTodayLocalDayKey();
+  const currentPeriodStart = getCurrentPeriodStart();
+  const todayPricePoints = fillSingleValueDay(
+    archive.dynamicPriceSamples.map((sample) => ({
+      periodStart: sample.periodStart,
+      value: sample.importPrice,
+    })),
+    todayKey,
+  );
+  const hasPriceValues = todayPricePoints.some(
+    (point) => typeof point.value === "number",
+  );
   const coverageSummary = snapshot
-    ? formatPriceCoverageSummary(visiblePoints)
+    ? formatPriceCoverageSummary(snapshot.points)
     : null;
-  const currentPricePoint = getCurrentPricePoint(visiblePoints, Date.now());
+  const currentPricePoint = getCurrentPricePoint(snapshot?.points ?? [], Date.now());
 
   return (
     <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
@@ -634,337 +661,33 @@ export function PricingSection({
         <p className="mt-4 rounded-[1.25rem] border border-amber-400/20 bg-amber-500/10 p-4 text-sm text-amber-100">
           {error}
         </p>
-      ) : snapshot === null ? (
+      ) : snapshot === null && !hasPriceValues ? (
         <p className="mt-4 text-sm leading-6 text-slate-400">
           Dynamic price data is not available yet.
         </p>
-      ) : visiblePoints.length === 0 ? (
+      ) : !hasPriceValues ? (
         <p className="mt-4 text-sm leading-6 text-slate-400">
-          No price points were returned for this time range.
+          No price points have been collected for today yet.
         </p>
       ) : (
         <div className="mt-5 space-y-4 rounded-[1.4rem] border border-white/10 bg-white/5 p-4">
-          <PriceChart currency={snapshot.currency} points={visiblePoints} />
+          <SingleValueBarHistoryChart
+            accentColor={UI_COLORS.price}
+            emptyMessage="No price points have been collected for today yet."
+            headerAccessory={<DisabledDateSelect day={todayKey} />}
+            label="Price"
+            nowMarkerPeriodStart={currentPeriodStart}
+            points={splitSingleValueSeriesByTime(todayPricePoints)}
+            tightYAxis
+            valueFormatter={(value) =>
+              `${value.toFixed(3)} ${snapshot?.currency ?? "EUR"}/kWh`
+            }
+            yAxisFormatter={formatShortPriceAxisValue}
+            yAxisLabel={`${snapshot?.currency ?? "EUR"}/kWh`}
+          />
         </div>
       )}
     </section>
-  );
-}
-
-function PriceChart({
-  points,
-  currency,
-}: {
-  points: DynamicPricePointRecord[];
-  currency: string;
-}) {
-  const now = Date.now();
-  const chartPoints = points.map((point) => {
-    const pointTime = new Date(point.startsAt).getTime();
-    const isPast = pointTime < now;
-
-    return {
-      ...point,
-      isMidnight: isMidnightTimestamp(point.startsAt),
-      isPast,
-      timeLabel: formatForecastTimeLabel(point.startsAt),
-    };
-  });
-  const nowPoint = getCurrentPricePoint(chartPoints, now);
-
-  return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap gap-2 text-xs font-medium text-slate-300">
-        <LegendChip color={UI_COLORS.price} label="Price" />
-      </div>
-      <MeasuredChartContainer className="h-[260px] min-w-0 w-full">
-        {({ height, width }) => (
-            <BarChart
-              data={chartPoints}
-              height={height}
-              margin={{ top: 16, right: 8, left: 8, bottom: 0 }}
-              barCategoryGap="18%"
-              width={width}
-            >
-              <XAxis
-                dataKey="startsAt"
-                tick={UI_CHART_STYLES.axisTick}
-                tickFormatter={formatForecastTimeLabel}
-                axisLine={false}
-                tickLine={false}
-                minTickGap={30}
-              />
-              <YAxis
-                axisLine={false}
-                domain={[0, "dataMax"]}
-                label={buildYAxisLabel(`${currency}/kWh`, "insideLeft")}
-                tick={UI_CHART_STYLES.axisTickMuted}
-                tickFormatter={formatShortPriceAxisValue}
-                tickLine={false}
-                width={66}
-              />
-              <Tooltip
-                content={
-                  <SingleSeriesTooltip
-                    formatter={(value) => `${value.toFixed(3)} ${currency}/kWh`}
-                    seriesLabel="Price"
-                  />
-                }
-                contentStyle={UI_CHART_STYLES.tooltipContentStyle}
-                itemStyle={{ color: UI_COLORS.priceSection }}
-              />
-              {chartPoints
-                .filter((point) => point.isMidnight)
-                .map((point) => (
-                  <ReferenceLine
-                    key={`price-midnight-${point.startsAt}`}
-                    x={point.startsAt}
-                    stroke={UI_COLORS.chartReference}
-                    strokeDasharray="3 5"
-                  />
-                ))}
-              {nowPoint ? (
-                <ReferenceLine
-                  label={buildNowLabel()}
-                  stroke={UI_COLORS.textPrimary}
-                  strokeDasharray="4 4"
-                  strokeOpacity={0.8}
-                  x={nowPoint.startsAt}
-                />
-              ) : null}
-              <Bar dataKey="importPrice" radius={[2, 2, 0, 0]} maxBarSize={12}>
-                {chartPoints.map((point) => (
-                  <Cell
-                    key={`price-bar-${point.startsAt}`}
-                    fill={
-                      point.isPast
-                        ? `${UI_COLORS.price}59`
-                        : `${UI_COLORS.price}D1`
-                    }
-                  />
-                ))}
-              </Bar>
-            </BarChart>
-        )}
-      </MeasuredChartContainer>
-    </div>
-  );
-}
-
-function ForecastChart({
-  metricLabel,
-  points,
-  unitLabel,
-}: {
-  metricLabel: string;
-  points: WeatherForecastPointRecord[];
-  unitLabel: string;
-}) {
-  const now = Date.now();
-  const transitionIndex = points.findIndex(
-    (point) => new Date(point.periodEnd).getTime() >= now,
-  );
-  const chartPoints = points.map((point, index) => {
-    const pointTime = new Date(point.periodEnd).getTime();
-    const isPast = pointTime < now;
-
-    return {
-      ...point,
-      futureValue:
-        transitionIndex === -1
-          ? null
-          : index >= Math.max(0, transitionIndex - 1)
-            ? point.value
-            : null,
-      isMidnight: isMidnightTimestamp(point.periodEnd),
-      isPast,
-      timeLabel: formatForecastTimeLabel(point.periodEnd),
-      value:
-        transitionIndex === -1
-          ? point.value
-          : index <= transitionIndex
-            ? point.value
-            : null,
-    };
-  });
-  const nowPoint =
-    transitionIndex === -1
-      ? (chartPoints[chartPoints.length - 1] ?? null)
-      : (chartPoints[transitionIndex] ?? null);
-
-  return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap gap-2 text-xs font-medium text-slate-300">
-        <LegendChip color={UI_COLORS.forecast} label={metricLabel} />
-      </div>
-      <MeasuredChartContainer className="h-[260px] min-w-0 w-full">
-        {({ height, width }) => (
-            <AreaChart
-              data={chartPoints}
-              height={height}
-              margin={{ top: 16, right: 8, left: 8, bottom: 0 }}
-              width={width}
-            >
-              <defs>
-                <linearGradient id="colorForecast" x1="0" y1="0" x2="0" y2="1">
-                  <stop
-                    offset="5%"
-                    stopColor={UI_COLORS.forecast}
-                    stopOpacity={0.3}
-                  />
-                  <stop
-                    offset="95%"
-                    stopColor={UI_COLORS.forecast}
-                    stopOpacity={0}
-                  />
-                </linearGradient>
-              </defs>
-              <XAxis
-                dataKey="periodEnd"
-                tick={UI_CHART_STYLES.axisTick}
-                tickFormatter={formatForecastTimeLabel}
-                axisLine={false}
-                tickLine={false}
-                minTickGap={30}
-              />
-              <YAxis
-                axisLine={false}
-                domain={[0, "dataMax"]}
-                label={buildYAxisLabel(unitLabel, "insideLeft")}
-                tick={UI_CHART_STYLES.axisTickMuted}
-                tickFormatter={formatShortForecastAxisValue}
-                tickLine={false}
-                width={60}
-              />
-              <Tooltip
-                content={
-                  <SingleSeriesTooltip
-                    formatter={(value) => `${value} ${unitLabel}`}
-                    seriesLabel={metricLabel}
-                  />
-                }
-                contentStyle={UI_CHART_STYLES.tooltipContentStyle}
-                itemStyle={{ color: UI_COLORS.forecast }}
-              />
-              {chartPoints
-                .filter((point) => point.isMidnight)
-                .map((point) => (
-                  <ReferenceLine
-                    key={`forecast-midnight-${point.periodEnd}`}
-                    x={point.periodEnd}
-                    stroke={UI_COLORS.chartReference}
-                    strokeDasharray="3 5"
-                  />
-                ))}
-              {nowPoint ? (
-                <ReferenceLine
-                  label={buildNowLabel()}
-                  stroke={UI_COLORS.textPrimary}
-                  strokeDasharray="4 4"
-                  strokeOpacity={0.8}
-                  x={nowPoint.periodEnd}
-                />
-              ) : null}
-              <Area
-                type="monotone"
-                dataKey="value"
-                stroke={UI_COLORS.forecast}
-                strokeOpacity={0.35}
-                strokeWidth={3}
-                fillOpacity={0.2}
-                fill="url(#colorForecast)"
-                connectNulls={false}
-              />
-              <Area
-                type="monotone"
-                dataKey="futureValue"
-                stroke={UI_COLORS.forecast}
-                strokeWidth={3}
-                fillOpacity={1}
-                fill="url(#colorForecast)"
-                connectNulls={false}
-              />
-            </AreaChart>
-        )}
-      </MeasuredChartContainer>
-    </div>
-  );
-}
-
-function SingleSeriesTooltip({
-  active,
-  formatter,
-  label,
-  seriesLabel,
-  payload,
-}: {
-  active?: boolean;
-  formatter: (value: number) => string;
-  label?: string | number;
-  seriesLabel: string;
-  payload?: Array<{
-    color?: string;
-    dataKey?: string;
-    value?: ValueType;
-  }>;
-}) {
-  if (!active || !payload || payload.length === 0) {
-    return null;
-  }
-
-  const selectedEntry =
-    payload.find(
-      (entry) =>
-        entry.dataKey?.startsWith("future") && typeof entry.value === "number",
-    ) ?? payload.find((entry) => typeof entry.value === "number");
-
-  if (!selectedEntry || typeof selectedEntry.value !== "number") {
-    return null;
-  }
-
-  return (
-    <div className={UI_STYLES.tooltipPanel}>
-      {typeof label === "string" ? (
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-          {formatGraphTooltipTimestamp(label)}
-        </p>
-      ) : null}
-      <p className="font-medium">{seriesLabel}</p>
-      <p className="text-slate-300">{formatter(selectedEntry.value)}</p>
-    </div>
-  );
-}
-
-function selectForecastPoints(input: {
-  generatedAt: string;
-  horizonHours: 24 | 48;
-  points: WeatherForecastPointRecord[];
-  sampleRateMinutes: 15 | 60;
-  sourcePeriodMinutes: number;
-}): WeatherForecastPointRecord[] {
-  const generatedAt = new Date(input.generatedAt).getTime();
-  const cutoff = generatedAt + input.horizonHours * 60 * 60 * 1000;
-  const withinRange = input.points.filter(
-    (point) => new Date(point.periodEnd).getTime() <= cutoff,
-  );
-  const stride = Math.max(
-    1,
-    Math.round(input.sampleRateMinutes / input.sourcePeriodMinutes),
-  );
-
-  return withinRange.filter((_, index) => index % stride === 0);
-}
-
-function selectPricePoints(input: {
-  generatedAt: string;
-  horizonHours: 48;
-  points: DynamicPricePointRecord[];
-}): DynamicPricePointRecord[] {
-  const generatedAt = new Date(input.generatedAt).getTime();
-  const cutoff = generatedAt + input.horizonHours * 60 * 60 * 1000;
-
-  return input.points.filter(
-    (point) => new Date(point.startsAt).getTime() <= cutoff,
   );
 }
 
@@ -998,72 +721,10 @@ function getCurrentForecastPoint(
   return points[points.length - 1] ?? null;
 }
 
-function buildNowLabel() {
-  return {
-    fill: UI_COLORS.textPrimary,
-    fontSize: 12,
-    position: "top" as const,
-    value: "Now",
-  };
-}
-
-function buildYAxisLabel(
-  value: string,
-  position: "insideLeft" | "insideRight",
-) {
-  return {
-    angle: position === "insideLeft" ? -90 : 90,
-    fill: UI_COLORS.chartTickMuted,
-    fontSize: 12,
-    position,
-    value,
-  };
-}
-
 function formatPriceCoverageSummary(
   _points: DynamicPricePointRecord[],
 ): string | null {
   return null;
-}
-
-function includesTomorrow(points: DynamicPricePointRecord[]): boolean {
-  const tomorrow = new Date();
-  tomorrow.setHours(0, 0, 0, 0);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowKey = tomorrow.toDateString();
-
-  return points.some(
-    (point) => new Date(point.startsAt).toDateString() === tomorrowKey,
-  );
-}
-
-function formatCoverageLabel(value: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    month: "short",
-    weekday: "short",
-  }).format(new Date(value));
-}
-
-function buildTickIndexes(length: number, count: number): number[] {
-  if (length <= count) {
-    return Array.from({ length }, (_, index) => index);
-  }
-
-  return Array.from({ length: count }, (_, index) =>
-    Math.min(length - 1, Math.round((index / (count - 1)) * (length - 1))),
-  );
-}
-
-function formatForecastTimeLabel(value: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    month: "short",
-  }).format(new Date(value));
 }
 
 function formatPriceSummaryValue(value: number, currency: string): string {
@@ -1080,21 +741,6 @@ function formatShortPriceAxisValue(value: number): string {
 
 function formatShortForecastAxisValue(value: number): string {
   return `${Math.round(value)}`;
-}
-
-function formatGraphTooltipTimestamp(value: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    month: "short",
-  }).format(new Date(value));
-}
-
-function isMidnightTimestamp(value: string): boolean {
-  const timestamp = new Date(value);
-
-  return timestamp.getHours() === 0 && timestamp.getMinutes() === 0;
 }
 
 function DestructiveConfirmButton({
@@ -1231,13 +877,10 @@ function DeviceList({
   return (
     <div className="grid gap-3">
       {devices.map((device) => {
-        const currentState = device.telemetry?.state ?? device.state;
-        const showState = kind === "battery";
-
         return (
           <article
             key={device.id}
-            className={`flex h-[420px] flex-col rounded-[1.4rem] border border-white/10 bg-white/5 p-4 ${kind === "battery" ? "ring-1 ring-cyan-300/5" : kind === "meter" ? "ring-1 ring-violet-300/5" : "ring-1 ring-amber-300/5"}`}
+            className={`flex min-h-[440px] flex-col rounded-[1.4rem] border border-white/10 bg-white/5 p-4 ${kind === "battery" ? "ring-1 ring-cyan-300/5" : kind === "meter" ? "ring-1 ring-violet-300/5" : "ring-1 ring-amber-300/5"}`}
           >
             <div className="min-w-0">
               <h4 className="truncate text-base font-semibold text-white">
@@ -1250,12 +893,6 @@ function DeviceList({
             <dl className="mt-4 grid flex-1 content-start gap-3 text-sm text-slate-300 sm:grid-cols-2">
               <MetaItem label="Model" value={device.model} />
               <MetaItem label="Address" value={device.address} />
-              {showState ? (
-                <MetaItem
-                  label="State"
-                  value={formatManagedDeviceState(currentState)}
-                />
-              ) : null}
               {kind === "battery" ? (
                 <MetaItem
                   label="SoC"
@@ -1265,6 +902,12 @@ function DeviceList({
                       ? `${Math.round(device.telemetry.socPercent)}%`
                       : "Unavailable"
                   }
+                />
+              ) : null}
+              {kind === "battery" ? (
+                <MetaItem
+                  label="Capacity"
+                  value={formatCapacity(device.telemetry?.capacityWh)}
                 />
               ) : null}
               <MetaItem

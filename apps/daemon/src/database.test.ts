@@ -48,6 +48,7 @@ test("managed device telemetry can be upserted and read back", () => {
     deviceId: "battery-1",
     siteId: "main-house",
     kind: "battery",
+    capacityWh: 9600,
     powerW: -950,
     socPercent: 62,
     state: "discharging",
@@ -63,6 +64,7 @@ test("managed device telemetry can be upserted and read back", () => {
       deviceId: "battery-1",
       siteId: "main-house",
       kind: "battery",
+      capacityWh: 9600,
       powerW: -950,
       socPercent: 62,
       state: "discharging",
@@ -137,6 +139,39 @@ test("solar forecast snapshots can be upserted and read back", () => {
     sourceName: "Open-Meteo",
     unitLabel: "W/m²",
   });
+
+  rmSync(tempDir, { recursive: true, force: true });
+});
+
+test("openDaemonDatabase adds the telemetry capacity column for older schemas", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "emsd-daemon-test-"));
+  const databasePath = join(tempDir, "emsd.sqlite");
+  const db = openDaemonDatabase(databasePath);
+
+  db.exec("DROP TABLE device_telemetry;");
+  db.exec(`
+    CREATE TABLE device_telemetry (
+      device_id TEXT PRIMARY KEY,
+      site_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      power_w REAL,
+      soc_percent REAL,
+      gas_m3 REAL,
+      state TEXT,
+      observed_at TEXT NOT NULL
+    );
+  `);
+  db.close();
+
+  const migratedDb = openDaemonDatabase(databasePath);
+  const columns = migratedDb
+    .query<{ name: string }, []>("PRAGMA table_info(device_telemetry)")
+    .all()
+    .map((column) => column.name);
+
+  migratedDb.close();
+
+  expect(columns).toContain("capacity_wh");
 
   rmSync(tempDir, { recursive: true, force: true });
 });
@@ -251,6 +286,7 @@ test("meter and battery samples keep the latest bucket value while solar provide
     deviceId: "meter-1",
     siteId: "main-house",
     kind: "meter",
+    capacityWh: null,
     powerW: -420,
     socPercent: null,
     state: null,
@@ -260,6 +296,7 @@ test("meter and battery samples keep the latest bucket value while solar provide
     deviceId: "meter-1",
     siteId: "main-house",
     kind: "meter",
+    capacityWh: null,
     powerW: -390,
     socPercent: null,
     state: null,
@@ -269,6 +306,7 @@ test("meter and battery samples keep the latest bucket value while solar provide
     deviceId: "battery-1",
     siteId: "main-house",
     kind: "battery",
+    capacityWh: 9600,
     powerW: 950,
     socPercent: 62,
     state: "charging",
@@ -278,6 +316,7 @@ test("meter and battery samples keep the latest bucket value while solar provide
     deviceId: "solar-provider-1",
     siteId: "main-house",
     kind: "solar-energy-provider",
+    capacityWh: null,
     powerW: 2200,
     socPercent: null,
     state: null,
@@ -287,6 +326,7 @@ test("meter and battery samples keep the latest bucket value while solar provide
     deviceId: "solar-provider-1",
     siteId: "main-house",
     kind: "solar-energy-provider",
+    capacityWh: null,
     powerW: 1600,
     socPercent: null,
     state: null,
