@@ -46,6 +46,7 @@ import {
   getTodayTriggerAt,
   isItemAlreadyTriggeredToday,
   needsCompletionTracking,
+  shouldMarkScheduledItemObserved,
   shouldCompleteScheduledItem,
   shouldSkipDelayedSocItemBecauseLaterItemIsDue,
   shouldSkipScheduledItem,
@@ -410,7 +411,7 @@ async function refreshWeatherForecasts(
       });
 
       upsertWeatherForecast(db, site.id, forecast);
-      logInfo(`refreshed solar forecast for ${site.id}`);
+      logVerbose(verbose, `refreshed solar forecast for ${site.id}`);
     } catch (error) {
       logError(
         `solar forecast refresh failed for ${site.id}: ${error instanceof Error ? error.message : String(error)}`,
@@ -445,7 +446,7 @@ async function refreshDynamicPrices(
     try {
       const snapshot = await getDynamicPriceSnapshot({ site, source });
       upsertDynamicPriceSnapshot(db, site.id, snapshot);
-      logInfo(`refreshed dynamic price snapshot for ${site.id}`);
+      logVerbose(verbose, `refreshed dynamic price snapshot for ${site.id}`);
     } catch (error) {
       logError(
         `dynamic price refresh failed for ${site.id}: ${error instanceof Error ? error.message : String(error)}`,
@@ -563,8 +564,37 @@ async function runScheduledStrategy(
   }
 
   if (activeItem) {
+    let runtime = battery.strategyRuntime;
+
     if (
-      !shouldCompleteScheduledItem({ battery, item: activeItem, now, sample })
+      shouldMarkScheduledItemObserved({ item: activeItem, runtime, sample })
+    ) {
+      runtime = {
+        ...runtime,
+        activeObservedAt: now.toISOString(),
+      };
+      updateBatteryStrategyRuntime(db, {
+        batteryId: battery.id,
+        siteId: battery.siteId,
+        strategyRuntime: runtime,
+      });
+      const observedDelay = formatStrategyObservationDelay(
+        battery.strategyRuntime.activeStartedAt,
+        now,
+      );
+      logInfo(
+        `strategy item started for ${battery.id}: ${describeStrategyPlanItemWithIndex(battery, activeItem)}${observedDelay}`,
+      );
+    }
+
+    if (
+      !shouldCompleteScheduledItem({
+        battery,
+        item: activeItem,
+        now,
+        runtime,
+        sample,
+      })
     ) {
       logVerbose(
         verbose,
@@ -573,11 +603,18 @@ async function runScheduledStrategy(
       return;
     }
 
-    logVerbose(
-      verbose,
-      `completed active strategy item for ${battery.id}: ${describeStrategyPlanItem(activeItem)}`,
+    logInfo(
+      `deactivating strategy item for ${battery.id}: ${describeStrategyPlanItemWithIndex(battery, activeItem)} reason=completed`,
     );
-    await restoreFallbackStrategy(db, battery, activeItem.id, verbose);
+    await restoreFallbackStrategy(
+      db,
+      {
+        ...battery,
+        strategyRuntime: runtime,
+      },
+      activeItem.id,
+      verbose,
+    );
     return;
   }
 
@@ -670,9 +707,8 @@ async function runScheduledStrategy(
       minimumDischargePercent: battery.minimumDischargePercent,
     });
 
-    logVerbose(
-      verbose,
-      `activating strategy item for ${battery.id}: ${describeStrategyPlanItem(item)}`,
+    logInfo(
+      `activating strategy item for ${battery.id}: ${describeStrategyPlanItemWithIndex(battery, item)}`,
     );
 
     await createBatteryPlugin(battery).setStrategy(strategy);
@@ -680,6 +716,7 @@ async function runScheduledStrategy(
     const nextRuntime = {
       activeItemId: needsCompletionTracking(item) ? item.id : null,
       activeStartedAt: needsCompletionTracking(item) ? now.toISOString() : null,
+      activeObservedAt: null,
       lastTriggeredAtByItemId: {
         ...runtime.lastTriggeredAtByItemId,
         [item.id]: triggerAt.toISOString(),
@@ -712,6 +749,43 @@ function getActiveStrategyPlanItem(
   }
 
   return battery.strategyPlan.find((item) => item.id === activeItemId) ?? null;
+}
+
+function describeStrategyPlanItemWithIndex(
+  battery: BatteryRecord,
+  item: BatteryStrategyPlanItem,
+): string {
+  const index = battery.strategyPlan.findIndex(
+    (candidate) => candidate.id === item.id,
+  );
+
+  if (index === -1) {
+    return `index=<missing> ${describeStrategyPlanItem(item)}`;
+  }
+
+  return `index=${index} ${describeStrategyPlanItem(item)}`;
+}
+
+function formatStrategyObservationDelay(
+  activeStartedAt: string | null,
+  observedAt: Date,
+): string {
+  if (!activeStartedAt) {
+    return "";
+  }
+
+  const startedAt = new Date(activeStartedAt).getTime();
+
+  if (Number.isNaN(startedAt)) {
+    return "";
+  }
+
+  const delaySeconds = Math.max(
+    0,
+    Math.round((observedAt.getTime() - startedAt) / 1000),
+  );
+
+  return ` after ${delaySeconds}s`;
 }
 
 async function restoreFallbackStrategy(

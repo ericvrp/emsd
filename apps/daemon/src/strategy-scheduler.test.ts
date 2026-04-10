@@ -7,6 +7,7 @@ import type {
 import {
   formatDaemonLogTimestamp,
   getTodayTriggerAt,
+  shouldMarkScheduledItemObserved,
   shouldCompleteScheduledItem,
   shouldSkipDelayedSocItemBecauseLaterItemIsDue,
 } from "./strategy-scheduler";
@@ -40,6 +41,7 @@ test("shouldCompleteScheduledItem uses the active plan item rather than the pers
     strategyRuntime: {
       activeItemId: "daily-1",
       activeStartedAt: "2026-04-09T07:00:00.000Z",
+      activeObservedAt: "2026-04-09T07:00:05.000Z",
       lastTriggeredAtByItemId: { "daily-1": "2026-04-09T07:00:00.000Z" },
     },
   });
@@ -57,7 +59,54 @@ test("shouldCompleteScheduledItem uses the active plan item rather than the pers
       battery,
       item,
       now: new Date("2026-04-09T12:00:00.000Z"),
+      runtime: battery.strategyRuntime,
       sample,
+    }),
+  ).toBe(true);
+});
+
+test("shouldCompleteScheduledItem waits until a scheduled discharge is observed", () => {
+  const battery = createBattery({
+    strategyRuntime: {
+      activeItemId: "daily-1",
+      activeStartedAt: "2026-04-09T09:00:00.000Z",
+      activeObservedAt: null,
+      lastTriggeredAtByItemId: { "daily-1": "2026-04-09T09:00:00.000Z" },
+    },
+  });
+  const item = createDailyItem({
+    id: "daily-1",
+    manualState: "discharging",
+    manualDischargeTargetSoc: 40,
+    manualTargetSoc: 40,
+    targetMethod: "soc",
+  });
+  const sample = createSample({ socPercent: 55, status: "idle" });
+
+  expect(
+    shouldCompleteScheduledItem({
+      battery,
+      item,
+      now: new Date("2026-04-09T09:05:00.000Z"),
+      runtime: battery.strategyRuntime,
+      sample,
+    }),
+  ).toBe(false);
+});
+
+test("shouldMarkScheduledItemObserved when the scheduled state is active", () => {
+  const item = createDailyItem({ id: "daily-1", manualState: "discharging" });
+
+  expect(
+    shouldMarkScheduledItemObserved({
+      item,
+      runtime: {
+        activeItemId: "daily-1",
+        activeStartedAt: "2026-04-09T09:00:00.000Z",
+        activeObservedAt: null,
+        lastTriggeredAtByItemId: { "daily-1": "2026-04-09T09:00:00.000Z" },
+      },
+      sample: createSample({ status: "discharging" }),
     }),
   ).toBe(true);
 });
@@ -89,6 +138,7 @@ test("shouldSkipDelayedSocItemBecauseLaterItemIsDue skips older delayed percenta
       runtime: {
         activeItemId: null,
         activeStartedAt: null,
+        activeObservedAt: null,
         lastTriggeredAtByItemId: {},
       },
     }),
@@ -122,6 +172,7 @@ test("shouldSkipDelayedSocItemBecauseLaterItemIsDue keeps same-time items in arr
       runtime: {
         activeItemId: null,
         activeStartedAt: null,
+        activeObservedAt: null,
         lastTriggeredAtByItemId: {},
       },
     }),
@@ -152,6 +203,7 @@ function createBattery(overrides: Partial<BatteryRecord> = {}): BatteryRecord {
     strategyRuntime: {
       activeItemId: null,
       activeStartedAt: null,
+      activeObservedAt: null,
       lastTriggeredAtByItemId: {},
     },
     updatedAt: "2026-04-09T00:00:00.000Z",

@@ -44,6 +44,7 @@ export type BatteryStrategyPlanRecord = BatteryStrategyPlanItem[];
 export interface BatteryStrategyRuntimeRecord {
   activeItemId: string | null;
   activeStartedAt: string | null;
+  activeObservedAt: string | null;
   lastTriggeredAtByItemId: Record<string, string>;
 }
 
@@ -297,6 +298,7 @@ export function createBatteryStrategyRuntime(): BatteryStrategyRuntimeRecord {
   return {
     activeItemId: null,
     activeStartedAt: null,
+    activeObservedAt: null,
     lastTriggeredAtByItemId: {},
   };
 }
@@ -308,6 +310,7 @@ export function clearActiveBatteryStrategyRuntime(
     ...normalizeBatteryStrategyRuntime(value),
     activeItemId: null,
     activeStartedAt: null,
+    activeObservedAt: null,
   };
 }
 
@@ -624,6 +627,11 @@ function normalizeBatteryStrategyRuntime(
       typeof candidate.activeStartedAt === "string" &&
       candidate.activeStartedAt.length > 0
         ? candidate.activeStartedAt
+        : null,
+    activeObservedAt:
+      typeof candidate.activeObservedAt === "string" &&
+      candidate.activeObservedAt.length > 0
+        ? candidate.activeObservedAt
         : null,
     lastTriggeredAtByItemId,
   };

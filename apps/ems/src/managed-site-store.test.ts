@@ -123,6 +123,7 @@ test("setBatteryStrategy clears active scheduled runtime on manual change", () =
       stringifyBatteryStrategyRuntime({
         activeItemId: "daily-1",
         activeStartedAt: "2026-04-09T07:00:00.000Z",
+        activeObservedAt: null,
         lastTriggeredAtByItemId: {
           "daily-1": "2026-04-09T07:00:00.000Z",
         },
@@ -149,6 +150,7 @@ test("setBatteryStrategy clears active scheduled runtime on manual change", () =
     expect(updated?.strategyRuntime).toEqual({
       activeItemId: null,
       activeStartedAt: null,
+      activeObservedAt: null,
       lastTriggeredAtByItemId: {
         "daily-1": "2026-04-09T07:00:00.000Z",
       },
@@ -269,6 +271,7 @@ test("setBatteryStrategyPlan clears stale scheduled runtime history", () => {
       stringifyBatteryStrategyRuntime({
         activeItemId: null,
         activeStartedAt: null,
+        activeObservedAt: null,
         lastTriggeredAtByItemId: {
           "daily-1": "2026-04-09T20:00:00.000Z",
         },

@@ -31,10 +31,11 @@ export function shouldCompleteScheduledItem(input: {
   battery: BatteryRecord;
   item: BatteryStrategyPlanItem;
   now: Date;
+  runtime: BatteryStrategyRuntimeRecord;
   sample: NormalizedBatteryInfo;
 }): boolean {
-  const { battery, item, now, sample } = input;
-  const startedAt = battery.strategyRuntime.activeStartedAt;
+  const { battery, item, now, runtime, sample } = input;
+  const startedAt = runtime.activeStartedAt;
 
   if (!startedAt) {
     return true;
@@ -68,6 +69,10 @@ export function shouldCompleteScheduledItem(input: {
       return true;
     }
 
+    if (runtime.activeObservedAt === null) {
+      return false;
+    }
+
     return sample.status !== "charging";
   }
 
@@ -78,6 +83,10 @@ export function shouldCompleteScheduledItem(input: {
         (item.manualDischargeTargetSoc ?? battery.minimumDischargePercent)
     ) {
       return true;
+    }
+
+    if (runtime.activeObservedAt === null) {
+      return false;
     }
 
     return sample.status !== "discharging";
@@ -249,6 +258,26 @@ export function describeStrategyPlanItem(
   }
 
   return parts.join(" ");
+}
+
+export function shouldMarkScheduledItemObserved(input: {
+  item: BatteryStrategyPlanItem;
+  runtime: BatteryStrategyRuntimeRecord;
+  sample: NormalizedBatteryInfo;
+}): boolean {
+  if (
+    input.runtime.activeObservedAt !== null ||
+    input.item.strategyMode !== "manual"
+  ) {
+    return false;
+  }
+
+  return (
+    (input.item.manualState === "charging" &&
+      input.sample.status === "charging") ||
+    (input.item.manualState === "discharging" &&
+      input.sample.status === "discharging")
+  );
 }
 
 function isSocTargetItem(item: BatteryStrategyPlanItem): boolean {
