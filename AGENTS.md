@@ -200,6 +200,9 @@
 - Keep `apps/web` iteration lightweight during active development; avoid unnecessary build/typecheck runs that churn `.next` artifacts.
 - Do not fetch solar forecasts or dynamic price info client-side.
 - Treat forecast and pricing plugins as server-only integrations; the web UI should only display data fetched through server-side EMS or daemon-owned paths.
+- For sign-changing history series like grid or battery power, prefer one continuous line with per-segment color changes over separate positive and negative series.
+- When a sign-changing line crosses zero between samples, split the rendered segment at the zero crossing so each half keeps the correct color.
+- For sign-changing power tooltips, show absolute wattage values and use the label to communicate direction, such as `Take from grid`, `Return to grid`, `Battery Charging Power`, or `Battery Discharging Power`.
 
 ## Documentation Guidance
 

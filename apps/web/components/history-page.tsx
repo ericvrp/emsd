@@ -81,16 +81,20 @@ type SplitCombinedPoint = CombinedPoint & {
   currentBatteryCharge: number | null;
   currentBatteryLevel: number | null;
   currentBatteryDischarge: number | null;
+  currentBatteryPower: number | null;
   currentGridExport: number | null;
   currentGridImport: number | null;
+  currentGridPower: number | null;
   currentPrice: number | null;
   currentSolarEnergy: number | null;
   currentSolar: number | null;
   futureBatteryCharge: number | null;
   futureBatteryLevel: number | null;
   futureBatteryDischarge: number | null;
+  futureBatteryPower: number | null;
   futureGridExport: number | null;
   futureGridImport: number | null;
+  futureGridPower: number | null;
   futurePrice: number | null;
   futureSolarEnergy: number | null;
   futureSolar: number | null;
@@ -100,9 +104,11 @@ type BatteryHistoryPoint = {
   currentChargePercent: number | null;
   currentChargingPower: number | null;
   currentDischargingPower: number | null;
+  currentPower: number | null;
   futureChargePercent: number | null;
   futureChargingPower: number | null;
   futureDischargingPower: number | null;
+  futurePower: number | null;
   periodStart: string;
 };
 
@@ -380,6 +386,46 @@ function CombinedHistoryChart({
   nowMarkerPeriodStart: string | null;
   points: SplitCombinedPoint[];
 }) {
+  const chartPoints = points.map((point) => ({
+    ...point,
+    timestampMs: new Date(point.periodStart).getTime(),
+  }));
+  const currentGridSegments = buildSegmentedLineSegments({
+    negativeColor: UI_COLORS.gridImport,
+    positiveColor: UI_COLORS.gridExport,
+    points: chartPoints.map((point) => ({
+      timestampMs: point.timestampMs,
+      value: point.currentGridPower,
+    })),
+    strokeOpacity: 1,
+  });
+  const futureGridSegments = buildSegmentedLineSegments({
+    negativeColor: UI_COLORS.gridImport,
+    positiveColor: UI_COLORS.gridExport,
+    points: chartPoints.map((point) => ({
+      timestampMs: point.timestampMs,
+      value: point.futureGridPower,
+    })),
+    strokeOpacity: 0.35,
+  });
+  const currentBatterySegments = buildSegmentedLineSegments({
+    negativeColor: UI_COLORS.batteryPowerDischarging,
+    positiveColor: UI_COLORS.batteryPowerCharging,
+    points: chartPoints.map((point) => ({
+      timestampMs: point.timestampMs,
+      value: point.currentBatteryPower,
+    })),
+    strokeOpacity: 1,
+  });
+  const futureBatterySegments = buildSegmentedLineSegments({
+    negativeColor: UI_COLORS.batteryPowerDischarging,
+    positiveColor: UI_COLORS.batteryPowerCharging,
+    points: chartPoints.map((point) => ({
+      timestampMs: point.timestampMs,
+      value: point.futureBatteryPower,
+    })),
+    strokeOpacity: 0.35,
+  });
   const hasValues = points.some((point) =>
     [
       point.currentPrice,
@@ -430,7 +476,7 @@ function CombinedHistoryChart({
       <MeasuredChartContainer className="h-[360px] min-w-0 w-full">
         {({ height, width }) => (
           <LineChart
-            data={points}
+            data={chartPoints}
             height={height}
             margin={{ top: 12, right: 56, bottom: 0, left: 0 }}
             width={width}
@@ -442,11 +488,13 @@ function CombinedHistoryChart({
             />
             <XAxis
               axisLine={false}
-              dataKey="periodStart"
+              dataKey="timestampMs"
+              domain={["dataMin", "dataMax"]}
               minTickGap={28}
               tick={UI_CHART_STYLES.axisTick}
               tickFormatter={formatDayTick}
               tickLine={false}
+              type="number"
             />
             <YAxis
               axisLine={false}
@@ -479,8 +527,7 @@ function CombinedHistoryChart({
             />
             <Tooltip
               content={
-                <HistoryTooltip
-                  formatter={formatCombinedValue}
+                <CombinedHistoryTooltip
                   labelFormatter={formatTooltipTimestamp}
                 />
               }
@@ -551,45 +598,47 @@ function CombinedHistoryChart({
               yAxisId="price"
             />
             <Line
-              dataKey="currentGridImport"
+              activeDot={false}
+              dataKey="currentGridPower"
               dot={false}
               isAnimationActive={false}
-              name="Take from grid"
-              stroke={UI_COLORS.gridImport}
-              strokeWidth={2.1}
-              type="monotone"
+              legendType="none"
+              stroke="transparent"
+              strokeWidth={10}
+              type="linear"
               yAxisId="power"
             />
             <Line
-              dataKey="futureGridImport"
+              activeDot={false}
+              dataKey="futureGridPower"
               dot={false}
               isAnimationActive={false}
-              name="Take from grid"
-              stroke={UI_COLORS.gridImport}
-              strokeOpacity={0.35}
-              strokeWidth={2.1}
-              type="monotone"
+              legendType="none"
+              stroke="transparent"
+              strokeWidth={10}
+              type="linear"
               yAxisId="power"
             />
             <Line
-              dataKey="currentGridExport"
+              activeDot={false}
+              dataKey="currentBatteryPower"
               dot={false}
               isAnimationActive={false}
-              name="Return to grid"
-              stroke={UI_COLORS.gridExport}
-              strokeWidth={2.1}
-              type="monotone"
+              legendType="none"
+              stroke="transparent"
+              strokeWidth={10}
+              type="linear"
               yAxisId="power"
             />
             <Line
-              dataKey="futureGridExport"
+              activeDot={false}
+              dataKey="futureBatteryPower"
               dot={false}
               isAnimationActive={false}
-              name="Return to grid"
-              stroke={UI_COLORS.gridExport}
-              strokeOpacity={0.35}
-              strokeWidth={2.1}
-              type="monotone"
+              legendType="none"
+              stroke="transparent"
+              strokeWidth={10}
+              type="linear"
               yAxisId="power"
             />
             <Line
@@ -613,48 +662,74 @@ function CombinedHistoryChart({
               type="monotone"
               yAxisId="charge"
             />
-            <Line
-              dataKey="currentBatteryDischarge"
-              dot={false}
-              isAnimationActive={false}
-              name="Battery Discharging Power"
-              stroke={UI_COLORS.batteryPowerDischarging}
-              strokeWidth={2.1}
-              type="monotone"
-              yAxisId="power"
-            />
-            <Line
-              dataKey="futureBatteryDischarge"
-              dot={false}
-              isAnimationActive={false}
-              name="Battery Discharging Power"
-              stroke={UI_COLORS.batteryPowerDischarging}
-              strokeOpacity={0.35}
-              strokeWidth={2.1}
-              type="monotone"
-              yAxisId="power"
-            />
-            <Line
-              dataKey="currentBatteryCharge"
-              dot={false}
-              isAnimationActive={false}
-              name="Battery Charging Power"
-              stroke={UI_COLORS.batteryPowerCharging}
-              strokeWidth={2.1}
-              type="monotone"
-              yAxisId="power"
-            />
-            <Line
-              dataKey="futureBatteryCharge"
-              dot={false}
-              isAnimationActive={false}
-              name="Battery Charging Power"
-              stroke={UI_COLORS.batteryPowerCharging}
-              strokeOpacity={0.35}
-              strokeWidth={2.1}
-              type="monotone"
-              yAxisId="power"
-            />
+            {currentGridSegments.map((segment) => (
+              <Line
+                key={segment.key}
+                activeDot={false}
+                connectNulls={false}
+                data={segment.points}
+                dataKey="value"
+                dot={false}
+                isAnimationActive={false}
+                legendType="none"
+                stroke={segment.color}
+                strokeOpacity={segment.strokeOpacity}
+                strokeWidth={2.1}
+                type="linear"
+                yAxisId="power"
+              />
+            ))}
+            {futureGridSegments.map((segment) => (
+              <Line
+                key={segment.key}
+                activeDot={false}
+                connectNulls={false}
+                data={segment.points}
+                dataKey="value"
+                dot={false}
+                isAnimationActive={false}
+                legendType="none"
+                stroke={segment.color}
+                strokeOpacity={segment.strokeOpacity}
+                strokeWidth={2.1}
+                type="linear"
+                yAxisId="power"
+              />
+            ))}
+            {currentBatterySegments.map((segment) => (
+              <Line
+                key={segment.key}
+                activeDot={false}
+                connectNulls={false}
+                data={segment.points}
+                dataKey="value"
+                dot={false}
+                isAnimationActive={false}
+                legendType="none"
+                stroke={segment.color}
+                strokeOpacity={segment.strokeOpacity}
+                strokeWidth={2.1}
+                type="linear"
+                yAxisId="power"
+              />
+            ))}
+            {futureBatterySegments.map((segment) => (
+              <Line
+                key={segment.key}
+                activeDot={false}
+                connectNulls={false}
+                data={segment.points}
+                dataKey="value"
+                dot={false}
+                isAnimationActive={false}
+                legendType="none"
+                stroke={segment.color}
+                strokeOpacity={segment.strokeOpacity}
+                strokeWidth={2.1}
+                type="linear"
+                yAxisId="power"
+              />
+            ))}
             {nowMarkerPeriodStart ? (
               <ReferenceLine
                 ifOverflow="extendDomain"
@@ -663,7 +738,7 @@ function CombinedHistoryChart({
                 strokeDasharray="4 4"
                 strokeOpacity={0.8}
                 strokeWidth={2}
-                x={nowMarkerPeriodStart}
+                x={new Date(nowMarkerPeriodStart).getTime()}
                 yAxisId="power"
               />
             ) : null}
@@ -698,6 +773,29 @@ function BatteryHistoryChart({
     return <p className="text-sm leading-6 text-slate-400">{emptyMessage}</p>;
   }
 
+  const chartPoints = points.map((point) => ({
+    ...point,
+    timestampMs: new Date(point.periodStart).getTime(),
+  }));
+  const currentBatterySegments = buildSegmentedLineSegments({
+    negativeColor: UI_COLORS.batteryPowerDischarging,
+    positiveColor: UI_COLORS.batteryPowerCharging,
+    points: chartPoints.map((point) => ({
+      timestampMs: point.timestampMs,
+      value: point.currentPower,
+    })),
+    strokeOpacity: 1,
+  });
+  const futureBatterySegments = buildSegmentedLineSegments({
+    negativeColor: UI_COLORS.batteryPowerDischarging,
+    positiveColor: UI_COLORS.batteryPowerCharging,
+    points: chartPoints.map((point) => ({
+      timestampMs: point.timestampMs,
+      value: point.futurePower,
+    })),
+    strokeOpacity: 0.35,
+  });
+
   return (
     <div className="space-y-2.5">
       <div className="flex flex-wrap gap-2 text-xs font-medium text-slate-300">
@@ -714,7 +812,7 @@ function BatteryHistoryChart({
       <MeasuredChartContainer className="h-[360px] min-w-0 w-full">
         {({ height, width }) => (
           <LineChart
-            data={points}
+            data={chartPoints}
             height={height}
             margin={{ top: 12, right: 56, bottom: 0, left: 0 }}
             width={width}
@@ -726,11 +824,13 @@ function BatteryHistoryChart({
             />
             <XAxis
               axisLine={false}
-              dataKey="periodStart"
+              dataKey="timestampMs"
+              domain={["dataMin", "dataMax"]}
               minTickGap={28}
               tick={UI_CHART_STYLES.axisTick}
               tickFormatter={formatDayTick}
               tickLine={false}
+              type="number"
             />
             <YAxis
               axisLine={false}
@@ -762,54 +862,67 @@ function BatteryHistoryChart({
             />
             <Tooltip
               content={
-                <HistoryTooltip
-                  formatter={formatBatteryHistoryValue}
+                <BatteryHistoryTooltip
                   labelFormatter={formatTooltipTimestamp}
                 />
               }
             />
             <Line
-              dataKey="currentChargingPower"
+              activeDot={false}
+              dataKey="currentPower"
               dot={false}
               isAnimationActive={false}
-              name="Battery Charging Power"
-              stroke={UI_COLORS.batteryPowerCharging}
-              strokeWidth={2.2}
-              type="monotone"
+              legendType="none"
+              stroke="transparent"
+              strokeWidth={10}
+              type="linear"
               yAxisId="power"
             />
             <Line
-              dataKey="futureChargingPower"
+              activeDot={false}
+              dataKey="futurePower"
               dot={false}
               isAnimationActive={false}
-              name="Battery Charging Power"
-              stroke={UI_COLORS.batteryPowerCharging}
-              strokeOpacity={0.35}
-              strokeWidth={2.2}
-              type="monotone"
+              legendType="none"
+              stroke="transparent"
+              strokeWidth={10}
+              type="linear"
               yAxisId="power"
             />
-            <Line
-              dataKey="currentDischargingPower"
-              dot={false}
-              isAnimationActive={false}
-              name="Battery Discharging Power"
-              stroke={UI_COLORS.batteryPowerDischarging}
-              strokeWidth={2.2}
-              type="monotone"
-              yAxisId="power"
-            />
-            <Line
-              dataKey="futureDischargingPower"
-              dot={false}
-              isAnimationActive={false}
-              name="Battery Discharging Power"
-              stroke={UI_COLORS.batteryPowerDischarging}
-              strokeOpacity={0.35}
-              strokeWidth={2.2}
-              type="monotone"
-              yAxisId="power"
-            />
+            {currentBatterySegments.map((segment) => (
+              <Line
+                key={segment.key}
+                activeDot={false}
+                connectNulls={false}
+                data={segment.points}
+                dataKey="value"
+                dot={false}
+                isAnimationActive={false}
+                legendType="none"
+                stroke={segment.color}
+                strokeOpacity={segment.strokeOpacity}
+                strokeWidth={2.2}
+                type="linear"
+                yAxisId="power"
+              />
+            ))}
+            {futureBatterySegments.map((segment) => (
+              <Line
+                key={segment.key}
+                activeDot={false}
+                connectNulls={false}
+                data={segment.points}
+                dataKey="value"
+                dot={false}
+                isAnimationActive={false}
+                legendType="none"
+                stroke={segment.color}
+                strokeOpacity={segment.strokeOpacity}
+                strokeWidth={2.2}
+                type="linear"
+                yAxisId="power"
+              />
+            ))}
             <Line
               dataKey="currentChargePercent"
               dot={false}
@@ -838,7 +951,7 @@ function BatteryHistoryChart({
                 strokeDasharray="4 4"
                 strokeOpacity={0.8}
                 strokeWidth={2}
-                x={nowMarkerPeriodStart}
+                x={new Date(nowMarkerPeriodStart).getTime()}
                 yAxisId="power"
               />
             ) : null}
@@ -1444,6 +1557,208 @@ function SegmentedHistoryTooltip({
   );
 }
 
+function BatteryHistoryTooltip({
+  active,
+  label,
+  labelFormatter,
+  payload,
+}: {
+  active?: boolean;
+  label?: string | number;
+  labelFormatter: (label: string | number) => string;
+  payload?: TooltipPayloadEntry[];
+}) {
+  if (label === undefined || label === null || !active || !payload || payload.length === 0) {
+    return null;
+  }
+
+  const powerEntry =
+    payload.find(
+      (entry) => entry.dataKey === "futurePower" && typeof entry.value === "number",
+    ) ??
+    payload.find(
+      (entry) => entry.dataKey === "currentPower" && typeof entry.value === "number",
+    );
+  const chargeEntry =
+    payload.find(
+      (entry) =>
+        entry.dataKey === "futureChargePercent" && typeof entry.value === "number",
+    ) ??
+    payload.find(
+      (entry) =>
+        entry.dataKey === "currentChargePercent" && typeof entry.value === "number",
+    );
+
+  if (!powerEntry && !chargeEntry) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-slate-950/95 px-3 py-2 text-sm text-slate-50 shadow-[0_24px_70px_rgba(2,6,23,0.6)] backdrop-blur">
+      <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+        {labelFormatter(label)}
+      </p>
+      <div className="space-y-1.5">
+        {powerEntry && typeof powerEntry.value === "number" ? (
+          <TooltipRow
+            color={
+              powerEntry.value >= 0
+                ? UI_COLORS.batteryPowerCharging
+                : UI_COLORS.batteryPowerDischarging
+            }
+            label={
+              powerEntry.value >= 0
+                ? "Battery Charging Power"
+                : "Battery Discharging Power"
+            }
+            value={formatAbsolutePowerValue(powerEntry.value)}
+          />
+        ) : null}
+        {chargeEntry && typeof chargeEntry.value === "number" ? (
+          <TooltipRow
+            color={UI_COLORS.batteryChargeLevel}
+            label="Battery Charge"
+            value={formatPercentValue(chargeEntry.value)}
+          />
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function CombinedHistoryTooltip({
+  active,
+  label,
+  labelFormatter,
+  payload,
+}: {
+  active?: boolean;
+  label?: string | number;
+  labelFormatter: (label: string | number) => string;
+  payload?: TooltipPayloadEntry[];
+}) {
+  if (label === undefined || label === null || !active || !payload || payload.length === 0) {
+    return null;
+  }
+
+  const rows: Array<{ color: string; label: string; value: string }> = [];
+  const pushEntry = (entry: TooltipPayloadEntry | undefined, color: string, rowLabel: string, value: string) => {
+    if (entry && typeof entry.value === "number") {
+      rows.push({ color, label: rowLabel, value });
+    }
+  };
+
+  const selectEntry = (...keys: string[]) =>
+    payload.find(
+      (entry) => keys.includes(entry.dataKey ?? "") && typeof entry.value === "number",
+    );
+
+  const priceEntry = selectEntry("futurePrice", "currentPrice");
+  const solarEntry = selectEntry("futureSolar", "currentSolar");
+  const solarEnergyEntry = selectEntry("futureSolarEnergy", "currentSolarEnergy");
+  const batteryLevelEntry = selectEntry("futureBatteryLevel", "currentBatteryLevel");
+  const gridPowerEntry = selectEntry("futureGridPower", "currentGridPower");
+  const batteryPowerEntry = selectEntry("futureBatteryPower", "currentBatteryPower");
+
+  if (priceEntry && typeof priceEntry.value === "number") {
+    rows.push({
+      color: UI_COLORS.price,
+      label: "Price",
+      value: formatPriceValue(priceEntry.value),
+    });
+  }
+
+  if (solarEntry && typeof solarEntry.value === "number") {
+    rows.push({
+      color: UI_COLORS.forecast,
+      label: "Solar Forecast",
+      value: formatWholeNumberValue(solarEntry.value),
+    });
+  }
+
+  if (solarEnergyEntry && typeof solarEnergyEntry.value === "number") {
+    rows.push({
+      color: UI_COLORS.solarEnergy,
+      label: "Solar Energy",
+      value: formatPowerValue(solarEnergyEntry.value),
+    });
+  }
+
+  if (batteryLevelEntry && typeof batteryLevelEntry.value === "number") {
+    rows.push({
+      color: UI_COLORS.batteryChargeLevel,
+      label: "Battery Charge",
+      value: formatPercentValue(batteryLevelEntry.value),
+    });
+  }
+
+  if (batteryPowerEntry && typeof batteryPowerEntry.value === "number") {
+    rows.push({
+      color:
+        batteryPowerEntry.value >= 0
+          ? UI_COLORS.batteryPowerCharging
+          : UI_COLORS.batteryPowerDischarging,
+      label:
+        batteryPowerEntry.value >= 0
+          ? "Battery Charging Power"
+          : "Battery Discharging Power",
+      value: formatAbsolutePowerValue(batteryPowerEntry.value),
+    });
+  }
+
+  if (gridPowerEntry && typeof gridPowerEntry.value === "number") {
+    rows.push({
+      color:
+        gridPowerEntry.value >= 0 ? UI_COLORS.gridExport : UI_COLORS.gridImport,
+      label:
+        gridPowerEntry.value >= 0 ? "Return to grid" : "Take from grid",
+      value: formatAbsolutePowerValue(gridPowerEntry.value),
+    });
+  }
+
+  if (rows.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-slate-950/95 px-3 py-2 text-sm text-slate-50 shadow-[0_24px_70px_rgba(2,6,23,0.6)] backdrop-blur">
+      <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+        {labelFormatter(label)}
+      </p>
+      <div className="space-y-1.5">
+        {rows.map((row) => (
+          <TooltipRow
+            key={`${row.label}-${row.value}`}
+            color={row.color}
+            label={row.label}
+            value={row.value}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TooltipRow({
+  color,
+  label,
+  value,
+}: {
+  color: string;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <span className="flex items-center gap-2 text-slate-200">
+        <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
+        {label}
+      </span>
+      <span className="font-medium text-white">{value}</span>
+    </div>
+  );
+}
+
 function buildSegmentedLineSegments({
   negativeColor,
   positiveColor,
@@ -1763,9 +2078,12 @@ function combineBatteryHistorySeries(input: {
       currentChargePercent: chargePoint?.currentValue ?? null,
       currentChargingPower: powerPoint.currentPositiveValue,
       currentDischargingPower: powerPoint.currentNegativeValue,
+      currentPower:
+        powerPoint.currentPositiveValue ?? powerPoint.currentNegativeValue,
       futureChargePercent: chargePoint?.futureValue ?? null,
       futureChargingPower: powerPoint.futurePositiveValue,
       futureDischargingPower: powerPoint.futureNegativeValue,
+      futurePower: powerPoint.futurePositiveValue ?? powerPoint.futureNegativeValue,
       periodStart: powerPoint.periodStart,
     };
   });
@@ -1953,27 +2271,36 @@ function splitCombinedSeriesByTime(
     const includeInFutureSeries =
       firstFutureIndex !== -1 && index >= Math.max(0, firstFutureIndex - 1);
 
-    return {
-      ...point,
-      currentBatteryCharge: isFuture ? null : point.batteryCharge,
-      currentBatteryLevel: isFuture ? null : point.batteryLevel,
-      currentBatteryDischarge: isFuture ? null : point.batteryDischarge,
-      currentGridExport: isFuture ? null : point.gridExport,
-      currentGridImport: isFuture ? null : point.gridImport,
-      currentPrice: isFuture ? null : point.price,
-      currentSolarEnergy: isFuture ? null : point.solarEnergy,
-      currentSolar: isFuture ? null : point.solar,
-      futureBatteryCharge: includeInFutureSeries ? point.batteryCharge : null,
-      futureBatteryLevel: includeInFutureSeries ? point.batteryLevel : null,
-      futureBatteryDischarge: includeInFutureSeries
-        ? point.batteryDischarge
-        : null,
-      futureGridExport: includeInFutureSeries ? point.gridExport : null,
-      futureGridImport: includeInFutureSeries ? point.gridImport : null,
-      futurePrice: includeInFutureSeries ? point.price : null,
-      futureSolarEnergy: includeInFutureSeries ? point.solarEnergy : null,
-      futureSolar: includeInFutureSeries ? point.solar : null,
-    };
+      return {
+        ...point,
+        currentBatteryCharge: isFuture ? null : point.batteryCharge,
+        currentBatteryLevel: isFuture ? null : point.batteryLevel,
+        currentBatteryDischarge: isFuture ? null : point.batteryDischarge,
+        currentBatteryPower:
+          isFuture ? null : (point.batteryCharge ?? point.batteryDischarge),
+        currentGridExport: isFuture ? null : point.gridExport,
+        currentGridImport: isFuture ? null : point.gridImport,
+        currentGridPower: isFuture ? null : (point.gridExport ?? point.gridImport),
+        currentPrice: isFuture ? null : point.price,
+        currentSolarEnergy: isFuture ? null : point.solarEnergy,
+        currentSolar: isFuture ? null : point.solar,
+        futureBatteryCharge: includeInFutureSeries ? point.batteryCharge : null,
+        futureBatteryLevel: includeInFutureSeries ? point.batteryLevel : null,
+        futureBatteryDischarge: includeInFutureSeries
+          ? point.batteryDischarge
+          : null,
+        futureBatteryPower: includeInFutureSeries
+          ? (point.batteryCharge ?? point.batteryDischarge)
+          : null,
+        futureGridExport: includeInFutureSeries ? point.gridExport : null,
+        futureGridImport: includeInFutureSeries ? point.gridImport : null,
+        futureGridPower: includeInFutureSeries
+          ? (point.gridExport ?? point.gridImport)
+          : null,
+        futurePrice: includeInFutureSeries ? point.price : null,
+        futureSolarEnergy: includeInFutureSeries ? point.solarEnergy : null,
+        futureSolar: includeInFutureSeries ? point.solar : null,
+      };
   });
 }
 
