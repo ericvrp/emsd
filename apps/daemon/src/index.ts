@@ -889,13 +889,16 @@ function logAppliedBatteryControlChanges(
 
   const current = createBatteryControlSnapshot(battery);
 
-  if (previous.strategyPlanSignature !== current.strategyPlanSignature) {
+  const manualChanged = previous.manualSignature !== current.manualSignature;
+  const planChanged = previous.strategyPlanSignature !== current.strategyPlanSignature;
+
+  if (planChanged) {
     logInfo(
       `strategy plan applied for ${battery.id}: default=${describeStrategyPlanItem(battery.strategyPlan[0])} pastToday=${describeTriggeredStrategyItemsBeforeNow(battery, now)} nextToday=${describeNextStrategyItemForToday(battery, now)}`,
     );
   }
 
-  if (previous.manualSignature !== current.manualSignature) {
+  if (manualChanged || planChanged) {
     if (battery.manualModeActive || battery.strategyMode === "manual") {
       logInfo(
         `manual strategy applied for ${battery.id}: ${describeCurrentBatteryStrategy(battery)}`,
