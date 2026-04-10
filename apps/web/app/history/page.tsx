@@ -38,7 +38,7 @@ export default async function HistoryRoute({
     rawTab === "grid" ||
     rawTab === "battery"
       ? rawTab
-      : "combined";
+      : "battery";
   const requestedDay = getSearchParamValue(params.day);
 
   const historyArchive = currentSite

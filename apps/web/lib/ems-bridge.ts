@@ -22,9 +22,7 @@ import type {
   WeatherForecastSourceRecord,
 } from "@emsd/core";
 import { getRepoRoot as resolveRepoRoot } from "@emsd/core";
-import type {
-  DiscoveredDevice,
-} from "./discovery-proof";
+import type { DiscoveredDevice } from "./discovery-proof";
 
 const execFileAsync = promisify(execFile);
 const repoRootPath = resolveRepoRoot();

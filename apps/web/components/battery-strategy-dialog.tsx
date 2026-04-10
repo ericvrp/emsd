@@ -68,7 +68,11 @@ export function BatteryStrategyDialog({
   return (
     <>
       <Button
-        aria-label={formatStrategyLabel({ manualModeActive, strategy, strategyPlan })}
+        aria-label={formatStrategyLabel({
+          manualModeActive,
+          strategy,
+          strategyPlan,
+        })}
         className={className}
         onClick={() => setIsOpen(true)}
         variant="ghost"

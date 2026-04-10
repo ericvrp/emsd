@@ -324,12 +324,12 @@ async function runBatteryStrategyCommand(args: string[]): Promise<number> {
 
     const updated = setBatteryStrategy(
       id,
-        {
-          strategyMode: options.strategyMode,
-          manualChargeTargetSoc:
-            options.manualChargeTargetSoc ?? battery.manualChargeTargetSoc,
-          manualDischargeTargetSoc:
-            options.manualDischargeTargetSoc ?? battery.manualDischargeTargetSoc,
+      {
+        strategyMode: options.strategyMode,
+        manualChargeTargetSoc:
+          options.manualChargeTargetSoc ?? battery.manualChargeTargetSoc,
+        manualDischargeTargetSoc:
+          options.manualDischargeTargetSoc ?? battery.manualDischargeTargetSoc,
         manualPowerW:
           options.strategyMode === "manual"
             ? clampManualPowerW(options.manualPowerW)
@@ -338,11 +338,11 @@ async function runBatteryStrategyCommand(args: string[]): Promise<number> {
           options.strategyMode === "manual"
             ? (options.manualState ?? battery.manualState ?? "idle")
             : battery.manualState,
-          manualTargetSoc:
-            options.strategyMode === "manual"
-              ? (options.manualTargetSoc ?? battery.manualTargetSoc ?? 100)
-              : battery.manualTargetSoc,
-        },
+        manualTargetSoc:
+          options.strategyMode === "manual"
+            ? (options.manualTargetSoc ?? battery.manualTargetSoc ?? 100)
+            : battery.manualTargetSoc,
+      },
       options.siteId,
     );
 

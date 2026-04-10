@@ -88,7 +88,9 @@ export const homeWizardBatteryPlugin: DiscoveryPlugin = {
   },
 };
 
-export function matchesHomeWizardBatteryResponse(responseText: string): boolean {
+export function matchesHomeWizardBatteryResponse(
+  responseText: string,
+): boolean {
   return matchesPatterns(responseMatch, responseText);
 }
 
@@ -168,7 +170,10 @@ function formatHomeWizardStrategyMode(
   }
 
   if (mode === "zero") {
-    if (permissions.has("charge_allowed") && permissions.has("discharge_allowed")) {
+    if (
+      permissions.has("charge_allowed") &&
+      permissions.has("discharge_allowed")
+    ) {
       return "self-consumption";
     }
 
@@ -183,7 +188,9 @@ function parsePermissions(value: unknown): Set<string> {
     return new Set();
   }
 
-  return new Set(value.filter((entry): entry is string => typeof entry === "string"));
+  return new Set(
+    value.filter((entry): entry is string => typeof entry === "string"),
+  );
 }
 
 function parseRoundedNumber(value: unknown): number | null {

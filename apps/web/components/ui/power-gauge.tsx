@@ -15,8 +15,7 @@ export function PowerGauge({
   state: string;
   value: number | null;
 }) {
-  const normalizedValue =
-    value === null ? 0 : Math.min(max, Math.abs(value));
+  const normalizedValue = value === null ? 0 : Math.min(max, Math.abs(value));
   const activeBars = Math.max(
     0,
     Math.min(4, Math.ceil((normalizedValue / max) * 4)),

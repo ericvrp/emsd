@@ -28,7 +28,7 @@ export function ToastOnSearchParams() {
     } else {
       toast.success(notice);
     }
-    
+
     lastToasted.current = toastKey;
 
     const params = new URLSearchParams(searchParams.toString());

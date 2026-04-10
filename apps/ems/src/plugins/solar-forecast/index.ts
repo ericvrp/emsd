@@ -37,7 +37,9 @@ export function createWeatherPlugin(
   return plugin;
 }
 
-export async function getWeatherForecast(input: WeatherForecastRequest): Promise<WeatherForecastRecord> {
+export async function getWeatherForecast(
+  input: WeatherForecastRequest,
+): Promise<WeatherForecastRecord> {
   const provider = input.source?.provider ?? DEFAULT_WEATHER_PROVIDER;
   return createWeatherPlugin(provider).fetchForecast(input);
 }
@@ -61,10 +63,14 @@ export function normalizeWeatherForecastPoints(
   points: WeatherForecastPointRecord[],
 ): WeatherForecastPointRecord[] {
   return points
-    .filter((point) => typeof point.periodEnd === "string" && point.periodEnd.length > 0)
+    .filter(
+      (point) =>
+        typeof point.periodEnd === "string" && point.periodEnd.length > 0,
+    )
     .sort(
       (left, right) =>
-        new Date(left.periodEnd).getTime() - new Date(right.periodEnd).getTime(),
+        new Date(left.periodEnd).getTime() -
+        new Date(right.periodEnd).getTime(),
     );
 }
 

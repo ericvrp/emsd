@@ -31,10 +31,22 @@ export function formatWeatherList(
     return "No solar forecast sources configured for the selected site.";
   }
 
-  const header = ["SOURCE ID", "NAME", "PROVIDER", "SURFACE", "UPDATED AT"].join(" | ");
+  const header = [
+    "SOURCE ID",
+    "NAME",
+    "PROVIDER",
+    "SURFACE",
+    "UPDATED AT",
+  ].join(" | ");
   const separator = "-".repeat(header.length);
   const rows = sources.map((source) =>
-    [source.id, source.name, source.provider, source.surface, source.updatedAt].join(" | "),
+    [
+      source.id,
+      source.name,
+      source.provider,
+      source.surface,
+      source.updatedAt,
+    ].join(" | "),
   );
 
   return [header, separator, ...rows].join("\n");

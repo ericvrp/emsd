@@ -18,9 +18,7 @@
   "paths": {
     "/api/v2/battery": {
       "get": {
-        "tags": [
-          "Read API"
-        ],
+        "tags": ["Read API"],
         "summary": "Get battery module data",
         "description": "Get battery module data\n\n|**Variable**|**Example Value**|**Unit**|**Description**|**Data type**|\n| :-: | :-: | :-: | :-: | :-: |\n|balancechargerequest|0|N/A|Module request for balance charge, 0 for false, 1 for true|Boolean|\n|chargecurrentlimit|38\\.0|A|Module charge current limit|Float|\n|cyclecount|344|N/A|Number of charge/discharge cycles|Integer|\n|dischargecurrentlimit|38\\.0|A|Module discharge current limit|Float|\n|fullchargecapacity|96\\.922|Ah|Fullcharge capacity|Float|\n|maximumcelltemperature|28\\.05|ºC|Max cell temperature|Float|\n|maximumcellvoltage|3\\.327|V|Max cell voltage|Float|\n|maximumcellvoltagenum|0|-|-|Enum|\n|maximummodulecurrent|-0.01|A|Max module DC current|Float|\n|maximummoduledcvoltage|106\\.27|V|Max module DC voltage|Float|\n|maximummoduletemperature|-273.15|ºC|Max module DC temperature|Float|\n|minimumcelltemperature|22\\.05|ºC|Min cell temperature|Float|\n|minimumcellvoltage|3\\.293|V|Min cell voltage|Float|\n|minimumcellvoltagenum|0|-|-|Enum|\n|minimummodulecurrent|-0.05|A|Min module current|Float|\n|minimummoduledcvoltage|105\\.528|V|Min module voltage|Float|\n|minimummoduletemperature|-273.15|ºC|Min module temperature|Float|\n|relativestateofcharge|79\\.0|%, percentage|Relative state of charge|Float|\n|remainingcapacity|79\\.941|Ah|Remaining capacity in Ah|Float|\n|systemalarm|0|N/A|System alarm, 0 for false, 1 for true|Boolean|\n|systemcurrent|0\\.0|A|System current|Float|\n|systemdcvoltage|211\\.797|V|System battery voltage|Float|\n|systemstatus|49|N/A|System status|Integer|\n|systemtime|0|N/A|System time|Boolean|\n|systemwarning|0|N/A|System warning, 0 for false, 1 for true|Boolean|\n",
         "operationId": "GetBattery",
@@ -63,9 +61,7 @@
     },
     "/api/v2/configurations": {
       "get": {
-        "tags": [
-          "Read API"
-        ],
+        "tags": ["Read API"],
         "summary": "Get all configurations",
         "description": "Get all configurations\n\nGets the values of all allowed configurations. The allowed configurations are:\n- CM_MarketingModuleCapacity\n- CN_CascadingRole\n- DE_Software\n- EM_OperatingMode\n- EM_Prognosis_Charging\n- EM_RE_ENABLE_MICROGRID\n- EM_ToU_Schedule\n- EM_USER_INPUT_TIME_ONE\n- EM_USER_INPUT_TIME_THREE\n- EM_USER_INPUT_TIME_TWO\n- EM_USOC\n- EM_US_CHP_Max_SOC\n- EM_US_CHP_Min_SOC\n- EM_US_GENRATOR_TYPE\n- EM_US_GEN_POWER_SET_POINT\n- EM_US_RE_ENABLE_MICROGRID\n- EM_US_USER_INPUT_TIME_ONE\n- EM_US_USER_INPUT_TIME_THREE\n- EM_US_USER_INPUT_TIME_TWO\n- IC_BatteryModules\n- IC_InverterMaxPower_w\n- NVM_PfcFixedCosPhi\n- NVM_PfcIsFixedCosPhiActive\n- NVM_PfcIsFixedCosPhiLagging\n- SH_HeaterOperatingMode\n- SH_HeaterTemperatureMax\n- SH_HeaterTemperatureMin",
         "operationId": "GetConfigurations",
@@ -110,9 +106,7 @@
         }
       },
       "put": {
-        "tags": [
-          "Write API"
-        ],
+        "tags": ["Write API"],
         "summary": "Update configurations",
         "description": "Update configurations\n\nSets the value of one or more configurations. The writable configurations are:\n- EM_OperatingMode\n- EM_Prognosis_Charging\n- EM_RE_ENABLE_MICROGRID\n- EM_ToU_Schedule\n- EM_USER_INPUT_TIME_ONE\n- EM_USER_INPUT_TIME_THREE\n- EM_USER_INPUT_TIME_TWO\n- EM_USOC\n- EM_US_CHP_Max_SOC\n- EM_US_CHP_Min_SOC\n- EM_US_GENRATOR_TYPE\n- EM_US_GEN_POWER_SET_POINT\n- EM_US_RE_ENABLE_MICROGRID\n- EM_US_USER_INPUT_TIME_ONE\n- EM_US_USER_INPUT_TIME_THREE\n- EM_US_USER_INPUT_TIME_TWO\n- NVM_PfcFixedCosPhi\n- NVM_PfcIsFixedCosPhiActive\n- NVM_PfcIsFixedCosPhiLagging\n- SH_HeaterOperatingMode\n- SH_HeaterTemperatureMax\n- SH_HeaterTemperatureMin\n\nThe operating mode (EM_OperatingMode) can not be changed if VPP is active.\n\nPossible values for EM_USOC are:\n* 0 (disable backup buffer)\n* 5 - 100 (backup buffer percentage)\n\n**Examples:**\n\n`curl -X PUT -d NVM_PfcFixedCosPhi=1 --header 'Auth-Token: TOKEN' http://SYSTEM-IP/api/v2/configurations`\n\n`curl -X PUT -d NVM_PfcFixedCosPhi=1 -d NVM_PfcIsFixedCosPhiActive=0 --header 'Auth-Token: TOKEN' http://SYSTEM-IP/api/v2/configurations`\n",
         "operationId": "PutConfiguration",
@@ -151,9 +145,7 @@
     },
     "/api/v2/configurations/{name}": {
       "get": {
-        "tags": [
-          "Read API"
-        ],
+        "tags": ["Read API"],
         "summary": "Get a single configuration",
         "description": "Get a single configuration\n\nGets the value of a given configuration. The allowed configurations are:\n- CM_MarketingModuleCapacity\n- CN_CascadingRole\n- DE_Software\n- EM_OperatingMode\n- EM_Prognosis_Charging\n- EM_RE_ENABLE_MICROGRID\n- EM_ToU_Schedule\n- EM_USER_INPUT_TIME_ONE\n- EM_USER_INPUT_TIME_THREE\n- EM_USER_INPUT_TIME_TWO\n- EM_USOC\n- EM_US_CHP_Max_SOC\n- EM_US_CHP_Min_SOC\n- EM_US_GENRATOR_TYPE\n- EM_US_GEN_POWER_SET_POINT\n- EM_US_RE_ENABLE_MICROGRID\n- EM_US_USER_INPUT_TIME_ONE\n- EM_US_USER_INPUT_TIME_THREE\n- EM_US_USER_INPUT_TIME_TWO\n- IC_BatteryModules\n- IC_InverterMaxPower_w\n- NVM_PfcFixedCosPhi\n- NVM_PfcIsFixedCosPhiActive\n- NVM_PfcIsFixedCosPhiLagging\n- SH_HeaterOperatingMode\n- SH_HeaterTemperatureMax\n- SH_HeaterTemperatureMin",
         "operationId": "GetConfiguration",
@@ -193,9 +185,7 @@
     },
     "/api/v2/inverter": {
       "get": {
-        "tags": [
-          "Read API"
-        ],
+        "tags": ["Read API"],
         "summary": "Get inverter data",
         "description": "Get inverter data\n\n|**Variable**|**Example Value**|**Unit**|**Description**|**Data type**|\n| :-: | :-: | :-: | :-: | :-: |\n|fac|49.947|Hz, hertz|AC frequency in hertz|Float|\n|iac_total|0.41|A, ampere|AC current|Float|\n|ibat|0|A, ampere|Battery current|Float|\n|ipv|0|A, ampere|PV current|Float|\n|pac_microgrid|0|W, watt|AC microgrid power:<br> greater than 0 means discharging, <br>less than 0 means charging|Float|\n|pac_total|-4.126|W, watt|AC power:<br> greater than 0 means discharging, <br>less than 0 means charging|Float|\n|pbat|0|W, watt|DC Power|Float|\n|phi|0|N/A|Power factor cos φ|Float|\n|ppv|0|W, watt|PV production in watts|Float|\n|sac_total|97.124|VA, volt-ampere|Output of apparent power in VA|Float|\n|tmax|32.351|ºC, degrees Celsius|Inverter Temperature|Float|\n|uac|237.764|V, volt|AC voltage in volts|Float|\n|ubat|212.0|V, volt|Battery voltage in volts|Float|\n|upv|0|V, volt|PV voltage in volts|Float|\n",
         "operationId": "GetInverter",
@@ -232,9 +222,7 @@
     },
     "/api/v2/io": {
       "get": {
-        "tags": [
-          "Read API"
-        ],
+        "tags": ["Read API"],
         "summary": "Return the status of all inputs and outputs",
         "description": "Return the status of all inputs and outputs\n",
         "operationId": "GetIos",
@@ -395,9 +383,7 @@
     },
     "/api/v2/latestdata": {
       "get": {
-        "tags": [
-          "Read API"
-        ],
+        "tags": ["Read API"],
         "summary": "Get latest data",
         "description": "Get latest data\n\nSupported since firmware version 1.13.2",
         "operationId": "LatestData",
@@ -515,9 +501,7 @@
     },
     "/api/v2/powermeter": {
       "get": {
-        "tags": [
-          "Read API"
-        ],
+        "tags": ["Read API"],
         "summary": "Get power-meter measurements",
         "description": "Get power-meter measurements\n\nSupported since firmware version 1.13.2",
         "operationId": "Powermeter",
@@ -589,9 +573,7 @@
     },
     "/api/v2/setpoint/{direction}/{watts}": {
       "post": {
-        "tags": [
-          "Write API"
-        ],
+        "tags": ["Write API"],
         "summary": "Charge/Discharge battery",
         "description": "Charge/Discharge battery\n\nThe discharging power of a storage system can be controlled by setting a setpoint in watts.\nThe corresponding value of the setpoint is kept until the battery receives a new charging or discharging value.\nIf VPP is active, the request will be rejected.\n",
         "operationId": "ChargeDischarge",
@@ -656,9 +638,7 @@
     },
     "/api/v2/status": {
       "get": {
-        "tags": [
-          "Read API"
-        ],
+        "tags": ["Read API"],
         "summary": "Get status data",
         "description": "Get status data\n\nThis endpoint does not require an authentication token.\n\n| Variable | Example Value | Unit | Description | Data type |\n| --- | --- | --- | --- | --- |\n| Apparent\\_output | 226 | VA, volt-ampere | All AC output of apparent power in VA | Integer |\n| BackupBuffer | 0 | %, percentage | Backup-buffer in percentage that is set on the system. | Integer |\n| BatteryCharging | false | \\- | Boolean that indicates the charge status. True if charging | Boolean |\n| BatteryDischarging | false | \\- | Boolean that indicates the discharge status. True if discharging | Boolean |\n| Consumption\\_Avg | 223 | W, watt | House consumption in watts, average over the last 60s | Integer |\n| Consumption\\_W | 232 | W, watt | House consumption in watts, direct measurement | Integer |\n| Fac | 49.999000549316400 | Hz, hertz | AC frequency in hertz | Float |\n| FlowConsumptionBattery | false | \\- | Boolean that indicates the energy flow at the installation site. True if battery feeds the consumption | Boolean |\n| FlowConsumptionGrid | true | \\- | Boolean that indicates the energy flow at the installation site. True if grid feeds the consumption | Boolean |\n| FlowConsumptionProduction | true | \\- | Boolean that indicates the energy flow at the installation site. True if production feeds the consumption | Boolean |\n| FlowGridBattery | false | \\- | Boolean that indicates the energy flow at the installation site. True if battery is charging from grid | Boolean |\n| FlowProductionBattery | false | \\- | Boolean that indicates the energy flow at the installation site. True if production is charging the battery | Boolean |\n| FlowProductionGrid | false | \\- | Boolean that indicates the energy flow at the installation site. True if production feeds into the grid | Boolean |\n| GridFeedIn\\_W | \\-208 | W, watt | Grid Feed in negative is consumption and positive is feed in | Integer |\n| IsSystemInstalled | 1 | \\- | System is installed or not | Integer |\n| OperatingMode | 2 | \\- | Operating mode that is set on the system: 1: Manual charging or discharging via API; 2: Automatic Self Consumption. Default.| Integer |\n| Pac\\_total\\_W | \\-5 | W, watt | AC Power greater than ZERO is discharging Inverter AC Power less than ZERO is charging | Signed Integer |\n| Production\\_W | 28 | W, watt | PV production in watts | Integer |\n| RSOC | 4 | %, percentage | Relative state of charge | Integer |\n| RemainingCapacity\\_W | 674 | Wh | Remaining capacity based on RSOC | Integer |\n| Sac1 | 75 | VA, volt-ampere | Output of apparent power in VA on Phase 1 | Integer |\n| Sac2 | 75 | VA, volt-ampere | Output of apparent power in VA on Phase 2 | Integer |\n| Sac3 | 76 | VA, volt-ampere | Output of apparent power in VA on Phase 3 | Integer |\n| SystemStatus | OnGrid | \\- | String that indicates if the system is connected to the grid (“OnGrid”) or disconnected (“OffGrid”) | String |\n| Timestamp | 2020-12-10 11:26:01 | \\- | Local system time | String |\n| USOC | 0 | %, percentage | User state of charge | Integer |\n| Uac | 230 | V, volt | AC voltage in volts | Integer |\n| Ubat | 50 | V, volt | Battery voltage in volts | Integer |\n| dischargeNotAllowed | false | \\- | Boolean that indicates the discharge status. True if no discharge allowed, based on battery maintenance | Boolean |\n| generator\\_autostart | false | \\- | Boolean that indicates the autostart setting of the generator. | Boolean |\n",
         "operationId": "Status",
@@ -726,9 +706,7 @@
       "Error": {
         "type": "object",
         "description": "Errors that return a JSON response.\n\nHeavily inspired from: https://github.com/actix/actix-web/blob/bcdde1d4ea2f4bf6c01ccf8b5b6118f7c9a3b2bf/actix-web/src/error/internal.rs\n\n# Examples\n```\n# use std::io;\n# use apimodule::errors::ErrorUnauthorized;\nasync fn handler_error() -> Result<String, actix_web::Error> {\nErr(ErrorUnauthorized(\"...\".to_string()))\n}\n```",
-        "required": [
-          "error"
-        ],
+        "required": ["error"],
         "properties": {
           "error": {
             "type": "string"

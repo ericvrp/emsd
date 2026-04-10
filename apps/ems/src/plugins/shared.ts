@@ -1,4 +1,7 @@
-export function matchesPatterns(patterns: string[], responseText: string): boolean {
+export function matchesPatterns(
+  patterns: string[],
+  responseText: string,
+): boolean {
   return patterns.every((pattern) => new RegExp(pattern).test(responseText));
 }
 

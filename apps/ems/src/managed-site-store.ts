@@ -3,6 +3,8 @@ import { existsSync } from "node:fs";
 import {
   type BatteryManualState,
   type BatteryRecord,
+  type BatteryStrategyRecord,
+  type BatteryStrategyRuntimeRecord,
   type BatteryStatus,
   type BatteryStrategyMode,
   type BatteryStrategyPlanRecord,
@@ -189,6 +191,8 @@ interface UpdateBatteryStrategyInput {
 
 interface UpdateBatteryStrategyPlanInput {
   strategyPlan: BatteryStrategyPlanRecord;
+  strategy?: BatteryStrategyRecord;
+  strategyRuntime?: BatteryStrategyRuntimeRecord;
 }
 
 interface UpdateBatteryMinimumDischargeInput {
@@ -844,27 +848,48 @@ export function setBatteryStrategyPlan(
       return null;
     }
 
+    const strategy = input.strategy ?? {
+      strategyMode: existing.strategyMode,
+      manualState: existing.manualState,
+      manualPowerW: existing.manualPowerW,
+      manualChargeTargetSoc: existing.manualChargeTargetSoc,
+      manualDischargeTargetSoc: existing.manualDischargeTargetSoc,
+      manualTargetSoc: existing.manualTargetSoc,
+    };
+    const strategyRuntime =
+      input.strategyRuntime ?? createBatteryStrategyRuntime();
+
     db.query(
       `
         UPDATE batteries
-        SET strategy_plan_json = ?2, strategy_runtime_json = ?3, manual_mode_active = 0, manual_mode_started = 0, updated_at = ?4
-        WHERE id = ?1 AND site_id = ?5
+        SET
+          strategy_plan_json = ?2,
+          strategy_mode = ?3,
+          manual_state = ?4,
+          manual_power_w = ?5,
+          manual_charge_target_soc = ?6,
+          manual_discharge_target_soc = ?7,
+          manual_target_soc = ?8,
+          strategy_runtime_json = ?9,
+          manual_mode_active = 0,
+          manual_mode_started = 0,
+          updated_at = ?10
+        WHERE id = ?1 AND site_id = ?11
       `,
     ).run(
       id,
       stringifyBatteryStrategyPlan(
         input.strategyPlan,
-        {
-          strategyMode: existing.strategyMode,
-          manualState: existing.manualState,
-          manualPowerW: existing.manualPowerW,
-          manualChargeTargetSoc: existing.manualChargeTargetSoc,
-          manualDischargeTargetSoc: existing.manualDischargeTargetSoc,
-          manualTargetSoc: existing.manualTargetSoc,
-        },
+        strategy,
         existing.minimumDischargePercent,
       ),
-      stringifyBatteryStrategyRuntime(createBatteryStrategyRuntime()),
+      strategy.strategyMode,
+      strategy.manualState ?? null,
+      strategy.manualPowerW ?? null,
+      strategy.manualChargeTargetSoc ?? null,
+      strategy.manualDischargeTargetSoc ?? null,
+      strategy.manualTargetSoc ?? null,
+      stringifyBatteryStrategyRuntime(strategyRuntime),
       new Date().toISOString(),
       siteId,
     );
@@ -1324,6 +1349,7 @@ function openWritableDatabase(databasePath: string): Database {
   ensureParentDirectory(databasePath);
 
   const db = new Database(databasePath);
+  db.exec("PRAGMA busy_timeout = 5000;");
   ensureSchema(db);
   return db;
 }

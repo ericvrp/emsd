@@ -37,7 +37,9 @@ test("weather commands add, list, update, and remove site solar forecast sources
       siteId: "home",
       name: "Met Norway",
     });
-    expect(output[2]).toContain("SOURCE ID | NAME | PROVIDER | SURFACE | UPDATED AT");
+    expect(output[2]).toContain(
+      "SOURCE ID | NAME | PROVIDER | SURFACE | UPDATED AT",
+    );
     expect(output[2]).toContain(
       "metno | Met Norway | open-meteo | open-meteo-shortwave-radiation |",
     );

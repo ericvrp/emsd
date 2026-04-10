@@ -114,7 +114,9 @@ class SonnenBatteryPlugin extends BatteryPlugin {
     );
     const status = parseSonnenBatteryStatus(payload);
     const socPercent = parseNullableNumber(payload?.RSOC);
-    const remainingCapacityWh = parseNullableNumber(payload?.RemainingCapacity_W);
+    const remainingCapacityWh = parseNullableNumber(
+      payload?.RemainingCapacity_W,
+    );
 
     return {
       capacityWh: inferSonnenCapacityWh(remainingCapacityWh, socPercent),
@@ -158,7 +160,10 @@ class SonnenBatteryPlugin extends BatteryPlugin {
 
 class HomeWizardBatteryPlugin extends BatteryPlugin {
   async getNormalizedInfo(): Promise<NormalizedBatteryInfo> {
-    const payload = await fetchHomeWizardJson(this.battery.ipAddress, "/api/batteries");
+    const payload = await fetchHomeWizardJson(
+      this.battery.ipAddress,
+      "/api/batteries",
+    );
 
     return {
       capacityWh: null,
@@ -202,8 +207,7 @@ class HomeWizardBatteryPlugin extends BatteryPlugin {
 
     await putHomeWizardBatteries(this.battery.ipAddress, {
       mode: manualState === "idle" ? "standby" : "zero",
-      permissions:
-        manualState === "discharging" ? ["discharge_allowed"] : [],
+      permissions: manualState === "discharging" ? ["discharge_allowed"] : [],
     });
   }
 }
@@ -322,17 +326,20 @@ async function putHomeWizardBatteries(
     permissions?: string[];
   },
 ): Promise<void> {
-  const response = await fetch(`https://${host}:${HOMEWIZARD_PORT}/api/batteries`, {
-    method: "PUT",
-    headers: {
-      ...buildHomeWizardHeaders(host),
-      "content-type": "application/json",
+  const response = await fetch(
+    `https://${host}:${HOMEWIZARD_PORT}/api/batteries`,
+    {
+      method: "PUT",
+      headers: {
+        ...buildHomeWizardHeaders(host),
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(payload),
+      tls: {
+        rejectUnauthorized: false,
+      },
     },
-    body: JSON.stringify(payload),
-    tls: {
-      rejectUnauthorized: false,
-    },
-  });
+  );
 
   if (!response.ok) {
     throw new Error(

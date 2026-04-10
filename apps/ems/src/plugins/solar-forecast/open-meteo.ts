@@ -77,10 +77,7 @@ function buildOpenMeteoUrl(input: {
   });
 
   if (input.use15Minute) {
-    params.set(
-      "minutely_15",
-      "shortwave_radiation,temperature_2m,cloud_cover",
-    );
+    params.set("minutely_15", "shortwave_radiation,temperature_2m,cloud_cover");
     params.set(
       "forecast_minutely_15",
       String(Math.max(1, Math.min(16 * 24 * 4, input.hours * 4))),

@@ -5,12 +5,13 @@ import {
   formatAbsolutePowerValue,
   formatShortPowerValue,
 } from "../lib/power-format";
+import { DisabledDateSelect } from "./date-select";
 import { UI_COLORS } from "../lib/ui-colors";
 import {
   aggregatePowerSamples,
   fillSingleValueDay,
   getCurrentPeriodStart,
-  getUtcDayKey,
+  getTodayLocalDayKey,
   invertSingleValueSeries,
   SegmentedLineHistoryChart,
   splitSingleValueSeriesByTime,
@@ -23,14 +24,16 @@ type GridPageProps = {
 };
 
 export function GridPage({ archive, siteName }: GridPageProps) {
-  const todayKey = getUtcDayKey(new Date());
+  const todayKey = getTodayLocalDayKey();
   const currentPeriodStart = getCurrentPeriodStart();
-  const currentPeriodMs = new Date(currentPeriodStart).getTime();
   const todayGridSeries = fillSingleValueDay(
     invertSingleValueSeries(aggregatePowerSamples(archive.p1MeterSamples)),
     todayKey,
-  ).filter((point) => new Date(point.periodStart).getTime() <= currentPeriodMs);
-  const currentGridPower = todayGridSeries.at(-1)?.value ?? null;
+  );
+  const currentGridPower = getLatestValueAtOrBefore(
+    todayGridSeries,
+    currentPeriodStart,
+  );
 
   return (
     <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
@@ -48,27 +51,50 @@ export function GridPage({ archive, siteName }: GridPageProps) {
           </p>
         </div>
         <SectionSummaryCard title="Current grid">
-          <p className="text-lg font-semibold text-white sm:text-xl">
+          <p className="text-2xl font-semibold text-white sm:text-3xl">
             {formatGridPower(currentGridPower)}
           </p>
         </SectionSummaryCard>
       </div>
 
       <div className="mt-5 space-y-4 rounded-[1.4rem] border border-white/10 bg-white/5 p-4">
-          <SegmentedLineHistoryChart
-            emptyMessage="No P1 meter samples have been collected for today yet."
-            negativeColor={UI_COLORS.gridImport}
-            negativeLabel="Import"
-            nowMarkerPeriodStart={currentPeriodStart}
-            points={splitSingleValueSeriesByTime(todayGridSeries)}
-            positiveColor={UI_COLORS.gridExport}
-            positiveLabel="Export"
-            valueFormatter={formatAbsolutePowerValue}
-            yAxisFormatter={formatShortPowerValue}
-          />
+        <SegmentedLineHistoryChart
+          emptyMessage="No P1 meter samples have been collected for today yet."
+          headerAccessory={<DisabledDateSelect day={todayKey} />}
+          negativeColor={UI_COLORS.gridImport}
+          negativeLabel="Import"
+          nowMarkerPeriodStart={currentPeriodStart}
+          points={splitSingleValueSeriesByTime(todayGridSeries)}
+          positiveColor={UI_COLORS.gridExport}
+          positiveLabel="Export"
+          valueFormatter={formatAbsolutePowerValue}
+          yAxisLabel="Power"
+          yAxisFormatter={formatShortPowerValue}
+        />
       </div>
     </section>
   );
+}
+
+function getLatestValueAtOrBefore(
+  points: Array<{ periodStart: string; value: number | null }>,
+  periodStart: string,
+): number | null {
+  const periodStartMs = new Date(periodStart).getTime();
+
+  for (let index = points.length - 1; index >= 0; index -= 1) {
+    const point = points[index];
+
+    if (!point || new Date(point.periodStart).getTime() > periodStartMs) {
+      continue;
+    }
+
+    if (typeof point.value === "number") {
+      return point.value;
+    }
+  }
+
+  return null;
 }
 
 function formatGridPower(value: number | null): string {

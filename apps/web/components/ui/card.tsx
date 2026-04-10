@@ -6,15 +6,7 @@ export function Card({
   className,
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) {
-  return (
-    <div
-      className={cn(
-        UI_STYLES.card,
-        className,
-      )}
-      {...props}
-    />
-  );
+  return <div className={cn(UI_STYLES.card, className)} {...props} />;
 }
 
 export function CardHeader({

@@ -14,7 +14,10 @@ afterEach(() => {
 
 test("Tibber price plugin fetches today and tomorrow prices", async () => {
   process.env.TIBBER_ACCESS_TOKEN = "tibber-token";
-  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+  globalThis.fetch = (async (
+    input: string | URL | Request,
+    init?: RequestInit,
+  ) => {
     expect(String(input)).toBe("https://api.tibber.com/v1-beta/gql");
     expect(init?.method).toBe("POST");
     expect(init?.headers).toMatchObject({

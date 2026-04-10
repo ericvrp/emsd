@@ -7,7 +7,9 @@ import {
   getWeatherForecast,
 } from "../lib/ems-bridge";
 
-export type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+export type SearchParams = Promise<
+  Record<string, string | string[] | undefined>
+>;
 
 export async function loadDashboardPageData(searchParams?: SearchParams) {
   const session = await getServerSession(authOptions);
@@ -33,9 +35,12 @@ export async function loadDashboardPageData(searchParams?: SearchParams) {
   }
 
   const currentSite = snapshot.sites[0] ?? null;
-  let dynamicPriceSnapshot: Awaited<ReturnType<typeof getDynamicPriceSnapshot>> | null = null;
+  let dynamicPriceSnapshot: Awaited<
+    ReturnType<typeof getDynamicPriceSnapshot>
+  > | null = null;
   let dynamicPriceSnapshotError: string | null = null;
-  let weatherForecast: Awaited<ReturnType<typeof getWeatherForecast>> | null = null;
+  let weatherForecast: Awaited<ReturnType<typeof getWeatherForecast>> | null =
+    null;
   let weatherForecastError: string | null = null;
 
   if (currentSite) {
@@ -46,7 +51,8 @@ export async function loadDashboardPageData(searchParams?: SearchParams) {
         });
       }
     } catch (error) {
-      dynamicPriceSnapshotError = error instanceof Error ? error.message : String(error);
+      dynamicPriceSnapshotError =
+        error instanceof Error ? error.message : String(error);
     }
 
     try {
@@ -58,7 +64,8 @@ export async function loadDashboardPageData(searchParams?: SearchParams) {
         });
       }
     } catch (error) {
-      weatherForecastError = error instanceof Error ? error.message : String(error);
+      weatherForecastError =
+        error instanceof Error ? error.message : String(error);
     }
   }
 

@@ -1,6 +1,11 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+} from "lucide-react";
 import type { ComponentType } from "react";
 import { cn } from "../lib/utils";
 import {
@@ -15,6 +20,8 @@ type DateSelectProps = {
   availableDays: string[];
   canGoBackward: boolean;
   canGoForward: boolean;
+  className?: string;
+  disabled?: boolean;
   firstDay: string | null;
   lastDay: string | null;
   onSelectDay: (day: string) => void;
@@ -23,12 +30,15 @@ type DateSelectProps = {
   onSelectNextDay: () => void;
   onSelectPreviousDay: () => void;
   selectedDay: string | null;
+  centered?: boolean;
 };
 
 export function DateSelect({
   availableDays,
   canGoBackward,
   canGoForward,
+  className,
+  disabled = false,
   firstDay,
   lastDay,
   onSelectDay,
@@ -37,28 +47,29 @@ export function DateSelect({
   onSelectNextDay,
   onSelectPreviousDay,
   selectedDay,
+  centered = true,
 }: DateSelectProps) {
   return (
-    <div className="flex justify-center">
-      <div className="flex flex-wrap items-center justify-center gap-2 rounded-2xl border border-white/10 bg-slate-950/55 p-2">
+    <div className={cn(centered ? "flex justify-center" : "", className)}>
+      <div className="flex flex-wrap items-center justify-center gap-1.5">
         <TapeDeckButton
-          disabled={!firstDay || selectedDay === firstDay}
+          disabled={disabled || !firstDay || selectedDay === firstDay}
           icon={ChevronsLeft}
           label="First day"
           onClick={onSelectFirstDay}
         />
         <TapeDeckButton
-          disabled={!canGoBackward}
+          disabled={disabled || !canGoBackward}
           icon={ChevronLeft}
           label="Previous day"
           onClick={onSelectPreviousDay}
         />
         <Select
-          disabled={selectedDay === null}
+          disabled={disabled || selectedDay === null}
           onValueChange={onSelectDay}
           {...(selectedDay ? { value: selectedDay } : {})}
         >
-          <SelectTrigger className="h-10 w-auto min-w-0 justify-center border-white/8 bg-white/5 px-3 text-center text-sm [&>span]:text-center [&_svg]:hidden">
+          <SelectTrigger className="h-9 w-auto min-w-0 justify-center border-white/8 bg-white/5 px-3 text-center text-sm [&>span]:text-center [&_svg]:hidden">
             <SelectValue placeholder="Choose day" />
           </SelectTrigger>
           <SelectContent>
@@ -70,19 +81,46 @@ export function DateSelect({
           </SelectContent>
         </Select>
         <TapeDeckButton
-          disabled={!canGoForward}
+          disabled={disabled || !canGoForward}
           icon={ChevronRight}
           label="Next day"
           onClick={onSelectNextDay}
         />
         <TapeDeckButton
-          disabled={!lastDay || selectedDay === lastDay}
+          disabled={disabled || !lastDay || selectedDay === lastDay}
           icon={ChevronsRight}
           label="Current day"
           onClick={onSelectLastDay}
         />
       </div>
     </div>
+  );
+}
+
+export function DisabledDateSelect({
+  className,
+  day,
+}: {
+  className?: string;
+  day: string;
+}) {
+  return (
+    <DateSelect
+      availableDays={[day]}
+      canGoBackward={false}
+      canGoForward={false}
+      centered={false}
+      disabled
+      firstDay={day}
+      lastDay={day}
+      onSelectDay={() => {}}
+      onSelectFirstDay={() => {}}
+      onSelectLastDay={() => {}}
+      onSelectNextDay={() => {}}
+      onSelectPreviousDay={() => {}}
+      selectedDay={day}
+      {...(className ? { className } : {})}
+    />
   );
 }
 
@@ -101,7 +139,7 @@ function TapeDeckButton({
     <button
       aria-label={label}
       className={cn(
-        "inline-flex h-10 w-10 items-center justify-center rounded-lg border text-sm font-medium transition",
+        "inline-flex h-9 w-9 items-center justify-center rounded-lg border text-sm font-medium transition",
         disabled
           ? "cursor-not-allowed border-white/6 bg-white/4 text-slate-500"
           : "border-white/10 bg-white/5 text-slate-100 hover:border-cyan-300/30 hover:bg-cyan-400/10 hover:text-white",

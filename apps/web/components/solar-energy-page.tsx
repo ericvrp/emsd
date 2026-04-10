@@ -3,13 +3,13 @@
 import type { HistoryArchive, LiveStatusSnapshot } from "../lib/ems-bridge";
 import { formatPowerValue, formatShortPowerValue } from "../lib/power-format";
 import { UI_COLORS } from "../lib/ui-colors";
+import { DisabledDateSelect } from "./date-select";
 import {
-  LegendChip,
   SingleValueHistoryChart,
   aggregatePowerSamples,
   fillSingleValueDay,
   getCurrentPeriodStart,
-  getUtcDayKey,
+  getTodayLocalDayKey,
   splitSingleValueSeriesByTime,
 } from "./history-page";
 import { SectionSummaryCard } from "./section-summary-card";
@@ -38,13 +38,12 @@ export function SolarEnergyPage({
     },
     null,
   );
-  const todayKey = getUtcDayKey(new Date());
+  const todayKey = getTodayLocalDayKey();
   const currentPeriodStart = getCurrentPeriodStart();
-  const currentPeriodMs = new Date(currentPeriodStart).getTime();
   const todaySolarSeries = fillSingleValueDay(
     aggregatePowerSamples(archive.solarEnergyProviderSamples),
     todayKey,
-  ).filter((point) => new Date(point.periodStart).getTime() <= currentPeriodMs);
+  );
 
   if (providers.length === 0) {
     return (
@@ -86,16 +85,13 @@ export function SolarEnergyPage({
       </div>
 
       <div className="mt-5 space-y-4 rounded-[1.4rem] border border-white/10 bg-white/5 p-4">
-        <div className="flex flex-wrap gap-2 text-xs font-medium text-slate-300">
-          <LegendChip color={UI_COLORS.solarEnergy} label="Generated Wattage" />
-        </div>
         <SingleValueHistoryChart
           accentColor={UI_COLORS.solarEnergy}
           emptyMessage="No generated wattage samples have been collected for today yet."
+          headerAccessory={<DisabledDateSelect day={todayKey} />}
           label="Generated Wattage"
           nowMarkerPeriodStart={currentPeriodStart}
           points={splitSingleValueSeriesByTime(todaySolarSeries)}
-          showLegend={false}
           valueFormatter={formatPowerValue}
           yAxisLabel="Power (W)"
           yAxisFormatter={formatShortPowerValue}

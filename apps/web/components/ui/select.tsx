@@ -15,11 +15,8 @@ export function SelectTrigger({
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Trigger>) {
   return (
-      <SelectPrimitive.Trigger
-        className={cn(
-          UI_STYLES.selectTrigger,
-          className,
-        )}
+    <SelectPrimitive.Trigger
+      className={cn(UI_STYLES.selectTrigger, className)}
       type="button"
       {...props}
     >
@@ -39,10 +36,7 @@ export function SelectContent({
   return (
     <SelectPrimitive.Portal>
       <SelectPrimitive.Content
-        className={cn(
-          UI_STYLES.selectContent,
-          className,
-        )}
+        className={cn(UI_STYLES.selectContent, className)}
         {...props}
       >
         <SelectPrimitive.Viewport className="p-1">
@@ -60,10 +54,7 @@ export function SelectItem({
 }: React.ComponentProps<typeof SelectPrimitive.Item>) {
   return (
     <SelectPrimitive.Item
-      className={cn(
-        UI_STYLES.selectItem,
-        className,
-      )}
+      className={cn(UI_STYLES.selectItem, className)}
       {...props}
     >
       <span className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">

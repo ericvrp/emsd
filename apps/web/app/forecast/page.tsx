@@ -8,6 +8,7 @@ import {
   SiteSetupPanel,
   WeatherForecastSection,
 } from "../../components/settings-panel";
+import { getHistoryArchive } from "../../lib/ems-bridge";
 
 export const dynamic = "force-dynamic";
 
@@ -22,20 +23,17 @@ export default async function ForecastPage({
     return <DaemonOfflineState />;
   }
 
-  const {
-    currentSite,
-    generatedAt,
-    weatherForecast,
-    weatherForecastError,
-  } = dashboardData;
+  const { currentSite, generatedAt, weatherForecast, weatherForecastError } =
+    dashboardData;
+  const historyArchive = currentSite
+    ? await getHistoryArchive({ siteId: currentSite.id })
+    : null;
 
   return (
-    <DashboardPageFrame
-      currentSite={currentSite}
-      generatedAt={generatedAt}
-    >
-      {currentSite ? (
+    <DashboardPageFrame currentSite={currentSite} generatedAt={generatedAt}>
+      {currentSite && historyArchive ? (
         <WeatherForecastSection
+          archive={historyArchive}
           error={weatherForecastError}
           forecast={weatherForecast}
           site={currentSite}

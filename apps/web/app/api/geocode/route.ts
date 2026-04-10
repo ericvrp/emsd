@@ -24,7 +24,10 @@ export async function GET(request: Request) {
   const query = url.searchParams.get("q")?.trim();
 
   if (!query) {
-    return NextResponse.json({ error: "Missing geocode query." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Missing geocode query." },
+      { status: 400 },
+    );
   }
 
   const searchUrl = new URL("https://nominatim.openstreetmap.org/search");

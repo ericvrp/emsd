@@ -3,6 +3,7 @@ import {
   type BatteryManualState,
   type BatteryRecord,
   type BatteryStrategyMode,
+  type BatteryStrategyPlanRecord,
   type BulkDiscoveryAddResult,
   type DashboardSnapshot,
   type DynamicPriceSnapshotRecord,
@@ -17,7 +18,10 @@ import {
   type SiteRecord,
   type SolarEnergyProviderRecord,
   type WeatherForecastRecord,
+  createBatteryStrategyRuntimeForPlanApply,
   getDaemonLockPath,
+  normalizeBatteryStrategyPlan,
+  resolveBatteryStrategyFromPlanItem,
 } from "@emsd/core";
 import {
   deleteWeatherForecast,
@@ -103,10 +107,13 @@ function succeed<T>(data: T, outputFilePath?: string): void {
 }
 
 function fail(error: unknown, outputFilePath?: string): void {
-  respond({
-    ok: false,
-    error: error instanceof Error ? error.message : String(error),
-  }, outputFilePath);
+  respond(
+    {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    },
+    outputFilePath,
+  );
 }
 
 function readInput<T>(raw?: string): T {
@@ -139,7 +146,10 @@ function readDiscoveredDevice(value: unknown): DiscoveredDevice {
 }
 
 function readDiscoveredDeviceList(value: unknown): DiscoveredDevice[] {
-  if (!Array.isArray(value) || value.some((entry) => !isDiscoveredDevice(entry))) {
+  if (
+    !Array.isArray(value) ||
+    value.some((entry) => !isDiscoveredDevice(entry))
+  ) {
     throw new Error("Invalid discovered device list payload.");
   }
 
@@ -163,7 +173,8 @@ function isDiscoveredDevice(value: unknown): value is DiscoveredDevice {
     typeof candidate.model === "string" &&
     typeof candidate.name === "string" &&
     (typeof candidate.powerW === "number" || candidate.powerW === null) &&
-    (typeof candidate.socPercent === "number" || candidate.socPercent === null) &&
+    (typeof candidate.socPercent === "number" ||
+      candidate.socPercent === null) &&
     (candidate.state === "idle" ||
       candidate.state === "charging" ||
       candidate.state === "discharging" ||
@@ -356,7 +367,9 @@ function toManagedDeviceRecord(
   };
 }
 
-async function discoverForSelection(host: string | null): Promise<DiscoveredDevice[]> {
+async function discoverForSelection(
+  host: string | null,
+): Promise<DiscoveredDevice[]> {
   if (host) {
     return discoverHostDevices(host, { host, verbose: false });
   }
@@ -564,7 +577,10 @@ export async function runApiAction(
           dynamicPriceSamples: readDynamicPriceSamples(db, siteId),
           p1MeterSamples: readP1MeterSamples(db, siteId),
           siteId,
-          solarEnergyProviderSamples: readSolarEnergyProviderSamples(db, siteId),
+          solarEnergyProviderSamples: readSolarEnergyProviderSamples(
+            db,
+            siteId,
+          ),
           solarForecastSamples: readSolarForecastSamples(db, siteId),
         };
       } finally {
@@ -589,7 +605,9 @@ export async function runApiAction(
       });
 
       if (!site) {
-        throw new Error(`Managed site not found: ${requireString(input.id, "id")}`);
+        throw new Error(
+          `Managed site not found: ${requireString(input.id, "id")}`,
+        );
       }
 
       return site;
@@ -599,7 +617,9 @@ export async function runApiAction(
       const site = deleteSite(requireString(input.id, "id"));
 
       if (!site) {
-        throw new Error(`Managed site not found: ${requireString(input.id, "id")}`);
+        throw new Error(
+          `Managed site not found: ${requireString(input.id, "id")}`,
+        );
       }
 
       return site;
@@ -615,7 +635,9 @@ export async function runApiAction(
         );
       }
 
-      return toManagedDeviceRecord(createManagedBatteryFromDiscovered(discovered, siteId));
+      return toManagedDeviceRecord(
+        createManagedBatteryFromDiscovered(discovered, siteId),
+      );
     }
 
     case "battery-set-enabled": {
@@ -626,7 +648,9 @@ export async function runApiAction(
       );
 
       if (!battery) {
-        throw new Error(`Managed battery not found: ${requireString(input.id, "id")}`);
+        throw new Error(
+          `Managed battery not found: ${requireString(input.id, "id")}`,
+        );
       }
 
       return toManagedDeviceRecord(battery);
@@ -645,7 +669,9 @@ export async function runApiAction(
       );
 
       if (!battery) {
-        throw new Error(`Managed battery not found: ${requireString(input.id, "id")}`);
+        throw new Error(
+          `Managed battery not found: ${requireString(input.id, "id")}`,
+        );
       }
 
       return toManagedDeviceRecord(battery);
@@ -675,7 +701,9 @@ export async function runApiAction(
             ? null
             : existing.manualState;
       const manualPowerW =
-        typeof input.manualPowerW === "number" ? input.manualPowerW : existing.manualPowerW;
+        typeof input.manualPowerW === "number"
+          ? input.manualPowerW
+          : existing.manualPowerW;
       const manualChargeTargetSoc =
         typeof input.manualChargeTargetSoc === "number"
           ? input.manualChargeTargetSoc
@@ -734,10 +762,43 @@ export async function runApiAction(
     case "battery-set-strategy-plan": {
       const batteryId = requireString(input.id, "id");
       const siteId = requireString(input.siteId, "siteId");
+      const existing = getBattery(batteryId, siteId);
+
+      if (!existing) {
+        throw new Error(`Managed battery not found: ${batteryId}`);
+      }
+
+      const strategyPlan = normalizeBatteryStrategyPlan({
+        minimumDischargePercent: existing.minimumDischargePercent,
+        strategy: {
+          strategyMode: existing.strategyMode,
+          manualState: existing.manualState,
+          manualPowerW: existing.manualPowerW,
+          manualChargeTargetSoc: existing.manualChargeTargetSoc,
+          manualDischargeTargetSoc: existing.manualDischargeTargetSoc,
+          manualTargetSoc: existing.manualTargetSoc,
+        },
+        value: Array.isArray(input.strategyPlan)
+          ? (input.strategyPlan as BatteryStrategyPlanRecord)
+          : [],
+      });
+      const strategy = resolveBatteryStrategyFromPlanItem({
+        item: strategyPlan[0],
+        minimumDischargePercent: existing.minimumDischargePercent,
+      });
+      const strategyRuntime = createBatteryStrategyRuntimeForPlanApply(
+        strategyPlan,
+        new Date(),
+      );
+
+      await createBatteryPlugin(existing).setStrategy(strategy);
+
       const updated = setBatteryStrategyPlan(
         batteryId,
         {
-          strategyPlan: Array.isArray(input.strategyPlan) ? input.strategyPlan : [],
+          strategy,
+          strategyPlan,
+          strategyRuntime,
         },
         siteId,
       );
@@ -756,7 +817,9 @@ export async function runApiAction(
       );
 
       if (!battery) {
-        throw new Error(`Managed battery not found: ${requireString(input.id, "id")}`);
+        throw new Error(
+          `Managed battery not found: ${requireString(input.id, "id")}`,
+        );
       }
 
       return toManagedDeviceRecord(battery);
@@ -772,7 +835,9 @@ export async function runApiAction(
         );
       }
 
-      return toManagedDeviceRecord(createManagedMeterFromDiscovered(discovered, siteId));
+      return toManagedDeviceRecord(
+        createManagedMeterFromDiscovered(discovered, siteId),
+      );
     }
 
     case "solar-energy-provider-create": {
@@ -842,7 +907,9 @@ export async function runApiAction(
       );
 
       if (!meter) {
-        throw new Error(`Managed meter not found: ${requireString(input.id, "id")}`);
+        throw new Error(
+          `Managed meter not found: ${requireString(input.id, "id")}`,
+        );
       }
 
       return toManagedDeviceRecord(meter);
@@ -855,7 +922,9 @@ export async function runApiAction(
       );
 
       if (!meter) {
-        throw new Error(`Managed meter not found: ${requireString(input.id, "id")}`);
+        throw new Error(
+          `Managed meter not found: ${requireString(input.id, "id")}`,
+        );
       }
 
       return toManagedDeviceRecord(meter);
@@ -909,7 +978,10 @@ export async function runApiAction(
 
     case "weather-delete": {
       const siteId = requireString(input.siteId, "siteId");
-      const source = deleteWeatherForecastSource(requireString(input.id, "id"), siteId);
+      const source = deleteWeatherForecastSource(
+        requireString(input.id, "id"),
+        siteId,
+      );
 
       if (!source) {
         throw new Error(
@@ -959,7 +1031,10 @@ export async function runApiAction(
           throw new Error(`Managed site not found: ${siteId}`);
         }
 
-        const source = readWeatherForecastSources(db).find((entry) => entry.siteId === siteId) ?? null;
+        const source =
+          readWeatherForecastSources(db).find(
+            (entry) => entry.siteId === siteId,
+          ) ?? null;
 
         if (source === null) {
           deleteWeatherForecast(db, siteId);
@@ -968,7 +1043,8 @@ export async function runApiAction(
           );
         }
 
-        previousGeneratedAt = readWeatherForecast(db, siteId)?.generatedAt ?? null;
+        previousGeneratedAt =
+          readWeatherForecast(db, siteId)?.generatedAt ?? null;
       } finally {
         db.close();
       }
@@ -1052,13 +1128,19 @@ export async function runApiAction(
           throw new Error(`Managed site not found: ${siteId}`);
         }
 
-        const source = readDynamicPriceSources(db).find((entry) => entry.siteId === siteId) ?? null;
+        const source =
+          readDynamicPriceSources(db).find(
+            (entry) => entry.siteId === siteId,
+          ) ?? null;
 
         if (source === null) {
-          throw new Error(`No dynamic price source is configured for site ${siteId}.`);
+          throw new Error(
+            `No dynamic price source is configured for site ${siteId}.`,
+          );
         }
 
-        previousGeneratedAt = readDynamicPriceSnapshot(db, siteId)?.generatedAt ?? null;
+        previousGeneratedAt =
+          readDynamicPriceSnapshot(db, siteId)?.generatedAt ?? null;
       } finally {
         db.close();
       }
@@ -1074,7 +1156,9 @@ export async function runApiAction(
       );
 
       if (!battery) {
-        throw new Error(`Managed battery not found: ${requireString(input.id, "id")}`);
+        throw new Error(
+          `Managed battery not found: ${requireString(input.id, "id")}`,
+        );
       }
 
       return createBatteryPlugin(battery).getNormalizedInfo();

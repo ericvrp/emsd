@@ -277,7 +277,9 @@ export function BatteryStrategyForm({
           </div>
         ) : null}
 
-        {(strategyMode === "manual" || strategyMode === "self-consumption" || manualOnly) ? (
+        {strategyMode === "manual" ||
+        strategyMode === "self-consumption" ||
+        manualOnly ? (
           <div className="space-y-2">
             <Label className="sr-only" htmlFor={`${batteryId}-state`}>
               {manualOnly ? "Manual mode selection" : "Manual state"}
@@ -362,8 +364,8 @@ export function BatteryStrategyForm({
                       <SelectItem value="duration">Duration</SelectItem>
                       <SelectItem value="end-time">End time</SelectItem>
                     </SelectContent>
-                    </Select>
-                  </div>
+                  </Select>
+                </div>
 
                 {targetMethod === "soc" ? (
                   <div className="space-y-2">
@@ -439,10 +441,7 @@ export function BatteryStrategyForm({
                   label="Duration"
                   value={formatDuration(estimatedDurationMinutes)}
                 />
-                <StrategyStatCard
-                  label="Ends"
-                  value={estimatedEndTime}
-                />
+                <StrategyStatCard label="Ends" value={estimatedEndTime} />
               </div>
               <div className="space-y-1 text-xs text-slate-500">
                 {!canEstimateTarget ? (

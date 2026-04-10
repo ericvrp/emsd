@@ -572,7 +572,7 @@ function mockBatteryFetch(): typeof fetch {
       url ===
         "http://192.168.1.15:8080/rpc/Indevolt.GetData?config=%7B%22t%22%3A%5B0%2C1118%2C6000%2C6001%2C6002%2C7101%5D%7D" ||
       url ===
-      "http://192.168.1.15:8080/rpc/Indevolt.GetData?config=%7B%22t%22%3A%5B142%2C6000%2C6001%2C6002%2C7101%5D%7D"
+        "http://192.168.1.15:8080/rpc/Indevolt.GetData?config=%7B%22t%22%3A%5B142%2C6000%2C6001%2C6002%2C7101%5D%7D"
     ) {
       return new Response(
         JSON.stringify({
@@ -611,7 +611,10 @@ function mockSonnenBatteryFetch(): typeof fetch {
   return (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
 
-    if (url === "http://192.168.1.88:8080/rpc/Indevolt.GetData?config=%7B%22t%22%3A%5B0%2C1118%2C6000%2C6001%2C6002%2C7101%5D%7D") {
+    if (
+      url ===
+      "http://192.168.1.88:8080/rpc/Indevolt.GetData?config=%7B%22t%22%3A%5B0%2C1118%2C6000%2C6001%2C6002%2C7101%5D%7D"
+    ) {
       return new Response("not found", { status: 404 });
     }
 
@@ -733,7 +736,10 @@ function mockHomeWizardBatteryFetch(): typeof fetch {
   return (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
 
-    if (url === "http://192.168.1.44:8080/rpc/Indevolt.GetData?config=%7B%22t%22%3A%5B0%2C1118%2C6000%2C6001%2C6002%2C7101%5D%7D") {
+    if (
+      url ===
+      "http://192.168.1.44:8080/rpc/Indevolt.GetData?config=%7B%22t%22%3A%5B0%2C1118%2C6000%2C6001%2C6002%2C7101%5D%7D"
+    ) {
       return new Response("not found", { status: 404 });
     }
 
@@ -760,7 +766,10 @@ function mockHomeWizardBatteryFetch(): typeof fetch {
       );
     }
 
-    if (url === "https://192.168.1.44:443/api/batteries" && (!init?.method || init.method === "GET")) {
+    if (
+      url === "https://192.168.1.44:443/api/batteries" &&
+      (!init?.method || init.method === "GET")
+    ) {
       expect(init?.headers).toMatchObject({
         Authorization: "Bearer hw-token",
         "X-Api-Version": "2",
@@ -781,7 +790,10 @@ function mockHomeWizardBatteryFetch(): typeof fetch {
       );
     }
 
-    if (url === "https://192.168.1.44:443/api/batteries" && init?.method === "PUT") {
+    if (
+      url === "https://192.168.1.44:443/api/batteries" &&
+      init?.method === "PUT"
+    ) {
       expect(init?.headers).toMatchObject({
         Authorization: "Bearer hw-token",
         "X-Api-Version": "2",

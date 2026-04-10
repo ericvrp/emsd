@@ -6,13 +6,5 @@ export function Input({
   className,
   ...props
 }: React.InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <input
-      className={cn(
-        UI_STYLES.input,
-        className,
-      )}
-      {...props}
-    />
-  );
+  return <input className={cn(UI_STYLES.input, className)} {...props} />;
 }

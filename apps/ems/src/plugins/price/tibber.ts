@@ -93,7 +93,9 @@ export const tibberPricePlugin: DynamicPricePlugin = {
     const priceInfo = home.currentSubscription?.priceInfo;
 
     if (!priceInfo) {
-      throw new Error(`Tibber home ${home.id} has no active subscription price info.`);
+      throw new Error(
+        `Tibber home ${home.id} has no active subscription price info.`,
+      );
     }
 
     const rawPoints = [
@@ -103,7 +105,10 @@ export const tibberPricePlugin: DynamicPricePlugin = {
     ];
     const points = dedupeAndSortPoints(rawPoints.map(mapTibberPoint));
     const currency =
-      points[0]?.currency ?? priceInfo.current?.currency ?? priceInfo.today?.[0]?.currency ?? "EUR";
+      points[0]?.currency ??
+      priceInfo.current?.currency ??
+      priceInfo.today?.[0]?.currency ??
+      "EUR";
 
     return createDynamicPriceSnapshot(input, {
       currency,
@@ -147,7 +152,9 @@ function selectTibberHome(
     const matched = homes.find((home) => home.id === configuredHomeId);
 
     if (!matched) {
-      throw new Error(`Tibber home not found for configured homeId ${configuredHomeId}.`);
+      throw new Error(
+        `Tibber home not found for configured homeId ${configuredHomeId}.`,
+      );
     }
 
     return matched;

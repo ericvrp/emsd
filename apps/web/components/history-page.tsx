@@ -4,16 +4,18 @@ import {
   CloudSun,
   Gauge,
   HandCoins,
-  Layers3,
   SunMedium,
   Zap,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import type { ComponentType } from "react";
+import type { ComponentType, ReactNode } from "react";
 import {
   Area,
   AreaChart,
+  Bar,
+  Cell,
   CartesianGrid,
+  ComposedChart,
   Line,
   LineChart,
   ReferenceLine,
@@ -35,7 +37,6 @@ import { MeasuredChartContainer } from "./measured-chart-container";
 import { Card, CardContent, CardHeader } from "./ui/card";
 
 type HistoryTab =
-  | "combined"
   | "price"
   | "solar"
   | "solar-energy"
@@ -128,6 +129,9 @@ const HISTORY_STEP_MS = 15 * 60 * 1_000;
 const CHARGE_AXIS_DOMAIN: [number, number] = [0, 100];
 const CHARGE_AXIS_TICKS = [0, 20, 40, 60, 80, 100];
 const BATTERY_POWER_AXIS_DOMAIN: [number, number] = [-3000, 3000];
+export const STANDARD_Y_AXIS_WIDTH = 64;
+const STANDARD_Y_AXIS_TICK_COUNT = 5;
+const STANDARD_RIGHT_AXIS_MARGIN = 72;
 
 const HISTORY_TABS: Array<{
   description: string;
@@ -135,12 +139,6 @@ const HISTORY_TABS: Array<{
   label: string;
   value: HistoryTab;
 }> = [
-  {
-    description: "Overlay the main energy signals in a single chart.",
-    icon: Layers3,
-    label: "Combined",
-    value: "combined",
-  },
   {
     description: "Review battery power and charge history.",
     icon: Zap,
@@ -179,7 +177,7 @@ export function HistoryPage({
   selectedTab,
 }: HistoryPageProps) {
   const router = useRouter();
-  const availableDays = getAvailableDays(archive);
+  const availableDays = getAvailableLocalDays(archive);
   const firstDay = availableDays[0] ?? null;
   const lastDay = availableDays.at(-1) ?? null;
   const selectedDay =
@@ -189,7 +187,7 @@ export function HistoryPage({
   const selectedDayIndex =
     selectedDay === null ? -1 : availableDays.indexOf(selectedDay);
   const nowMarkerPeriodStart =
-    selectedDay !== null && selectedDay === getUtcDayKey(new Date())
+    selectedDay !== null && selectedDay === getTodayLocalDayKey()
       ? getCurrentPeriodStart()
       : null;
 
@@ -325,20 +323,17 @@ export function HistoryPage({
               History will appear here once the daemon has collected at least
               one sampled day.
             </p>
-          ) : selectedTab === "combined" ? (
-            <CombinedHistoryChart
-              nowMarkerPeriodStart={nowMarkerPeriodStart}
-              points={splitCombinedDailySeries}
-            />
           ) : selectedTab === "price" ? (
-            <SingleValueHistoryChart
+            <SingleValueBarHistoryChart
               accentColor={UI_COLORS.price}
               emptyMessage="No dynamic price samples were available for this range."
               label="Price"
               nowMarkerPeriodStart={nowMarkerPeriodStart}
               points={splitSingleValueSeriesByTime(dailyPriceSeries)}
+              tightYAxis
               valueFormatter={formatPriceValue}
               yAxisFormatter={formatShortPriceValue}
+              yAxisLabel="Price"
             />
           ) : selectedTab === "solar" ? (
             <SingleValueHistoryChart
@@ -349,6 +344,7 @@ export function HistoryPage({
               points={splitSingleValueSeriesByTime(dailySolarSeries)}
               valueFormatter={formatWholeNumberValue}
               yAxisFormatter={formatShortPowerValue}
+              yAxisLabel="Power"
             />
           ) : selectedTab === "solar-energy" ? (
             <SingleValueHistoryChart
@@ -359,6 +355,7 @@ export function HistoryPage({
               points={splitSingleValueSeriesByTime(dailySolarEnergySeries)}
               valueFormatter={formatPowerValue}
               yAxisFormatter={formatShortPowerValue}
+              yAxisLabel="Power"
             />
           ) : selectedTab === "grid" ? (
             <SegmentedLineHistoryChart
@@ -371,6 +368,7 @@ export function HistoryPage({
               positiveLabel="Export"
               valueFormatter={formatAbsolutePowerValue}
               yAxisFormatter={formatShortPowerValue}
+              yAxisLabel="Power"
             />
           ) : (
             <BatteryHistoryChart
@@ -507,7 +505,7 @@ function CombinedHistoryChart({
               tick={UI_CHART_STYLES.axisTickMuted}
               tickFormatter={formatShortPowerValue}
               tickLine={false}
-              width={60}
+              width={STANDARD_Y_AXIS_WIDTH}
               yAxisId="power"
             />
             <YAxis
@@ -520,7 +518,7 @@ function CombinedHistoryChart({
               ticks={CHARGE_AXIS_TICKS}
               tickFormatter={formatShortPercentValue}
               tickLine={false}
-              width={76}
+              width={STANDARD_Y_AXIS_WIDTH}
               yAxisId="charge"
             />
             <YAxis hide yAxisId="price" />
@@ -611,7 +609,7 @@ function CombinedHistoryChart({
               legendType="none"
               stroke="transparent"
               strokeWidth={10}
-              type="linear"
+              type="monotone"
               yAxisId="power"
             />
             <Line
@@ -622,7 +620,7 @@ function CombinedHistoryChart({
               legendType="none"
               stroke="transparent"
               strokeWidth={10}
-              type="linear"
+              type="monotone"
               yAxisId="power"
             />
             <Line
@@ -757,10 +755,12 @@ function CombinedHistoryChart({
 
 export function BatteryHistoryChart({
   emptyMessage,
+  headerAccessory,
   nowMarkerPeriodStart,
   points,
 }: {
   emptyMessage: string;
+  headerAccessory?: ReactNode;
   nowMarkerPeriodStart: string | null;
   points: BatteryHistoryPoint[];
 }) {
@@ -804,19 +804,28 @@ export function BatteryHistoryChart({
 
   return (
     <div className="space-y-2.5">
-      <div className="flex flex-wrap gap-2 text-xs font-medium text-slate-300">
-        <LegendChip
-          color={UI_COLORS.batteryPowerCharging}
-          label="Battery Charging Power"
-        />
-        <LegendChip
-          color={UI_COLORS.batteryPowerDischarging}
-          label="Battery Discharging Power"
-        />
-        <LegendChip color={UI_COLORS.batteryChargeLevel} label="Battery Charge" />
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-wrap gap-2 text-xs font-medium text-slate-300">
+          <LegendChip
+            color={UI_COLORS.batteryPowerCharging}
+            label="Battery Charging Power"
+          />
+          <LegendChip
+            color={UI_COLORS.batteryPowerDischarging}
+            label="Battery Discharging Power"
+          />
+          <LegendChip color={UI_COLORS.batteryChargeLevel} label="Battery Charge" />
+        </div>
+        {headerAccessory}
       </div>
       <MeasuredChartContainer className="h-[360px] min-w-0 w-full">
-        {({ height, width }) => (
+        {({ height, width }) => {
+          const xAxisTicks = buildResponsiveDayTicks(
+            chartPoints.map((point) => point.timestampMs),
+            width,
+          );
+
+          return (
           <LineChart
             data={chartPoints}
             height={height}
@@ -832,10 +841,12 @@ export function BatteryHistoryChart({
               axisLine={false}
               dataKey="timestampMs"
               domain={["dataMin", "dataMax"]}
+              interval={0}
               minTickGap={28}
               tick={UI_CHART_STYLES.axisTick}
               tickFormatter={formatDayTick}
               tickLine={false}
+              ticks={xAxisTicks}
               type="number"
             />
             <YAxis
@@ -845,7 +856,7 @@ export function BatteryHistoryChart({
               tick={UI_CHART_STYLES.axisTickMuted}
               tickFormatter={formatShortPowerValue}
               tickLine={false}
-              width={72}
+              width={STANDARD_Y_AXIS_WIDTH}
               yAxisId="power"
             />
             <YAxis
@@ -858,7 +869,7 @@ export function BatteryHistoryChart({
               ticks={CHARGE_AXIS_TICKS}
               tickFormatter={formatShortPercentValue}
               tickLine={false}
-              width={76}
+              width={STANDARD_Y_AXIS_WIDTH}
               yAxisId="charge"
             />
             <ReferenceLine
@@ -909,7 +920,7 @@ export function BatteryHistoryChart({
                 stroke={segment.color}
                 strokeOpacity={segment.strokeOpacity}
                 strokeWidth={2.2}
-                type="linear"
+                type="monotone"
                 yAxisId="power"
               />
             ))}
@@ -926,7 +937,7 @@ export function BatteryHistoryChart({
                 stroke={segment.color}
                 strokeOpacity={segment.strokeOpacity}
                 strokeWidth={2.2}
-                type="linear"
+                type="monotone"
                 yAxisId="power"
               />
             ))}
@@ -963,7 +974,8 @@ export function BatteryHistoryChart({
               />
             ) : null}
           </LineChart>
-        )}
+          );
+        }}
       </MeasuredChartContainer>
     </div>
   );
@@ -995,6 +1007,7 @@ export function buildBatteryHistoryPoints(
 export function SingleValueHistoryChart({
   accentColor,
   emptyMessage,
+  headerAccessory,
   label,
   nowMarkerPeriodStart,
   points,
@@ -1006,6 +1019,7 @@ export function SingleValueHistoryChart({
 }: {
   accentColor: string;
   emptyMessage: string;
+  headerAccessory?: ReactNode;
   label: string;
   nowMarkerPeriodStart: string | null;
   points: SplitSingleValuePoint[];
@@ -1015,6 +1029,10 @@ export function SingleValueHistoryChart({
   yAxisDomain?: [number, number];
   yAxisFormatter: (value: number) => string;
 }) {
+  const chartData = points.map((point) => ({
+    ...point,
+    rightAxisValue: point.currentValue ?? point.futureValue,
+  }));
   const hasValues = points.some(
     (point) =>
       typeof point.currentValue === "number" ||
@@ -1022,24 +1040,38 @@ export function SingleValueHistoryChart({
   );
   const gradientId = `${label.toLowerCase().replace(/\s+/g, "-")}-gradient`;
   const mutedGradientId = `${label.toLowerCase().replace(/\s+/g, "-")}-muted-gradient`;
-
+  const axisConfig = buildMirroredYAxis(
+    points.flatMap((point) => [point.currentValue, point.futureValue]),
+    yAxisDomain,
+  );
   if (!hasValues) {
     return <p className="text-sm leading-6 text-slate-400">{emptyMessage}</p>;
   }
 
   return (
     <div className="space-y-2.5">
-      {showLegend ? (
-        <div className="flex flex-wrap gap-2 text-xs font-medium text-slate-300">
-          <LegendChip color={accentColor} label={label} />
+      {showLegend || headerAccessory ? (
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          {showLegend ? (
+            <div className="flex flex-wrap gap-2 text-xs font-medium text-slate-300">
+              <LegendChip color={accentColor} label={label} />
+            </div>
+          ) : null}
+          {headerAccessory}
         </div>
       ) : null}
       <MeasuredChartContainer className="h-[360px] min-w-0 w-full">
-        {({ height, width }) => (
+        {({ height, width }) => {
+          const xAxisTicks = buildResponsiveDayTicks(
+            points.map((point) => point.periodStart),
+            width,
+          );
+
+          return (
           <AreaChart
-            data={points}
+            data={chartData}
             height={height}
-            margin={{ top: 12, right: 16, bottom: 0, left: 0 }}
+            margin={{ top: 12, right: STANDARD_RIGHT_AXIS_MARGIN, bottom: 0, left: 0 }}
             width={width}
           >
             <defs>
@@ -1060,21 +1092,39 @@ export function SingleValueHistoryChart({
             <XAxis
               axisLine={false}
               dataKey="periodStart"
+              interval={0}
               minTickGap={28}
               tick={UI_CHART_STYLES.axisTick}
               tickFormatter={formatDayTick}
               tickLine={false}
+              ticks={xAxisTicks}
             />
             <YAxis
               axisLine={false}
-              {...(yAxisLabel
-                ? { label: buildYAxisLabel(yAxisLabel, "insideLeft") }
-                : {})}
-              {...(yAxisDomain ? { domain: yAxisDomain } : {})}
+              domain={axisConfig.domain}
+              label={buildYAxisLabel(yAxisLabel ?? "", "insideLeft")}
               tick={UI_CHART_STYLES.axisTickMuted}
               tickFormatter={yAxisFormatter}
               tickLine={false}
-              width={56}
+              tickMargin={8}
+              ticks={axisConfig.ticks}
+              width={STANDARD_Y_AXIS_WIDTH}
+              yAxisId="left"
+            />
+            <YAxis
+              axisLine={false}
+              domain={axisConfig.domain}
+              orientation="right"
+              {...(yAxisLabel
+                ? { label: buildYAxisLabel(yAxisLabel, "insideRight") }
+                : {})}
+              tick={UI_CHART_STYLES.axisTickMuted}
+              tickFormatter={yAxisFormatter}
+              tickLine={false}
+              tickMargin={8}
+              ticks={axisConfig.ticks}
+              width={STANDARD_Y_AXIS_WIDTH}
+              yAxisId="right"
             />
             <Tooltip
               content={
@@ -1091,9 +1141,11 @@ export function SingleValueHistoryChart({
                 strokeDasharray="4 4"
                 strokeOpacity={0.8}
                 x={nowMarkerPeriodStart}
+                yAxisId="left"
               />
             ) : null}
             <Area
+              activeDot={false}
               dataKey="currentValue"
               fill={`url(#${gradientId})`}
               isAnimationActive={false}
@@ -1101,8 +1153,10 @@ export function SingleValueHistoryChart({
               stroke={accentColor}
               strokeWidth={3}
               type="monotone"
+              yAxisId="left"
             />
             <Area
+              activeDot={false}
               dataKey="futureValue"
               fill={`url(#${mutedGradientId})`}
               isAnimationActive={false}
@@ -1111,9 +1165,207 @@ export function SingleValueHistoryChart({
               strokeOpacity={0.35}
               strokeWidth={3}
               type="monotone"
+              yAxisId="left"
+            />
+            <Area
+              activeDot={false}
+              dataKey="rightAxisValue"
+              dot={false}
+              fill="transparent"
+              isAnimationActive={false}
+              legendType="none"
+              stroke="transparent"
+              type="monotone"
+              yAxisId="right"
             />
           </AreaChart>
-        )}
+          );
+        }}
+      </MeasuredChartContainer>
+    </div>
+  );
+}
+
+export function SingleValueBarHistoryChart({
+  accentColor,
+  emptyMessage,
+  headerAccessory,
+  label,
+  nowMarkerPeriodStart,
+  points,
+  showLegend = true,
+  tightYAxis = false,
+  valueFormatter,
+  yAxisLabel,
+  yAxisFormatter,
+}: {
+  accentColor: string;
+  emptyMessage: string;
+  headerAccessory?: ReactNode;
+  label: string;
+  nowMarkerPeriodStart: string | null;
+  points: SplitSingleValuePoint[];
+  showLegend?: boolean;
+  tightYAxis?: boolean;
+  valueFormatter: (value: number) => string;
+  yAxisLabel?: string;
+  yAxisFormatter: (value: number) => string;
+}) {
+  const chartData = points.map((point) => ({
+    displayValue: point.currentValue ?? point.futureValue,
+    periodStart: point.periodStart,
+    rightAxisValue: point.currentValue ?? point.futureValue,
+    currentValue: point.currentValue,
+    futureValue: point.futureValue,
+  }));
+  const hasValues = chartData.some(
+    (point) =>
+      typeof point.currentValue === "number" ||
+      typeof point.futureValue === "number",
+  );
+  const axisConfig = buildMirroredYAxis(
+    chartData.flatMap((point) => [point.currentValue, point.futureValue]),
+    undefined,
+    undefined,
+    !tightYAxis,
+    tightYAxis,
+  );
+
+  if (!hasValues) {
+    return <p className="text-sm leading-6 text-slate-400">{emptyMessage}</p>;
+  }
+
+  return (
+    <div className="space-y-2.5">
+      {showLegend || headerAccessory ? (
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          {showLegend ? (
+            <div className="flex flex-wrap gap-2 text-xs font-medium text-slate-300">
+              <LegendChip color={accentColor} label={label} />
+            </div>
+          ) : null}
+          {headerAccessory}
+        </div>
+      ) : null}
+      <MeasuredChartContainer className="h-[360px] min-w-0 w-full">
+        {({ height, width }) => {
+          const xAxisTicks = buildResponsiveDayTicks(
+            chartData.map((point) => point.periodStart),
+            width,
+          );
+
+          return (
+            <ComposedChart
+              data={chartData}
+              height={height}
+              margin={{
+                top: 16,
+                right: STANDARD_RIGHT_AXIS_MARGIN,
+                bottom: 0,
+                left: 8,
+              }}
+              barCategoryGap="14%"
+              width={width}
+            >
+              <CartesianGrid
+                stroke={UI_COLORS.chartGrid}
+                strokeDasharray="3 6"
+                vertical={false}
+              />
+              <XAxis
+                axisLine={false}
+                dataKey="periodStart"
+                interval={0}
+                minTickGap={28}
+                tick={UI_CHART_STYLES.axisTick}
+                tickFormatter={formatDayTick}
+                tickLine={false}
+                ticks={xAxisTicks}
+              />
+              <YAxis
+                axisLine={false}
+                domain={axisConfig.domain}
+                label={buildYAxisLabel(yAxisLabel ?? "", "insideLeft")}
+                tick={UI_CHART_STYLES.axisTickMuted}
+                tickFormatter={yAxisFormatter}
+                tickLine={false}
+                tickMargin={8}
+                ticks={axisConfig.ticks}
+                width={STANDARD_Y_AXIS_WIDTH}
+                yAxisId="left"
+              />
+              <YAxis
+                axisLine={false}
+                domain={axisConfig.domain}
+                label={buildYAxisLabel(yAxisLabel ?? "", "insideRight")}
+                orientation="right"
+                tick={UI_CHART_STYLES.axisTickMuted}
+                tickFormatter={yAxisFormatter}
+                tickLine={false}
+                tickMargin={8}
+                ticks={axisConfig.ticks}
+                width={STANDARD_Y_AXIS_WIDTH}
+                yAxisId="right"
+              />
+              <Tooltip
+                content={
+                  <HistoryTooltip
+                    formatter={valueFormatter}
+                    labelFormatter={formatTooltipTimestamp}
+                  />
+                }
+              />
+              {chartData
+                .filter((point) => isMidnightTickValue(point.periodStart))
+                .map((point) => (
+                  <ReferenceLine
+                    key={`bar-midnight-${point.periodStart}`}
+                    stroke={UI_COLORS.chartReference}
+                    strokeDasharray="3 5"
+                    x={point.periodStart}
+                  />
+                ))}
+              {nowMarkerPeriodStart ? (
+                <ReferenceLine
+                  label={buildNowLabel()}
+                  stroke={UI_COLORS.textPrimary}
+                  strokeDasharray="4 4"
+                  strokeOpacity={0.8}
+                  x={nowMarkerPeriodStart}
+                  yAxisId="left"
+                />
+              ) : null}
+              <Bar
+                dataKey="displayValue"
+                maxBarSize={12}
+                radius={[2, 2, 0, 0]}
+                yAxisId="left"
+              >
+                {chartData.map((point) => (
+                  <Cell
+                    key={`bar-value-${point.periodStart}`}
+                    fill={
+                      typeof point.currentValue === "number"
+                        ? `${accentColor}59`
+                        : `${accentColor}D1`
+                    }
+                  />
+                ))}
+              </Bar>
+              <Line
+                activeDot={false}
+                dataKey="rightAxisValue"
+                dot={false}
+                isAnimationActive={false}
+                legendType="none"
+                stroke="transparent"
+                strokeWidth={1}
+                type="monotone"
+                yAxisId="right"
+              />
+            </ComposedChart>
+          );
+        }}
       </MeasuredChartContainer>
     </div>
   );
@@ -1121,6 +1373,7 @@ export function SingleValueHistoryChart({
 
 export function SegmentedLineHistoryChart({
   emptyMessage,
+  headerAccessory,
   negativeColor,
   negativeLabel,
   nowMarkerPeriodStart,
@@ -1129,8 +1382,10 @@ export function SegmentedLineHistoryChart({
   positiveLabel,
   valueFormatter,
   yAxisFormatter,
+  yAxisLabel,
 }: {
   emptyMessage: string;
+  headerAccessory?: ReactNode;
   negativeColor: string;
   negativeLabel: string;
   nowMarkerPeriodStart: string | null;
@@ -1138,6 +1393,7 @@ export function SegmentedLineHistoryChart({
   positiveColor: string;
   positiveLabel: string;
   valueFormatter: (value: number) => string;
+  yAxisLabel?: string;
   yAxisFormatter: (value: number) => string;
 }) {
   const hasValues = points.some(
@@ -1153,6 +1409,7 @@ export function SegmentedLineHistoryChart({
   const chartPoints = points.map((point) => ({
     currentValue: point.currentValue,
     futureValue: point.futureValue,
+    rightAxisValue: point.currentValue ?? point.futureValue,
     timestampMs: new Date(point.periodStart).getTime(),
   }));
   const currentSegments = buildSegmentedLineSegments({
@@ -1173,19 +1430,30 @@ export function SegmentedLineHistoryChart({
     })),
     strokeOpacity: 0.35,
   });
-
+  const axisConfig = buildMirroredYAxis(
+    chartPoints.flatMap((point) => [point.currentValue, point.futureValue]),
+  );
   return (
     <div className="space-y-2.5">
-      <div className="flex flex-wrap gap-2 text-xs font-medium text-slate-300">
-        <LegendChip color={positiveColor} label={positiveLabel} />
-        <LegendChip color={negativeColor} label={negativeLabel} />
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-wrap gap-2 text-xs font-medium text-slate-300">
+          <LegendChip color={positiveColor} label={positiveLabel} />
+          <LegendChip color={negativeColor} label={negativeLabel} />
+        </div>
+        {headerAccessory}
       </div>
       <MeasuredChartContainer className="h-[360px] min-w-0 w-full">
-        {({ height, width }) => (
+        {({ height, width }) => {
+          const xAxisTicks = buildResponsiveDayTicks(
+            chartPoints.map((point) => point.timestampMs),
+            width,
+          );
+
+          return (
           <LineChart
             data={chartPoints}
             height={height}
-            margin={{ top: 12, right: 16, bottom: 0, left: 0 }}
+            margin={{ top: 12, right: STANDARD_RIGHT_AXIS_MARGIN, bottom: 0, left: 0 }}
             width={width}
           >
             <CartesianGrid
@@ -1197,23 +1465,44 @@ export function SegmentedLineHistoryChart({
               axisLine={false}
               dataKey="timestampMs"
               domain={["dataMin", "dataMax"]}
+              interval={0}
               minTickGap={28}
               tick={UI_CHART_STYLES.axisTick}
               tickFormatter={formatDayTick}
               tickLine={false}
+              ticks={xAxisTicks}
               type="number"
             />
             <YAxis
               axisLine={false}
+              domain={axisConfig.domain}
+              label={buildYAxisLabel(yAxisLabel ?? "", "insideLeft")}
               tick={UI_CHART_STYLES.axisTickMuted}
               tickFormatter={yAxisFormatter}
               tickLine={false}
-              width={60}
+              tickMargin={8}
+              ticks={axisConfig.ticks}
+              width={STANDARD_Y_AXIS_WIDTH}
+              yAxisId="left"
+            />
+            <YAxis
+              axisLine={false}
+              domain={axisConfig.domain}
+              orientation="right"
+              label={buildYAxisLabel(yAxisLabel ?? "", "insideRight")}
+              tick={UI_CHART_STYLES.axisTickMuted}
+              tickFormatter={yAxisFormatter}
+              tickLine={false}
+              tickMargin={8}
+              ticks={axisConfig.ticks}
+              width={STANDARD_Y_AXIS_WIDTH}
+              yAxisId="right"
             />
             <ReferenceLine
               stroke={UI_COLORS.chartZeroLine}
               strokeDasharray="4 6"
               y={0}
+              yAxisId="left"
             />
             {nowMarkerPeriodStart ? (
               <ReferenceLine
@@ -1222,6 +1511,7 @@ export function SegmentedLineHistoryChart({
                 strokeDasharray="4 4"
                 strokeOpacity={0.8}
                 x={new Date(nowMarkerPeriodStart).getTime()}
+                yAxisId="left"
               />
             ) : null}
             <Tooltip
@@ -1245,7 +1535,8 @@ export function SegmentedLineHistoryChart({
               legendType="none"
               stroke="transparent"
               strokeWidth={10}
-              type="linear"
+              type="monotone"
+              yAxisId="left"
             />
             <Line
               activeDot={false}
@@ -1256,7 +1547,20 @@ export function SegmentedLineHistoryChart({
               legendType="none"
               stroke="transparent"
               strokeWidth={10}
-              type="linear"
+              type="monotone"
+              yAxisId="left"
+            />
+            <Line
+              activeDot={false}
+              connectNulls={false}
+              dataKey="rightAxisValue"
+              dot={false}
+              isAnimationActive={false}
+              legendType="none"
+              stroke="transparent"
+              strokeWidth={1}
+              type="monotone"
+              yAxisId="right"
             />
             {currentSegments.map((segment) => (
               <Line
@@ -1271,7 +1575,8 @@ export function SegmentedLineHistoryChart({
                 stroke={segment.color}
                 strokeOpacity={segment.strokeOpacity}
                 strokeWidth={2.8}
-                type="linear"
+                type="monotone"
+                yAxisId="left"
               />
             ))}
             {futureSegments.map((segment) => (
@@ -1287,11 +1592,13 @@ export function SegmentedLineHistoryChart({
                 stroke={segment.color}
                 strokeOpacity={segment.strokeOpacity}
                 strokeWidth={2.8}
-                type="linear"
+                type="monotone"
+                yAxisId="left"
               />
             ))}
           </LineChart>
-        )}
+          );
+        }}
       </MeasuredChartContainer>
     </div>
   );
@@ -2016,6 +2323,53 @@ function getAvailableDays(archive: HistoryArchive): string[] {
   return [...dayKeys].sort();
 }
 
+export function getAvailableLocalDays(archive: HistoryArchive): string[] {
+  const dayKeys = new Set<string>();
+  const todayKey = getLocalDayKey(new Date());
+
+  for (const sample of archive.dynamicPriceSamples) {
+    const dayKey = getLocalDayKey(sample.periodStart);
+
+    if (dayKey <= todayKey) {
+      dayKeys.add(dayKey);
+    }
+  }
+
+  for (const sample of archive.solarForecastSamples) {
+    const dayKey = getLocalDayKey(sample.periodStart);
+
+    if (dayKey <= todayKey) {
+      dayKeys.add(dayKey);
+    }
+  }
+
+  for (const sample of archive.solarEnergyProviderSamples) {
+    const dayKey = getLocalDayKey(sample.periodStart);
+
+    if (dayKey <= todayKey) {
+      dayKeys.add(dayKey);
+    }
+  }
+
+  for (const sample of archive.p1MeterSamples) {
+    const dayKey = getLocalDayKey(sample.periodStart);
+
+    if (dayKey <= todayKey) {
+      dayKeys.add(dayKey);
+    }
+  }
+
+  for (const sample of archive.batteryPowerSamples) {
+    const dayKey = getLocalDayKey(sample.periodStart);
+
+    if (dayKey <= todayKey) {
+      dayKeys.add(dayKey);
+    }
+  }
+
+  return [...dayKeys].sort();
+}
+
 function createSingleValueSeries(
   points: SingleValuePoint[],
 ): SingleValuePoint[] {
@@ -2181,11 +2535,11 @@ export function fillSingleValueDay(
 ): SingleValuePoint[] {
   const valuesByPeriod = new Map(
     points
-      .filter((point) => getUtcDayKey(point.periodStart) === dayKey)
+      .filter((point) => getLocalDayKey(point.periodStart) === dayKey)
       .map((point) => [point.periodStart, point.value] as const),
   );
 
-  return createDayPeriods(dayKey).map((periodStart) => ({
+  return createLocalDayPeriods(dayKey).map((periodStart) => ({
     periodStart,
     value: valuesByPeriod.get(periodStart) ?? null,
   }));
@@ -2197,11 +2551,11 @@ export function fillSignedDay(
 ): SignedValuePoint[] {
   const valuesByPeriod = new Map(
     points
-      .filter((point) => getUtcDayKey(point.periodStart) === dayKey)
+      .filter((point) => getLocalDayKey(point.periodStart) === dayKey)
       .map((point) => [point.periodStart, point] as const),
   );
 
-  return createDayPeriods(dayKey).map((periodStart) => {
+  return createLocalDayPeriods(dayKey).map((periodStart) => {
     const existing = valuesByPeriod.get(periodStart);
 
     return (
@@ -2356,7 +2710,7 @@ function createDayPeriods(dayKey: string): string[] {
   );
 }
 
-function formatDayTick(value: string | number): string {
+export function formatDayTick(value: string | number): string {
   return new Intl.DateTimeFormat(undefined, {
     hour: "2-digit",
     minute: "2-digit",
@@ -2430,6 +2784,280 @@ function formatBatteryHistoryValue(value: number, key?: string): string {
 
 export function getUtcDayKey(value: Date | string): string {
   return new Date(value).toISOString().slice(0, 10);
+}
+
+export function getLocalDayKey(value: Date | string): string {
+  const date = new Date(value);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+export function getTodayLocalDayKey(): string {
+  return getLocalDayKey(new Date());
+}
+
+function createLocalDayPeriods(dayKey: string): string[] {
+  const parts = dayKey.split("-");
+  if (parts.length !== 3) return [];
+  const year = Number(parts[0]);
+  const month = Number(parts[1]);
+  const day = Number(parts[2]);
+  if (Number.isNaN(year) || Number.isNaN(month) || Number.isNaN(day)) return [];
+  const startMs = new Date(year, month - 1, day, 0, 0, 0, 0).getTime();
+  const endMs = new Date(year, month - 1, day + 1, 0, 0, 0, 0).getTime();
+
+  const periods: string[] = [];
+
+  for (let periodStartMs = startMs; periodStartMs < endMs; periodStartMs += HISTORY_STEP_MS) {
+    periods.push(new Date(periodStartMs).toISOString());
+  }
+
+  return periods;
+}
+
+export function buildMirroredYAxis(
+  values: Array<number | null | undefined>,
+  domainOverride?: [number, number],
+  tickCount = STANDARD_Y_AXIS_TICK_COUNT,
+  includeZero = true,
+  useExactDomain = false,
+): { domain: [number, number]; ticks: number[] } {
+  if (domainOverride) {
+    return buildYAxisFromDomain(domainOverride, tickCount);
+  }
+
+  const numericValues = values.filter(
+    (value): value is number => typeof value === "number" && Number.isFinite(value),
+  );
+
+  if (numericValues.length === 0) {
+    return buildYAxisFromDomain([0, 1], tickCount);
+  }
+
+  let minimum = Math.min(...numericValues);
+  let maximum = Math.max(...numericValues);
+
+  if (includeZero) {
+    if (minimum > 0) {
+      minimum = 0;
+    }
+
+    if (maximum < 0) {
+      maximum = 0;
+    }
+  }
+
+  if (minimum === maximum) {
+    if (minimum === 0) {
+      maximum = 1;
+    } else if (minimum > 0) {
+      minimum = 0;
+    } else {
+      maximum = 0;
+    }
+  }
+
+  if (useExactDomain) {
+    return buildExactYAxisFromDomain([minimum, maximum], tickCount);
+  }
+
+  return buildYAxisFromDomain([minimum, maximum], tickCount);
+}
+
+export function buildResponsiveDayTicks<T extends string | number>(
+  values: T[],
+  chartWidth: number,
+): T[] {
+  const hourStep = getResponsiveHourStep(chartWidth);
+  const hourCandidates = values.filter(
+    (value) => isHourTickValue(value) && isStepAlignedHour(value, hourStep),
+  );
+
+  if (hourCandidates.length > 0) {
+    return buildXAxisTicks(hourCandidates, hourCandidates.length, [
+      values[0],
+      values.find((value) => isMidnightTickValue(value)),
+    ]);
+  }
+
+  return buildXAxisTicks(values, getResponsiveTickCount(chartWidth), [
+    values[0],
+    values.find((value) => isMidnightTickValue(value)),
+  ]);
+}
+
+function buildXAxisTicks<T extends string | number>(
+  values: T[],
+  count = 7,
+  requiredValues: Array<T | undefined> = [],
+): T[] {
+  if (values.length === 0) {
+    return [];
+  }
+
+  const tickValues = new Map<number, T>();
+
+  for (const value of requiredValues) {
+    if (value !== undefined) {
+      tickValues.set(getXAxisTimestamp(value), value);
+    }
+  }
+
+  for (const index of buildTickIndexes(values.length, count)) {
+    const value = values[index];
+
+    if (value !== undefined) {
+      tickValues.set(getXAxisTimestamp(value), value);
+    }
+  }
+
+  return [...tickValues.entries()]
+    .sort((left, right) => left[0] - right[0])
+    .map(([, value]) => value);
+}
+
+function getResponsiveTickCount(chartWidth: number): number {
+  const usableWidth = Math.max(0, chartWidth - STANDARD_Y_AXIS_WIDTH * 2);
+
+  return Math.max(3, Math.min(8, Math.floor(usableWidth / 84)));
+}
+
+function getResponsiveHourStep(chartWidth: number): number {
+  const usableWidth = Math.max(0, chartWidth - STANDARD_Y_AXIS_WIDTH * 2);
+
+  if (usableWidth >= 860) {
+    return 2;
+  }
+
+  if (usableWidth >= 700) {
+    return 3;
+  }
+
+  if (usableWidth >= 580) {
+    return 4;
+  }
+
+  if (usableWidth >= 460) {
+    return 5;
+  }
+
+  return 6;
+}
+
+function buildTickIndexes(length: number, count: number): number[] {
+  if (length <= count) {
+    return Array.from({ length }, (_, index) => index);
+  }
+
+  return Array.from({ length: count }, (_, index) =>
+    Math.min(length - 1, Math.round((index / (count - 1)) * (length - 1))),
+  );
+}
+
+function buildYAxisFromDomain(
+  domain: [number, number],
+  tickCount: number,
+): { domain: [number, number]; ticks: number[] } {
+  let [minimum, maximum] = domain;
+
+  if (minimum === maximum) {
+    maximum = minimum + 1;
+  }
+
+  const step = getNiceAxisStep(minimum, maximum, tickCount);
+  const domainMinimum = normalizeAxisValue(Math.floor(minimum / step) * step);
+  const domainMaximum = normalizeAxisValue(Math.ceil(maximum / step) * step);
+  const ticks: number[] = [];
+
+  for (
+    let value = domainMinimum;
+    value <= domainMaximum + step / 2;
+    value += step
+  ) {
+    ticks.push(normalizeAxisValue(value));
+  }
+
+  return {
+    domain: [domainMinimum, domainMaximum],
+    ticks,
+  };
+}
+
+function buildExactYAxisFromDomain(
+  domain: [number, number],
+  tickCount: number,
+): { domain: [number, number]; ticks: number[] } {
+  let [minimum, maximum] = domain;
+
+  if (minimum === maximum) {
+    maximum = minimum + 1;
+  }
+
+  const step = (maximum - minimum) / Math.max(1, tickCount - 1);
+  const ticks = Array.from({ length: tickCount }, (_, index) =>
+    normalizeAxisValue(minimum + step * index),
+  );
+
+  return {
+    domain: [normalizeAxisValue(minimum), normalizeAxisValue(maximum)],
+    ticks,
+  };
+}
+
+function getNiceAxisStep(
+  minimum: number,
+  maximum: number,
+  tickCount: number,
+): number {
+  const range = Math.max(Math.abs(maximum - minimum), 1);
+  const roughStep = range / Math.max(1, tickCount - 1);
+  const exponent = Math.floor(Math.log10(roughStep));
+  const fraction = roughStep / 10 ** exponent;
+
+  let niceFraction: number;
+  if (fraction <= 1) {
+    niceFraction = 1;
+  } else if (fraction <= 2) {
+    niceFraction = 2;
+  } else if (fraction <= 5) {
+    niceFraction = 5;
+  } else {
+    niceFraction = 10;
+  }
+
+  return niceFraction * 10 ** exponent;
+}
+
+function normalizeAxisValue(value: number): number {
+  if (Math.abs(value) < 1e-9) {
+    return 0;
+  }
+
+  return Number(value.toFixed(10));
+}
+
+function getXAxisTimestamp(value: string | number): number {
+  return typeof value === "number" ? value : new Date(value).getTime();
+}
+
+function isHourTickValue(value: string | number): boolean {
+  const date = new Date(value);
+
+  return date.getMinutes() === 0;
+}
+
+function isStepAlignedHour(value: string | number, hourStep: number): boolean {
+  const date = new Date(value);
+
+  return date.getHours() % hourStep === 0;
+}
+
+function isMidnightTickValue(value: string | number): boolean {
+  const date = new Date(value);
+
+  return date.getHours() === 0 && date.getMinutes() === 0;
 }
 
 function deduplicateTooltipEntries(

@@ -1,6 +1,12 @@
 import type { ManagedDeviceState } from "@emsd/core";
 import type { BatteryTelemetrySample } from "../../discovery-types";
-import { getStringOrNumber, getStringValue, parseJsonObject, parseNullableNumber, matchesPatterns } from "../shared";
+import {
+  getStringOrNumber,
+  getStringValue,
+  parseJsonObject,
+  parseNullableNumber,
+  matchesPatterns,
+} from "../shared";
 import type { DiscoveryPlugin } from "../types";
 
 const responseMatch = [
