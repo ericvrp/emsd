@@ -32,9 +32,8 @@ import {
   refreshWeatherForecast,
   setBatteryEnabled,
   setBatteryMinimumDischargePercent,
-  setBatteryStrategy,
-  setBatteryStrategyPlan,
   setHouseStrategy,
+  setHouseStrategyPlan,
   setMeterEnabled,
   updateDynamicPriceSource,
   updateSite,
@@ -349,130 +348,6 @@ export async function setBatteryMinimumDischargePercentAction(
   }, "devices");
 }
 
-export async function setBatteryStrategyAction(
-  formData: FormData,
-): Promise<void> {
-  const siteId = stringValue(formData, "siteId");
-
-  return runAction(
-    async () => {
-      const batteryId = stringValue(formData, "batteryId");
-      const batteryName =
-        optionalStringValue(formData, "batteryName") ?? batteryId;
-      const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
-      const strategyMode = stringValue(formData, "strategyMode");
-      const manualState = optionalStringValue(formData, "manualState");
-      const manualPowerRaw = optionalStringValue(formData, "manualPowerW");
-      const manualChargeTargetSocRaw = optionalStringValue(
-        formData,
-        "manualChargeTargetSoc",
-      );
-      const manualDischargeTargetSocRaw = optionalStringValue(
-        formData,
-        "manualDischargeTargetSoc",
-      );
-      const manualModeActiveRaw = optionalStringValue(
-        formData,
-        "manualModeActive",
-      );
-      const manualTargetSocRaw = optionalStringValue(
-        formData,
-        "manualTargetSoc",
-      );
-      await setBatteryStrategy({
-        id: batteryId,
-        manualChargeTargetSoc:
-          manualChargeTargetSocRaw === null ||
-          manualChargeTargetSocRaw.length === 0
-            ? null
-            : Number(manualChargeTargetSocRaw),
-        manualDischargeTargetSoc:
-          manualDischargeTargetSocRaw === null ||
-          manualDischargeTargetSocRaw.length === 0
-            ? null
-            : Number(manualDischargeTargetSocRaw),
-        manualPowerW:
-          manualPowerRaw === null || manualPowerRaw.length === 0
-            ? null
-            : Number(manualPowerRaw),
-        manualState:
-          manualState === "idle" ||
-          manualState === "charging" ||
-          manualState === "discharging"
-            ? manualState
-            : null,
-        manualTargetSoc:
-          manualTargetSocRaw === null || manualTargetSocRaw.length === 0
-            ? null
-            : Number(manualTargetSocRaw),
-        manualModeActive: manualModeActiveRaw === "true",
-        siteId,
-        strategyMode:
-          strategyMode === "manual" ||
-          strategyMode === "self-consumption" ||
-          strategyMode === "auto"
-            ? strategyMode
-            : "auto",
-      });
-      return {
-        notice:
-          manualModeActiveRaw === "true"
-            ? `Applied manual mode for ${batteryName}.`
-            : `Updated strategy for ${batteryName}.`,
-        path: returnPath,
-        tab: null,
-      };
-    },
-    null,
-    optionalStringValue(formData, "returnPath") ?? "/",
-  );
-}
-
-export async function setBatteryStrategyPlanAction(
-  formData: FormData,
-): Promise<void> {
-  const siteId = stringValue(formData, "siteId");
-
-  return runAction(
-    async () => {
-      const batteryId = stringValue(formData, "batteryId");
-      const batteryName =
-        optionalStringValue(formData, "batteryName") ?? batteryId;
-      const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
-      const minimumDischargePercent = Number(
-        stringValue(formData, "minimumDischargePercent"),
-      );
-      const strategyPlanJson = stringValue(formData, "strategyPlanJson");
-      const strategyPlan = normalizeBatteryStrategyPlan({
-        minimumDischargePercent,
-        strategy: {
-          strategyMode: "self-consumption",
-          manualState: null,
-          manualPowerW: null,
-          manualChargeTargetSoc: 100,
-          manualDischargeTargetSoc: minimumDischargePercent,
-          manualTargetSoc: 100,
-        },
-        value: JSON.parse(strategyPlanJson) as BatteryStrategyPlanRecord,
-      });
-
-      await setBatteryStrategyPlan({
-        id: batteryId,
-        siteId,
-        strategyPlan,
-      });
-
-      return {
-        notice: `Applied schedule for ${batteryName}.`,
-        path: returnPath,
-        tab: null,
-      };
-    },
-    null,
-    optionalStringValue(formData, "returnPath") ?? "/",
-  );
-}
-
 export async function createMeterFromDiscoveryAction(
   formData: FormData,
 ): Promise<void> {
@@ -718,6 +593,47 @@ export async function setHouseStrategyAction(
           manualModeActiveRaw === "true"
             ? "Applied manual mode for all batteries."
             : "Updated strategy for all batteries.",
+        path: returnPath,
+        tab: null,
+      };
+    },
+    null,
+    optionalStringValue(formData, "returnPath") ?? "/",
+  );
+}
+
+export async function setHouseStrategyPlanAction(
+  formData: FormData,
+): Promise<void> {
+  const siteId = stringValue(formData, "siteId");
+
+  return runAction(
+    async () => {
+      const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
+      const minimumDischargePercent = Number(
+        stringValue(formData, "minimumDischargePercent"),
+      );
+      const strategyPlanJson = stringValue(formData, "strategyPlanJson");
+      const strategyPlan = normalizeBatteryStrategyPlan({
+        minimumDischargePercent,
+        strategy: {
+          strategyMode: "self-consumption",
+          manualState: null,
+          manualPowerW: null,
+          manualChargeTargetSoc: 100,
+          manualDischargeTargetSoc: minimumDischargePercent,
+          manualTargetSoc: 100,
+        },
+        value: JSON.parse(strategyPlanJson) as BatteryStrategyPlanRecord,
+      });
+
+      await setHouseStrategyPlan({
+        siteId,
+        strategyPlan,
+      });
+
+      return {
+        notice: "Applied schedule for all batteries.",
         path: returnPath,
         tab: null,
       };

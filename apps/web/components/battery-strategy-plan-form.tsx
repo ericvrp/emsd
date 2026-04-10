@@ -19,7 +19,7 @@ import {
   Zap,
 } from "lucide-react";
 import { useState } from "react";
-import { setBatteryStrategyPlanAction } from "../app/actions";
+import { setHouseStrategyPlanAction } from "../app/actions";
 import { UI_STYLES } from "../lib/ui-colors";
 import { SubmitButton } from "./submit-button";
 import { Button } from "./ui/button";
@@ -36,7 +36,7 @@ import {
 type StrategyAction = "self-consumption" | BatteryManualState;
 
 interface BatteryStrategyPlanFormProps {
-  action?: typeof setBatteryStrategyPlanAction;
+  action?: typeof setHouseStrategyPlanAction;
   batteryId: string;
   batteryName?: string;
   minimumDischargePercent: number;
@@ -47,7 +47,7 @@ interface BatteryStrategyPlanFormProps {
 }
 
 export function BatteryStrategyPlanForm({
-  action = setBatteryStrategyPlanAction,
+  action = setHouseStrategyPlanAction,
   batteryId,
   batteryName,
   minimumDischargePercent,

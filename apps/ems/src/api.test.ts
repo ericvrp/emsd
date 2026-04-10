@@ -211,7 +211,7 @@ test("api history archive returns stored battery, price, and forecast data", asy
   expect(archive.dynamicPriceSamples).toHaveLength(1);
 });
 
-test("battery-set-strategy-plan applies the fallback and skips earlier same-day items", async () => {
+test("house-strategy-plan-set applies the fallback and skips earlier same-day items", async () => {
   const databasePath = createTempDatabase();
   const fetchCalls: string[] = [];
   const now = new Date();
@@ -262,8 +262,7 @@ test("battery-set-strategy-plan applies the fallback and skips earlier same-day 
     databasePath,
   );
 
-  await runApiAction("battery-set-strategy-plan", {
-    id: "battery-1",
+  await runApiAction("house-strategy-plan-set", {
     siteId: "home",
     strategyPlan: [
       {

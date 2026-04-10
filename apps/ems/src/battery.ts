@@ -16,7 +16,6 @@ import {
   getBattery,
   listBatteries,
   setBatteryEnabled,
-  setBatteryStrategy,
 } from "./managed-site-store";
 
 interface BatteryAddOptions {
@@ -28,21 +27,10 @@ interface BatteryCommandOptions {
   siteId: string;
 }
 
-interface BatteryStrategySetOptions extends BatteryCommandOptions {
-  manualChargeTargetSoc: number | null;
-  manualDischargeTargetSoc: number | null;
-  manualPowerW: number | null;
-  manualState: BatteryManualState | null;
-  manualTargetSoc: number | null;
-  strategyMode: BatteryStrategyMode;
-}
-
 interface ResolvedDiscoveredDevice {
   device: DiscoveredDevice | null;
   errorMessage: string | null;
 }
-
-const MAX_MANUAL_POWER_W = 2400;
 
 export function formatBatteryHelpText(): string {
   return [
@@ -57,8 +45,6 @@ export function formatBatteryHelpText(): string {
     "  battery rm <battery-id> --site-id <site-id>",
     "  battery enable <battery-id> --site-id <site-id>",
     "  battery disable <battery-id> --site-id <site-id>",
-    "  battery strategy get <battery-id> --site-id <site-id>",
-    "  battery strategy set <battery-id> --site-id <site-id> --mode <manual|self-consumption|auto> [--state <idle|charging|discharging>] [--power <watts>] [--target-soc <percent>] [--charge-target-soc <percent>] [--discharge-target-soc <percent>]",
   ].join("\n");
 }
 
@@ -150,10 +136,6 @@ export async function runBatteryCommand(args: string[] = []): Promise<number> {
         ),
       );
       return 0;
-    }
-
-    if (args[0] === "strategy") {
-      return runBatteryStrategyCommand(args.slice(1));
     }
 
     if (args[0] === "add" || args[0] === "create") {
@@ -256,107 +238,6 @@ export async function runBatteryCommand(args: string[] = []): Promise<number> {
   }
 }
 
-async function runBatteryStrategyCommand(args: string[]): Promise<number> {
-  if (args[0] === "get") {
-    const id = args[1];
-
-    if (!id) {
-      throw new Error("Missing battery id for strategy get");
-    }
-
-    const options = parseBatteryCommandOptions(args.slice(2));
-    const battery = getBattery(id, options.siteId);
-
-    if (!battery) {
-      throw new Error(`Managed battery not found: ${id}`);
-    }
-
-    console.log(
-      JSON.stringify(
-        {
-          id: battery.id,
-          manualChargeTargetSoc: battery.manualChargeTargetSoc,
-          manualDischargeTargetSoc: battery.manualDischargeTargetSoc,
-          manualPowerW: battery.manualPowerW,
-          manualState: battery.manualState,
-          manualTargetSoc: battery.manualTargetSoc,
-          strategyMode: battery.strategyMode,
-        },
-        null,
-        2,
-      ),
-    );
-    return 0;
-  }
-
-  if (args[0] === "set") {
-    const id = args[1];
-
-    if (!id) {
-      throw new Error("Missing battery id for strategy set");
-    }
-
-    const options = parseBatteryStrategySetOptions(args.slice(2));
-    const battery = getBattery(id, options.siteId);
-
-    if (!battery) {
-      throw new Error(`Managed battery not found: ${id}`);
-    }
-
-    const plugin = createBatteryPlugin(battery);
-
-    if (!plugin.supportsStrategy(options.strategyMode)) {
-      throw new Error(
-        `Battery strategy '${options.strategyMode}' is not supported yet`,
-      );
-    }
-
-    await plugin.setStrategy({
-      manualChargeTargetSoc:
-        options.manualChargeTargetSoc ?? battery.manualChargeTargetSoc,
-      manualDischargeTargetSoc:
-        options.manualDischargeTargetSoc ?? battery.manualDischargeTargetSoc,
-      strategyMode: options.strategyMode,
-      manualPowerW: options.manualPowerW,
-      manualState: options.manualState,
-      manualTargetSoc: options.manualTargetSoc,
-    });
-
-    const updated = setBatteryStrategy(
-      id,
-      {
-        strategyMode: options.strategyMode,
-        manualChargeTargetSoc:
-          options.manualChargeTargetSoc ?? battery.manualChargeTargetSoc,
-        manualDischargeTargetSoc:
-          options.manualDischargeTargetSoc ?? battery.manualDischargeTargetSoc,
-        manualPowerW:
-          options.strategyMode === "manual"
-            ? clampManualPowerW(options.manualPowerW)
-            : battery.manualPowerW,
-        manualState:
-          options.strategyMode === "manual"
-            ? (options.manualState ?? battery.manualState ?? "idle")
-            : battery.manualState,
-        manualTargetSoc:
-          options.strategyMode === "manual"
-            ? (options.manualTargetSoc ?? battery.manualTargetSoc ?? 100)
-            : battery.manualTargetSoc,
-      },
-      options.siteId,
-    );
-
-    if (!updated) {
-      throw new Error(`Managed battery not found: ${id}`);
-    }
-
-    console.log(JSON.stringify(updated, null, 2));
-    return 0;
-  }
-
-  throw new Error(`Unknown battery strategy command: ${args[0] ?? ""}`);
-}
-
 function parseBatteryAddOptions(args: string[]): BatteryAddOptions {
   const options: BatteryAddOptions = {
     host: null,
@@ -396,133 +277,6 @@ function parseBatteryAddOptions(args: string[]): BatteryAddOptions {
 function parseBatteryCommandOptions(args: string[]): BatteryCommandOptions {
   return {
     siteId: parseRequiredSiteId(args),
-  };
-}
-
-function parseBatteryStrategySetOptions(
-  args: string[],
-): BatteryStrategySetOptions {
-  const siteId = parseRequiredSiteId(args);
-  let strategyMode: BatteryStrategyMode | null = null;
-  let manualChargeTargetSoc: number | null = null;
-  let manualDischargeTargetSoc: number | null = null;
-  let manualState: BatteryManualState | null = null;
-  let manualPowerW: number | null = null;
-  let manualTargetSoc: number | null = null;
-
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-
-    if (arg === "--site-id") {
-      index += 1;
-      continue;
-    }
-
-    if (arg === "--mode") {
-      const value = args[index + 1];
-
-      if (
-        value !== "manual" &&
-        value !== "self-consumption" &&
-        value !== "auto"
-      ) {
-        throw new Error(`Unsupported battery strategy mode: ${value ?? ""}`);
-      }
-
-      strategyMode = value;
-      index += 1;
-      continue;
-    }
-
-    if (arg === "--state") {
-      const value = args[index + 1];
-
-      if (value !== "idle" && value !== "charging" && value !== "discharging") {
-        throw new Error(`Unsupported manual battery state: ${value ?? ""}`);
-      }
-
-      manualState = value;
-      index += 1;
-      continue;
-    }
-
-    if (arg === "--power") {
-      manualPowerW = parseIntegerOption(args[index + 1], "--power");
-      index += 1;
-      continue;
-    }
-
-    if (arg === "--target-soc") {
-      manualTargetSoc = parseIntegerOption(args[index + 1], "--target-soc");
-      index += 1;
-      continue;
-    }
-
-    if (arg === "--charge-target-soc") {
-      manualChargeTargetSoc = parseIntegerOption(
-        args[index + 1],
-        "--charge-target-soc",
-      );
-      index += 1;
-      continue;
-    }
-
-    if (arg === "--discharge-target-soc") {
-      manualDischargeTargetSoc = parseIntegerOption(
-        args[index + 1],
-        "--discharge-target-soc",
-      );
-      index += 1;
-      continue;
-    }
-
-    throw new Error(`Unknown battery strategy option: ${arg}`);
-  }
-
-  if (!strategyMode) {
-    throw new Error(
-      "Missing required option: --mode <manual|self-consumption|auto>",
-    );
-  }
-
-  if (strategyMode === "manual") {
-    if (!manualState) {
-      throw new Error(
-        "Missing required option for manual mode: --state <idle|charging|discharging>",
-      );
-    }
-
-    if (manualState !== "idle" && manualPowerW === null) {
-      throw new Error(
-        "Missing required option for manual mode: --power <watts>",
-      );
-    }
-
-    if (
-      manualPowerW !== null &&
-      (manualPowerW < 0 || manualPowerW > MAX_MANUAL_POWER_W)
-    ) {
-      throw new Error(
-        `Manual power must be between 0 and ${MAX_MANUAL_POWER_W} W`,
-      );
-    }
-  }
-
-  if (
-    manualTargetSoc !== null &&
-    (manualTargetSoc < 5 || manualTargetSoc > 100)
-  ) {
-    throw new Error("Target SoC must be between 5 and 100");
-  }
-
-  return {
-    siteId,
-    manualChargeTargetSoc,
-    manualDischargeTargetSoc,
-    strategyMode,
-    manualPowerW,
-    manualState,
-    manualTargetSoc,
   };
 }
 
@@ -634,14 +388,6 @@ function inferBatteryPowerW(details: string): number | null {
 
   const parsed = Number(matchedPower);
   return Number.isFinite(parsed) ? Math.abs(parsed) : null;
-}
-
-function clampManualPowerW(value: number | null): number | null {
-  if (value === null) {
-    return null;
-  }
-
-  return Math.max(0, Math.min(MAX_MANUAL_POWER_W, Math.round(value)));
 }
 
 function parseIntegerOption(value: string | undefined, label: string): number {

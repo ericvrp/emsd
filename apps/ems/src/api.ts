@@ -69,9 +69,8 @@ import {
   listWeatherForecastSources,
   setBatteryEnabled,
   setBatteryMinimumDischargePercent,
-  setBatteryStrategy,
-  setBatteryStrategyPlan,
   setHouseStrategy,
+  setHouseStrategyPlan,
   setMeterEnabled,
   updateDynamicPriceSource,
   updateSite,
@@ -678,139 +677,6 @@ export async function runApiAction(
       return toManagedDeviceRecord(battery);
     }
 
-    case "battery-set-strategy": {
-      const batteryId = requireString(input.id, "id");
-      const siteId = requireString(input.siteId, "siteId");
-      const existing = getBattery(batteryId, siteId);
-
-      if (!existing) {
-        throw new Error(`Managed battery not found: ${batteryId}`);
-      }
-
-      const strategyMode =
-        input.strategyMode === "manual" ||
-        input.strategyMode === "self-consumption" ||
-        input.strategyMode === "auto"
-          ? input.strategyMode
-          : existing.strategyMode;
-      const manualState =
-        input.manualState === "idle" ||
-        input.manualState === "charging" ||
-        input.manualState === "discharging"
-          ? input.manualState
-          : input.manualState === null
-            ? null
-            : existing.manualState;
-      const manualPowerW =
-        typeof input.manualPowerW === "number"
-          ? input.manualPowerW
-          : existing.manualPowerW;
-      const manualChargeTargetSoc =
-        typeof input.manualChargeTargetSoc === "number"
-          ? input.manualChargeTargetSoc
-          : existing.manualChargeTargetSoc;
-      const manualDischargeTargetSoc =
-        typeof input.manualDischargeTargetSoc === "number"
-          ? input.manualDischargeTargetSoc
-          : existing.manualDischargeTargetSoc;
-      const manualTargetSoc =
-        typeof input.manualTargetSoc === "number"
-          ? clampManualTargetSoc(
-              input.manualTargetSoc,
-              manualState,
-              existing.minimumDischargePercent,
-            )
-          : clampNullableManualTargetSoc(
-              resolveManualTargetSoc({
-                manualState,
-                manualChargeTargetSoc,
-                manualDischargeTargetSoc,
-              }) ?? existing.manualTargetSoc,
-              manualState,
-              existing.minimumDischargePercent,
-            );
-
-      await createBatteryPlugin(existing).setStrategy({
-        manualChargeTargetSoc,
-        manualDischargeTargetSoc,
-        strategyMode,
-        manualPowerW,
-        manualState,
-        manualTargetSoc,
-      });
-
-      const updated = setBatteryStrategy(
-        batteryId,
-        {
-          manualChargeTargetSoc,
-          manualDischargeTargetSoc,
-          manualPowerW,
-          manualState,
-          manualTargetSoc,
-          manualModeActive: input.manualModeActive === true,
-          strategyMode,
-        },
-        siteId,
-      );
-
-      if (!updated) {
-        throw new Error(`Managed battery not found: ${batteryId}`);
-      }
-
-      return toManagedDeviceRecord(updated);
-    }
-
-    case "battery-set-strategy-plan": {
-      const batteryId = requireString(input.id, "id");
-      const siteId = requireString(input.siteId, "siteId");
-      const existing = getBattery(batteryId, siteId);
-
-      if (!existing) {
-        throw new Error(`Managed battery not found: ${batteryId}`);
-      }
-
-      const strategyPlan = normalizeBatteryStrategyPlan({
-        minimumDischargePercent: existing.minimumDischargePercent,
-        strategy: {
-          strategyMode: existing.strategyMode,
-          manualState: existing.manualState,
-          manualPowerW: existing.manualPowerW,
-          manualChargeTargetSoc: existing.manualChargeTargetSoc,
-          manualDischargeTargetSoc: existing.manualDischargeTargetSoc,
-          manualTargetSoc: existing.manualTargetSoc,
-        },
-        value: Array.isArray(input.strategyPlan)
-          ? (input.strategyPlan as BatteryStrategyPlanRecord)
-          : [],
-      });
-      const strategy = resolveBatteryStrategyFromPlanItem({
-        item: strategyPlan[0],
-        minimumDischargePercent: existing.minimumDischargePercent,
-      });
-      const strategyRuntime = createBatteryStrategyRuntimeForPlanApply(
-        strategyPlan,
-        new Date(),
-      );
-
-      await createBatteryPlugin(existing).setStrategy(strategy);
-
-      const updated = setBatteryStrategyPlan(
-        batteryId,
-        {
-          strategy,
-          strategyPlan,
-          strategyRuntime,
-        },
-        siteId,
-      );
-
-      if (!updated) {
-        throw new Error(`Managed battery not found: ${batteryId}`);
-      }
-
-      return toManagedDeviceRecord(updated);
-    }
-
     case "battery-delete": {
       const battery = deleteBattery(
         requireString(input.id, "id"),
@@ -890,6 +756,58 @@ export async function runApiAction(
           manualTargetSoc,
           manualModeActive: input.manualModeActive === true,
           strategyMode,
+        },
+        siteId,
+      );
+
+      return updated.map(toManagedDeviceRecord);
+    }
+
+    case "house-strategy-plan-set": {
+      const siteId = requireString(input.siteId, "siteId");
+      const batteries = listBatteries(siteId);
+
+      if (batteries.length === 0) {
+        throw new Error("No batteries found for this site");
+      }
+
+      const strategyPlan = Array.isArray(input.strategyPlan)
+        ? (input.strategyPlan as BatteryStrategyPlanRecord)
+        : [];
+
+      for (const battery of batteries) {
+        const normalizedPlan = normalizeBatteryStrategyPlan({
+          minimumDischargePercent: battery.minimumDischargePercent,
+          strategy: {
+            strategyMode: battery.strategyMode,
+            manualState: battery.manualState,
+            manualPowerW: battery.manualPowerW,
+            manualChargeTargetSoc: battery.manualChargeTargetSoc,
+            manualDischargeTargetSoc: battery.manualDischargeTargetSoc,
+            manualTargetSoc: battery.manualTargetSoc,
+          },
+          value: strategyPlan,
+        });
+
+        const strategy = resolveBatteryStrategyFromPlanItem({
+          item: normalizedPlan[0],
+          minimumDischargePercent: battery.minimumDischargePercent,
+        });
+
+        try {
+          await createBatteryPlugin(battery).setStrategy(strategy);
+        } catch {
+          // Continue with other batteries even if plugin fails
+        }
+      }
+
+      const updated = setHouseStrategyPlan(
+        {
+          strategyPlan,
+          strategyRuntime: createBatteryStrategyRuntimeForPlanApply(
+            strategyPlan,
+            new Date(),
+          ),
         },
         siteId,
       );

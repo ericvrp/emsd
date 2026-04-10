@@ -3107,10 +3107,7 @@ function buildNowLabel() {
   };
 }
 
-function buildYAxisLabel(
-  value: string,
-  position: "insideLeft" | "right",
-) {
+function buildYAxisLabel(value: string, position: "insideLeft" | "right") {
   return {
     angle: position === "insideLeft" ? -90 : 90,
     fill: UI_COLORS.chartTickMuted,

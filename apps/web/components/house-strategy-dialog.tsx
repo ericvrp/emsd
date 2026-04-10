@@ -7,7 +7,10 @@ import type {
 import { CalendarClock, Hand, X } from "lucide-react";
 import type { ComponentType } from "react";
 import { useEffect, useState } from "react";
-import { setHouseStrategyAction } from "../app/actions";
+import {
+  setHouseStrategyAction,
+  setHouseStrategyPlanAction,
+} from "../app/actions";
 import { BatteryStrategyForm } from "./battery-strategy-form";
 import { BatteryStrategyPlanForm } from "./battery-strategy-plan-form";
 import { Button } from "./ui/button";
@@ -181,27 +184,27 @@ export function HouseStrategyDialog({
                     {selectedMode === "manual" ? (
                       <div className="rounded-2xl border border-white/8 bg-slate-950/40 p-4">
                         <div className="space-y-4">
-                            <BatteryStrategyForm
-                              action={setHouseStrategyAction}
-                              batteryId="house"
-                              batteryName="All batteries"
-                              capacityWh={capacityWh}
-                              currentSocPercent={currentSocPercent}
-                              hideStrategySelector
-                              manualOnly
-                              manualModeActive={true}
-                              showContextSummary={false}
-                              minimumDischargePercent={minimumDischargePercent}
-                              returnPath="/"
-                              siteId={siteId}
-                              strategy={strategy}
-                              submitLabel="Save"
-                            />
+                          <BatteryStrategyForm
+                            action={setHouseStrategyAction}
+                            batteryId="house"
+                            batteryName="All batteries"
+                            capacityWh={capacityWh}
+                            currentSocPercent={currentSocPercent}
+                            hideStrategySelector
+                            manualOnly
+                            manualModeActive={true}
+                            showContextSummary={false}
+                            minimumDischargePercent={minimumDischargePercent}
+                            returnPath="/"
+                            siteId={siteId}
+                            strategy={strategy}
+                            submitLabel="Save"
+                          />
                         </div>
                       </div>
                     ) : (
                       <BatteryStrategyPlanForm
-                        action={setHouseStrategyAction}
+                        action={setHouseStrategyPlanAction}
                         batteryId="house"
                         batteryName="All batteries"
                         minimumDischargePercent={minimumDischargePercent}

@@ -58,40 +58,6 @@ test("battery commands require a persisted site and use it for CRUD", async () =
     );
 
     await expect(
-      runEms([
-        "battery",
-        "strategy",
-        "set",
-        created.id,
-        "--site-id",
-        "home",
-        "--mode",
-        "self-consumption",
-      ]),
-    ).resolves.toBe(0);
-    await expect(
-      runEms(["battery", "strategy", "get", created.id, "--site-id", "home"]),
-    ).resolves.toBe(0);
-    await expect(
-      runEms([
-        "battery",
-        "strategy",
-        "set",
-        created.id,
-        "--site-id",
-        "home",
-        "--mode",
-        "manual",
-        "--state",
-        "discharging",
-        "--power",
-        "2400",
-        "--target-soc",
-        "15",
-      ]),
-    ).resolves.toBe(0);
-
-    await expect(
       runEms(["battery", "disable", created.id, "--site-id", "home"]),
     ).resolves.toBe(0);
     await expect(
@@ -101,19 +67,10 @@ test("battery commands require a persisted site and use it for CRUD", async () =
       runEms(["battery", "delete", created.id, "--site-id", "home"]),
     ).resolves.toBe(0);
 
-    const selfConsumption = JSON.parse(output[3] ?? "{}");
-    const strategyGet = JSON.parse(output[4] ?? "{}");
-    const manual = JSON.parse(output[5] ?? "{}");
-    const disabled = JSON.parse(output[6] ?? "{}");
-    const enabled = JSON.parse(output[7] ?? "{}");
-    const removed = JSON.parse(output[8] ?? "{}");
+    const disabled = JSON.parse(output[3] ?? "{}");
+    const enabled = JSON.parse(output[4] ?? "{}");
+    const removed = JSON.parse(output[5] ?? "{}");
 
-    expect(selfConsumption.strategyMode).toBe("self-consumption");
-    expect(strategyGet.strategyMode).toBe("self-consumption");
-    expect(manual.strategyMode).toBe("manual");
-    expect(manual.manualState).toBe("discharging");
-    expect(manual.manualPowerW).toBe(2400);
-    expect(manual.manualTargetSoc).toBe(15);
     expect(disabled.enabled).toBe(false);
     expect(enabled.enabled).toBe(true);
     expect(removed.id).toBe(created.id);
@@ -164,39 +121,9 @@ test("battery commands support a sonnen battery plugin", async () => {
     await expect(
       runEms(["battery", "get", discoveryId ?? "", "--site-id", "home"]),
     ).resolves.toBe(0);
-    await expect(
-      runEms([
-        "battery",
-        "strategy",
-        "set",
-        discoveryId ?? "",
-        "--site-id",
-        "home",
-        "--mode",
-        "self-consumption",
-      ]),
-    ).resolves.toBe(0);
-    await expect(
-      runEms([
-        "battery",
-        "strategy",
-        "set",
-        discoveryId ?? "",
-        "--site-id",
-        "home",
-        "--mode",
-        "manual",
-        "--state",
-        "charging",
-        "--power",
-        "1400",
-      ]),
-    ).resolves.toBe(0);
 
     const created = JSON.parse(output[1] ?? "{}");
     const normalized = JSON.parse(output[2] ?? "{}");
-    const selfConsumption = JSON.parse(output[3] ?? "{}");
-    const manual = JSON.parse(output[4] ?? "{}");
 
     expect(created.model).toBe("sonnenbatterie");
     expect(created.status).toBe("discharging");
@@ -204,10 +131,6 @@ test("battery commands support a sonnen battery plugin", async () => {
     expect(normalized.capacityWh).toBe(9000);
     expect(normalized.currentW).toBe(1300);
     expect(normalized.socPercent).toBe(61);
-    expect(selfConsumption.strategyMode).toBe("self-consumption");
-    expect(manual.strategyMode).toBe("manual");
-    expect(manual.manualState).toBe("charging");
-    expect(manual.manualPowerW).toBe(1400);
   } finally {
     process.env.EMSD_DB_PATH = originalDatabasePath;
     process.env.SONNEN_BATTERY_AUTH_TOKEN = originalSonnenToken;
@@ -258,39 +181,9 @@ test("battery commands support a HomeWizard battery plugin", async () => {
     await expect(
       runEms(["battery", "get", discoveryId ?? "", "--site-id", "home"]),
     ).resolves.toBe(0);
-    await expect(
-      runEms([
-        "battery",
-        "strategy",
-        "set",
-        discoveryId ?? "",
-        "--site-id",
-        "home",
-        "--mode",
-        "self-consumption",
-      ]),
-    ).resolves.toBe(0);
-    await expect(
-      runEms([
-        "battery",
-        "strategy",
-        "set",
-        discoveryId ?? "",
-        "--site-id",
-        "home",
-        "--mode",
-        "manual",
-        "--state",
-        "discharging",
-        "--power",
-        "800",
-      ]),
-    ).resolves.toBe(0);
 
     const created = JSON.parse(output[1] ?? "{}");
     const normalized = JSON.parse(output[2] ?? "{}");
-    const selfConsumption = JSON.parse(output[3] ?? "{}");
-    const manual = JSON.parse(output[4] ?? "{}");
 
     expect(created.model).toBe("homewizard-battery");
     expect(created.status).toBe("discharging");
@@ -298,10 +191,6 @@ test("battery commands support a HomeWizard battery plugin", async () => {
     expect(normalized.capacityWh).toBeNull();
     expect(normalized.currentW).toBe(404);
     expect(normalized.socPercent).toBeNull();
-    expect(selfConsumption.strategyMode).toBe("self-consumption");
-    expect(manual.strategyMode).toBe("manual");
-    expect(manual.manualState).toBe("discharging");
-    expect(manual.manualPowerW).toBe(800);
   } finally {
     process.env.EMSD_DB_PATH = originalDatabasePath;
     process.env.HOMEWIZARD_BATTERY_AUTH_TOKEN = originalHomeWizardToken;

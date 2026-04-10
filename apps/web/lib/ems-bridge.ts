@@ -195,28 +195,6 @@ export function deleteBattery(input: { id: string; siteId: string }) {
   return runBridge<ManagedDeviceRecord>("battery-delete", input);
 }
 
-export function setBatteryStrategy(input: {
-  id: string;
-  manualChargeTargetSoc: number | null;
-  manualDischargeTargetSoc: number | null;
-  manualPowerW: number | null;
-  manualState: "idle" | "charging" | "discharging" | null;
-  manualTargetSoc: number | null;
-  manualModeActive?: boolean;
-  siteId: string;
-  strategyMode: "auto" | "manual" | "self-consumption";
-}) {
-  return runBridge<ManagedDeviceRecord>("battery-set-strategy", input);
-}
-
-export function setBatteryStrategyPlan(input: {
-  id: string;
-  siteId: string;
-  strategyPlan: BatteryStrategyPlanRecord;
-}) {
-  return runBridge<ManagedDeviceRecord>("battery-set-strategy-plan", input);
-}
-
 export function setHouseStrategy(input: {
   manualChargeTargetSoc: number | null;
   manualDischargeTargetSoc: number | null;
@@ -228,6 +206,13 @@ export function setHouseStrategy(input: {
   strategyMode: "auto" | "manual" | "self-consumption";
 }) {
   return runBridge<ManagedDeviceRecord[]>("house-strategy-set", input);
+}
+
+export function setHouseStrategyPlan(input: {
+  siteId: string;
+  strategyPlan: BatteryStrategyPlanRecord;
+}) {
+  return runBridge<ManagedDeviceRecord[]>("house-strategy-plan-set", input);
 }
 
 export function createMeterFromDiscovery(input: {

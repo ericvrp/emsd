@@ -761,70 +761,6 @@ export function getSolarEnergyProvider(
   }
 }
 
-export function setBatteryStrategy(
-  id: string,
-  input: UpdateBatteryStrategyInput,
-  siteId: string,
-  databasePath = getDatabasePath(),
-): BatteryRecord | null {
-  assertKnownSiteId(siteId, databasePath);
-  const db = openWritableDatabase(databasePath);
-
-  try {
-    assertWritableSchema(
-      db,
-      databasePath,
-      "batteries",
-      BATTERY_REQUIRED_COLUMNS,
-    );
-
-    const existing = getBatteryById(db, id, siteId);
-
-    if (!existing) {
-      return null;
-    }
-
-    const nextRuntime = stringifyBatteryStrategyRuntime(
-      clearActiveBatteryStrategyRuntime(existing.strategyRuntime),
-    );
-
-    db.query(
-      `
-        UPDATE batteries
-        SET
-          strategy_mode = ?2,
-          manual_state = ?3,
-          manual_power_w = ?4,
-          manual_charge_target_soc = ?5,
-          manual_discharge_target_soc = ?6,
-          manual_target_soc = ?7,
-          manual_mode_active = ?8,
-          manual_mode_started = ?9,
-          strategy_runtime_json = ?10,
-          updated_at = ?11
-        WHERE id = ?1 AND site_id = ?12
-      `,
-    ).run(
-      id,
-      input.strategyMode,
-      input.manualState ?? null,
-      input.manualPowerW ?? null,
-      input.manualChargeTargetSoc ?? null,
-      input.manualDischargeTargetSoc ?? null,
-      input.manualTargetSoc ?? null,
-      input.manualModeActive === true ? 1 : 0,
-      0,
-      nextRuntime,
-      new Date().toISOString(),
-      siteId,
-    );
-
-    return getBatteryByIdOrThrow(db, id, siteId);
-  } finally {
-    db.close();
-  }
-}
-
 export function setHouseStrategy(
   input: UpdateBatteryStrategyInput,
   siteId: string,
@@ -890,12 +826,11 @@ export function setHouseStrategy(
   }
 }
 
-export function setBatteryStrategyPlan(
-  id: string,
+export function setHouseStrategyPlan(
   input: UpdateBatteryStrategyPlanInput,
   siteId: string,
   databasePath = getDatabasePath(),
-): BatteryRecord | null {
+): BatteryRecord[] {
   assertKnownSiteId(siteId, databasePath);
   const db = openWritableDatabase(databasePath);
 
@@ -907,59 +842,61 @@ export function setBatteryStrategyPlan(
       BATTERY_REQUIRED_COLUMNS,
     );
 
-    const existing = getBatteryById(db, id, siteId);
+    const batteries = readBatteries(db, siteId);
 
-    if (!existing) {
-      return null;
+    if (batteries.length === 0) {
+      return [];
     }
 
-    const strategy = input.strategy ?? {
-      strategyMode: existing.strategyMode,
-      manualState: existing.manualState,
-      manualPowerW: existing.manualPowerW,
-      manualChargeTargetSoc: existing.manualChargeTargetSoc,
-      manualDischargeTargetSoc: existing.manualDischargeTargetSoc,
-      manualTargetSoc: existing.manualTargetSoc,
-    };
-    const strategyRuntime =
-      input.strategyRuntime ?? createBatteryStrategyRuntime();
+    for (const battery of batteries) {
+      const strategy = input.strategy ?? {
+        strategyMode: battery.strategyMode,
+        manualState: battery.manualState,
+        manualPowerW: battery.manualPowerW,
+        manualChargeTargetSoc: battery.manualChargeTargetSoc,
+        manualDischargeTargetSoc: battery.manualDischargeTargetSoc,
+        manualTargetSoc: battery.manualTargetSoc,
+      };
+      const strategyRuntime =
+        input.strategyRuntime ?? createBatteryStrategyRuntime();
 
-    db.query(
-      `
-        UPDATE batteries
-        SET
-          strategy_plan_json = ?2,
-          strategy_mode = ?3,
-          manual_state = ?4,
-          manual_power_w = ?5,
-          manual_charge_target_soc = ?6,
-          manual_discharge_target_soc = ?7,
-          manual_target_soc = ?8,
-          strategy_runtime_json = ?9,
-          manual_mode_active = 0,
-          manual_mode_started = 0,
-          updated_at = ?10
-        WHERE id = ?1 AND site_id = ?11
-      `,
-    ).run(
-      id,
-      stringifyBatteryStrategyPlan(
-        input.strategyPlan,
-        strategy,
-        existing.minimumDischargePercent,
-      ),
-      strategy.strategyMode,
-      strategy.manualState ?? null,
-      strategy.manualPowerW ?? null,
-      strategy.manualChargeTargetSoc ?? null,
-      strategy.manualDischargeTargetSoc ?? null,
-      strategy.manualTargetSoc ?? null,
-      stringifyBatteryStrategyRuntime(strategyRuntime),
-      new Date().toISOString(),
-      siteId,
-    );
+      db.query(
+        `
+          UPDATE batteries
+          SET
+            strategy_plan_json = ?2,
+            strategy_mode = ?3,
+            manual_state = ?4,
+            manual_power_w = ?5,
+            manual_charge_target_soc = ?6,
+            manual_discharge_target_soc = ?7,
+            manual_target_soc = ?8,
+            strategy_runtime_json = ?9,
+            manual_mode_active = 0,
+            manual_mode_started = 0,
+            updated_at = ?10
+          WHERE id = ?1 AND site_id = ?11
+        `,
+      ).run(
+        battery.id,
+        stringifyBatteryStrategyPlan(
+          input.strategyPlan,
+          strategy,
+          battery.minimumDischargePercent,
+        ),
+        strategy.strategyMode,
+        strategy.manualState ?? null,
+        strategy.manualPowerW ?? null,
+        strategy.manualChargeTargetSoc ?? null,
+        strategy.manualDischargeTargetSoc ?? null,
+        strategy.manualTargetSoc ?? null,
+        stringifyBatteryStrategyRuntime(strategyRuntime),
+        new Date().toISOString(),
+        siteId,
+      );
+    }
 
-    return getBatteryByIdOrThrow(db, id, siteId);
+    return readBatteries(db, siteId);
   } finally {
     db.close();
   }

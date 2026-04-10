@@ -3,7 +3,7 @@
 import type { BatteryManualState, BatteryStrategyRecord } from "@emsd/core";
 import { Save } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { setBatteryStrategyAction } from "../app/actions";
+import { setHouseStrategyAction } from "../app/actions";
 import { SubmitButton } from "./submit-button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -16,7 +16,7 @@ import {
 } from "./ui/select";
 
 interface BatteryStrategyFormProps {
-  action?: typeof setBatteryStrategyAction;
+  action?: typeof setHouseStrategyAction;
   batteryId: string;
   batteryName?: string;
   capacityWh: number | null;
@@ -36,7 +36,7 @@ type TargetMethod = "soc" | "duration" | "end-time";
 type ManualModeAction = "self-consumption" | BatteryManualState;
 
 export function BatteryStrategyForm({
-  action = setBatteryStrategyAction,
+  action = setHouseStrategyAction,
   batteryId,
   batteryName,
   capacityWh,
