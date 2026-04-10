@@ -54,7 +54,8 @@ export function HomeBatteryHistorySection({
         </div>
         <SectionSummaryCard title="Current battery">
           <p className="text-2xl font-semibold text-white sm:text-3xl">
-            {formatCharge(currentChargePercent)} • {formatPower(currentPowerW, currentState)}
+            {formatCharge(currentChargePercent)} •{" "}
+            {formatPower(currentPowerW, currentState)}
           </p>
         </SectionSummaryCard>
       </div>

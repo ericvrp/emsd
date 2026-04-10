@@ -829,8 +829,9 @@ export async function runApiAction(
     case "house-strategy-set": {
       const siteId = requireString(input.siteId, "siteId");
       const batteries = listBatteries(siteId);
+      const firstBattery = batteries[0];
 
-      if (batteries.length === 0) {
+      if (!firstBattery) {
         throw new Error("No batteries found for this site");
       }
 
@@ -839,7 +840,7 @@ export async function runApiAction(
         input.strategyMode === "self-consumption" ||
         input.strategyMode === "auto"
           ? input.strategyMode
-          : batteries[0].strategyMode;
+          : firstBattery.strategyMode;
       const manualState =
         input.manualState === "idle" ||
         input.manualState === "charging" ||
@@ -847,23 +848,23 @@ export async function runApiAction(
           ? input.manualState
           : input.manualState === null
             ? null
-            : batteries[0].manualState;
+            : firstBattery.manualState;
       const manualPowerW =
         typeof input.manualPowerW === "number"
           ? input.manualPowerW
-          : batteries[0].manualPowerW;
+          : firstBattery.manualPowerW;
       const manualChargeTargetSoc =
         typeof input.manualChargeTargetSoc === "number"
           ? input.manualChargeTargetSoc
-          : batteries[0].manualChargeTargetSoc;
+          : firstBattery.manualChargeTargetSoc;
       const manualDischargeTargetSoc =
         typeof input.manualDischargeTargetSoc === "number"
           ? input.manualDischargeTargetSoc
-          : batteries[0].manualDischargeTargetSoc;
+          : firstBattery.manualDischargeTargetSoc;
       const manualTargetSoc =
         typeof input.manualTargetSoc === "number"
           ? input.manualTargetSoc
-          : batteries[0].manualTargetSoc;
+          : firstBattery.manualTargetSoc;
 
       for (const battery of batteries) {
         try {

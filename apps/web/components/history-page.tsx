@@ -1,14 +1,8 @@
 "use client";
 
-import {
-  CloudSun,
-  Gauge,
-  HandCoins,
-  SunMedium,
-  Zap,
-} from "lucide-react";
+import { CloudSun, Gauge, HandCoins, SunMedium, Zap } from "lucide-react";
 import { useRouter } from "next/navigation";
-import type { ComponentType, ReactNode } from "react";
+import { useId, type ComponentType, type ReactNode } from "react";
 import {
   Area,
   AreaChart,
@@ -36,12 +30,7 @@ import { DateSelect } from "./date-select";
 import { MeasuredChartContainer } from "./measured-chart-container";
 import { Card, CardContent, CardHeader } from "./ui/card";
 
-type HistoryTab =
-  | "price"
-  | "solar"
-  | "solar-energy"
-  | "grid"
-  | "battery";
+type HistoryTab = "price" | "solar" | "solar-energy" | "grid" | "battery";
 
 type HistoryPageProps = {
   archive: HistoryArchive;
@@ -129,7 +118,8 @@ const HISTORY_STEP_MS = 15 * 60 * 1_000;
 const CHARGE_AXIS_DOMAIN: [number, number] = [0, 100];
 const CHARGE_AXIS_TICKS = [0, 20, 40, 60, 80, 100];
 const BATTERY_POWER_AXIS_DOMAIN: [number, number] = [-3000, 3000];
-export const STANDARD_Y_AXIS_WIDTH = 64;
+export const LEFT_Y_AXIS_WIDTH = 64;
+export const RIGHT_Y_AXIS_WIDTH = 64;
 const STANDARD_Y_AXIS_TICK_COUNT = 5;
 const STANDARD_RIGHT_AXIS_MARGIN = 72;
 
@@ -226,7 +216,9 @@ export function HistoryPage({
       ? []
       : fillSingleValueDay(solarEnergySeries, selectedDay);
   const dailyGridValueSeries =
-    selectedDay === null ? [] : fillSingleValueDay(gridValueSeries, selectedDay);
+    selectedDay === null
+      ? []
+      : fillSingleValueDay(gridValueSeries, selectedDay);
   const dailyGridSeries =
     selectedDay === null ? [] : fillSignedDay(gridSeries, selectedDay);
   const dailyBatterySeries =
@@ -394,42 +386,26 @@ function CombinedHistoryChart({
     ...point,
     timestampMs: new Date(point.periodStart).getTime(),
   }));
-  const currentGridSegments = buildSegmentedLineSegments({
-    negativeColor: UI_COLORS.gridImport,
-    positiveColor: UI_COLORS.gridExport,
-    points: chartPoints.map((point) => ({
-      timestampMs: point.timestampMs,
-      value: point.currentGridPower,
-    })),
-    strokeOpacity: 1,
-  });
-  const futureGridSegments = buildSegmentedLineSegments({
-    negativeColor: UI_COLORS.gridImport,
-    positiveColor: UI_COLORS.gridExport,
-    points: chartPoints.map((point) => ({
-      timestampMs: point.timestampMs,
-      value: point.futureGridPower,
-    })),
-    strokeOpacity: 0.35,
-  });
-  const currentBatterySegments = buildSegmentedLineSegments({
-    negativeColor: UI_COLORS.batteryPowerDischarging,
-    positiveColor: UI_COLORS.batteryPowerCharging,
-    points: chartPoints.map((point) => ({
-      timestampMs: point.timestampMs,
-      value: point.currentBatteryPower,
-    })),
-    strokeOpacity: 1,
-  });
-  const futureBatterySegments = buildSegmentedLineSegments({
-    negativeColor: UI_COLORS.batteryPowerDischarging,
-    positiveColor: UI_COLORS.batteryPowerCharging,
-    points: chartPoints.map((point) => ({
-      timestampMs: point.timestampMs,
-      value: point.futureBatteryPower,
-    })),
-    strokeOpacity: 0.35,
-  });
+  const chartId = useId();
+  const powerValues = chartPoints.flatMap((point) => [
+    point.currentGridPower,
+    point.futureGridPower,
+    point.currentBatteryPower,
+    point.futureBatteryPower,
+    point.currentSolarEnergy,
+    point.futureSolarEnergy,
+  ]);
+  const axisConfig = buildMirroredYAxis(powerValues);
+
+  const [min, max] = axisConfig.domain;
+  let offset = 0;
+  if (max <= 0) {
+    offset = 0;
+  } else if (min >= 0) {
+    offset = 1;
+  } else {
+    offset = max / (max - min);
+  }
   const hasValues = points.some((point) =>
     [
       point.currentPrice,
@@ -470,7 +446,10 @@ function CombinedHistoryChart({
           color={UI_COLORS.batteryPowerDischarging}
           label="Battery Discharging Power"
         />
-        <LegendChip color={UI_COLORS.batteryChargeLevel} label="Battery Charge" />
+        <LegendChip
+          color={UI_COLORS.batteryChargeLevel}
+          label="Battery Charge"
+        />
         <LegendChip color={UI_COLORS.solarEnergy} label="Solar Energy" />
         <LegendChip color={UI_COLORS.forecast} label="Solar Forecast" />
         <LegendChip color={UI_COLORS.price} label="Price" />
@@ -502,27 +481,103 @@ function CombinedHistoryChart({
             />
             <YAxis
               axisLine={false}
+              domain={axisConfig.domain}
               tick={UI_CHART_STYLES.axisTickMuted}
               tickFormatter={formatShortPowerValue}
               tickLine={false}
-              width={STANDARD_Y_AXIS_WIDTH}
+              ticks={axisConfig.ticks}
+              width={LEFT_Y_AXIS_WIDTH}
               yAxisId="power"
             />
             <YAxis
               axisLine={false}
               domain={CHARGE_AXIS_DOMAIN}
-              label={buildYAxisLabel("Charge (%)", "insideRight")}
+              label={buildYAxisLabel("Charge (%)", "right")}
               orientation="right"
               tick={UI_CHART_STYLES.axisTick}
               tickMargin={8}
               ticks={CHARGE_AXIS_TICKS}
               tickFormatter={formatShortPercentValue}
               tickLine={false}
-              width={STANDARD_Y_AXIS_WIDTH}
+              width={RIGHT_Y_AXIS_WIDTH}
               yAxisId="charge"
             />
             <YAxis hide yAxisId="price" />
             <YAxis hide yAxisId="solar" />
+            <defs>
+              <linearGradient
+                id={`gridCurrent-${chartId}`}
+                x1="0"
+                y1="0"
+                x2="0"
+                y2="1"
+              >
+                <stop
+                  offset={offset}
+                  stopColor={UI_COLORS.gridExport}
+                  stopOpacity={1}
+                />
+                <stop
+                  offset={offset}
+                  stopColor={UI_COLORS.gridImport}
+                  stopOpacity={1}
+                />
+              </linearGradient>
+              <linearGradient
+                id={`gridFuture-${chartId}`}
+                x1="0"
+                y1="0"
+                x2="0"
+                y2="1"
+              >
+                <stop
+                  offset={offset}
+                  stopColor={UI_COLORS.gridExport}
+                  stopOpacity={0.35}
+                />
+                <stop
+                  offset={offset}
+                  stopColor={UI_COLORS.gridImport}
+                  stopOpacity={0.35}
+                />
+              </linearGradient>
+              <linearGradient
+                id={`batteryCurrent-${chartId}`}
+                x1="0"
+                y1="0"
+                x2="0"
+                y2="1"
+              >
+                <stop
+                  offset={offset}
+                  stopColor={UI_COLORS.batteryPowerCharging}
+                  stopOpacity={1}
+                />
+                <stop
+                  offset={offset}
+                  stopColor={UI_COLORS.batteryPowerDischarging}
+                  stopOpacity={1}
+                />
+              </linearGradient>
+              <linearGradient
+                id={`batteryFuture-${chartId}`}
+                x1="0"
+                y1="0"
+                x2="0"
+                y2="1"
+              >
+                <stop
+                  offset={offset}
+                  stopColor={UI_COLORS.batteryPowerCharging}
+                  stopOpacity={0.35}
+                />
+                <stop
+                  offset={offset}
+                  stopColor={UI_COLORS.batteryPowerDischarging}
+                  stopOpacity={0.35}
+                />
+              </linearGradient>
+            </defs>
             <ReferenceLine
               stroke={UI_COLORS.chartZeroLine}
               strokeDasharray="4 6"
@@ -603,46 +658,58 @@ function CombinedHistoryChart({
             />
             <Line
               activeDot={false}
+              connectNulls={false}
               dataKey="currentGridPower"
               dot={false}
               isAnimationActive={false}
               legendType="none"
-              stroke="transparent"
-              strokeWidth={10}
+              stroke={`url(#gridCurrent-${chartId})`}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2.8}
               type="monotone"
               yAxisId="power"
             />
             <Line
               activeDot={false}
+              connectNulls={false}
               dataKey="futureGridPower"
               dot={false}
               isAnimationActive={false}
               legendType="none"
-              stroke="transparent"
-              strokeWidth={10}
+              stroke={`url(#gridFuture-${chartId})`}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2.8}
               type="monotone"
               yAxisId="power"
             />
             <Line
               activeDot={false}
+              connectNulls={false}
               dataKey="currentBatteryPower"
               dot={false}
               isAnimationActive={false}
               legendType="none"
-              stroke="transparent"
-              strokeWidth={10}
-              type="linear"
+              stroke={`url(#batteryCurrent-${chartId})`}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2.8}
+              type="monotone"
               yAxisId="power"
             />
             <Line
               activeDot={false}
+              connectNulls={false}
               dataKey="futureBatteryPower"
               dot={false}
               isAnimationActive={false}
               legendType="none"
-              stroke="transparent"
-              strokeWidth={10}
-              type="linear"
+              stroke={`url(#batteryFuture-${chartId})`}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2.8}
+              type="monotone"
               yAxisId="power"
             />
             <Line
@@ -666,74 +733,6 @@ function CombinedHistoryChart({
               type="monotone"
               yAxisId="charge"
             />
-            {currentGridSegments.map((segment) => (
-              <Line
-                key={segment.key}
-                activeDot={false}
-                connectNulls={false}
-                data={segment.points}
-                dataKey="value"
-                dot={false}
-                isAnimationActive={false}
-                legendType="none"
-                stroke={segment.color}
-                strokeOpacity={segment.strokeOpacity}
-                strokeWidth={2.1}
-                type="linear"
-                yAxisId="power"
-              />
-            ))}
-            {futureGridSegments.map((segment) => (
-              <Line
-                key={segment.key}
-                activeDot={false}
-                connectNulls={false}
-                data={segment.points}
-                dataKey="value"
-                dot={false}
-                isAnimationActive={false}
-                legendType="none"
-                stroke={segment.color}
-                strokeOpacity={segment.strokeOpacity}
-                strokeWidth={2.1}
-                type="linear"
-                yAxisId="power"
-              />
-            ))}
-            {currentBatterySegments.map((segment) => (
-              <Line
-                key={segment.key}
-                activeDot={false}
-                connectNulls={false}
-                data={segment.points}
-                dataKey="value"
-                dot={false}
-                isAnimationActive={false}
-                legendType="none"
-                stroke={segment.color}
-                strokeOpacity={segment.strokeOpacity}
-                strokeWidth={2.1}
-                type="linear"
-                yAxisId="power"
-              />
-            ))}
-            {futureBatterySegments.map((segment) => (
-              <Line
-                key={segment.key}
-                activeDot={false}
-                connectNulls={false}
-                data={segment.points}
-                dataKey="value"
-                dot={false}
-                isAnimationActive={false}
-                legendType="none"
-                stroke={segment.color}
-                strokeOpacity={segment.strokeOpacity}
-                strokeWidth={2.1}
-                type="linear"
-                yAxisId="power"
-              />
-            ))}
             {nowMarkerPeriodStart ? (
               <ReferenceLine
                 ifOverflow="extendDomain"
@@ -783,24 +782,9 @@ export function BatteryHistoryChart({
     ...point,
     timestampMs: new Date(point.periodStart).getTime(),
   }));
-  const currentBatterySegments = buildSegmentedLineSegments({
-    negativeColor: UI_COLORS.batteryPowerDischarging,
-    positiveColor: UI_COLORS.batteryPowerCharging,
-    points: chartPoints.map((point) => ({
-      timestampMs: point.timestampMs,
-      value: point.currentPower,
-    })),
-    strokeOpacity: 1,
-  });
-  const futureBatterySegments = buildSegmentedLineSegments({
-    negativeColor: UI_COLORS.batteryPowerDischarging,
-    positiveColor: UI_COLORS.batteryPowerCharging,
-    points: chartPoints.map((point) => ({
-      timestampMs: point.timestampMs,
-      value: point.futurePower,
-    })),
-    strokeOpacity: 0.35,
-  });
+  const offset =
+    BATTERY_POWER_AXIS_DOMAIN[1] /
+    (BATTERY_POWER_AXIS_DOMAIN[1] - BATTERY_POWER_AXIS_DOMAIN[0]);
 
   return (
     <div className="space-y-2.5">
@@ -814,7 +798,10 @@ export function BatteryHistoryChart({
             color={UI_COLORS.batteryPowerDischarging}
             label="Battery Discharging Power"
           />
-          <LegendChip color={UI_COLORS.batteryChargeLevel} label="Battery Charge" />
+          <LegendChip
+            color={UI_COLORS.batteryChargeLevel}
+            label="Battery Charge"
+          />
         </div>
         {headerAccessory}
       </div>
@@ -826,154 +813,168 @@ export function BatteryHistoryChart({
           );
 
           return (
-          <LineChart
-            data={chartPoints}
-            height={height}
-            margin={{ top: 12, right: 56, bottom: 0, left: 0 }}
-            width={width}
-          >
-            <CartesianGrid
-              stroke={UI_COLORS.chartGrid}
-              strokeDasharray="3 6"
-              vertical={false}
-            />
-            <XAxis
-              axisLine={false}
-              dataKey="timestampMs"
-              domain={["dataMin", "dataMax"]}
-              interval={0}
-              minTickGap={28}
-              tick={UI_CHART_STYLES.axisTick}
-              tickFormatter={formatDayTick}
-              tickLine={false}
-              ticks={xAxisTicks}
-              type="number"
-            />
-            <YAxis
-              axisLine={false}
-              domain={BATTERY_POWER_AXIS_DOMAIN}
-              label={buildYAxisLabel("Power (W)", "insideLeft")}
-              tick={UI_CHART_STYLES.axisTickMuted}
-              tickFormatter={formatShortPowerValue}
-              tickLine={false}
-              width={STANDARD_Y_AXIS_WIDTH}
-              yAxisId="power"
-            />
-            <YAxis
-              axisLine={false}
-              domain={CHARGE_AXIS_DOMAIN}
-              label={buildYAxisLabel("Charge (%)", "insideRight")}
-              orientation="right"
-              tick={UI_CHART_STYLES.axisTick}
-              tickMargin={8}
-              ticks={CHARGE_AXIS_TICKS}
-              tickFormatter={formatShortPercentValue}
-              tickLine={false}
-              width={STANDARD_Y_AXIS_WIDTH}
-              yAxisId="charge"
-            />
-            <ReferenceLine
-              stroke={UI_COLORS.chartZeroLine}
-              strokeDasharray="4 6"
-              y={0}
-              yAxisId="power"
-            />
-            <Tooltip
-              content={
-                <BatteryHistoryTooltip
-                  labelFormatter={formatTooltipTimestamp}
-                />
-              }
-            />
-            <Line
-              activeDot={false}
-              dataKey="currentPower"
-              dot={false}
-              isAnimationActive={false}
-              legendType="none"
-              stroke="transparent"
-              strokeWidth={10}
-              type="linear"
-              yAxisId="power"
-            />
-            <Line
-              activeDot={false}
-              dataKey="futurePower"
-              dot={false}
-              isAnimationActive={false}
-              legendType="none"
-              stroke="transparent"
-              strokeWidth={10}
-              type="linear"
-              yAxisId="power"
-            />
-            {currentBatterySegments.map((segment) => (
-              <Line
-                key={segment.key}
-                activeDot={false}
-                connectNulls={false}
-                data={segment.points}
-                dataKey="value"
-                dot={false}
-                isAnimationActive={false}
-                legendType="none"
-                stroke={segment.color}
-                strokeOpacity={segment.strokeOpacity}
-                strokeWidth={2.2}
-                type="monotone"
+            <LineChart
+              data={chartPoints}
+              height={height}
+              margin={{ top: 12, right: 56, bottom: 0, left: 0 }}
+              width={width}
+            >
+              <CartesianGrid
+                stroke={UI_COLORS.chartGrid}
+                strokeDasharray="3 6"
+                vertical={false}
+              />
+              <XAxis
+                axisLine={false}
+                dataKey="timestampMs"
+                domain={["dataMin", "dataMax"]}
+                interval={0}
+                minTickGap={28}
+                tick={UI_CHART_STYLES.axisTick}
+                tickFormatter={formatDayTick}
+                tickLine={false}
+                ticks={xAxisTicks}
+                type="number"
+              />
+              <YAxis
+                axisLine={false}
+                domain={BATTERY_POWER_AXIS_DOMAIN}
+                label={buildYAxisLabel("Power (W)", "insideLeft")}
+                tick={UI_CHART_STYLES.axisTickMuted}
+                tickFormatter={formatShortPowerValue}
+                tickLine={false}
+                width={LEFT_Y_AXIS_WIDTH}
                 yAxisId="power"
               />
-            ))}
-            {futureBatterySegments.map((segment) => (
-              <Line
-                key={segment.key}
-                activeDot={false}
-                connectNulls={false}
-                data={segment.points}
-                dataKey="value"
-                dot={false}
-                isAnimationActive={false}
-                legendType="none"
-                stroke={segment.color}
-                strokeOpacity={segment.strokeOpacity}
-                strokeWidth={2.2}
-                type="monotone"
-                yAxisId="power"
+              <YAxis
+                axisLine={false}
+                domain={CHARGE_AXIS_DOMAIN}
+                label={buildYAxisLabel("Charge (%)", "right")}
+                orientation="right"
+                tick={UI_CHART_STYLES.axisTick}
+                tickMargin={8}
+                ticks={CHARGE_AXIS_TICKS}
+                tickFormatter={formatShortPercentValue}
+                tickLine={false}
+                width={RIGHT_Y_AXIS_WIDTH}
+                yAxisId="charge"
               />
-            ))}
-            <Line
-              dataKey="currentChargePercent"
-              dot={false}
-              isAnimationActive={false}
-              name="Battery Charge"
-              stroke={UI_COLORS.batteryChargeLevel}
-              strokeWidth={2.4}
-              type="monotone"
-              yAxisId="charge"
-            />
-            <Line
-              dataKey="futureChargePercent"
-              dot={false}
-              isAnimationActive={false}
-              name="Battery Charge"
-              stroke={UI_COLORS.batteryChargeLevel}
-              strokeOpacity={0.35}
-              strokeWidth={2.4}
-              type="monotone"
-              yAxisId="charge"
-            />
-            {nowMarkerPeriodStart ? (
               <ReferenceLine
-                label={buildNowLabel()}
-                stroke={UI_COLORS.textPrimary}
-                strokeDasharray="4 4"
-                strokeOpacity={0.8}
-                strokeWidth={2}
-                x={new Date(nowMarkerPeriodStart).getTime()}
+                stroke={UI_COLORS.chartZeroLine}
+                strokeDasharray="4 6"
+                y={0}
                 yAxisId="power"
               />
-            ) : null}
-          </LineChart>
+              <defs>
+                <linearGradient
+                  id="batteryPowerCurrent"
+                  x1="0"
+                  y1="0"
+                  x2="0"
+                  y2="1"
+                >
+                  <stop
+                    offset={offset}
+                    stopColor={UI_COLORS.batteryPowerCharging}
+                    stopOpacity={1}
+                  />
+                  <stop
+                    offset={offset}
+                    stopColor={UI_COLORS.batteryPowerDischarging}
+                    stopOpacity={1}
+                  />
+                </linearGradient>
+                <linearGradient
+                  id="batteryPowerFuture"
+                  x1="0"
+                  y1="0"
+                  x2="0"
+                  y2="1"
+                >
+                  <stop
+                    offset={offset}
+                    stopColor={UI_COLORS.batteryPowerCharging}
+                    stopOpacity={0.35}
+                  />
+                  <stop
+                    offset={offset}
+                    stopColor={UI_COLORS.batteryPowerDischarging}
+                    stopOpacity={0.35}
+                  />
+                </linearGradient>
+              </defs>
+              <Tooltip
+                content={
+                  <BatteryHistoryTooltip
+                    labelFormatter={formatTooltipTimestamp}
+                  />
+                }
+              />
+              <Line
+                activeDot={false}
+                connectNulls={false}
+                dataKey="currentPower"
+                dot={false}
+                isAnimationActive={false}
+                legendType="none"
+                stroke="url(#batteryPowerCurrent)"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2.8}
+                type="monotone"
+                yAxisId="power"
+              />
+              <Line
+                activeDot={false}
+                connectNulls={false}
+                dataKey="futurePower"
+                dot={false}
+                isAnimationActive={false}
+                legendType="none"
+                stroke="url(#batteryPowerFuture)"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2.8}
+                type="monotone"
+                yAxisId="power"
+              />
+              <Line
+                dataKey="currentChargePercent"
+                dot={false}
+                isAnimationActive={false}
+                name="Battery Charge"
+                stroke={UI_COLORS.batteryChargeLevel}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2.8}
+                type="monotone"
+                yAxisId="charge"
+              />
+              <Line
+                dataKey="futureChargePercent"
+                dot={false}
+                isAnimationActive={false}
+                name="Battery Charge"
+                stroke={UI_COLORS.batteryChargeLevel}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeOpacity={0.35}
+                strokeWidth={2.8}
+                type="monotone"
+                yAxisId="charge"
+              />
+              {nowMarkerPeriodStart ? (
+                <ReferenceLine
+                  label={buildNowLabel()}
+                  stroke={UI_COLORS.textPrimary}
+                  strokeDasharray="4 4"
+                  strokeOpacity={0.8}
+                  strokeWidth={2}
+                  x={new Date(nowMarkerPeriodStart).getTime()}
+                  yAxisId="power"
+                />
+              ) : null}
+            </LineChart>
           );
         }}
       </MeasuredChartContainer>
@@ -1068,117 +1069,144 @@ export function SingleValueHistoryChart({
           );
 
           return (
-          <AreaChart
-            data={chartData}
-            height={height}
-            margin={{ top: 12, right: STANDARD_RIGHT_AXIS_MARGIN, bottom: 0, left: 0 }}
-            width={width}
-          >
-            <defs>
-              <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={accentColor} stopOpacity={0.38} />
-                <stop offset="95%" stopColor={accentColor} stopOpacity={0.04} />
-              </linearGradient>
-              <linearGradient id={mutedGradientId} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={accentColor} stopOpacity={0.16} />
-                <stop offset="95%" stopColor={accentColor} stopOpacity={0.02} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid
-              stroke={UI_COLORS.chartGrid}
-              strokeDasharray="3 6"
-              vertical={false}
-            />
-            <XAxis
-              axisLine={false}
-              dataKey="periodStart"
-              interval={0}
-              minTickGap={28}
-              tick={UI_CHART_STYLES.axisTick}
-              tickFormatter={formatDayTick}
-              tickLine={false}
-              ticks={xAxisTicks}
-            />
-            <YAxis
-              axisLine={false}
-              domain={axisConfig.domain}
-              label={buildYAxisLabel(yAxisLabel ?? "", "insideLeft")}
-              tick={UI_CHART_STYLES.axisTickMuted}
-              tickFormatter={yAxisFormatter}
-              tickLine={false}
-              tickMargin={8}
-              ticks={axisConfig.ticks}
-              width={STANDARD_Y_AXIS_WIDTH}
-              yAxisId="left"
-            />
-            <YAxis
-              axisLine={false}
-              domain={axisConfig.domain}
-              orientation="right"
-              {...(yAxisLabel
-                ? { label: buildYAxisLabel(yAxisLabel, "insideRight") }
-                : {})}
-              tick={UI_CHART_STYLES.axisTickMuted}
-              tickFormatter={yAxisFormatter}
-              tickLine={false}
-              tickMargin={8}
-              ticks={axisConfig.ticks}
-              width={STANDARD_Y_AXIS_WIDTH}
-              yAxisId="right"
-            />
-            <Tooltip
-              content={
-                <HistoryTooltip
-                  formatter={valueFormatter}
-                  labelFormatter={formatTooltipTimestamp}
-                />
-              }
-            />
-            {nowMarkerPeriodStart ? (
-              <ReferenceLine
-                label={buildNowLabel()}
-                stroke={UI_COLORS.textPrimary}
-                strokeDasharray="4 4"
-                strokeOpacity={0.8}
-                x={nowMarkerPeriodStart}
+            <AreaChart
+              data={chartData}
+              height={height}
+              margin={{
+                top: 12,
+                right: STANDARD_RIGHT_AXIS_MARGIN,
+                bottom: 0,
+                left: 0,
+              }}
+              width={width}
+            >
+              <defs>
+                <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                  <stop
+                    offset="5%"
+                    stopColor={accentColor}
+                    stopOpacity={0.38}
+                  />
+                  <stop
+                    offset="95%"
+                    stopColor={accentColor}
+                    stopOpacity={0.04}
+                  />
+                </linearGradient>
+                <linearGradient
+                  id={mutedGradientId}
+                  x1="0"
+                  y1="0"
+                  x2="0"
+                  y2="1"
+                >
+                  <stop
+                    offset="5%"
+                    stopColor={accentColor}
+                    stopOpacity={0.16}
+                  />
+                  <stop
+                    offset="95%"
+                    stopColor={accentColor}
+                    stopOpacity={0.02}
+                  />
+                </linearGradient>
+              </defs>
+              <CartesianGrid
+                stroke={UI_COLORS.chartGrid}
+                strokeDasharray="3 6"
+                vertical={false}
+              />
+              <XAxis
+                axisLine={false}
+                dataKey="periodStart"
+                interval={0}
+                minTickGap={28}
+                tick={UI_CHART_STYLES.axisTick}
+                tickFormatter={formatDayTick}
+                tickLine={false}
+                ticks={xAxisTicks}
+              />
+              <YAxis
+                axisLine={false}
+                domain={axisConfig.domain}
+                label={buildYAxisLabel(yAxisLabel ?? "", "insideLeft")}
+                tick={UI_CHART_STYLES.axisTickMuted}
+                tickFormatter={yAxisFormatter}
+                tickLine={false}
+                tickMargin={8}
+                ticks={axisConfig.ticks}
+                width={LEFT_Y_AXIS_WIDTH}
                 yAxisId="left"
               />
-            ) : null}
-            <Area
-              activeDot={false}
-              dataKey="currentValue"
-              fill={`url(#${gradientId})`}
-              isAnimationActive={false}
-              name={label}
-              stroke={accentColor}
-              strokeWidth={3}
-              type="monotone"
-              yAxisId="left"
-            />
-            <Area
-              activeDot={false}
-              dataKey="futureValue"
-              fill={`url(#${mutedGradientId})`}
-              isAnimationActive={false}
-              name={label}
-              stroke={accentColor}
-              strokeOpacity={0.35}
-              strokeWidth={3}
-              type="monotone"
-              yAxisId="left"
-            />
-            <Area
-              activeDot={false}
-              dataKey="rightAxisValue"
-              dot={false}
-              fill="transparent"
-              isAnimationActive={false}
-              legendType="none"
-              stroke="transparent"
-              type="monotone"
-              yAxisId="right"
-            />
-          </AreaChart>
+              <YAxis
+                axisLine={false}
+                domain={axisConfig.domain}
+                orientation="right"
+                {...(yAxisLabel
+                  ? { label: buildYAxisLabel(yAxisLabel, "right") }
+                  : {})}
+                tick={UI_CHART_STYLES.axisTickMuted}
+                tickFormatter={yAxisFormatter}
+                tickLine={false}
+                tickMargin={8}
+                ticks={axisConfig.ticks}
+                width={RIGHT_Y_AXIS_WIDTH}
+                yAxisId="right"
+              />
+              <Tooltip
+                content={
+                  <HistoryTooltip
+                    formatter={valueFormatter}
+                    labelFormatter={formatTooltipTimestamp}
+                  />
+                }
+              />
+              {nowMarkerPeriodStart ? (
+                <ReferenceLine
+                  label={buildNowLabel()}
+                  stroke={UI_COLORS.textPrimary}
+                  strokeDasharray="4 4"
+                  strokeOpacity={0.8}
+                  x={nowMarkerPeriodStart}
+                  yAxisId="left"
+                />
+              ) : null}
+              <Area
+                activeDot={false}
+                dataKey="currentValue"
+                fill={`url(#${gradientId})`}
+                isAnimationActive={false}
+                name={label}
+                stroke={accentColor}
+                strokeWidth={3}
+                type="monotone"
+                yAxisId="left"
+              />
+              <Area
+                activeDot={false}
+                dataKey="futureValue"
+                fill={`url(#${mutedGradientId})`}
+                isAnimationActive={false}
+                name={label}
+                stroke={accentColor}
+                strokeOpacity={0.35}
+                strokeWidth={3}
+                type="monotone"
+                yAxisId="left"
+              />
+              <Area
+                activeDot={false}
+                dataKey="rightAxisValue"
+                dot={false}
+                fill="transparent"
+                isAnimationActive={false}
+                legendType="none"
+                stroke="transparent"
+                type="monotone"
+                yAxisId="right"
+              />
+            </AreaChart>
           );
         }}
       </MeasuredChartContainer>
@@ -1291,20 +1319,20 @@ export function SingleValueBarHistoryChart({
                 tickLine={false}
                 tickMargin={8}
                 ticks={axisConfig.ticks}
-                width={STANDARD_Y_AXIS_WIDTH}
+                width={LEFT_Y_AXIS_WIDTH}
                 yAxisId="left"
               />
               <YAxis
                 axisLine={false}
                 domain={axisConfig.domain}
-                label={buildYAxisLabel(yAxisLabel ?? "", "insideRight")}
+                label={buildYAxisLabel(yAxisLabel ?? "", "right")}
                 orientation="right"
                 tick={UI_CHART_STYLES.axisTickMuted}
                 tickFormatter={yAxisFormatter}
                 tickLine={false}
                 tickMargin={8}
                 ticks={axisConfig.ticks}
-                width={STANDARD_Y_AXIS_WIDTH}
+                width={RIGHT_Y_AXIS_WIDTH}
                 yAxisId="right"
               />
               <Tooltip
@@ -1412,27 +1440,19 @@ export function SegmentedLineHistoryChart({
     rightAxisValue: point.currentValue ?? point.futureValue,
     timestampMs: new Date(point.periodStart).getTime(),
   }));
-  const currentSegments = buildSegmentedLineSegments({
-    negativeColor,
-    positiveColor,
-    points: chartPoints.map((point) => ({
-      timestampMs: point.timestampMs,
-      value: point.currentValue,
-    })),
-    strokeOpacity: 1,
-  });
-  const futureSegments = buildSegmentedLineSegments({
-    negativeColor,
-    positiveColor,
-    points: chartPoints.map((point) => ({
-      timestampMs: point.timestampMs,
-      value: point.futureValue,
-    })),
-    strokeOpacity: 0.35,
-  });
   const axisConfig = buildMirroredYAxis(
     chartPoints.flatMap((point) => [point.currentValue, point.futureValue]),
   );
+  const [min, max] = axisConfig.domain;
+  let offset = 0;
+  if (max <= 0) {
+    offset = 0;
+  } else if (min >= 0) {
+    offset = 1;
+  } else {
+    offset = max / (max - min);
+  }
+  const chartId = useId();
   return (
     <div className="space-y-2.5">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1450,153 +1470,162 @@ export function SegmentedLineHistoryChart({
           );
 
           return (
-          <LineChart
-            data={chartPoints}
-            height={height}
-            margin={{ top: 12, right: STANDARD_RIGHT_AXIS_MARGIN, bottom: 0, left: 0 }}
-            width={width}
-          >
-            <CartesianGrid
-              stroke={UI_COLORS.chartGrid}
-              strokeDasharray="3 6"
-              vertical={false}
-            />
-            <XAxis
-              axisLine={false}
-              dataKey="timestampMs"
-              domain={["dataMin", "dataMax"]}
-              interval={0}
-              minTickGap={28}
-              tick={UI_CHART_STYLES.axisTick}
-              tickFormatter={formatDayTick}
-              tickLine={false}
-              ticks={xAxisTicks}
-              type="number"
-            />
-            <YAxis
-              axisLine={false}
-              domain={axisConfig.domain}
-              label={buildYAxisLabel(yAxisLabel ?? "", "insideLeft")}
-              tick={UI_CHART_STYLES.axisTickMuted}
-              tickFormatter={yAxisFormatter}
-              tickLine={false}
-              tickMargin={8}
-              ticks={axisConfig.ticks}
-              width={STANDARD_Y_AXIS_WIDTH}
-              yAxisId="left"
-            />
-            <YAxis
-              axisLine={false}
-              domain={axisConfig.domain}
-              orientation="right"
-              label={buildYAxisLabel(yAxisLabel ?? "", "insideRight")}
-              tick={UI_CHART_STYLES.axisTickMuted}
-              tickFormatter={yAxisFormatter}
-              tickLine={false}
-              tickMargin={8}
-              ticks={axisConfig.ticks}
-              width={STANDARD_Y_AXIS_WIDTH}
-              yAxisId="right"
-            />
-            <ReferenceLine
-              stroke={UI_COLORS.chartZeroLine}
-              strokeDasharray="4 6"
-              y={0}
-              yAxisId="left"
-            />
-            {nowMarkerPeriodStart ? (
+            <LineChart
+              data={chartPoints}
+              height={height}
+              margin={{
+                top: 12,
+                right: STANDARD_RIGHT_AXIS_MARGIN,
+                bottom: 0,
+                left: 0,
+              }}
+              width={width}
+            >
+              <CartesianGrid
+                stroke={UI_COLORS.chartGrid}
+                strokeDasharray="3 6"
+                vertical={false}
+              />
+              <XAxis
+                axisLine={false}
+                dataKey="timestampMs"
+                domain={["dataMin", "dataMax"]}
+                interval={0}
+                minTickGap={28}
+                tick={UI_CHART_STYLES.axisTick}
+                tickFormatter={formatDayTick}
+                tickLine={false}
+                ticks={xAxisTicks}
+                type="number"
+              />
+              <YAxis
+                axisLine={false}
+                domain={axisConfig.domain}
+                label={buildYAxisLabel(yAxisLabel ?? "", "insideLeft")}
+                tick={UI_CHART_STYLES.axisTickMuted}
+                tickFormatter={yAxisFormatter}
+                tickLine={false}
+                tickMargin={8}
+                ticks={axisConfig.ticks}
+                width={LEFT_Y_AXIS_WIDTH}
+                yAxisId="left"
+              />
+              <YAxis
+                axisLine={false}
+                domain={axisConfig.domain}
+                orientation="right"
+                label={buildYAxisLabel(yAxisLabel ?? "", "right")}
+                tick={UI_CHART_STYLES.axisTickMuted}
+                tickFormatter={yAxisFormatter}
+                tickLine={false}
+                tickMargin={8}
+                ticks={axisConfig.ticks}
+                width={RIGHT_Y_AXIS_WIDTH}
+                yAxisId="right"
+              />
               <ReferenceLine
-                label={buildNowLabel()}
-                stroke={UI_COLORS.textPrimary}
-                strokeDasharray="4 4"
-                strokeOpacity={0.8}
-                x={new Date(nowMarkerPeriodStart).getTime()}
+                stroke={UI_COLORS.chartZeroLine}
+                strokeDasharray="4 6"
+                y={0}
                 yAxisId="left"
               />
-            ) : null}
-            <Tooltip
-              content={
-                <SegmentedHistoryTooltip
-                  labelFormatter={formatTooltipTimestamp}
-                  negativeColor={negativeColor}
-                  negativeLabel={negativeLabel}
-                  positiveColor={positiveColor}
-                  positiveLabel={positiveLabel}
-                  valueFormatter={valueFormatter}
+              <defs>
+                <linearGradient
+                  id={`segmentedCurrent-${chartId}`}
+                  x1="0"
+                  y1="0"
+                  x2="0"
+                  y2="1"
+                >
+                  <stop
+                    offset={offset}
+                    stopColor={positiveColor}
+                    stopOpacity={1}
+                  />
+                  <stop
+                    offset={offset}
+                    stopColor={negativeColor}
+                    stopOpacity={1}
+                  />
+                </linearGradient>
+                <linearGradient
+                  id={`segmentedFuture-${chartId}`}
+                  x1="0"
+                  y1="0"
+                  x2="0"
+                  y2="1"
+                >
+                  <stop
+                    offset={offset}
+                    stopColor={positiveColor}
+                    stopOpacity={0.35}
+                  />
+                  <stop
+                    offset={offset}
+                    stopColor={negativeColor}
+                    stopOpacity={0.35}
+                  />
+                </linearGradient>
+              </defs>
+              {nowMarkerPeriodStart ? (
+                <ReferenceLine
+                  label={buildNowLabel()}
+                  stroke={UI_COLORS.textPrimary}
+                  strokeDasharray="4 4"
+                  strokeOpacity={0.8}
+                  x={new Date(nowMarkerPeriodStart).getTime()}
+                  yAxisId="left"
                 />
-              }
-            />
-            <Line
-              activeDot={false}
-              connectNulls={false}
-              dataKey="currentValue"
-              dot={false}
-              isAnimationActive={false}
-              legendType="none"
-              stroke="transparent"
-              strokeWidth={10}
-              type="monotone"
-              yAxisId="left"
-            />
-            <Line
-              activeDot={false}
-              connectNulls={false}
-              dataKey="futureValue"
-              dot={false}
-              isAnimationActive={false}
-              legendType="none"
-              stroke="transparent"
-              strokeWidth={10}
-              type="monotone"
-              yAxisId="left"
-            />
-            <Line
-              activeDot={false}
-              connectNulls={false}
-              dataKey="rightAxisValue"
-              dot={false}
-              isAnimationActive={false}
-              legendType="none"
-              stroke="transparent"
-              strokeWidth={1}
-              type="monotone"
-              yAxisId="right"
-            />
-            {currentSegments.map((segment) => (
+              ) : null}
+              <Tooltip
+                content={
+                  <SegmentedHistoryTooltip
+                    labelFormatter={formatTooltipTimestamp}
+                    negativeColor={negativeColor}
+                    negativeLabel={negativeLabel}
+                    positiveColor={positiveColor}
+                    positiveLabel={positiveLabel}
+                    valueFormatter={valueFormatter}
+                  />
+                }
+              />
               <Line
-                key={segment.key}
                 activeDot={false}
                 connectNulls={false}
-                data={segment.points}
-                dataKey="value"
+                dataKey="currentValue"
                 dot={false}
                 isAnimationActive={false}
                 legendType="none"
-                stroke={segment.color}
-                strokeOpacity={segment.strokeOpacity}
+                stroke={`url(#segmentedCurrent-${chartId})`}
                 strokeWidth={2.8}
                 type="monotone"
                 yAxisId="left"
               />
-            ))}
-            {futureSegments.map((segment) => (
               <Line
-                key={segment.key}
                 activeDot={false}
                 connectNulls={false}
-                data={segment.points}
-                dataKey="value"
+                dataKey="futureValue"
                 dot={false}
                 isAnimationActive={false}
                 legendType="none"
-                stroke={segment.color}
-                strokeOpacity={segment.strokeOpacity}
+                stroke={`url(#segmentedFuture-${chartId})`}
                 strokeWidth={2.8}
                 type="monotone"
                 yAxisId="left"
               />
-            ))}
-          </LineChart>
+              <Line
+                activeDot={false}
+                connectNulls={false}
+                dataKey="rightAxisValue"
+                dot={false}
+                isAnimationActive={false}
+                legendType="none"
+                stroke="transparent"
+                strokeWidth={1}
+                type="monotone"
+                yAxisId="right"
+              />
+            </LineChart>
           );
         }}
       </MeasuredChartContainer>
@@ -1812,11 +1841,6 @@ export function SignedHistoryChart({
   );
 }
 
-type SegmentedLinePoint = {
-  timestampMs: number;
-  value: number | null;
-};
-
 type SegmentedLineSeries = {
   color: string;
   key: string;
@@ -1845,7 +1869,13 @@ function SegmentedHistoryTooltip({
   positiveLabel: string;
   valueFormatter: (value: number) => string;
 }) {
-  if (!active || label === undefined || label === null || !payload || payload.length === 0) {
+  if (
+    !active ||
+    label === undefined ||
+    label === null ||
+    !payload ||
+    payload.length === 0
+  ) {
     return null;
   }
 
@@ -1861,7 +1891,8 @@ function SegmentedHistoryTooltip({
     payload.find(
       (entry) =>
         entry.dataKey?.startsWith("future") && typeof entry.value === "number",
-    ) ?? payload.find((entry) => typeof entry.value === "number");
+    ) ??
+    payload.find((entry) => typeof entry.value === "number");
 
   if (!selectedEntry || typeof selectedEntry.value !== "number") {
     return null;
@@ -1905,25 +1936,35 @@ function BatteryHistoryTooltip({
   labelFormatter: (label: string | number) => string;
   payload?: TooltipPayloadEntry[];
 }) {
-  if (label === undefined || label === null || !active || !payload || payload.length === 0) {
+  if (
+    label === undefined ||
+    label === null ||
+    !active ||
+    !payload ||
+    payload.length === 0
+  ) {
     return null;
   }
 
   const powerEntry =
     payload.find(
-      (entry) => entry.dataKey === "futurePower" && typeof entry.value === "number",
+      (entry) =>
+        entry.dataKey === "futurePower" && typeof entry.value === "number",
     ) ??
     payload.find(
-      (entry) => entry.dataKey === "currentPower" && typeof entry.value === "number",
+      (entry) =>
+        entry.dataKey === "currentPower" && typeof entry.value === "number",
     );
   const chargeEntry =
     payload.find(
       (entry) =>
-        entry.dataKey === "futureChargePercent" && typeof entry.value === "number",
+        entry.dataKey === "futureChargePercent" &&
+        typeof entry.value === "number",
     ) ??
     payload.find(
       (entry) =>
-        entry.dataKey === "currentChargePercent" && typeof entry.value === "number",
+        entry.dataKey === "currentChargePercent" &&
+        typeof entry.value === "number",
     );
 
   if (!powerEntry && !chargeEntry) {
@@ -1974,12 +2015,23 @@ function CombinedHistoryTooltip({
   labelFormatter: (label: string | number) => string;
   payload?: TooltipPayloadEntry[];
 }) {
-  if (label === undefined || label === null || !active || !payload || payload.length === 0) {
+  if (
+    label === undefined ||
+    label === null ||
+    !active ||
+    !payload ||
+    payload.length === 0
+  ) {
     return null;
   }
 
   const rows: Array<{ color: string; label: string; value: string }> = [];
-  const pushEntry = (entry: TooltipPayloadEntry | undefined, color: string, rowLabel: string, value: string) => {
+  const pushEntry = (
+    entry: TooltipPayloadEntry | undefined,
+    color: string,
+    rowLabel: string,
+    value: string,
+  ) => {
     if (entry && typeof entry.value === "number") {
       rows.push({ color, label: rowLabel, value });
     }
@@ -1987,15 +2039,25 @@ function CombinedHistoryTooltip({
 
   const selectEntry = (...keys: string[]) =>
     payload.find(
-      (entry) => keys.includes(entry.dataKey ?? "") && typeof entry.value === "number",
+      (entry) =>
+        keys.includes(entry.dataKey ?? "") && typeof entry.value === "number",
     );
 
   const priceEntry = selectEntry("futurePrice", "currentPrice");
   const solarEntry = selectEntry("futureSolar", "currentSolar");
-  const solarEnergyEntry = selectEntry("futureSolarEnergy", "currentSolarEnergy");
-  const batteryLevelEntry = selectEntry("futureBatteryLevel", "currentBatteryLevel");
+  const solarEnergyEntry = selectEntry(
+    "futureSolarEnergy",
+    "currentSolarEnergy",
+  );
+  const batteryLevelEntry = selectEntry(
+    "futureBatteryLevel",
+    "currentBatteryLevel",
+  );
   const gridPowerEntry = selectEntry("futureGridPower", "currentGridPower");
-  const batteryPowerEntry = selectEntry("futureBatteryPower", "currentBatteryPower");
+  const batteryPowerEntry = selectEntry(
+    "futureBatteryPower",
+    "currentBatteryPower",
+  );
 
   if (priceEntry && typeof priceEntry.value === "number") {
     rows.push({
@@ -2047,8 +2109,7 @@ function CombinedHistoryTooltip({
     rows.push({
       color:
         gridPowerEntry.value >= 0 ? UI_COLORS.gridExport : UI_COLORS.gridImport,
-      label:
-        gridPowerEntry.value >= 0 ? "Export" : "Import",
+      label: gridPowerEntry.value >= 0 ? "Export" : "Import",
       value: formatAbsolutePowerValue(gridPowerEntry.value),
     });
   }
@@ -2088,95 +2149,15 @@ function TooltipRow({
   return (
     <div className="flex items-center justify-between gap-4">
       <span className="flex items-center gap-2 text-slate-200">
-        <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
+        <span
+          className="h-2.5 w-2.5 rounded-full"
+          style={{ backgroundColor: color }}
+        />
         {label}
       </span>
       <span className="font-medium text-white">{value}</span>
     </div>
   );
-}
-
-function buildSegmentedLineSegments({
-  negativeColor,
-  positiveColor,
-  points,
-  strokeOpacity,
-}: {
-  negativeColor: string;
-  positiveColor: string;
-  points: SegmentedLinePoint[];
-  strokeOpacity: number;
-}): SegmentedLineSeries[] {
-  const segments: SegmentedLineSeries[] = [];
-
-  for (let index = 0; index < points.length - 1; index += 1) {
-    const current = points[index];
-    const next = points[index + 1];
-
-    if (
-      !current ||
-      !next ||
-      typeof current.value !== "number" ||
-      typeof next.value !== "number"
-    ) {
-      continue;
-    }
-
-    if (current.value === 0 && next.value === 0) {
-      segments.push({
-        color: positiveColor,
-        key: `${current.timestampMs}-${next.timestampMs}-zero`,
-        points: [
-          { timestampMs: current.timestampMs, value: current.value },
-          { timestampMs: next.timestampMs, value: next.value },
-        ],
-        strokeOpacity,
-      });
-      continue;
-    }
-
-    if (current.value === 0 || next.value === 0 || current.value * next.value > 0) {
-      const segmentValue = current.value !== 0 ? current.value : next.value;
-
-      segments.push({
-        color: segmentValue >= 0 ? positiveColor : negativeColor,
-        key: `${current.timestampMs}-${next.timestampMs}-direct`,
-        points: [
-          { timestampMs: current.timestampMs, value: current.value },
-          { timestampMs: next.timestampMs, value: next.value },
-        ],
-        strokeOpacity,
-      });
-      continue;
-    }
-
-    const zeroRatio = Math.abs(current.value) /
-      (Math.abs(current.value) + Math.abs(next.value));
-    const zeroTimestampMs =
-      current.timestampMs +
-      (next.timestampMs - current.timestampMs) * zeroRatio;
-
-    segments.push({
-      color: current.value >= 0 ? positiveColor : negativeColor,
-      key: `${current.timestampMs}-${next.timestampMs}-before-zero`,
-      points: [
-        { timestampMs: current.timestampMs, value: current.value },
-        { timestampMs: zeroTimestampMs, value: 0 },
-      ],
-      strokeOpacity,
-    });
-    segments.push({
-      color: next.value >= 0 ? positiveColor : negativeColor,
-      key: `${current.timestampMs}-${next.timestampMs}-after-zero`,
-      points: [
-        { timestampMs: zeroTimestampMs, value: 0 },
-        { timestampMs: next.timestampMs, value: next.value },
-      ],
-      strokeOpacity,
-    });
-  }
-
-  return segments;
 }
 
 function HistoryTooltip({
@@ -2467,7 +2448,8 @@ function combineBatteryHistorySeries(input: {
       futureChargePercent: chargePoint?.futureValue ?? null,
       futureChargingPower: powerPoint.futurePositiveValue,
       futureDischargingPower: powerPoint.futureNegativeValue,
-      futurePower: powerPoint.futurePositiveValue ?? powerPoint.futureNegativeValue,
+      futurePower:
+        powerPoint.futurePositiveValue ?? powerPoint.futureNegativeValue,
       periodStart: powerPoint.periodStart,
     };
   });
@@ -2655,36 +2637,39 @@ function splitCombinedSeriesByTime(
     const includeInFutureSeries =
       firstFutureIndex !== -1 && index >= Math.max(0, firstFutureIndex - 1);
 
-      return {
-        ...point,
-        currentBatteryCharge: isFuture ? null : point.batteryCharge,
-        currentBatteryLevel: isFuture ? null : point.batteryLevel,
-        currentBatteryDischarge: isFuture ? null : point.batteryDischarge,
-        currentBatteryPower:
-          isFuture ? null : (point.batteryCharge ?? point.batteryDischarge),
-        currentGridExport: isFuture ? null : point.gridExport,
-        currentGridImport: isFuture ? null : point.gridImport,
-        currentGridPower: isFuture ? null : (point.gridExport ?? point.gridImport),
-        currentPrice: isFuture ? null : point.price,
-        currentSolarEnergy: isFuture ? null : point.solarEnergy,
-        currentSolar: isFuture ? null : point.solar,
-        futureBatteryCharge: includeInFutureSeries ? point.batteryCharge : null,
-        futureBatteryLevel: includeInFutureSeries ? point.batteryLevel : null,
-        futureBatteryDischarge: includeInFutureSeries
-          ? point.batteryDischarge
-          : null,
-        futureBatteryPower: includeInFutureSeries
-          ? (point.batteryCharge ?? point.batteryDischarge)
-          : null,
-        futureGridExport: includeInFutureSeries ? point.gridExport : null,
-        futureGridImport: includeInFutureSeries ? point.gridImport : null,
-        futureGridPower: includeInFutureSeries
-          ? (point.gridExport ?? point.gridImport)
-          : null,
-        futurePrice: includeInFutureSeries ? point.price : null,
-        futureSolarEnergy: includeInFutureSeries ? point.solarEnergy : null,
-        futureSolar: includeInFutureSeries ? point.solar : null,
-      };
+    return {
+      ...point,
+      currentBatteryCharge: isFuture ? null : point.batteryCharge,
+      currentBatteryLevel: isFuture ? null : point.batteryLevel,
+      currentBatteryDischarge: isFuture ? null : point.batteryDischarge,
+      currentBatteryPower: isFuture
+        ? null
+        : (point.batteryCharge ?? point.batteryDischarge),
+      currentGridExport: isFuture ? null : point.gridExport,
+      currentGridImport: isFuture ? null : point.gridImport,
+      currentGridPower: isFuture
+        ? null
+        : (point.gridExport ?? point.gridImport),
+      currentPrice: isFuture ? null : point.price,
+      currentSolarEnergy: isFuture ? null : point.solarEnergy,
+      currentSolar: isFuture ? null : point.solar,
+      futureBatteryCharge: includeInFutureSeries ? point.batteryCharge : null,
+      futureBatteryLevel: includeInFutureSeries ? point.batteryLevel : null,
+      futureBatteryDischarge: includeInFutureSeries
+        ? point.batteryDischarge
+        : null,
+      futureBatteryPower: includeInFutureSeries
+        ? (point.batteryCharge ?? point.batteryDischarge)
+        : null,
+      futureGridExport: includeInFutureSeries ? point.gridExport : null,
+      futureGridImport: includeInFutureSeries ? point.gridImport : null,
+      futureGridPower: includeInFutureSeries
+        ? (point.gridExport ?? point.gridImport)
+        : null,
+      futurePrice: includeInFutureSeries ? point.price : null,
+      futureSolarEnergy: includeInFutureSeries ? point.solarEnergy : null,
+      futureSolar: includeInFutureSeries ? point.solar : null,
+    };
   });
 }
 
@@ -2810,7 +2795,11 @@ function createLocalDayPeriods(dayKey: string): string[] {
 
   const periods: string[] = [];
 
-  for (let periodStartMs = startMs; periodStartMs < endMs; periodStartMs += HISTORY_STEP_MS) {
+  for (
+    let periodStartMs = startMs;
+    periodStartMs < endMs;
+    periodStartMs += HISTORY_STEP_MS
+  ) {
     periods.push(new Date(periodStartMs).toISOString());
   }
 
@@ -2829,7 +2818,8 @@ export function buildMirroredYAxis(
   }
 
   const numericValues = values.filter(
-    (value): value is number => typeof value === "number" && Number.isFinite(value),
+    (value): value is number =>
+      typeof value === "number" && Number.isFinite(value),
   );
 
   if (numericValues.length === 0) {
@@ -2919,13 +2909,19 @@ function buildXAxisTicks<T extends string | number>(
 }
 
 function getResponsiveTickCount(chartWidth: number): number {
-  const usableWidth = Math.max(0, chartWidth - STANDARD_Y_AXIS_WIDTH * 2);
+  const usableWidth = Math.max(
+    0,
+    chartWidth - LEFT_Y_AXIS_WIDTH - RIGHT_Y_AXIS_WIDTH,
+  );
 
   return Math.max(3, Math.min(8, Math.floor(usableWidth / 84)));
 }
 
 function getResponsiveHourStep(chartWidth: number): number {
-  const usableWidth = Math.max(0, chartWidth - STANDARD_Y_AXIS_WIDTH * 2);
+  const usableWidth = Math.max(
+    0,
+    chartWidth - LEFT_Y_AXIS_WIDTH - RIGHT_Y_AXIS_WIDTH,
+  );
 
   if (usableWidth >= 860) {
     return 2;
@@ -3113,12 +3109,13 @@ function buildNowLabel() {
 
 function buildYAxisLabel(
   value: string,
-  position: "insideLeft" | "insideRight",
+  position: "insideLeft" | "right",
 ) {
   return {
     angle: position === "insideLeft" ? -90 : 90,
     fill: UI_COLORS.chartTickMuted,
     fontSize: 12,
+    offset: 0,
     position,
     value,
   };

@@ -21,29 +21,44 @@ export function AppNav() {
     { href: "/forecast", icon: CloudSun, label: "Solar Forecast" },
     { href: "/pricing", icon: HandCoins, label: "Price" },
     { href: "/grid", icon: Gauge, label: "Grid" },
-    { href: "/history", icon: HistoryIcon, label: "History" },
+    { href: "/history", icon: HistoryIcon, label: "History", disabled: true },
   ];
 
   return (
     <nav className="flex flex-wrap items-center gap-6" aria-label="Primary">
-      {navItems.map(({ href, icon: Icon, label }) => (
-        <Link
-          aria-label={label}
-          key={href}
-          className={cn(
-            UI_STYLES.tabItem,
-            pathname === href
-              ? UI_STYLES.appNavActive
-              : UI_STYLES.appNavInactive,
-          )}
-          href={href}
-          prefetch
-          scroll={false}
-        >
-          <Icon size={14} />
-          <span className="hidden sm:inline">{label}</span>
-        </Link>
-      ))}
+      {navItems.map(({ href, icon: Icon, label, disabled }) =>
+        disabled ? (
+          <span
+            key="disabled-history"
+            aria-label={`${label} (disabled)`}
+            className={cn(
+              UI_STYLES.tabItem,
+              UI_STYLES.appNavInactive,
+              "opacity-50 cursor-not-allowed",
+            )}
+          >
+            <Icon size={14} />
+            <span className="hidden sm:inline">{label}</span>
+          </span>
+        ) : (
+          <Link
+            aria-label={label}
+            key={href}
+            className={cn(
+              UI_STYLES.tabItem,
+              pathname === href
+                ? UI_STYLES.appNavActive
+                : UI_STYLES.appNavInactive,
+            )}
+            href={href}
+            prefetch
+            scroll={false}
+          >
+            <Icon size={14} />
+            <span className="hidden sm:inline">{label}</span>
+          </Link>
+        ),
+      )}
     </nav>
   );
 }

@@ -623,7 +623,10 @@ export function PricingSection({
   const coverageSummary = snapshot
     ? formatPriceCoverageSummary(snapshot.points)
     : null;
-  const currentPricePoint = getCurrentPricePoint(snapshot?.points ?? [], Date.now());
+  const currentPricePoint = getCurrentPricePoint(
+    snapshot?.points ?? [],
+    Date.now(),
+  );
 
   return (
     <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">

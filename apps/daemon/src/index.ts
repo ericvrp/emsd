@@ -895,13 +895,16 @@ function logAppliedBatteryControlChanges(
     );
   }
 
-  if (
-    previous.manualSignature !== current.manualSignature &&
-    battery.manualModeActive
-  ) {
-    logInfo(
-      `manual strategy applied for ${battery.id}: ${describeCurrentBatteryStrategy(battery)}`,
-    );
+  if (previous.manualSignature !== current.manualSignature) {
+    if (battery.manualModeActive || battery.strategyMode === "manual") {
+      logInfo(
+        `manual strategy applied for ${battery.id}: ${describeCurrentBatteryStrategy(battery)}`,
+      );
+    } else {
+      logInfo(
+        `automatic strategy applied for ${battery.id}: ${describeCurrentBatteryStrategy(battery)}`,
+      );
+    }
   }
 }
 

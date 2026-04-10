@@ -7,7 +7,6 @@ import type {
 import { CalendarClock, Hand, X } from "lucide-react";
 import type { ComponentType } from "react";
 import { useEffect, useState } from "react";
-import { UI_STYLES } from "../lib/ui-colors";
 import { BatteryStrategyForm } from "./battery-strategy-form";
 import { BatteryStrategyPlanForm } from "./battery-strategy-plan-form";
 import { Button } from "./ui/button";
@@ -110,19 +109,21 @@ export function BatteryStrategyDialog({
 
                 <div className="mt-6 min-h-0 flex-1 overflow-y-auto">
                   <div className="space-y-6">
-                    <div className={UI_STYLES.tabBar}>
-                      <ModeSwitchButton
-                        active={selectedMode === "manual"}
-                        icon={Hand}
-                        label="Manual Mode"
-                        onClick={() => setSelectedMode("manual")}
-                      />
-                      <ModeSwitchButton
-                        active={selectedMode === "strategy"}
-                        icon={CalendarClock}
-                        label="Strategy Mode"
-                        onClick={() => setSelectedMode("strategy")}
-                      />
+                    <div className="rounded-t-2xl border-b border-white/10 bg-white/5 px-4 pb-1">
+                      <div className="flex items-center justify-center gap-6">
+                        <ModeSwitchButton
+                          active={selectedMode === "manual"}
+                          icon={Hand}
+                          label="Manual Mode"
+                          onClick={() => setSelectedMode("manual")}
+                        />
+                        <ModeSwitchButton
+                          active={selectedMode === "strategy"}
+                          icon={CalendarClock}
+                          label="Strategy Mode"
+                          onClick={() => setSelectedMode("strategy")}
+                        />
+                      </div>
                     </div>
 
                     {selectedMode === "manual" ? (
@@ -135,7 +136,7 @@ export function BatteryStrategyDialog({
                             currentSocPercent={currentSocPercent}
                             hideStrategySelector
                             manualOnly
-                            manualModeActive
+                            manualModeActive={true}
                             showContextSummary={false}
                             minimumDischargePercent={minimumDischargePercent}
                             returnPath="/"
@@ -179,7 +180,11 @@ function ModeSwitchButton({
 }) {
   return (
     <button
-      className={`${UI_STYLES.tabItem} px-3 py-2 ${active ? UI_STYLES.tabItemActive : UI_STYLES.tabItemInactive}`}
+      className={`inline-flex items-center gap-2 border-b-2 border-transparent px-1 py-2 text-sm font-medium transition ${
+        active
+          ? "border-white text-white"
+          : "text-slate-200 hover:border-white/25 hover:text-white"
+      }`}
       onClick={onClick}
       type="button"
     >

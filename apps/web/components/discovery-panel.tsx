@@ -61,7 +61,9 @@ export function DiscoveryPanel({
     () => [...devices].sort(compareDiscoveryDevices),
     [devices],
   );
-  const batteries = orderedDevices.filter((device) => device.category === "battery");
+  const batteries = orderedDevices.filter(
+    (device) => device.category === "battery",
+  );
   const solarProviders = orderedDevices.filter(
     (device) => device.category === "solar-energy-provider",
   );
@@ -518,7 +520,9 @@ function compareDiscoveryDevices(
   return left.name.localeCompare(right.name);
 }
 
-function formatDiscoveryEmptyLabel(category: SignedDiscoveredDevice["category"]): string {
+function formatDiscoveryEmptyLabel(
+  category: SignedDiscoveredDevice["category"],
+): string {
   if (category === "battery") {
     return "batteries";
   }

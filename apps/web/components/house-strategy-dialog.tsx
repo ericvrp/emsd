@@ -1,11 +1,13 @@
 "use client";
 
-import type { BatteryStrategyPlanRecord, BatteryStrategyRecord } from "@emsd/core";
+import type {
+  BatteryStrategyPlanRecord,
+  BatteryStrategyRecord,
+} from "@emsd/core";
 import { CalendarClock, Hand, X } from "lucide-react";
 import type { ComponentType } from "react";
 import { useEffect, useState } from "react";
 import { setHouseStrategyAction } from "../app/actions";
-import { UI_STYLES } from "../lib/ui-colors";
 import { BatteryStrategyForm } from "./battery-strategy-form";
 import { BatteryStrategyPlanForm } from "./battery-strategy-plan-form";
 import { Button } from "./ui/button";
@@ -28,7 +30,9 @@ interface HouseStrategyDialogProps {
   siteName: string;
 }
 
-function getModeIcon(manualModeActive: boolean): ComponentType<{ className?: string }> {
+function getModeIcon(
+  manualModeActive: boolean,
+): ComponentType<{ className?: string }> {
   return manualModeActive ? Hand : CalendarClock;
 }
 
@@ -37,7 +41,11 @@ function ModeIcon({ manualModeActive }: { manualModeActive: boolean }) {
   return <Icon className="h-4 w-4" />;
 }
 
-function formatStrategyLabel(manualModeActive: boolean, strategy: BatteryStrategyRecord, strategyPlan: BatteryStrategyPlanRecord): string {
+function formatStrategyLabel(
+  manualModeActive: boolean,
+  strategy: BatteryStrategyRecord,
+  strategyPlan: BatteryStrategyPlanRecord,
+): string {
   if (manualModeActive) {
     if (strategy.strategyMode === "self-consumption") {
       return "Self-consumption";
@@ -103,21 +111,24 @@ export function HouseStrategyDialog({
     }
   }, [isOpen, manualModeActive]);
 
-  const strategy =
-    firstBattery?.batteryStrategy ?? {
-      strategyMode: "self-consumption",
-      manualPowerW: null,
-      manualState: null,
-      manualChargeTargetSoc: 100,
-      manualDischargeTargetSoc: firstBattery?.minimumDischargePercent ?? 10,
-      manualTargetSoc: 100,
-    };
+  const strategy = firstBattery?.batteryStrategy ?? {
+    strategyMode: "self-consumption",
+    manualPowerW: null,
+    manualState: null,
+    manualChargeTargetSoc: 100,
+    manualDischargeTargetSoc: firstBattery?.minimumDischargePercent ?? 10,
+    manualTargetSoc: 100,
+  };
 
   const strategyPlan = firstBattery?.batteryStrategyPlan ?? [];
   const minimumDischargePercent = firstBattery?.minimumDischargePercent ?? 10;
   const currentSocPercent = firstBattery?.telemetry?.socPercent ?? null;
   const capacityWh = firstBattery?.telemetry?.capacityWh ?? null;
-  const buttonLabel = formatStrategyLabel(manualModeActive, strategy, strategyPlan);
+  const buttonLabel = formatStrategyLabel(
+    manualModeActive,
+    strategy,
+    strategyPlan,
+  );
 
   return (
     <>
@@ -150,40 +161,42 @@ export function HouseStrategyDialog({
 
                 <div className="min-h-0 flex-1 overflow-y-auto">
                   <div className="space-y-6">
-                    <div className={UI_STYLES.tabBar}>
-                      <ModeSwitchButton
-                        active={selectedMode === "manual"}
-                        icon={Hand}
-                        label="Manual"
-                        onClick={() => setSelectedMode("manual")}
-                      />
-                      <ModeSwitchButton
-                        active={selectedMode === "strategy"}
-                        icon={CalendarClock}
-                        label="Automatic"
-                        onClick={() => setSelectedMode("strategy")}
-                      />
+                    <div className="rounded-t-2xl border-b border-white/10 bg-white/5 px-4 pb-1">
+                      <div className="flex items-center justify-center gap-6">
+                        <ModeSwitchButton
+                          active={selectedMode === "manual"}
+                          icon={Hand}
+                          label="Manual"
+                          onClick={() => setSelectedMode("manual")}
+                        />
+                        <ModeSwitchButton
+                          active={selectedMode === "strategy"}
+                          icon={CalendarClock}
+                          label="Automatic"
+                          onClick={() => setSelectedMode("strategy")}
+                        />
+                      </div>
                     </div>
 
                     {selectedMode === "manual" ? (
                       <div className="rounded-2xl border border-white/8 bg-slate-950/40 p-4">
                         <div className="space-y-4">
-                          <BatteryStrategyForm
-                            action={setHouseStrategyAction}
-                            batteryId="house"
-                            batteryName="All batteries"
-                            capacityWh={capacityWh}
-                            currentSocPercent={currentSocPercent}
-                            hideStrategySelector
-                            manualOnly
-                            manualModeActive={manualModeActive}
-                            showContextSummary={false}
-                            minimumDischargePercent={minimumDischargePercent}
-                            returnPath="/"
-                            siteId={siteId}
-                            strategy={strategy}
-                            submitLabel="Save"
-                          />
+                            <BatteryStrategyForm
+                              action={setHouseStrategyAction}
+                              batteryId="house"
+                              batteryName="All batteries"
+                              capacityWh={capacityWh}
+                              currentSocPercent={currentSocPercent}
+                              hideStrategySelector
+                              manualOnly
+                              manualModeActive={true}
+                              showContextSummary={false}
+                              minimumDischargePercent={minimumDischargePercent}
+                              returnPath="/"
+                              siteId={siteId}
+                              strategy={strategy}
+                              submitLabel="Save"
+                            />
                         </div>
                       </div>
                     ) : (
@@ -222,8 +235,10 @@ function ModeSwitchButton({
 }) {
   return (
     <button
-      className={`${UI_STYLES.tabItem} flex-1 ${
-        active ? UI_STYLES.tabItemActive : UI_STYLES.tabItemInactive
+      className={`inline-flex flex-1 items-center justify-center gap-2 border-b-2 border-transparent px-1 py-2 text-sm font-medium transition ${
+        active
+          ? "border-white text-white"
+          : "text-slate-200 hover:border-white/25 hover:text-white"
       }`}
       onClick={onClick}
       type="button"

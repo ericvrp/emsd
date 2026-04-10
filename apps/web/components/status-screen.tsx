@@ -50,8 +50,9 @@ export async function StatusScreen({
       : null;
   const currentBatteryState =
     batteries.length > 0
-      ? batteries.find((b) => b.telemetry?.state)?.telemetry?.state ??
-        (batteries[0]?.state ?? null)
+      ? (batteries.find((b) => b.telemetry?.state)?.telemetry?.state ??
+        batteries[0]?.state ??
+        null)
       : null;
   let historyArchive = null;
   let historyArchiveError: string | null = null;
