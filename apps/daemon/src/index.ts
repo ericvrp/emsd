@@ -902,7 +902,7 @@ function logAppliedBatteryControlChanges(
       );
     } else {
       logInfo(
-        `automatic strategy applied for ${battery.id}: ${describeCurrentBatteryStrategy(battery)}`,
+        `automatic strategy applied for ${battery.id}: ${JSON.stringify(battery.strategyPlan)}`,
       );
     }
   }
