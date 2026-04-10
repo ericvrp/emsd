@@ -5,34 +5,37 @@ import {
   formatAbsolutePowerValue,
   formatShortPowerValue,
 } from "../lib/power-format";
-import { DisabledDateSelect } from "./date-select";
 import { UI_COLORS } from "../lib/ui-colors";
 import {
+  SegmentedLineHistoryChart,
   aggregatePowerSamples,
   fillSingleValueDay,
-  getCurrentPeriodStart,
-  getTodayLocalDayKey,
   invertSingleValueSeries,
-  SegmentedLineHistoryChart,
   splitSingleValueSeriesByTime,
 } from "./history-page";
 import { SectionSummaryCard } from "./section-summary-card";
+import {
+  TopLevelDaySelect,
+  useTopLevelDaySelection,
+} from "./top-level-day-select";
 
 type GridPageProps = {
   archive: HistoryArchive;
+  requestedDay: string | null;
   siteName: string;
 };
 
-export function GridPage({ archive, siteName }: GridPageProps) {
-  const todayKey = getTodayLocalDayKey();
-  const currentPeriodStart = getCurrentPeriodStart();
-  const todayGridSeries = fillSingleValueDay(
+export function GridPage({ archive, requestedDay, siteName }: GridPageProps) {
+  const daySelection = useTopLevelDaySelection({ archive, requestedDay });
+  const selectedDayGridSeries = fillSingleValueDay(
     invertSingleValueSeries(aggregatePowerSamples(archive.p1MeterSamples)),
-    todayKey,
+    daySelection.selectedDay,
   );
   const currentGridPower = getLatestValueAtOrBefore(
-    todayGridSeries,
-    currentPeriodStart,
+    selectedDayGridSeries,
+    daySelection.nowMarkerPeriodStart ??
+      selectedDayGridSeries.at(-1)?.periodStart ??
+      "",
   );
 
   return (
@@ -59,12 +62,12 @@ export function GridPage({ archive, siteName }: GridPageProps) {
 
       <div className="mt-5 space-y-4 rounded-[1.4rem] border border-white/10 bg-white/5 p-4">
         <SegmentedLineHistoryChart
-          emptyMessage="No P1 meter samples have been collected for today yet."
-          headerAccessory={<DisabledDateSelect day={todayKey} />}
+          emptyMessage="No grid samples for this day."
+          headerAccessory={<TopLevelDaySelect daySelection={daySelection} />}
           negativeColor={UI_COLORS.gridImport}
           negativeLabel="Import"
-          nowMarkerPeriodStart={currentPeriodStart}
-          points={splitSingleValueSeriesByTime(todayGridSeries)}
+          nowMarkerPeriodStart={daySelection.nowMarkerPeriodStart}
+          points={splitSingleValueSeriesByTime(selectedDayGridSeries)}
           positiveColor={UI_COLORS.gridExport}
           positiveLabel="Export"
           valueFormatter={formatAbsolutePowerValue}

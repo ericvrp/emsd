@@ -3,25 +3,28 @@
 import type { HistoryArchive, LiveStatusSnapshot } from "../lib/ems-bridge";
 import { formatPowerValue, formatShortPowerValue } from "../lib/power-format";
 import { UI_COLORS } from "../lib/ui-colors";
-import { DisabledDateSelect } from "./date-select";
 import {
   SingleValueHistoryChart,
   aggregatePowerSamples,
   fillSingleValueDay,
-  getCurrentPeriodStart,
-  getTodayLocalDayKey,
   splitSingleValueSeriesByTime,
 } from "./history-page";
 import { SectionSummaryCard } from "./section-summary-card";
+import {
+  TopLevelDaySelect,
+  useTopLevelDaySelection,
+} from "./top-level-day-select";
 
 type SolarEnergyPageProps = {
   archive: HistoryArchive;
   currentSite: LiveStatusSnapshot["sites"][number];
+  requestedDay: string | null;
 };
 
 export function SolarEnergyPage({
   archive,
   currentSite,
+  requestedDay,
 }: SolarEnergyPageProps) {
   const providers = currentSite.devices.filter(
     (device) => device.kind === "solar-energy-provider",
@@ -38,11 +41,10 @@ export function SolarEnergyPage({
     },
     null,
   );
-  const todayKey = getTodayLocalDayKey();
-  const currentPeriodStart = getCurrentPeriodStart();
-  const todaySolarSeries = fillSingleValueDay(
+  const daySelection = useTopLevelDaySelection({ archive, requestedDay });
+  const selectedDaySolarSeries = fillSingleValueDay(
     aggregatePowerSamples(archive.solarEnergyProviderSamples),
-    todayKey,
+    daySelection.selectedDay,
   );
 
   if (providers.length === 0) {
@@ -87,11 +89,11 @@ export function SolarEnergyPage({
       <div className="mt-5 space-y-4 rounded-[1.4rem] border border-white/10 bg-white/5 p-4">
         <SingleValueHistoryChart
           accentColor={UI_COLORS.solarEnergy}
-          emptyMessage="No generated wattage samples have been collected for today yet."
-          headerAccessory={<DisabledDateSelect day={todayKey} />}
+          emptyMessage="No solar energy samples for this day."
+          headerAccessory={<TopLevelDaySelect daySelection={daySelection} />}
           label="Generated Wattage"
-          nowMarkerPeriodStart={currentPeriodStart}
-          points={splitSingleValueSeriesByTime(todaySolarSeries)}
+          nowMarkerPeriodStart={daySelection.nowMarkerPeriodStart}
+          points={splitSingleValueSeriesByTime(selectedDaySolarSeries)}
           valueFormatter={formatPowerValue}
           yAxisLabel="Power (W)"
           yAxisFormatter={formatShortPowerValue}

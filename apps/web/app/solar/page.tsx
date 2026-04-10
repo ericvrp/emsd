@@ -6,10 +6,17 @@ import { DashboardPageFrame } from "../../components/dashboard-page-frame";
 import { SiteSetupPanel } from "../../components/settings-panel";
 import { SolarEnergyPage } from "../../components/solar-energy-page";
 import { getHistoryArchive, getLiveStatus } from "../../lib/ems-bridge";
+import { getSearchParamValue } from "../../lib/search-params";
 
 export const dynamic = "force-dynamic";
 
-export default async function SolarRoute() {
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+
+export default async function SolarRoute({
+  searchParams,
+}: {
+  searchParams?: SearchParams;
+}) {
   const session = await getServerSession(authOptions);
 
   if (!session) {
@@ -23,6 +30,8 @@ export default async function SolarRoute() {
   }
 
   const currentSite = snapshot.sites[0] ?? null;
+  const params = (await searchParams) ?? {};
+  const requestedDay = getSearchParamValue(params.day);
   const historyArchive = currentSite
     ? await getHistoryArchive({ siteId: currentSite.id })
     : null;
@@ -33,7 +42,11 @@ export default async function SolarRoute() {
       generatedAt={snapshot.generatedAt}
     >
       {currentSite && historyArchive ? (
-        <SolarEnergyPage archive={historyArchive} currentSite={currentSite} />
+        <SolarEnergyPage
+          archive={historyArchive}
+          currentSite={currentSite}
+          requestedDay={requestedDay}
+        />
       ) : (
         <SiteSetupPanel />
       )}

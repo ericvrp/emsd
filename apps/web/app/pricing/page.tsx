@@ -1,14 +1,13 @@
-import {
-  loadDashboardPageData,
-  type SearchParams,
-} from "../../components/dashboard-page-data";
-import { DashboardPageFrame } from "../../components/dashboard-page-frame";
 import { DaemonOfflineState } from "../../components/daemon-offline-state";
 import {
-  PricingSection,
-  SiteSetupPanel,
-} from "../../components/settings-panel";
+  type SearchParams,
+  loadDashboardPageData,
+} from "../../components/dashboard-page-data";
+import { DashboardPageFrame } from "../../components/dashboard-page-frame";
+import { PricingSection } from "../../components/pricing-page";
+import { SiteSetupPanel } from "../../components/settings-panel";
 import { getHistoryArchive } from "../../lib/ems-bridge";
+import { getSearchParamValue } from "../../lib/search-params";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +28,9 @@ export default async function PricingPage({
     dynamicPriceSnapshotError,
     generatedAt,
   } = dashboardData;
+  const requestedDay = getSearchParamValue(
+    dashboardData.resolvedSearchParams.day,
+  );
   const historyArchive = currentSite
     ? await getHistoryArchive({ siteId: currentSite.id })
     : null;
@@ -39,6 +41,7 @@ export default async function PricingPage({
         <PricingSection
           archive={historyArchive}
           error={dynamicPriceSnapshotError}
+          requestedDay={requestedDay}
           site={currentSite}
           snapshot={dynamicPriceSnapshot}
         />

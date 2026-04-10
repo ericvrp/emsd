@@ -1,6 +1,7 @@
 import { BatteryCharging, Zap } from "lucide-react";
 import { getHistoryArchive } from "../lib/ems-bridge";
 import { formatAbsolutePowerValue } from "../lib/power-format";
+import { getSearchParamValue } from "../lib/search-params";
 import { UI_STYLES } from "../lib/ui-colors";
 import { DaemonOfflineState } from "./daemon-offline-state";
 import {
@@ -23,6 +24,9 @@ export async function StatusScreen({
   }
 
   const { currentSite, generatedAt } = dashboardData;
+  const requestedDay = getSearchParamValue(
+    dashboardData.resolvedSearchParams.day,
+  );
 
   const batteries = currentSite
     ? currentSite.devices.filter((device) => device.kind === "battery")
@@ -100,6 +104,7 @@ export async function StatusScreen({
               currentChargePercent={currentBatteryCharge}
               currentPowerW={currentBatteryPower}
               currentState={currentBatteryState}
+              requestedDay={requestedDay}
               siteName={currentSite.name}
             />
           ) : null}

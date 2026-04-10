@@ -3,14 +3,12 @@
 import type { ReactNode } from "react";
 import type { HistoryArchive } from "../lib/ems-bridge";
 import { formatAbsolutePowerValue } from "../lib/power-format";
-import { DisabledDateSelect } from "./date-select";
+import { BatteryHistoryChart, buildBatteryHistoryPoints } from "./history-page";
 import { SectionSummaryCard } from "./section-summary-card";
 import {
-  BatteryHistoryChart,
-  buildBatteryHistoryPoints,
-  getCurrentPeriodStart,
-  getTodayLocalDayKey,
-} from "./history-page";
+  TopLevelDaySelect,
+  useTopLevelDaySelection,
+} from "./top-level-day-select";
 
 type HomeBatteryHistorySectionProps = {
   archive: HistoryArchive;
@@ -18,6 +16,7 @@ type HomeBatteryHistorySectionProps = {
   currentChargePercent: number | null;
   currentPowerW: number | null;
   currentState: string | null;
+  requestedDay: string | null;
   siteName: string;
 };
 
@@ -27,13 +26,13 @@ export function HomeBatteryHistorySection({
   currentChargePercent,
   currentPowerW,
   currentState,
+  requestedDay,
   siteName,
 }: HomeBatteryHistorySectionProps) {
-  const todayKey = getTodayLocalDayKey();
-  const nowMarkerPeriodStart = getCurrentPeriodStart();
+  const daySelection = useTopLevelDaySelection({ archive, requestedDay });
   const batteryHistoryPoints = buildBatteryHistoryPoints(
     archive.batteryPowerSamples,
-    todayKey,
+    daySelection.selectedDay,
   );
 
   return (
@@ -62,9 +61,9 @@ export function HomeBatteryHistorySection({
 
       <div className="mt-5 space-y-4 rounded-[1.4rem] border border-white/10 bg-white/5 p-4">
         <BatteryHistoryChart
-          emptyMessage="No battery power or charge samples have been collected for today yet."
-          headerAccessory={<DisabledDateSelect day={todayKey} />}
-          nowMarkerPeriodStart={nowMarkerPeriodStart}
+          emptyMessage="No battery samples for this day."
+          headerAccessory={<TopLevelDaySelect daySelection={daySelection} />}
+          nowMarkerPeriodStart={daySelection.nowMarkerPeriodStart}
           points={batteryHistoryPoints}
         />
       </div>
