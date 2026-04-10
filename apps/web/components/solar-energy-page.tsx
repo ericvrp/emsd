@@ -3,6 +3,7 @@
 import type { HistoryArchive, LiveStatusSnapshot } from "../lib/ems-bridge";
 import { UI_COLORS } from "../lib/ui-colors";
 import {
+  LegendChip,
   SingleValueHistoryChart,
   aggregatePowerSamples,
   fillSingleValueDay,
@@ -88,6 +89,9 @@ export function SolarEnergyPage({
       </div>
 
       <div className="mt-5 space-y-4 rounded-[1.4rem] border border-white/10 bg-white/5 p-4">
+        <div className="flex flex-wrap gap-2 text-xs font-medium text-slate-300">
+          <LegendChip color={UI_COLORS.solarEnergy} label="Generated Wattage" />
+        </div>
         <SingleValueHistoryChart
           accentColor={UI_COLORS.solarEnergy}
           emptyMessage="No generated wattage samples have been collected for today yet."

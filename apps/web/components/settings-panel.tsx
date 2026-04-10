@@ -52,6 +52,7 @@ import {
 import { UI_CHART_STYLES, UI_COLORS, UI_STYLES } from "../lib/ui-colors";
 import { cn } from "../lib/utils";
 import { DiscoveryPanel } from "./discovery-panel";
+import { LegendChip } from "./history-page";
 import { MeasuredChartContainer } from "./measured-chart-container";
 import { SubmitButton } from "./submit-button";
 import { Button } from "./ui/button";
@@ -648,6 +649,9 @@ function PriceChart({
 
   return (
     <div className="space-y-3">
+      <div className="flex flex-wrap gap-2 text-xs font-medium text-slate-300">
+        <LegendChip color={UI_COLORS.price} label="Price" />
+      </div>
       <MeasuredChartContainer className="h-[260px] min-w-0 w-full">
         {({ height, width }) => (
             <BarChart
@@ -765,6 +769,9 @@ function ForecastChart({
 
   return (
     <div className="space-y-3">
+      <div className="flex flex-wrap gap-2 text-xs font-medium text-slate-300">
+        <LegendChip color={UI_COLORS.forecast} label={metricLabel} />
+      </div>
       <MeasuredChartContainer className="h-[260px] min-w-0 w-full">
         {({ height, width }) => (
             <AreaChart
