@@ -136,15 +136,7 @@ export function HouseStrategyDialog({
           <div className="fixed inset-0 z-[100] overflow-y-auto bg-slate-950/75 p-4 backdrop-blur-sm">
             <div className="flex min-h-full items-start justify-center py-6">
               <div className="flex h-[min(90vh,960px)] w-full max-w-6xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-slate-950 p-4 shadow-[0_30px_120px_rgba(0,0,0,0.45)] sm:p-6">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-sm font-semibold uppercase tracking-[0.22em] text-cyan-300">
-                      House Strategy
-                    </p>
-                    <h2 className="mt-3 text-3xl font-semibold text-white">
-                      {siteName}
-                    </h2>
-                  </div>
+                <div className="mb-6 flex items-start justify-between gap-4">
                   <Button
                     aria-label="Close strategy dialog"
                     className="h-9 w-9 px-0"
@@ -156,7 +148,7 @@ export function HouseStrategyDialog({
                   </Button>
                 </div>
 
-                <div className="mt-6 min-h-0 flex-1 overflow-y-auto">
+                <div className="min-h-0 flex-1 overflow-y-auto">
                   <div className="space-y-6">
                     <div className={UI_STYLES.tabBar}>
                       <ModeSwitchButton
@@ -230,15 +222,13 @@ function ModeSwitchButton({
 }) {
   return (
     <button
-      className={`flex flex-1 items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-medium transition ${
-        active
-          ? "bg-cyan-500/15 text-cyan-100"
-          : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
+      className={`${UI_STYLES.tabItem} flex-1 ${
+        active ? UI_STYLES.tabItemActive : UI_STYLES.tabItemInactive
       }`}
       onClick={onClick}
       type="button"
     >
-      <Icon className="h-4 w-4" />
+      <Icon className="h-[15px] w-[15px]" />
       {label}
     </button>
   );
