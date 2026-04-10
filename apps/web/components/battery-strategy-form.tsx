@@ -301,9 +301,9 @@ export function BatteryStrategyForm({
                     Self-consumption
                   </SelectItem>
                 ) : null}
+                <SelectItem value="idle">Idle</SelectItem>
                 <SelectItem value="charging">Charge</SelectItem>
                 <SelectItem value="discharging">Discharge</SelectItem>
-                <SelectItem value="idle">Idle</SelectItem>
               </SelectContent>
             </Select>
           </div>
