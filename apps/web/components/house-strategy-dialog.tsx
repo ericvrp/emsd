@@ -11,6 +11,8 @@ import {
   setHouseStrategyAction,
   setHouseStrategyPlanAction,
 } from "../app/actions";
+import { UI_STYLES } from "../lib/ui-colors";
+import { cn } from "../lib/utils";
 import { BatteryStrategyForm } from "./battery-strategy-form";
 import { BatteryStrategyPlanForm } from "./battery-strategy-plan-form";
 import { Button } from "./ui/button";
@@ -151,6 +153,14 @@ export function HouseStrategyDialog({
             <div className="flex min-h-full items-start justify-center py-6">
               <div className="flex h-[min(90vh,960px)] w-full max-w-6xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-slate-950 p-4 shadow-[0_30px_120px_rgba(0,0,0,0.45)] sm:p-6">
                 <div className="mb-6 flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-semibold uppercase tracking-[0.22em] text-cyan-300">
+                      Strategy
+                    </p>
+                    <h2 className="mt-2 text-xl font-semibold text-white sm:text-2xl">
+                      {siteName}
+                    </h2>
+                  </div>
                   <Button
                     aria-label="Close strategy dialog"
                     className="h-9 w-9 px-0"
@@ -163,9 +173,9 @@ export function HouseStrategyDialog({
                 </div>
 
                 <div className="min-h-0 flex-1 overflow-y-auto">
-                  <div className="space-y-6">
-                    <div className="rounded-t-2xl border-b border-white/10 bg-white/5 px-4 pb-1">
-                      <div className="flex items-center justify-center gap-6">
+                  <div className="overflow-hidden rounded-2xl bg-white/5">
+                    <div className="pt-2.5 sm:pt-3">
+                      <div className={UI_STYLES.tabBar}>
                         <ModeSwitchButton
                           active={selectedMode === "manual"}
                           icon={Hand}
@@ -181,39 +191,37 @@ export function HouseStrategyDialog({
                       </div>
                     </div>
 
-                    {selectedMode === "manual" ? (
-                      <div className="rounded-2xl border border-white/8 bg-slate-950/40 p-4">
-                        <div className="space-y-4">
-                          <BatteryStrategyForm
-                            action={setHouseStrategyAction}
-                            batteryId="house"
-                            batteryName="All batteries"
-                            capacityWh={capacityWh}
-                            currentSocPercent={currentSocPercent}
-                            hideStrategySelector
-                            manualOnly
-                            manualModeActive={true}
-                            showContextSummary={false}
-                            minimumDischargePercent={minimumDischargePercent}
-                            returnPath="/"
-                            siteId={siteId}
-                            strategy={strategy}
-                            submitLabel="Save"
-                          />
-                        </div>
-                      </div>
-                    ) : (
-                      <BatteryStrategyPlanForm
-                        action={setHouseStrategyPlanAction}
-                        batteryId="house"
-                        batteryName="All batteries"
-                        minimumDischargePercent={minimumDischargePercent}
-                        returnPath="/"
-                        siteId={siteId}
-                        strategyPlan={strategyPlan}
-                        submitLabel="Save"
-                      />
-                    )}
+                    <div className="px-4 py-5">
+                      {selectedMode === "manual" ? (
+                        <BatteryStrategyForm
+                          action={setHouseStrategyAction}
+                          batteryId="house"
+                          batteryName="All batteries"
+                          capacityWh={capacityWh}
+                          currentSocPercent={currentSocPercent}
+                          hideStrategySelector
+                          manualOnly
+                          manualModeActive={true}
+                          showContextSummary={false}
+                          minimumDischargePercent={minimumDischargePercent}
+                          returnPath="/"
+                          siteId={siteId}
+                          strategy={strategy}
+                          submitLabel="Save"
+                        />
+                      ) : (
+                        <BatteryStrategyPlanForm
+                          action={setHouseStrategyPlanAction}
+                          batteryId="house"
+                          batteryName="All batteries"
+                          minimumDischargePercent={minimumDischargePercent}
+                          returnPath="/"
+                          siteId={siteId}
+                          strategyPlan={strategyPlan}
+                          submitLabel="Save"
+                        />
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -238,11 +246,10 @@ function ModeSwitchButton({
 }) {
   return (
     <button
-      className={`inline-flex flex-1 items-center justify-center gap-2 border-b-2 border-transparent px-1 py-2 text-sm font-medium transition ${
-        active
-          ? "border-white text-white"
-          : "text-slate-200 hover:border-white/25 hover:text-white"
-      }`}
+      className={cn(
+        UI_STYLES.tabItem,
+        active ? UI_STYLES.tabItemActive : UI_STYLES.tabItemInactive,
+      )}
       onClick={onClick}
       type="button"
     >
