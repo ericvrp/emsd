@@ -7,8 +7,8 @@ import type {
 import {
   formatDaemonLogTimestamp,
   getTodayTriggerAt,
-  shouldMarkScheduledItemObserved,
   shouldCompleteScheduledItem,
+  shouldMarkScheduledItemObserved,
   shouldSkipDelayedSocItemBecauseLaterItemIsDue,
 } from "./strategy-scheduler";
 

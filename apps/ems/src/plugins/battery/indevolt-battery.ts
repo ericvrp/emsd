@@ -3,9 +3,9 @@ import type { BatteryTelemetrySample } from "../../discovery-types";
 import {
   getStringOrNumber,
   getStringValue,
+  matchesPatterns,
   parseJsonObject,
   parseNullableNumber,
-  matchesPatterns,
 } from "../shared";
 import type { DiscoveryPlugin } from "../types";
 

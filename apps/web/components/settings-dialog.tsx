@@ -3,8 +3,8 @@
 import { Settings, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
-import { DialogPortal } from "./ui/dialog-portal";
 import { Button } from "./ui/button";
+import { DialogPortal } from "./ui/dialog-portal";
 
 export function SettingsDialog({
   children,

@@ -46,8 +46,8 @@ import {
   getTodayTriggerAt,
   isItemAlreadyTriggeredToday,
   needsCompletionTracking,
-  shouldMarkScheduledItemObserved,
   shouldCompleteScheduledItem,
+  shouldMarkScheduledItemObserved,
   shouldSkipDelayedSocItemBecauseLaterItemIsDue,
   shouldSkipScheduledItem,
 } from "./strategy-scheduler";
@@ -890,7 +890,8 @@ function logAppliedBatteryControlChanges(
   const current = createBatteryControlSnapshot(battery);
 
   const manualChanged = previous.manualSignature !== current.manualSignature;
-  const planChanged = previous.strategyPlanSignature !== current.strategyPlanSignature;
+  const planChanged =
+    previous.strategyPlanSignature !== current.strategyPlanSignature;
 
   if (planChanged) {
     logInfo(

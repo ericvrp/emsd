@@ -398,16 +398,9 @@ function CombinedHistoryChart({
     point.futureSolarEnergy,
   ]);
   const axisConfig = buildMirroredYAxis(powerValues);
-
   const [min, max] = axisConfig.domain;
-  let offset = 0;
-  if (max <= 0) {
-    offset = 0;
-  } else if (min >= 0) {
-    offset = 1;
-  } else {
-    offset = max / (max - min);
-  }
+  const chartZeroOffset = max <= 0 ? 0 : min >= 0 ? 1 : max / (max - min);
+
   const hasValues = points.some((point) =>
     [
       point.currentPrice,
@@ -509,72 +502,76 @@ function CombinedHistoryChart({
             <defs>
               <linearGradient
                 id={`gridCurrent-${chartId}`}
+                gradientUnits="userSpaceOnUse"
                 x1="0"
-                y1="0"
+                y1={12}
                 x2="0"
-                y2="1"
+                y2={height}
               >
                 <stop
-                  offset={offset}
+                  offset={chartZeroOffset}
                   stopColor={UI_COLORS.gridExport}
                   stopOpacity={1}
                 />
                 <stop
-                  offset={offset}
+                  offset={chartZeroOffset}
                   stopColor={UI_COLORS.gridImport}
                   stopOpacity={1}
                 />
               </linearGradient>
               <linearGradient
                 id={`gridFuture-${chartId}`}
+                gradientUnits="userSpaceOnUse"
                 x1="0"
-                y1="0"
+                y1={12}
                 x2="0"
-                y2="1"
+                y2={height}
               >
                 <stop
-                  offset={offset}
+                  offset={chartZeroOffset}
                   stopColor={UI_COLORS.gridExport}
                   stopOpacity={0.35}
                 />
                 <stop
-                  offset={offset}
+                  offset={chartZeroOffset}
                   stopColor={UI_COLORS.gridImport}
                   stopOpacity={0.35}
                 />
               </linearGradient>
               <linearGradient
                 id={`batteryCurrent-${chartId}`}
+                gradientUnits="userSpaceOnUse"
                 x1="0"
-                y1="0"
+                y1={12}
                 x2="0"
-                y2="1"
+                y2={height}
               >
                 <stop
-                  offset={offset}
+                  offset={chartZeroOffset}
                   stopColor={UI_COLORS.batteryPowerCharging}
                   stopOpacity={1}
                 />
                 <stop
-                  offset={offset}
+                  offset={chartZeroOffset}
                   stopColor={UI_COLORS.batteryPowerDischarging}
                   stopOpacity={1}
                 />
               </linearGradient>
               <linearGradient
                 id={`batteryFuture-${chartId}`}
+                gradientUnits="userSpaceOnUse"
                 x1="0"
-                y1="0"
+                y1={12}
                 x2="0"
-                y2="1"
+                y2={height}
               >
                 <stop
-                  offset={offset}
+                  offset={chartZeroOffset}
                   stopColor={UI_COLORS.batteryPowerCharging}
                   stopOpacity={0.35}
                 />
                 <stop
-                  offset={offset}
+                  offset={chartZeroOffset}
                   stopColor={UI_COLORS.batteryPowerDischarging}
                   stopOpacity={0.35}
                 />
@@ -776,10 +773,6 @@ export function BatteryHistoryChart({
     ].some((value) => typeof value === "number"),
   );
 
-  const offset =
-    BATTERY_POWER_AXIS_DOMAIN[1] /
-    (BATTERY_POWER_AXIS_DOMAIN[1] - BATTERY_POWER_AXIS_DOMAIN[0]);
-
   return (
     <div className="space-y-2.5">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -868,36 +861,38 @@ export function BatteryHistoryChart({
                 <defs>
                   <linearGradient
                     id="batteryPowerCurrent"
+                    gradientUnits="userSpaceOnUse"
                     x1="0"
-                    y1="0"
+                    y1={12}
                     x2="0"
-                    y2="1"
+                    y2={height}
                   >
                     <stop
-                      offset={offset}
+                      offset={0.5}
                       stopColor={UI_COLORS.batteryPowerCharging}
                       stopOpacity={1}
                     />
                     <stop
-                      offset={offset}
+                      offset={0.5}
                       stopColor={UI_COLORS.batteryPowerDischarging}
                       stopOpacity={1}
                     />
                   </linearGradient>
                   <linearGradient
                     id="batteryPowerFuture"
+                    gradientUnits="userSpaceOnUse"
                     x1="0"
-                    y1="0"
+                    y1={12}
                     x2="0"
-                    y2="1"
+                    y2={height}
                   >
                     <stop
-                      offset={offset}
+                      offset={0.5}
                       stopColor={UI_COLORS.batteryPowerCharging}
                       stopOpacity={0.35}
                     />
                     <stop
-                      offset={offset}
+                      offset={0.5}
                       stopColor={UI_COLORS.batteryPowerDischarging}
                       stopOpacity={0.35}
                     />
@@ -2029,20 +2024,24 @@ function SegmentedHistoryTooltip({
     return null;
   }
 
+  const validPayload = payload.filter(
+    (entry) => entry.dataKey !== "rightAxisValue",
+  );
+
   const selectedEntry =
-    payload.find(
+    validPayload.find(
       (entry) =>
         entry.dataKey === "futureValue" && typeof entry.value === "number",
     ) ??
-    payload.find(
+    validPayload.find(
       (entry) =>
         entry.dataKey === "currentValue" && typeof entry.value === "number",
     ) ??
-    payload.find(
+    validPayload.find(
       (entry) =>
         entry.dataKey?.startsWith("future") && typeof entry.value === "number",
     ) ??
-    payload.find((entry) => typeof entry.value === "number");
+    validPayload.find((entry) => typeof entry.value === "number");
 
   if (!selectedEntry || typeof selectedEntry.value !== "number") {
     return null;
@@ -3222,6 +3221,10 @@ function deduplicateTooltipEntries(
   >();
 
   for (const entry of entries) {
+    if (entry.dataKey === "rightAxisValue") {
+      continue;
+    }
+
     const key = entry.name ?? entry.dataKey ?? "Value";
     const existing = entriesByName.get(key);
 
