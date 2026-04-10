@@ -1021,22 +1021,8 @@ function buildYAxisLabel(
 }
 
 function formatPriceCoverageSummary(
-  points: DynamicPricePointRecord[],
+  _points: DynamicPricePointRecord[],
 ): string | null {
-  if (points.length === 0) {
-    return null;
-  }
-
-  const lastPoint = points[points.length - 1];
-
-  if (!lastPoint) {
-    return null;
-  }
-
-  if (includesTomorrow(points)) {
-    return `Showing available prices through ${formatCoverageLabel(lastPoint.startsAt)}.`;
-  }
-
   return null;
 }
 

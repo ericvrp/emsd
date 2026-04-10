@@ -47,10 +47,7 @@ export function HomeBatteryHistorySection({
         </div>
         <SectionSummaryCard title="Current battery">
           <p className="text-lg font-semibold text-white sm:text-xl">
-            Charge: {formatCharge(currentChargePercent)}
-          </p>
-          <p className="mt-1 text-lg font-semibold text-white sm:text-xl">
-            Power: {formatPower(currentPowerW)}
+            {formatCharge(currentChargePercent)} • {formatPower(currentPowerW)}
           </p>
         </SectionSummaryCard>
       </div>
@@ -71,5 +68,11 @@ function formatCharge(value: number | null): string {
 }
 
 function formatPower(value: number | null): string {
-  return value === null ? "Unavailable" : formatAbsolutePowerValue(value);
+  if (value === null) return "Unavailable";
+
+  const isCharging = value > 0;
+  const direction = isCharging ? "Discharging" : "Charging";
+  const absoluteValue = Math.abs(value);
+
+  return `${direction} ${formatAbsolutePowerValue(absoluteValue)}`;
 }

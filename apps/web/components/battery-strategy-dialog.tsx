@@ -205,11 +205,11 @@ function formatStrategyLabel(input: {
     }
 
     if (input.strategy.manualState === "charging") {
-      return "Charging";
+      return "Charge";
     }
 
     if (input.strategy.manualState === "discharging") {
-      return "Discharging";
+      return "Discharge";
     }
 
     return "Idle";

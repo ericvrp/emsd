@@ -364,11 +364,11 @@ export function HistoryPage({
             <SegmentedLineHistoryChart
               emptyMessage="No P1 meter samples were available for this range."
               negativeColor={UI_COLORS.gridImport}
-              negativeLabel="Take from grid"
+              negativeLabel="Import"
               nowMarkerPeriodStart={nowMarkerPeriodStart}
               points={splitSingleValueSeriesByTime(dailyGridValueSeries)}
               positiveColor={UI_COLORS.gridExport}
-              positiveLabel="Return to grid"
+              positiveLabel="Export"
               valueFormatter={formatAbsolutePowerValue}
               yAxisFormatter={formatShortPowerValue}
             />
@@ -476,8 +476,8 @@ function CombinedHistoryChart({
         <LegendChip color={UI_COLORS.solarEnergy} label="Solar Energy" />
         <LegendChip color={UI_COLORS.forecast} label="Solar Forecast" />
         <LegendChip color={UI_COLORS.price} label="Price" />
-        <LegendChip color={UI_COLORS.gridExport} label="Return to grid" />
-        <LegendChip color={UI_COLORS.gridImport} label="Take from grid" />
+        <LegendChip color={UI_COLORS.gridExport} label="Export" />
+        <LegendChip color={UI_COLORS.gridImport} label="Import" />
       </div>
       <MeasuredChartContainer className="h-[360px] min-w-0 w-full">
         {({ height, width }) => (
@@ -1741,7 +1741,7 @@ function CombinedHistoryTooltip({
       color:
         gridPowerEntry.value >= 0 ? UI_COLORS.gridExport : UI_COLORS.gridImport,
       label:
-        gridPowerEntry.value >= 0 ? "Return to grid" : "Take from grid",
+        gridPowerEntry.value >= 0 ? "Export" : "Import",
       value: formatAbsolutePowerValue(gridPowerEntry.value),
     });
   }

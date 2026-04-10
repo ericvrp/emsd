@@ -15,6 +15,7 @@ import {
   SegmentedLineHistoryChart,
   splitSingleValueSeriesByTime,
 } from "./history-page";
+import { SectionSummaryCard } from "./section-summary-card";
 
 type GridPageProps = {
   archive: HistoryArchive;
@@ -29,6 +30,7 @@ export function GridPage({ archive, siteName }: GridPageProps) {
     invertSingleValueSeries(aggregatePowerSamples(archive.p1MeterSamples)),
     todayKey,
   ).filter((point) => new Date(point.periodStart).getTime() <= currentPeriodMs);
+  const currentGridPower = todayGridSeries.at(-1)?.value ?? null;
 
   return (
     <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
@@ -45,18 +47,22 @@ export function GridPage({ archive, siteName }: GridPageProps) {
             Measured import and export power from the connected P1 meter.
           </p>
         </div>
-        <p className="text-xs leading-5 text-slate-500">{formatTodayLabel(todayKey)}</p>
+        <SectionSummaryCard title="Current grid">
+          <p className="text-lg font-semibold text-white sm:text-xl">
+            {formatGridPower(currentGridPower)}
+          </p>
+        </SectionSummaryCard>
       </div>
 
       <div className="mt-5 space-y-4 rounded-[1.4rem] border border-white/10 bg-white/5 p-4">
           <SegmentedLineHistoryChart
             emptyMessage="No P1 meter samples have been collected for today yet."
             negativeColor={UI_COLORS.gridImport}
-            negativeLabel="Take from grid"
+            negativeLabel="Import"
             nowMarkerPeriodStart={currentPeriodStart}
             points={splitSingleValueSeriesByTime(todayGridSeries)}
             positiveColor={UI_COLORS.gridExport}
-            positiveLabel="Return to grid"
+            positiveLabel="Export"
             valueFormatter={formatAbsolutePowerValue}
             yAxisFormatter={formatShortPowerValue}
           />
@@ -65,10 +71,12 @@ export function GridPage({ archive, siteName }: GridPageProps) {
   );
 }
 
-function formatTodayLabel(dayKey: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    day: "numeric",
-    month: "short",
-    weekday: "long",
-  }).format(new Date(`${dayKey}T00:00:00.000Z`));
+function formatGridPower(value: number | null): string {
+  if (value === null) return "Unavailable";
+
+  const isImporting = value < 0;
+  const direction = isImporting ? "Importing" : "Exporting";
+  const absoluteValue = Math.abs(value);
+
+  return `${direction} ${formatAbsolutePowerValue(absoluteValue)}`;
 }
