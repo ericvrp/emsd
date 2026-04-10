@@ -54,6 +54,7 @@ import { cn } from "../lib/utils";
 import { DiscoveryPanel } from "./discovery-panel";
 import { LegendChip } from "./history-page";
 import { MeasuredChartContainer } from "./measured-chart-container";
+import { SectionSummaryCard } from "./section-summary-card";
 import { SubmitButton } from "./submit-button";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader } from "./ui/card";
@@ -513,11 +514,12 @@ export function WeatherForecastSection({
         sourcePeriodMinutes: forecast.periodMinutes,
       })
     : [];
+  const currentForecastPoint = getCurrentForecastPoint(visiblePoints, Date.now());
 
   return (
     <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-sky-300/40 to-transparent" />
-      <div>
+      <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-300/90">
             Forecast
@@ -530,6 +532,16 @@ export function WeatherForecastSection({
             site.
           </p>
         </div>
+        <SectionSummaryCard title="Current forecast">
+          <p className="text-2xl font-semibold text-white sm:text-3xl">
+            {currentForecastPoint === null || currentForecastPoint.value === null
+              ? "Unavailable"
+              : formatForecastSummaryValue(
+                  currentForecastPoint.value,
+                  forecast?.unitLabel ?? "",
+                )}
+          </p>
+        </SectionSummaryCard>
       </div>
 
       {site.location.trim().length === 0 ? (
@@ -584,25 +596,38 @@ export function PricingSection({
   const coverageSummary = snapshot
     ? formatPriceCoverageSummary(visiblePoints)
     : null;
+  const currentPricePoint = getCurrentPricePoint(visiblePoints, Date.now());
 
   return (
     <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-violet-300/40 to-transparent" />
-      <div>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-violet-300/90">
-          Pricing
-        </p>
-        <h3 className="mt-2 text-xl font-semibold text-white">
-          Dynamic electricity prices for {site.name}
-        </h3>
-        <p className="mt-2 text-sm leading-6 text-slate-400">
-          Tibber provides the built-in dynamic price snapshot for this site.
-        </p>
-        {coverageSummary ? (
-          <p className="mt-2 text-xs leading-5 text-slate-500">
-            {coverageSummary}
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-violet-300/90">
+            Pricing
           </p>
-        ) : null}
+          <h3 className="mt-2 text-xl font-semibold text-white">
+            Dynamic electricity prices for {site.name}
+          </h3>
+          <p className="mt-2 text-sm leading-6 text-slate-400">
+            Tibber provides the built-in dynamic price snapshot for this site.
+          </p>
+          {coverageSummary ? (
+            <p className="mt-2 text-xs leading-5 text-slate-500">
+              {coverageSummary}
+            </p>
+          ) : null}
+        </div>
+        <SectionSummaryCard title="Current price">
+          <p className="text-2xl font-semibold text-white sm:text-3xl">
+            {currentPricePoint === null || snapshot === null
+              ? "Unavailable"
+              : formatPriceSummaryValue(
+                  currentPricePoint.importPrice,
+                  snapshot.currency,
+                )}
+          </p>
+        </SectionSummaryCard>
       </div>
 
       {error ? (
@@ -960,6 +985,19 @@ function getCurrentPricePoint(
   return currentPoint ?? points[0] ?? null;
 }
 
+function getCurrentForecastPoint(
+  points: WeatherForecastPointRecord[],
+  now: number,
+): WeatherForecastPointRecord | null {
+  for (const point of points) {
+    if (new Date(point.periodEnd).getTime() >= now) {
+      return point;
+    }
+  }
+
+  return points[points.length - 1] ?? null;
+}
+
 function buildNowLabel() {
   return {
     fill: UI_COLORS.textPrimary,
@@ -1040,6 +1078,14 @@ function formatForecastTimeLabel(value: string): string {
     minute: "2-digit",
     month: "short",
   }).format(new Date(value));
+}
+
+function formatPriceSummaryValue(value: number, currency: string): string {
+  return `${value.toFixed(3)} ${currency}/kWh`;
+}
+
+function formatForecastSummaryValue(value: number, unitLabel: string): string {
+  return `${Math.round(value)} ${unitLabel}`;
 }
 
 function formatShortPriceAxisValue(value: number): string {

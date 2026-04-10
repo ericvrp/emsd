@@ -1,18 +1,18 @@
 "use client";
 
 import type { HistoryArchive, LiveStatusSnapshot } from "../lib/ems-bridge";
+import { formatPowerValue, formatShortPowerValue } from "../lib/power-format";
 import { UI_COLORS } from "../lib/ui-colors";
 import {
   LegendChip,
   SingleValueHistoryChart,
   aggregatePowerSamples,
   fillSingleValueDay,
-  formatPowerValue,
-  formatShortPowerValue,
   getCurrentPeriodStart,
   getUtcDayKey,
   splitSingleValueSeriesByTime,
 } from "./history-page";
+import { SectionSummaryCard } from "./section-summary-card";
 
 type SolarEnergyPageProps = {
   archive: HistoryArchive;
@@ -76,16 +76,13 @@ export function SolarEnergyPage({
             Measured production from the connected local solar energy provider.
           </p>
         </div>
-        <div className="rounded-[1.4rem] border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-right">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-100/80">
-            Current generation
-          </p>
-          <p className="mt-2 text-2xl font-semibold text-white sm:text-3xl">
+        <SectionSummaryCard title="Current generation">
+          <p className="text-2xl font-semibold text-white sm:text-3xl">
             {currentGeneratedWattage === null
               ? "Unavailable"
               : formatPowerValue(currentGeneratedWattage)}
           </p>
-        </div>
+        </SectionSummaryCard>
       </div>
 
       <div className="mt-5 space-y-4 rounded-[1.4rem] border border-white/10 bg-white/5 p-4">

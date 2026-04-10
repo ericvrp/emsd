@@ -1,3 +1,4 @@
+import { formatAbsolutePowerValue } from "../../lib/power-format";
 import { UI_STYLES } from "../../lib/ui-colors";
 import { cn } from "../../lib/utils";
 
@@ -72,13 +73,7 @@ function formatPower(value: number | null): string {
     return "Unavailable";
   }
 
-  const absoluteValue = Math.round(Math.abs(value));
-
-  if (absoluteValue === 0) {
-    return "0 W";
-  }
-
-  return `${absoluteValue} W`;
+  return formatAbsolutePowerValue(value);
 }
 
 function formatStateLabel(state: string): string {

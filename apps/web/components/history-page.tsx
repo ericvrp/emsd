@@ -23,6 +23,11 @@ import {
 } from "recharts";
 import type { ValueType } from "recharts/types/component/DefaultTooltipContent";
 import type { HistoryArchive } from "../lib/ems-bridge";
+import {
+  formatAbsolutePowerValue,
+  formatPowerValue,
+  formatShortPowerValue,
+} from "../lib/power-format";
 import { UI_CHART_STYLES, UI_COLORS, UI_STYLES } from "../lib/ui-colors";
 import { cn } from "../lib/utils";
 import { DateSelect } from "./date-select";
@@ -122,6 +127,7 @@ type TooltipPayloadEntry = {
 const HISTORY_STEP_MS = 15 * 60 * 1_000;
 const CHARGE_AXIS_DOMAIN: [number, number] = [0, 100];
 const CHARGE_AXIS_TICKS = [0, 20, 40, 60, 80, 100];
+const BATTERY_POWER_AXIS_DOMAIN: [number, number] = [-3000, 3000];
 
 const HISTORY_TABS: Array<{
   description: string;
@@ -749,7 +755,7 @@ function CombinedHistoryChart({
   );
 }
 
-function BatteryHistoryChart({
+export function BatteryHistoryChart({
   emptyMessage,
   nowMarkerPeriodStart,
   points,
@@ -834,6 +840,7 @@ function BatteryHistoryChart({
             />
             <YAxis
               axisLine={false}
+              domain={BATTERY_POWER_AXIS_DOMAIN}
               label={buildYAxisLabel("Power (W)", "insideLeft")}
               tick={UI_CHART_STYLES.axisTickMuted}
               tickFormatter={formatShortPowerValue}
@@ -960,6 +967,29 @@ function BatteryHistoryChart({
       </MeasuredChartContainer>
     </div>
   );
+}
+
+export function buildBatteryHistoryPoints(
+  samples: Array<{
+    periodStart: string;
+    powerW: number | null;
+    socPercent: number | null;
+  }>,
+  dayKey: string,
+) {
+  const batterySeries = createSignedSeries(
+    invertSingleValueSeries(aggregatePowerSamples(samples)),
+  );
+  const batteryChargeSeries = createSingleValueSeries(
+    aggregateBatteryChargeSamples(samples),
+  );
+
+  return combineBatteryHistorySeries({
+    charge: splitSingleValueSeriesByTime(
+      fillSingleValueDay(batteryChargeSeries, dayKey),
+    ),
+    power: splitSignedSeriesByTime(fillSignedDay(batterySeries, dayKey)),
+  });
 }
 
 export function SingleValueHistoryChart({
@@ -2340,30 +2370,6 @@ function formatTooltipTimestamp(value: string | number): string {
     minute: "2-digit",
     month: "short",
   }).format(new Date(value));
-}
-
-export function formatPowerValue(value: number): string {
-  const absoluteValue = Math.abs(value);
-
-  if (absoluteValue >= 1000) {
-    return `${value < 0 ? "-" : ""}${(absoluteValue / 1000).toFixed(2)} kW`;
-  }
-
-  return `${Math.round(value)} W`;
-}
-
-export function formatAbsolutePowerValue(value: number): string {
-  return formatPowerValue(Math.abs(value));
-}
-
-export function formatShortPowerValue(value: number): string {
-  const absoluteValue = Math.abs(value);
-
-  if (absoluteValue >= 1000) {
-    return `${value < 0 ? "-" : ""}${(absoluteValue / 1000).toFixed(1)}k`;
-  }
-
-  return `${Math.round(value)}`;
 }
 
 function formatPriceValue(value: number): string {

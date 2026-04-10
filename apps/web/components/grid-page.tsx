@@ -1,12 +1,14 @@
 "use client";
 
 import type { HistoryArchive } from "../lib/ems-bridge";
+import {
+  formatAbsolutePowerValue,
+  formatShortPowerValue,
+} from "../lib/power-format";
 import { UI_COLORS } from "../lib/ui-colors";
 import {
   aggregatePowerSamples,
   fillSingleValueDay,
-  formatAbsolutePowerValue,
-  formatShortPowerValue,
   getCurrentPeriodStart,
   getUtcDayKey,
   invertSingleValueSeries,
