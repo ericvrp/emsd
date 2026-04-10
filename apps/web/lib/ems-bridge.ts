@@ -217,6 +217,19 @@ export function setBatteryStrategyPlan(input: {
   return runBridge<ManagedDeviceRecord>("battery-set-strategy-plan", input);
 }
 
+export function setHouseStrategy(input: {
+  manualChargeTargetSoc: number | null;
+  manualDischargeTargetSoc: number | null;
+  manualPowerW: number | null;
+  manualState: "idle" | "charging" | "discharging" | null;
+  manualTargetSoc: number | null;
+  manualModeActive?: boolean;
+  siteId: string;
+  strategyMode: "auto" | "manual" | "self-consumption";
+}) {
+  return runBridge<ManagedDeviceRecord[]>("house-strategy-set", input);
+}
+
 export function createMeterFromDiscovery(input: {
   device: DiscoveredDevice;
   siteId: string;

@@ -7,9 +7,20 @@ import type {
   BatteryStrategyTargetMethod,
   BatteryStrategyTriggerKind,
 } from "@emsd/core";
-import { ArrowDown, ArrowUp, Plus, Save, Trash2 } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  Battery,
+  BatteryCharging,
+  BatteryIcon,
+  Plus,
+  Save,
+  Trash2,
+  Zap,
+} from "lucide-react";
 import { useState } from "react";
 import { setBatteryStrategyPlanAction } from "../app/actions";
+import { UI_STYLES } from "../lib/ui-colors";
 import { SubmitButton } from "./submit-button";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -25,6 +36,7 @@ import {
 type StrategyAction = "self-consumption" | BatteryManualState;
 
 interface BatteryStrategyPlanFormProps {
+  action?: typeof setBatteryStrategyPlanAction;
   batteryId: string;
   batteryName?: string;
   minimumDischargePercent: number;
@@ -34,6 +46,7 @@ interface BatteryStrategyPlanFormProps {
 }
 
 export function BatteryStrategyPlanForm({
+  action = setBatteryStrategyPlanAction,
   batteryId,
   batteryName,
   minimumDischargePercent,
@@ -91,7 +104,7 @@ export function BatteryStrategyPlanForm({
   }
 
   return (
-    <form action={setBatteryStrategyPlanAction} className="space-y-4">
+    <form action={action} className="space-y-4">
       <input type="hidden" name="siteId" value={siteId} />
       <input type="hidden" name="batteryId" value={batteryId} />
       {batteryName ? (

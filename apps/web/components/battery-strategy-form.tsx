@@ -16,6 +16,7 @@ import {
 } from "./ui/select";
 
 interface BatteryStrategyFormProps {
+  action?: typeof setBatteryStrategyAction;
   batteryId: string;
   batteryName?: string;
   capacityWh: number | null;
@@ -35,6 +36,7 @@ type TargetMethod = "soc" | "duration" | "end-time";
 type ManualModeAction = "self-consumption" | BatteryManualState;
 
 export function BatteryStrategyForm({
+  action = setBatteryStrategyAction,
   batteryId,
   batteryName,
   capacityWh,
@@ -205,7 +207,7 @@ export function BatteryStrategyForm({
   }, [endTime, estimatedDurationMinutes, now, targetMethod]);
 
   return (
-    <form action={setBatteryStrategyAction} className="space-y-4">
+    <form action={action} className="space-y-4">
       <input type="hidden" name="siteId" value={siteId} />
       <input type="hidden" name="batteryId" value={batteryId} />
       {batteryName ? (

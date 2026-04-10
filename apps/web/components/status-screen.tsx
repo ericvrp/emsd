@@ -3,7 +3,6 @@ import { BatteryCharging, Zap } from "lucide-react";
 import { getHistoryArchive } from "../lib/ems-bridge";
 import { formatAbsolutePowerValue } from "../lib/power-format";
 import { UI_STYLES } from "../lib/ui-colors";
-import { BatteryStrategyDialog } from "./battery-strategy-dialog";
 import { DaemonOfflineState } from "./daemon-offline-state";
 import {
   type SearchParams,
@@ -86,28 +85,6 @@ export async function StatusScreen({
                     {battery.name}
                   </CardTitle>
                 </div>
-                <BatteryStrategyDialog
-                  batteryId={battery.id}
-                  batteryName={battery.name}
-                  className="shrink-0 self-start px-3 sm:px-4"
-                  capacityWh={battery.telemetry?.capacityWh ?? null}
-                  currentSocPercent={socPercent}
-                  minimumDischargePercent={battery.minimumDischargePercent ?? 10}
-                  siteId={currentSiteId ?? ""}
-                  strategy={
-                    battery.batteryStrategy ?? {
-                      manualChargeTargetSoc: 100,
-                      manualDischargeTargetSoc:
-                        battery.minimumDischargePercent ?? 10,
-                      strategyMode: "self-consumption",
-                      manualPowerW: null,
-                      manualState: "idle",
-                      manualTargetSoc: 100,
-                    }
-                  }
-                  manualModeActive={battery.batteryManualModeActive}
-                  strategyPlan={battery.batteryStrategyPlan ?? []}
-                />
               </div>
             </CardHeader>
             <CardContent className="px-6 py-6 sm:px-8 sm:py-8">

@@ -71,6 +71,7 @@ import {
   setBatteryMinimumDischargePercent,
   setBatteryStrategy,
   setBatteryStrategyPlan,
+  setHouseStrategy,
   setMeterEnabled,
   updateDynamicPriceSource,
   updateSite,
@@ -823,6 +824,76 @@ export async function runApiAction(
       }
 
       return toManagedDeviceRecord(battery);
+    }
+
+    case "house-strategy-set": {
+      const siteId = requireString(input.siteId, "siteId");
+      const batteries = listBatteries(siteId);
+
+      if (batteries.length === 0) {
+        throw new Error("No batteries found for this site");
+      }
+
+      const strategyMode =
+        input.strategyMode === "manual" ||
+        input.strategyMode === "self-consumption" ||
+        input.strategyMode === "auto"
+          ? input.strategyMode
+          : batteries[0].strategyMode;
+      const manualState =
+        input.manualState === "idle" ||
+        input.manualState === "charging" ||
+        input.manualState === "discharging"
+          ? input.manualState
+          : input.manualState === null
+            ? null
+            : batteries[0].manualState;
+      const manualPowerW =
+        typeof input.manualPowerW === "number"
+          ? input.manualPowerW
+          : batteries[0].manualPowerW;
+      const manualChargeTargetSoc =
+        typeof input.manualChargeTargetSoc === "number"
+          ? input.manualChargeTargetSoc
+          : batteries[0].manualChargeTargetSoc;
+      const manualDischargeTargetSoc =
+        typeof input.manualDischargeTargetSoc === "number"
+          ? input.manualDischargeTargetSoc
+          : batteries[0].manualDischargeTargetSoc;
+      const manualTargetSoc =
+        typeof input.manualTargetSoc === "number"
+          ? input.manualTargetSoc
+          : batteries[0].manualTargetSoc;
+
+      for (const battery of batteries) {
+        try {
+          await createBatteryPlugin(battery).setStrategy({
+            manualChargeTargetSoc,
+            manualDischargeTargetSoc,
+            strategyMode,
+            manualPowerW,
+            manualState,
+            manualTargetSoc,
+          });
+        } catch {
+          // Continue with other batteries even if plugin fails
+        }
+      }
+
+      const updated = setHouseStrategy(
+        {
+          manualChargeTargetSoc,
+          manualDischargeTargetSoc,
+          manualPowerW,
+          manualState,
+          manualTargetSoc,
+          manualModeActive: input.manualModeActive === true,
+          strategyMode,
+        },
+        siteId,
+      );
+
+      return updated.map(toManagedDeviceRecord);
     }
 
     case "meter-create": {

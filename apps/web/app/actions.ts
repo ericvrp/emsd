@@ -34,6 +34,7 @@ import {
   setBatteryMinimumDischargePercent,
   setBatteryStrategy,
   setBatteryStrategyPlan,
+  setHouseStrategy,
   setMeterEnabled,
   updateDynamicPriceSource,
   updateSite,
@@ -649,4 +650,79 @@ export async function deleteDynamicPriceSourceAction(
     await deleteDynamicPriceSource({ id: sourceId, siteId });
     return { notice: `Deleted price source ${sourceId}.`, tab: "pricing" };
   }, "pricing");
+}
+
+export async function setHouseStrategyAction(
+  formData: FormData,
+): Promise<void> {
+  const siteId = stringValue(formData, "siteId");
+
+  return runAction(
+    async () => {
+      const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
+      const strategyMode = stringValue(formData, "strategyMode");
+      const manualState = optionalStringValue(formData, "manualState");
+      const manualPowerRaw = optionalStringValue(formData, "manualPowerW");
+      const manualChargeTargetSocRaw = optionalStringValue(
+        formData,
+        "manualChargeTargetSoc",
+      );
+      const manualDischargeTargetSocRaw = optionalStringValue(
+        formData,
+        "manualDischargeTargetSoc",
+      );
+      const manualModeActiveRaw = optionalStringValue(
+        formData,
+        "manualModeActive",
+      );
+      const manualTargetSocRaw = optionalStringValue(
+        formData,
+        "manualTargetSoc",
+      );
+      await setHouseStrategy({
+        manualChargeTargetSoc:
+          manualChargeTargetSocRaw === null ||
+          manualChargeTargetSocRaw.length === 0
+            ? null
+            : Number(manualChargeTargetSocRaw),
+        manualDischargeTargetSoc:
+          manualDischargeTargetSocRaw === null ||
+          manualDischargeTargetSocRaw.length === 0
+            ? null
+            : Number(manualDischargeTargetSocRaw),
+        manualPowerW:
+          manualPowerRaw === null || manualPowerRaw.length === 0
+            ? null
+            : Number(manualPowerRaw),
+        manualState:
+          manualState === "idle" ||
+          manualState === "charging" ||
+          manualState === "discharging"
+            ? manualState
+            : null,
+        manualTargetSoc:
+          manualTargetSocRaw === null || manualTargetSocRaw.length === 0
+            ? null
+            : Number(manualTargetSocRaw),
+        manualModeActive: manualModeActiveRaw === "true",
+        strategyMode:
+          strategyMode === "manual" ||
+          strategyMode === "self-consumption" ||
+          strategyMode === "auto"
+            ? strategyMode
+            : "auto",
+        siteId,
+      });
+      return {
+        notice:
+          manualModeActiveRaw === "true"
+            ? "Applied manual mode for all batteries."
+            : "Updated strategy for all batteries.",
+        path: returnPath,
+        tab: null,
+      };
+    },
+    null,
+    optionalStringValue(formData, "returnPath") ?? "/",
+  );
 }

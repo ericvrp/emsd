@@ -825,6 +825,71 @@ export function setBatteryStrategy(
   }
 }
 
+export function setHouseStrategy(
+  input: UpdateBatteryStrategyInput,
+  siteId: string,
+  databasePath = getDatabasePath(),
+): BatteryRecord[] {
+  assertKnownSiteId(siteId, databasePath);
+  const db = openWritableDatabase(databasePath);
+
+  try {
+    assertWritableSchema(
+      db,
+      databasePath,
+      "batteries",
+      BATTERY_REQUIRED_COLUMNS,
+    );
+
+    const batteries = readBatteries(db, siteId);
+
+    if (batteries.length === 0) {
+      return [];
+    }
+
+    for (const battery of batteries) {
+      const nextRuntime = stringifyBatteryStrategyRuntime(
+        clearActiveBatteryStrategyRuntime(battery.strategyRuntime),
+      );
+
+      db.query(
+        `
+          UPDATE batteries
+          SET
+            strategy_mode = ?2,
+            manual_state = ?3,
+            manual_power_w = ?4,
+            manual_charge_target_soc = ?5,
+            manual_discharge_target_soc = ?6,
+            manual_target_soc = ?7,
+            manual_mode_active = ?8,
+            manual_mode_started = ?9,
+            strategy_runtime_json = ?10,
+            updated_at = ?11
+          WHERE id = ?1 AND site_id = ?12
+        `,
+      ).run(
+        battery.id,
+        input.strategyMode,
+        input.manualState ?? null,
+        input.manualPowerW ?? null,
+        input.manualChargeTargetSoc ?? null,
+        input.manualDischargeTargetSoc ?? null,
+        input.manualTargetSoc ?? null,
+        input.manualModeActive === true ? 1 : 0,
+        0,
+        nextRuntime,
+        new Date().toISOString(),
+        siteId,
+      );
+    }
+
+    return readBatteries(db, siteId);
+  } finally {
+    db.close();
+  }
+}
+
 export function setBatteryStrategyPlan(
   id: string,
   input: UpdateBatteryStrategyPlanInput,
