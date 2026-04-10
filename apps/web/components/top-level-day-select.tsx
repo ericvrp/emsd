@@ -30,8 +30,8 @@ export function useTopLevelDaySelection({
   const canGoBackward = selectedDayIndex > 0;
   const canGoForward =
     selectedDayIndex >= 0 && selectedDayIndex < availableDays.length - 1;
-  const isTodaySelected = selectedDay === todayKey;
-  const nowMarkerPeriodStart = isTodaySelected ? getCurrentPeriodStart() : null;
+  const nowMarkerPeriodStart =
+    selectedDay === todayKey ? getCurrentPeriodStart() : null;
 
   function navigate(day: string | null) {
     const params = new URLSearchParams(searchParams.toString());
@@ -53,7 +53,6 @@ export function useTopLevelDaySelection({
     canGoBackward,
     canGoForward,
     firstDay,
-    isTodaySelected,
     lastDay,
     nowMarkerPeriodStart,
     selectedDay,

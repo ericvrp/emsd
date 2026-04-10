@@ -7,7 +7,7 @@ import type {
 } from "@emsd/core";
 import { UI_COLORS } from "../lib/ui-colors";
 import {
-  SingleValueBarHistoryChart,
+  SingleValueHistoryChart,
   fillSingleValueDay,
   splitSingleValueSeriesByTime,
 } from "./history-page";
@@ -46,6 +46,12 @@ export function PricingSection({
     snapshot?.points ?? [],
     Date.now(),
   );
+  const priceCurrency = snapshot?.currency ?? "EUR";
+  const emptyMessage =
+    snapshot === null
+      ? "Dynamic price data is not available yet."
+      : "No price data for this day.";
+  const priceAxisDomain = buildPriceAxisDomain(selectedDayPricePoints);
 
   return (
     <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
@@ -83,42 +89,21 @@ export function PricingSection({
         <p className="mt-4 rounded-[1.25rem] border border-amber-400/20 bg-amber-500/10 p-4 text-sm text-amber-100">
           {error}
         </p>
-      ) : snapshot === null ? (
-        <div className="mt-5 space-y-4 rounded-[1.4rem] border border-white/10 bg-white/5 p-4">
-          <SingleValueBarHistoryChart
-            accentColor={UI_COLORS.price}
-            emptyMessage="Dynamic price data is not available yet."
-            headerAccessory={<TopLevelDaySelect daySelection={daySelection} />}
-            label="Price"
-            nowMarkerPeriodStart={daySelection.nowMarkerPeriodStart}
-            nowMarkerTimestampMs={
-              daySelection.isTodaySelected ? Date.now() : null
-            }
-            points={splitSingleValueSeriesByTime(selectedDayPricePoints)}
-            tightYAxis
-            valueFormatter={(value) => `${value.toFixed(3)} EUR/kWh`}
-            yAxisFormatter={formatShortPriceAxisValue}
-            yAxisLabel="EUR/kWh"
-          />
-        </div>
       ) : (
         <div className="mt-5 space-y-4 rounded-[1.4rem] border border-white/10 bg-white/5 p-4">
-          <SingleValueBarHistoryChart
+          <SingleValueHistoryChart
             accentColor={UI_COLORS.price}
-            emptyMessage="No price data for this day."
+            emptyMessage={emptyMessage}
             headerAccessory={<TopLevelDaySelect daySelection={daySelection} />}
             label="Price"
             nowMarkerPeriodStart={daySelection.nowMarkerPeriodStart}
-            nowMarkerTimestampMs={
-              daySelection.isTodaySelected ? Date.now() : null
-            }
             points={splitSingleValueSeriesByTime(selectedDayPricePoints)}
-            tightYAxis
             valueFormatter={(value) =>
-              `${value.toFixed(3)} ${snapshot.currency}/kWh`
+              `${value.toFixed(3)} ${priceCurrency}/kWh`
             }
+            {...(priceAxisDomain ? { yAxisDomain: priceAxisDomain } : {})}
             yAxisFormatter={formatShortPriceAxisValue}
-            yAxisLabel={`${snapshot.currency}/kWh`}
+            yAxisLabel={`${priceCurrency}/kWh`}
           />
         </div>
       )}
@@ -155,4 +140,27 @@ function formatPriceSummaryValue(value: number, currency: string): string {
 
 function formatShortPriceAxisValue(value: number): string {
   return value.toFixed(2);
+}
+
+function buildPriceAxisDomain(
+  points: Array<{ value: number | null }>,
+): [number, number] | undefined {
+  const values = points
+    .map((point) => point.value)
+    .filter((value): value is number => typeof value === "number");
+
+  if (values.length === 0) {
+    return undefined;
+  }
+
+  const minimum = Math.min(...values);
+  const maximum = Math.max(...values);
+
+  if (minimum === maximum) {
+    const padding = Math.max(Math.abs(minimum) * 0.1, 0.01);
+    return [Math.max(0, minimum - padding), maximum + padding];
+  }
+
+  const padding = Math.max((maximum - minimum) * 0.12, 0.01);
+  return [Math.max(0, minimum - padding), maximum + padding];
 }

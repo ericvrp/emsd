@@ -1222,7 +1222,6 @@ export function SingleValueBarHistoryChart({
   headerAccessory,
   label,
   nowMarkerPeriodStart,
-  nowMarkerTimestampMs,
   points,
   showLegend = true,
   tightYAxis = false,
@@ -1235,7 +1234,6 @@ export function SingleValueBarHistoryChart({
   headerAccessory?: ReactNode;
   label: string;
   nowMarkerPeriodStart: string | null;
-  nowMarkerTimestampMs?: number | null;
   points: SplitSingleValuePoint[];
   showLegend?: boolean;
   tightYAxis?: boolean;
@@ -1244,8 +1242,11 @@ export function SingleValueBarHistoryChart({
   yAxisFormatter: (value: number) => string;
 }) {
   const chartData = points.map((point) => ({
+    centerTimestampMs:
+      new Date(point.periodStart).getTime() + HISTORY_STEP_MS / 2,
     displayValue: point.currentValue ?? point.futureValue,
     periodStart: point.periodStart,
+    periodStartMs: new Date(point.periodStart).getTime(),
     rightAxisValue: point.currentValue ?? point.futureValue,
     currentValue: point.currentValue,
     futureValue: point.futureValue,
@@ -1262,6 +1263,12 @@ export function SingleValueBarHistoryChart({
     !tightYAxis,
     tightYAxis,
   );
+  const firstPeriodStartMs = chartData[0]?.periodStartMs ?? 0;
+  const lastPeriodStartMs = chartData.at(-1)?.periodStartMs ?? 0;
+  const xAxisDomain: [number, number] = [
+    firstPeriodStartMs,
+    lastPeriodStartMs + HISTORY_STEP_MS,
+  ];
 
   return (
     <div className="space-y-2.5">
@@ -1279,135 +1286,122 @@ export function SingleValueBarHistoryChart({
         <MeasuredChartContainer className="h-[360px] min-w-0 w-full">
           {({ height, width }) => {
             const xAxisTicks = buildResponsiveDayTicks(
-              chartData.map((point) => point.periodStart),
+              chartData.map((point) => point.periodStartMs),
               width,
             );
-            const exactNowMarkerOffsetPx = buildBarChartNowMarkerOffset({
-              chartWidth: width,
-              leftAxisWidth: LEFT_Y_AXIS_WIDTH,
-              marginLeft: STANDARD_LEFT_AXIS_MARGIN,
-              marginRight: STANDARD_RIGHT_AXIS_MARGIN,
-              nowTimestampMs: nowMarkerTimestampMs ?? null,
-              points,
-              rightAxisWidth: RIGHT_Y_AXIS_WIDTH,
-            });
 
             return (
-              <>
-                <ComposedChart
-                  data={chartData}
-                  height={height}
-                  margin={{
-                    top: 16,
-                    right: STANDARD_RIGHT_AXIS_MARGIN,
-                    bottom: 0,
-                    left: STANDARD_LEFT_AXIS_MARGIN,
-                  }}
-                  barCategoryGap="14%"
-                  width={width}
-                >
-                  <CartesianGrid
-                    stroke={UI_COLORS.chartGrid}
-                    strokeDasharray="3 6"
-                    vertical={false}
-                  />
-                  <XAxis
-                    axisLine={false}
-                    dataKey="periodStart"
-                    interval={0}
-                    minTickGap={28}
-                    tick={UI_CHART_STYLES.axisTick}
-                    tickFormatter={formatDayTick}
-                    tickLine={false}
-                    ticks={xAxisTicks}
-                  />
-                  <YAxis
-                    axisLine={false}
-                    domain={axisConfig.domain}
-                    label={buildYAxisLabel(yAxisLabel ?? "", "insideLeft")}
-                    tick={UI_CHART_STYLES.axisTickMuted}
-                    tickFormatter={yAxisFormatter}
-                    tickLine={false}
-                    tickMargin={8}
-                    ticks={axisConfig.ticks}
-                    width={LEFT_Y_AXIS_WIDTH}
-                    yAxisId="left"
-                  />
-                  <YAxis
-                    axisLine={false}
-                    domain={axisConfig.domain}
-                    label={buildYAxisLabel(yAxisLabel ?? "", "right")}
-                    orientation="right"
-                    tick={UI_CHART_STYLES.axisTickMuted}
-                    tickFormatter={yAxisFormatter}
-                    tickLine={false}
-                    tickMargin={8}
-                    ticks={axisConfig.ticks}
-                    width={RIGHT_Y_AXIS_WIDTH}
-                    yAxisId="right"
-                  />
-                  <Tooltip
-                    content={
-                      <HistoryTooltip
-                        formatter={valueFormatter}
-                        labelFormatter={formatTooltipTimestamp}
-                      />
-                    }
-                  />
-                  {chartData
-                    .filter((point) => isMidnightTickValue(point.periodStart))
-                    .map((point) => (
-                      <ReferenceLine
-                        key={`bar-midnight-${point.periodStart}`}
-                        stroke={UI_COLORS.chartReference}
-                        strokeDasharray="3 5"
-                        x={point.periodStart}
-                      />
-                    ))}
-                  {nowMarkerPeriodStart &&
-                  nowMarkerTimestampMs === undefined ? (
-                    <ReferenceLine
-                      label={buildNowLabel()}
-                      stroke={UI_COLORS.textPrimary}
-                      strokeDasharray="4 4"
-                      strokeOpacity={0.8}
-                      x={nowMarkerPeriodStart}
-                      yAxisId="left"
+              <ComposedChart
+                data={chartData}
+                height={height}
+                margin={{
+                  top: 16,
+                  right: STANDARD_RIGHT_AXIS_MARGIN,
+                  bottom: 0,
+                  left: STANDARD_LEFT_AXIS_MARGIN,
+                }}
+                barCategoryGap="14%"
+                width={width}
+              >
+                <CartesianGrid
+                  stroke={UI_COLORS.chartGrid}
+                  strokeDasharray="3 6"
+                  vertical={false}
+                />
+                <XAxis
+                  axisLine={false}
+                  dataKey="centerTimestampMs"
+                  domain={xAxisDomain}
+                  interval={0}
+                  minTickGap={28}
+                  tick={UI_CHART_STYLES.axisTick}
+                  tickFormatter={formatDayTick}
+                  tickLine={false}
+                  ticks={xAxisTicks}
+                  type="number"
+                />
+                <YAxis
+                  axisLine={false}
+                  domain={axisConfig.domain}
+                  label={buildYAxisLabel(yAxisLabel ?? "", "insideLeft")}
+                  tick={UI_CHART_STYLES.axisTickMuted}
+                  tickFormatter={yAxisFormatter}
+                  tickLine={false}
+                  tickMargin={8}
+                  ticks={axisConfig.ticks}
+                  width={LEFT_Y_AXIS_WIDTH}
+                  yAxisId="left"
+                />
+                <YAxis
+                  axisLine={false}
+                  domain={axisConfig.domain}
+                  label={buildYAxisLabel(yAxisLabel ?? "", "right")}
+                  orientation="right"
+                  tick={UI_CHART_STYLES.axisTickMuted}
+                  tickFormatter={yAxisFormatter}
+                  tickLine={false}
+                  tickMargin={8}
+                  ticks={axisConfig.ticks}
+                  width={RIGHT_Y_AXIS_WIDTH}
+                  yAxisId="right"
+                />
+                <Tooltip
+                  content={
+                    <HistoryTooltip
+                      formatter={valueFormatter}
+                      labelFormatter={formatTooltipTimestamp}
                     />
-                  ) : null}
-                  <Bar
-                    dataKey="displayValue"
-                    maxBarSize={12}
-                    radius={[2, 2, 0, 0]}
+                  }
+                />
+                {chartData
+                  .filter((point) => isMidnightTickValue(point.periodStartMs))
+                  .map((point) => (
+                    <ReferenceLine
+                      key={`bar-midnight-${point.periodStart}`}
+                      stroke={UI_COLORS.chartReference}
+                      strokeDasharray="3 5"
+                      x={point.periodStartMs}
+                    />
+                  ))}
+                {nowMarkerPeriodStart ? (
+                  <ReferenceLine
+                    label={buildNowLabel()}
+                    stroke={UI_COLORS.textPrimary}
+                    strokeDasharray="4 4"
+                    strokeOpacity={0.8}
+                    x={new Date(nowMarkerPeriodStart).getTime()}
                     yAxisId="left"
-                  >
-                    {chartData.map((point) => (
-                      <Cell
-                        key={`bar-value-${point.periodStart}`}
-                        fill={
-                          typeof point.currentValue === "number"
-                            ? `${accentColor}59`
-                            : `${accentColor}D1`
-                        }
-                      />
-                    ))}
-                  </Bar>
-                  <Line
-                    activeDot={false}
-                    dataKey="rightAxisValue"
-                    dot={false}
-                    isAnimationActive={false}
-                    legendType="none"
-                    stroke="transparent"
-                    strokeWidth={1}
-                    type="monotone"
-                    yAxisId="right"
                   />
-                </ComposedChart>
-                {exactNowMarkerOffsetPx !== null ? (
-                  <ExactNowOverlay leftPx={exactNowMarkerOffsetPx} />
                 ) : null}
-              </>
+                <Bar
+                  dataKey="displayValue"
+                  maxBarSize={12}
+                  radius={[2, 2, 0, 0]}
+                  yAxisId="left"
+                >
+                  {chartData.map((point) => (
+                    <Cell
+                      key={`bar-value-${point.periodStart}`}
+                      fill={
+                        typeof point.currentValue === "number"
+                          ? `${accentColor}59`
+                          : `${accentColor}D1`
+                      }
+                    />
+                  ))}
+                </Bar>
+                <Line
+                  activeDot={false}
+                  dataKey="rightAxisValue"
+                  dot={false}
+                  isAnimationActive={false}
+                  legendType="none"
+                  stroke="transparent"
+                  strokeWidth={1}
+                  type="monotone"
+                  yAxisId="right"
+                />
+              </ComposedChart>
             );
           }}
         </MeasuredChartContainer>
@@ -1658,89 +1652,6 @@ function EmptyChartMessage({ message }: { message: string }) {
   );
 }
 
-function ExactNowOverlay({ leftPx }: { leftPx: number }) {
-  return (
-    <div
-      className="pointer-events-none absolute inset-y-0"
-      style={{ left: `${leftPx}px` }}
-    >
-      <div className="absolute left-1/2 -top-1 -translate-x-1/2 text-xs text-slate-100">
-        Now
-      </div>
-      <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 border-l-2 border-dashed border-slate-100/80" />
-    </div>
-  );
-}
-
-function buildBarChartNowMarkerOffset({
-  chartWidth,
-  leftAxisWidth,
-  marginLeft,
-  marginRight,
-  nowTimestampMs,
-  points,
-  rightAxisWidth,
-}: {
-  chartWidth: number;
-  leftAxisWidth: number;
-  marginLeft: number;
-  marginRight: number;
-  nowTimestampMs: number | null;
-  points: Array<{
-    periodStart: string;
-    timestampMs?: number;
-  }>;
-  rightAxisWidth: number;
-}) {
-  if (nowTimestampMs === null || points.length === 0) {
-    return null;
-  }
-
-  const firstPoint = points[0];
-  const lastPoint = points.at(-1);
-  const rangeStartMs = getPointTimestampMs(firstPoint);
-  const rangeEndMs = getPointTimestampMs(lastPoint);
-
-  if (
-    rangeStartMs === null ||
-    rangeEndMs === null ||
-    rangeEndMs <= rangeStartMs
-  ) {
-    return null;
-  }
-
-  if (nowTimestampMs < rangeStartMs || nowTimestampMs > rangeEndMs) {
-    return null;
-  }
-
-  const plotStart = marginLeft + leftAxisWidth;
-  const plotWidth =
-    chartWidth - marginLeft - marginRight - leftAxisWidth - rightAxisWidth;
-
-  if (plotWidth <= 0) {
-    return null;
-  }
-
-  const progress =
-    (nowTimestampMs - rangeStartMs) / (rangeEndMs - rangeStartMs);
-  return plotStart + progress * plotWidth;
-}
-
-function getPointTimestampMs(
-  point: { periodStart: string; timestampMs?: number } | undefined,
-): number | null {
-  if (!point) {
-    return null;
-  }
-
-  if (typeof point.timestampMs === "number") {
-    return point.timestampMs;
-  }
-
-  const timestampMs = new Date(point.periodStart).getTime();
-  return Number.isNaN(timestampMs) ? null : timestampMs;
-}
-
 export function SignedHistoryChart({
   emptyMessage,
   negativeColor,
@@ -1900,7 +1811,7 @@ export function SignedHistoryChart({
               content={
                 <HistoryTooltip
                   formatter={valueFormatter}
-                  labelFormatter={formatTooltipTimestamp}
+                  labelFormatter={formatBarTooltipTimestamp}
                 />
               }
             />
@@ -2801,6 +2712,15 @@ function formatTooltipTimestamp(value: string | number): string {
   }).format(new Date(value));
 }
 
+function formatBarTooltipTimestamp(value: string | number): string {
+  const timestampMs =
+    typeof value === "number"
+      ? value - HISTORY_STEP_MS / 2
+      : new Date(value).getTime();
+
+  return formatTooltipTimestamp(timestampMs);
+}
+
 function formatPriceValue(value: number): string {
   return `${value.toFixed(3)} EUR/kWh`;
 }
@@ -3029,7 +2949,23 @@ function getResponsiveHourStep(chartWidth: number): number {
     return 5;
   }
 
-  return 6;
+  if (usableWidth >= 360) {
+    return 6;
+  }
+
+  if (usableWidth >= 280) {
+    return 8;
+  }
+
+  if (usableWidth >= 220) {
+    return 12;
+  }
+
+  if (usableWidth >= 140) {
+    return 24;
+  }
+
+  return 24;
 }
 
 function buildTickIndexes(length: number, count: number): number[] {
