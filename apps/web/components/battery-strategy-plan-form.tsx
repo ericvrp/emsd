@@ -43,6 +43,7 @@ interface BatteryStrategyPlanFormProps {
   returnPath?: string;
   siteId: string;
   strategyPlan: BatteryStrategyPlanRecord;
+  submitLabel?: string;
 }
 
 export function BatteryStrategyPlanForm({
@@ -53,6 +54,7 @@ export function BatteryStrategyPlanForm({
   returnPath,
   siteId,
   strategyPlan,
+  submitLabel = "Apply",
 }: BatteryStrategyPlanFormProps) {
   const [items, setItems] = useState(strategyPlan);
 
@@ -430,7 +432,7 @@ export function BatteryStrategyPlanForm({
         </Button>
         <SubmitButton>
           <Save size={14} />
-          Apply
+          {submitLabel}
         </SubmitButton>
       </div>
     </form>

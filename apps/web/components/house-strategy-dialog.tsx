@@ -123,7 +123,6 @@ export function HouseStrategyDialog({
     <>
       <Button
         aria-label={buttonLabel}
-        className="text-cyan-300 hover:text-cyan-200"
         onClick={() => setIsOpen(true)}
         type="button"
         variant="ghost"
@@ -163,13 +162,13 @@ export function HouseStrategyDialog({
                       <ModeSwitchButton
                         active={selectedMode === "manual"}
                         icon={Hand}
-                        label="Manual Mode"
+                        label="Manual"
                         onClick={() => setSelectedMode("manual")}
                       />
                       <ModeSwitchButton
                         active={selectedMode === "strategy"}
                         icon={CalendarClock}
-                        label="Strategy Mode"
+                        label="Automatic"
                         onClick={() => setSelectedMode("strategy")}
                       />
                     </div>
@@ -191,7 +190,7 @@ export function HouseStrategyDialog({
                             returnPath="/"
                             siteId={siteId}
                             strategy={strategy}
-                            submitLabel="Apply to all batteries"
+                            submitLabel="Save"
                           />
                         </div>
                       </div>
@@ -204,6 +203,7 @@ export function HouseStrategyDialog({
                         returnPath="/"
                         siteId={siteId}
                         strategyPlan={strategyPlan}
+                        submitLabel="Save"
                       />
                     )}
                   </div>

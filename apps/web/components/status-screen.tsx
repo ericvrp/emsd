@@ -1,4 +1,3 @@
-import { formatManagedDeviceState } from "@emsd/core";
 import { BatteryCharging, Zap } from "lucide-react";
 import { getHistoryArchive } from "../lib/ems-bridge";
 import { formatAbsolutePowerValue } from "../lib/power-format";
@@ -10,7 +9,7 @@ import {
 } from "./dashboard-page-data";
 import { DashboardPageFrame } from "./dashboard-page-frame";
 import { HomeBatteryHistorySection } from "./home-battery-history-section";
-import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
+import { Card, CardContent } from "./ui/card";
 
 export async function StatusScreen({
   searchParams,
@@ -66,49 +65,6 @@ export async function StatusScreen({
     }
   }
 
-  const batteryCards = (
-    <section className="flex w-full flex-col gap-6">
-      {batteries.map((battery) => {
-        const currentState = battery.telemetry?.state ?? battery.state;
-        const currentPower = battery.telemetry?.powerW ?? null;
-        const socPercent = battery.telemetry?.socPercent ?? null;
-
-        return (
-          <Card
-            key={battery.id}
-            className="w-full overflow-hidden border-white/12 bg-slate-950/70"
-          >
-            <CardHeader className="border-b border-white/8 px-6 py-5 sm:px-8">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <CardTitle className="truncate text-3xl font-semibold tracking-tight sm:text-4xl">
-                    {battery.name}
-                  </CardTitle>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="px-6 py-6 sm:px-8 sm:py-8">
-              <div className="flex flex-col items-center justify-center gap-6">
-                <div className="flex flex-nowrap items-center justify-center gap-3 sm:gap-6">
-                  <BatteryChargeGauge socPercent={socPercent} />
-                  <PowerIndicator state={currentState} value={currentPower} />
-                </div>
-                <div className="text-center">
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                    Current state
-                  </p>
-                  <p className="mt-2 text-lg font-medium capitalize text-slate-200">
-                    {formatManagedDeviceState(currentState)}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        );
-      })}
-    </section>
-  );
-
   return (
     <DashboardPageFrame currentSite={currentSite} generatedAt={generatedAt}>
       {currentSite === null ? (
@@ -144,11 +100,8 @@ export async function StatusScreen({
               currentPowerW={currentBatteryPower}
               currentState={currentBatteryState}
               siteName={currentSite.name}
-            >
-              {batteryCards}
-            </HomeBatteryHistorySection>
+            />
           ) : null}
-          {historyArchive ? null : batteryCards}
         </section>
       )}
     </DashboardPageFrame>
