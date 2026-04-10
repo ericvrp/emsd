@@ -50,6 +50,11 @@ export async function StatusScreen({
       ? batteryChargeValues.reduce((total, value) => total + value, 0) /
         batteryChargeValues.length
       : null;
+  const currentBatteryState =
+    batteries.length > 0
+      ? batteries.find((b) => b.telemetry?.state)?.telemetry?.state ??
+        (batteries[0]?.state ?? null)
+      : null;
   let historyArchive = null;
   let historyArchiveError: string | null = null;
 
@@ -160,6 +165,7 @@ export async function StatusScreen({
               archive={historyArchive}
               currentChargePercent={currentBatteryCharge}
               currentPowerW={currentBatteryPower}
+              currentState={currentBatteryState}
               siteName={currentSite.name}
             >
               {batteryCards}

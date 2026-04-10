@@ -1,29 +1,35 @@
 "use client";
 
+import type { ReactNode } from "react";
 import type { HistoryArchive } from "../lib/ems-bridge";
 import { formatAbsolutePowerValue } from "../lib/power-format";
+import { DisabledDateSelect } from "./date-select";
 import { SectionSummaryCard } from "./section-summary-card";
 import {
   BatteryHistoryChart,
   buildBatteryHistoryPoints,
   getCurrentPeriodStart,
-  getUtcDayKey,
+  getTodayLocalDayKey,
 } from "./history-page";
 
 type HomeBatteryHistorySectionProps = {
   archive: HistoryArchive;
+  children?: ReactNode;
   currentChargePercent: number | null;
   currentPowerW: number | null;
+  currentState: string | null;
   siteName: string;
 };
 
 export function HomeBatteryHistorySection({
   archive,
+  children,
   currentChargePercent,
   currentPowerW,
+  currentState,
   siteName,
 }: HomeBatteryHistorySectionProps) {
-  const todayKey = getUtcDayKey(new Date());
+  const todayKey = getTodayLocalDayKey();
   const nowMarkerPeriodStart = getCurrentPeriodStart();
   const batteryHistoryPoints = buildBatteryHistoryPoints(
     archive.batteryPowerSamples,
@@ -39,15 +45,16 @@ export function HomeBatteryHistorySection({
             Battery
           </p>
           <h3 className="mt-2 text-xl font-semibold text-white">
-            Battery history for {siteName}
+            Battery for {siteName}
           </h3>
           <p className="mt-2 text-sm leading-6 text-slate-400">
-            Recent charging, discharging, and battery charge for the current day.
+            Recent charging, discharging, and battery charge for the current
+            day.
           </p>
         </div>
         <SectionSummaryCard title="Current battery">
-          <p className="text-lg font-semibold text-white sm:text-xl">
-            {formatCharge(currentChargePercent)} • {formatPower(currentPowerW)}
+          <p className="text-2xl font-semibold text-white sm:text-3xl">
+            {formatCharge(currentChargePercent)} • {formatPower(currentPowerW, currentState)}
           </p>
         </SectionSummaryCard>
       </div>
@@ -55,10 +62,12 @@ export function HomeBatteryHistorySection({
       <div className="mt-5 space-y-4 rounded-[1.4rem] border border-white/10 bg-white/5 p-4">
         <BatteryHistoryChart
           emptyMessage="No battery power or charge samples have been collected for today yet."
+          headerAccessory={<DisabledDateSelect day={todayKey} />}
           nowMarkerPeriodStart={nowMarkerPeriodStart}
           points={batteryHistoryPoints}
         />
       </div>
+      {children ? <div className="mt-6">{children}</div> : null}
     </section>
   );
 }
@@ -67,8 +76,12 @@ function formatCharge(value: number | null): string {
   return value === null ? "Unavailable" : `${Math.round(value)}%`;
 }
 
-function formatPower(value: number | null): string {
+function formatPower(value: number | null, state: string | null): string {
   if (value === null) return "Unavailable";
+
+  if (state === "idle") {
+    return "Idle";
+  }
 
   const isCharging = value > 0;
   const direction = isCharging ? "Discharging" : "Charging";
