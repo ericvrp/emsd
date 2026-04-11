@@ -17,6 +17,7 @@ export const UI_COLORS = {
   price: "#ca8a04",
   priceSection: "#f59e0b",
   solarEnergy: "#f97316",
+  solarPrediction: "#facc15",
   textPrimary: "#f8fafc",
 } as const;
 

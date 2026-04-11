@@ -1,3 +1,4 @@
+import { buildPredictedSolarGenerationSeries } from "@emsd/core";
 import { DaemonOfflineState } from "../../components/daemon-offline-state";
 import {
   type SearchParams,
@@ -30,6 +31,12 @@ export default async function ForecastPage({
   const historyArchive = currentSite
     ? await getHistoryArchive({ siteId: currentSite.id })
     : null;
+  const predictedSolarGeneration = historyArchive
+    ? buildPredictedSolarGenerationSeries({
+        forecastSamples: historyArchive.solarForecastSamples,
+        solarEnergyProviderSamples: historyArchive.solarEnergyProviderSamples,
+      })
+    : [];
 
   return (
     <DashboardPageFrame currentSite={currentSite} generatedAt={generatedAt}>
@@ -38,6 +45,7 @@ export default async function ForecastPage({
           archive={historyArchive}
           error={weatherForecastError}
           forecast={weatherForecast}
+          predictedSolarGeneration={predictedSolarGeneration}
           requestedDay={requestedDay}
           site={currentSite}
           source={currentSite.weatherSources[0] ?? null}

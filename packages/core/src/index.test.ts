@@ -1,5 +1,8 @@
 import { afterEach, expect, test } from "bun:test";
 import {
+  MAX_SOLAR_PREDICTION_PRECEDING_DAYS,
+  SOLAR_PREDICTION_MATCH_TOLERANCE_MS,
+  buildPredictedSolarGenerationSeries,
   createBatteryStrategyRuntimeForPlanApply,
   discoverReportJsonSchema,
   getDatabasePath,
@@ -139,3 +142,198 @@ test("createBatteryStrategyRuntimeForPlanApply keeps same-time items pending", (
 
   expect(runtime.lastTriggeredAtByItemId).toEqual({});
 });
+
+test("buildPredictedSolarGenerationSeries uses the average ratio of up to seven preceding days", () => {
+  const targetPeriodStart = "2026-04-09T12:00:00.000Z";
+  const currentForecastWm2 = 250;
+  const forecastSamples = [
+    buildForecastSample(targetPeriodStart, currentForecastWm2),
+    ...buildHistoricalForecastDays(targetPeriodStart, 9, 100),
+  ];
+  const solarEnergyProviderSamples = [
+    ...buildHistoricalGenerationDays(targetPeriodStart, 9, (dayOffset) =>
+      dayOffset <= MAX_SOLAR_PREDICTION_PRECEDING_DAYS ? 100 + dayOffset : 999,
+    ),
+  ];
+
+  const [prediction] = buildPredictedSolarGenerationSeries({
+    forecastSamples,
+    solarEnergyProviderSamples,
+  });
+
+  expect(prediction?.periodStart).toBe(targetPeriodStart);
+  expect(prediction?.value).toBeCloseTo(260, 10);
+});
+
+test("buildPredictedSolarGenerationSeries matches the closest timestamps within tolerance", () => {
+  const targetPeriodStart = "2026-04-09T12:00:00.000Z";
+  const forecastSamples = [
+    buildForecastSample(targetPeriodStart, 200),
+    buildForecastSample("2026-04-08T12:06:00.000Z", 100),
+  ];
+  const solarEnergyProviderSamples = [
+    buildGenerationSample("solar-1", "2026-04-08T11:54:00.000Z", 150),
+  ];
+
+  const [prediction] = buildPredictedSolarGenerationSeries({
+    forecastSamples,
+    solarEnergyProviderSamples,
+  });
+
+  expect(prediction).toEqual({
+    periodStart: targetPeriodStart,
+    value: 300,
+  });
+});
+
+test("buildPredictedSolarGenerationSeries rejects samples outside the match tolerance", () => {
+  const targetPeriodStart = "2026-04-09T12:00:00.000Z";
+  const forecastSamples = [
+    buildForecastSample(targetPeriodStart, 200),
+    buildForecastSample(
+      new Date(
+        new Date("2026-04-08T12:00:00.000Z").getTime() +
+          SOLAR_PREDICTION_MATCH_TOLERANCE_MS +
+          1,
+      ).toISOString(),
+      100,
+    ),
+  ];
+  const solarEnergyProviderSamples = [
+    buildGenerationSample("solar-1", "2026-04-08T12:00:00.000Z", 150),
+  ];
+
+  const [prediction] = buildPredictedSolarGenerationSeries({
+    forecastSamples,
+    solarEnergyProviderSamples,
+  });
+
+  expect(prediction).toEqual({
+    periodStart: targetPeriodStart,
+    value: null,
+  });
+});
+
+test("buildPredictedSolarGenerationSeries aggregates multiple solar providers", () => {
+  const targetPeriodStart = "2026-04-09T12:00:00.000Z";
+  const forecastSamples = [
+    buildForecastSample(targetPeriodStart, 150),
+    buildForecastSample("2026-04-08T12:00:00.000Z", 100),
+  ];
+  const solarEnergyProviderSamples = [
+    buildGenerationSample("solar-1", "2026-04-08T12:00:00.000Z", 90),
+    buildGenerationSample("solar-2", "2026-04-08T12:00:00.000Z", 60),
+  ];
+
+  const [prediction] = buildPredictedSolarGenerationSeries({
+    forecastSamples,
+    solarEnergyProviderSamples,
+  });
+
+  expect(prediction).toEqual({
+    periodStart: targetPeriodStart,
+    value: 225,
+  });
+});
+
+test("buildPredictedSolarGenerationSeries skips zero and missing historical forecasts", () => {
+  const targetPeriodStart = "2026-04-09T12:00:00.000Z";
+  const forecastSamples = [
+    buildForecastSample(targetPeriodStart, 200),
+    buildForecastSample("2026-04-08T12:00:00.000Z", 0),
+    buildForecastSample("2026-04-07T12:00:00.000Z", null),
+    buildForecastSample("2026-04-06T12:00:00.000Z", 100),
+  ];
+  const solarEnergyProviderSamples = [
+    buildGenerationSample("solar-1", "2026-04-08T12:00:00.000Z", 120),
+    buildGenerationSample("solar-1", "2026-04-07T12:00:00.000Z", 120),
+    buildGenerationSample("solar-1", "2026-04-06T12:00:00.000Z", 150),
+  ];
+
+  const [prediction] = buildPredictedSolarGenerationSeries({
+    forecastSamples,
+    solarEnergyProviderSamples,
+  });
+
+  expect(prediction).toEqual({
+    periodStart: targetPeriodStart,
+    value: 300,
+  });
+});
+
+test("buildPredictedSolarGenerationSeries returns zero for a zero current forecast", () => {
+  const targetPeriodStart = "2026-04-09T12:00:00.000Z";
+  const [prediction] = buildPredictedSolarGenerationSeries({
+    forecastSamples: [buildForecastSample(targetPeriodStart, 0)],
+    solarEnergyProviderSamples: [],
+  });
+
+  expect(prediction).toEqual({
+    periodStart: targetPeriodStart,
+    value: 0,
+  });
+});
+
+test("buildPredictedSolarGenerationSeries returns null when no usable history exists", () => {
+  const targetPeriodStart = "2026-04-09T12:00:00.000Z";
+  const [prediction] = buildPredictedSolarGenerationSeries({
+    forecastSamples: [buildForecastSample(targetPeriodStart, 180)],
+    solarEnergyProviderSamples: [],
+  });
+
+  expect(prediction).toEqual({
+    periodStart: targetPeriodStart,
+    value: null,
+  });
+});
+
+function buildForecastSample(periodStart: string, value: number | null) {
+  return {
+    airTempC: null,
+    cloudOpacityPercent: null,
+    generatedAt: periodStart,
+    ghiWm2: value,
+    periodStart,
+    siteId: "home",
+    value,
+  };
+}
+
+function buildGenerationSample(
+  providerId: string,
+  periodStart: string,
+  powerW: number | null,
+) {
+  return {
+    observedAt: periodStart,
+    periodStart,
+    powerW,
+    providerId,
+    siteId: "home",
+  };
+}
+
+function buildHistoricalForecastDays(
+  targetPeriodStart: string,
+  count: number,
+  value: number,
+) {
+  return Array.from({ length: count }, (_, index) => {
+    const date = new Date(targetPeriodStart);
+    date.setDate(date.getDate() - (index + 1));
+    return buildForecastSample(date.toISOString(), value);
+  });
+}
+
+function buildHistoricalGenerationDays(
+  targetPeriodStart: string,
+  count: number,
+  getValue: (dayOffset: number) => number,
+) {
+  return Array.from({ length: count }, (_, index) => {
+    const dayOffset = index + 1;
+    const date = new Date(targetPeriodStart);
+    date.setDate(date.getDate() - dayOffset);
+    return buildGenerationSample("solar-1", date.toISOString(), getValue(dayOffset));
+  });
+}

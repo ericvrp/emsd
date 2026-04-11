@@ -810,6 +810,14 @@ export interface SolarEnergyProviderSampleRecord {
   powerW: number | null;
 }
 
+export interface PredictedSolarGenerationPoint {
+  periodStart: string;
+  value: number | null;
+}
+
+export const MAX_SOLAR_PREDICTION_PRECEDING_DAYS = 7;
+export const SOLAR_PREDICTION_MATCH_TOLERANCE_MS = 7.5 * 60 * 1_000;
+
 export interface DashboardSiteRecord extends SiteRecord {
   devices: ManagedDeviceStatusRecord[];
   dynamicPriceSources: DynamicPriceSourceRecord[];
@@ -842,6 +850,226 @@ export interface HistoryArchive {
   siteId: string;
   solarEnergyProviderSamples: SolarEnergyProviderSampleRecord[];
   solarForecastSamples: SolarForecastSampleRecord[];
+}
+
+export function buildPredictedSolarGenerationSeries(input: {
+  forecastSamples: SolarForecastSampleRecord[];
+  solarEnergyProviderSamples: SolarEnergyProviderSampleRecord[];
+  targetForecastSamples?: SolarForecastSampleRecord[];
+  maxPrecedingDays?: number;
+  matchToleranceMs?: number;
+}): PredictedSolarGenerationPoint[] {
+  const forecastIndex = buildTimestampedValueIndex(
+    input.forecastSamples.map((sample) => ({
+      timestamp: sample.periodStart,
+      value: sample.ghiWm2 ?? sample.value,
+    })),
+  );
+  const generationIndex = buildTimestampedValueIndex(
+    aggregateSolarGenerationByPeriodStart(input.solarEnergyProviderSamples),
+  );
+  const targetSamples = input.targetForecastSamples ?? input.forecastSamples;
+  const maxPrecedingDays =
+    input.maxPrecedingDays ?? MAX_SOLAR_PREDICTION_PRECEDING_DAYS;
+  const matchToleranceMs =
+    input.matchToleranceMs ?? SOLAR_PREDICTION_MATCH_TOLERANCE_MS;
+
+  return targetSamples.map((sample) => ({
+    periodStart: sample.periodStart,
+    value: predictSolarGenerationForForecastSample({
+      forecastIndex,
+      generationIndex,
+      forecastValue: sample.ghiWm2 ?? sample.value,
+      maxPrecedingDays,
+      matchToleranceMs,
+      periodStart: sample.periodStart,
+    }),
+  }));
+}
+
+function predictSolarGenerationForForecastSample(input: {
+  forecastIndex: TimestampedValueIndex;
+  generationIndex: TimestampedValueIndex;
+  forecastValue: number | null;
+  maxPrecedingDays: number;
+  matchToleranceMs: number;
+  periodStart: string;
+}): number | null {
+  if (input.forecastValue === null) {
+    return null;
+  }
+
+  if (input.forecastValue === 0) {
+    return 0;
+  }
+
+  const targetDate = new Date(input.periodStart);
+
+  if (Number.isNaN(targetDate.getTime())) {
+    return null;
+  }
+
+  const ratios: number[] = [];
+
+  for (let dayOffset = 1; dayOffset <= input.maxPrecedingDays; dayOffset += 1) {
+    const historicalDate = new Date(targetDate);
+    historicalDate.setDate(historicalDate.getDate() - dayOffset);
+
+    const historicalTimestampMs = historicalDate.getTime();
+    const forecastMatch = findClosestTimestampedValueWithin(
+      input.forecastIndex,
+      historicalTimestampMs,
+      input.matchToleranceMs,
+    );
+    const generationMatch = findClosestTimestampedValueWithin(
+      input.generationIndex,
+      historicalTimestampMs,
+      input.matchToleranceMs,
+    );
+
+    if (
+      forecastMatch === null ||
+      generationMatch === null ||
+      forecastMatch.value === null ||
+      generationMatch.value === null ||
+      forecastMatch.value <= 0
+    ) {
+      continue;
+    }
+
+    ratios.push(generationMatch.value / forecastMatch.value);
+  }
+
+  if (ratios.length === 0) {
+    return null;
+  }
+
+  const averageRatio = ratios.reduce((total, ratio) => total + ratio, 0) /
+    ratios.length;
+  return input.forecastValue * averageRatio;
+}
+
+interface TimestampedValuePoint {
+  timestampMs: number;
+  value: number | null;
+}
+
+interface TimestampedValueIndex {
+  points: TimestampedValuePoint[];
+  timestampsMs: number[];
+}
+
+function aggregateSolarGenerationByPeriodStart(
+  samples: SolarEnergyProviderSampleRecord[],
+): Array<{ timestamp: string; value: number | null }> {
+  const aggregated = new Map<string, { hasValue: boolean; total: number }>();
+
+  for (const sample of samples) {
+    const current = aggregated.get(sample.periodStart) ?? {
+      hasValue: false,
+      total: 0,
+    };
+
+    if (typeof sample.powerW === "number") {
+      current.hasValue = true;
+      current.total += sample.powerW;
+    }
+
+    aggregated.set(sample.periodStart, current);
+  }
+
+  return [...aggregated.entries()]
+    .map(([timestamp, entry]) => ({
+      timestamp,
+      value: entry.hasValue ? entry.total : null,
+    }))
+    .sort(
+      (left, right) =>
+        new Date(left.timestamp).getTime() - new Date(right.timestamp).getTime(),
+    );
+}
+
+function buildTimestampedValueIndex(
+  values: Array<{ timestamp: string; value: number | null }>,
+): TimestampedValueIndex {
+  const points = values
+    .map((value) => ({
+      timestampMs: new Date(value.timestamp).getTime(),
+      value: value.value,
+    }))
+    .filter((value) => Number.isFinite(value.timestampMs))
+    .sort((left, right) => left.timestampMs - right.timestampMs);
+
+  return {
+    points,
+    timestampsMs: points.map((point) => point.timestampMs),
+  };
+}
+
+function findClosestTimestampedValueWithin(
+  index: TimestampedValueIndex,
+  targetTimestampMs: number,
+  maxDeltaMs: number,
+): TimestampedValuePoint | null {
+  if (!Number.isFinite(targetTimestampMs) || index.points.length === 0) {
+    return null;
+  }
+
+  const insertionIndex = findTimestampInsertionIndex(
+    index.timestampsMs,
+    targetTimestampMs,
+  );
+  let closest: TimestampedValuePoint | null = null;
+
+  for (const candidateIndex of [insertionIndex - 1, insertionIndex]) {
+    const candidate = index.points[candidateIndex];
+
+    if (!candidate) {
+      continue;
+    }
+
+    if (
+      closest === null ||
+      Math.abs(candidate.timestampMs - targetTimestampMs) <
+        Math.abs(closest.timestampMs - targetTimestampMs)
+    ) {
+      closest = candidate;
+    }
+  }
+
+  if (
+    closest === null ||
+    Math.abs(closest.timestampMs - targetTimestampMs) > maxDeltaMs
+  ) {
+    return null;
+  }
+
+  return closest;
+}
+
+function findTimestampInsertionIndex(
+  timestampsMs: number[],
+  targetTimestampMs: number,
+): number {
+  let low = 0;
+  let high = timestampsMs.length;
+
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    const value = timestampsMs[middle];
+
+    if (value === undefined) {
+      break;
+    }
+
+    if (value < targetTimestampMs) {
+      low = middle + 1;
+    } else {
+      high = middle;
+    }
+  }
+
+  return low;
 }
 
 export function getRepoRoot(): string {

@@ -47,7 +47,7 @@ export function HomeBatteryHistorySection({
             Battery for {siteName}
           </h3>
           <p className="mt-2 text-sm leading-6 text-slate-400">
-            Recent charging, discharging, and battery charge for the current
+            Recent charging, discharging, and battery charge for the selected
             day.
           </p>
         </div>
