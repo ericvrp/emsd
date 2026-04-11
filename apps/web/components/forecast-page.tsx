@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import type {
   HistoryArchive,
   PredictedSolarGenerationPoint,
@@ -86,12 +86,45 @@ export function WeatherForecastSection({
     aggregatePowerSamples(archive.solarEnergyProviderSamples),
     daySelection.selectedDay,
   );
+  const predictionAccuracySummary = buildSolarPredictionAccuracySummary({
+    dayKey: daySelection.selectedDay,
+    generatedSeries: selectedDayGeneratedSeries,
+    predictedSeries: selectedDayPredictedSeries,
+    nowMarkerPeriodStart: daySelection.nowMarkerPeriodStart,
+  });
   const currentGeneratedPower = getLatestValueAtOrBefore(
     selectedDayGeneratedSeries,
     daySelection.nowMarkerPeriodStart ??
       selectedDayGeneratedSeries.at(-1)?.periodStart ??
       "",
   );
+
+  useEffect(() => {
+    console.table([
+      {
+        date: predictionAccuracySummary.date,
+        scoringPercentage:
+          predictionAccuracySummary.scoringPercentage ?? "Unavailable",
+        totalAbsoluteError: formatEnergyValue(
+          predictionAccuracySummary.totalAbsoluteErrorWh,
+        ),
+        totalGeneratedEnergy: formatEnergyValue(
+          predictionAccuracySummary.totalGeneratedWh,
+        ),
+        totalPredictedEnergy: formatEnergyValue(
+          predictionAccuracySummary.totalPredictedWh,
+        ),
+        usedSamples: predictionAccuracySummary.usedSamples,
+      },
+    ]);
+  }, [
+    predictionAccuracySummary.date,
+    predictionAccuracySummary.scoringPercentage,
+    predictionAccuracySummary.totalAbsoluteErrorWh,
+    predictionAccuracySummary.totalGeneratedWh,
+    predictionAccuracySummary.totalPredictedWh,
+    predictionAccuracySummary.usedSamples,
+  ]);
 
   return (
     <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
@@ -441,6 +474,90 @@ function getLatestValueAtOrBefore(
   }
 
   return null;
+}
+
+function buildSolarPredictionAccuracySummary(input: {
+  dayKey: string;
+  generatedSeries: Array<{ periodStart: string; value: number | null }>;
+  nowMarkerPeriodStart: string | null;
+  predictedSeries: Array<{ periodStart: string; value: number | null }>;
+}): {
+  date: string;
+  scoringPercentage: number | null;
+  totalAbsoluteErrorWh: number;
+  totalGeneratedWh: number;
+  totalPredictedWh: number;
+  usedSamples: number;
+} {
+  let totalAbsoluteError = 0;
+  let totalGeneratedW = 0;
+  let totalPredictedW = 0;
+  let denominator = 0;
+  let usedSamples = 0;
+  const nowMarkerMs = input.nowMarkerPeriodStart
+    ? new Date(input.nowMarkerPeriodStart).getTime()
+    : null;
+
+  for (let index = 0; index < input.predictedSeries.length; index += 1) {
+    const predictedPoint = input.predictedSeries[index];
+    const generatedPoint = input.generatedSeries[index];
+
+    if (!predictedPoint || !generatedPoint) {
+      continue;
+    }
+
+    const periodStartMs = new Date(predictedPoint.periodStart).getTime();
+
+    if (
+      nowMarkerMs !== null &&
+      !Number.isNaN(periodStartMs) &&
+      periodStartMs > nowMarkerMs
+    ) {
+      continue;
+    }
+
+    if (
+      typeof predictedPoint.value !== "number" ||
+      typeof generatedPoint.value !== "number"
+    ) {
+      continue;
+    }
+
+    totalPredictedW += predictedPoint.value;
+    totalGeneratedW += generatedPoint.value;
+    totalAbsoluteError += Math.abs(predictedPoint.value - generatedPoint.value);
+    denominator += Math.max(predictedPoint.value, generatedPoint.value);
+    usedSamples += 1;
+  }
+
+  const scoringPercentage =
+    usedSamples === 0
+      ? null
+      : denominator === 0
+        ? 100
+        : Math.max(0, 100 * (1 - totalAbsoluteError / denominator));
+
+  return {
+    date: input.dayKey,
+    scoringPercentage:
+      scoringPercentage === null ? null : Number(scoringPercentage.toFixed(2)),
+    totalAbsoluteErrorWh: convertWattSampleSumToWh(totalAbsoluteError),
+    totalGeneratedWh: convertWattSampleSumToWh(totalGeneratedW),
+    totalPredictedWh: convertWattSampleSumToWh(totalPredictedW),
+    usedSamples,
+  };
+}
+
+function convertWattSampleSumToWh(totalWattSamples: number): number {
+  return Number((totalWattSamples * 0.25).toFixed(2));
+}
+
+function formatEnergyValue(valueWh: number): string {
+  if (Math.abs(valueWh) > 999) {
+    return `${(valueWh / 1000).toFixed(2)} kWh`;
+  }
+
+  return `${valueWh.toFixed(2)} Wh`;
 }
 
 function formatForecastSummaryValue(value: number, unitLabel: string): string {
