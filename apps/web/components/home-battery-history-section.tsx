@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import type { HistoryArchive } from "../lib/ems-bridge";
 import { formatAbsolutePowerValue } from "../lib/power-format";
-import { BatteryHistoryChart, buildBatteryHistoryPoints } from "./history-page";
+import { BatteryHistoryChart, buildBatteryHistoryPoints } from "./history";
 import { SectionSummaryCard } from "./section-summary-card";
 import {
   TopLevelDaySelect,

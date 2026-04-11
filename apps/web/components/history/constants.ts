@@ -1,0 +1,10 @@
+export const HISTORY_STEP_MS = 15 * 60 * 1_000;
+export const CHARGE_AXIS_DOMAIN: [number, number] = [0, 100];
+export const CHARGE_AXIS_TICKS = [0, 20, 40, 60, 80, 100];
+export const BATTERY_POWER_AXIS_DOMAIN: [number, number] = [-3000, 3000];
+export const BATTERY_POWER_AXIS_TICKS = [-3000, -1500, 0, 1500, 3000];
+export const LEFT_Y_AXIS_WIDTH = 64;
+export const RIGHT_Y_AXIS_WIDTH = 64;
+export const STANDARD_Y_AXIS_TICK_COUNT = 5;
+export const STANDARD_LEFT_AXIS_MARGIN = 8;
+export const STANDARD_RIGHT_AXIS_MARGIN = 72;

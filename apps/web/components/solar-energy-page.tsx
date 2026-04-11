@@ -8,7 +8,7 @@ import {
   aggregatePowerSamples,
   fillSingleValueDay,
   splitSingleValueSeriesByTime,
-} from "./history-page";
+} from "./history";
 import { SectionSummaryCard } from "./section-summary-card";
 import {
   TopLevelDaySelect,

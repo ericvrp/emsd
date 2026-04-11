@@ -11,7 +11,7 @@ import {
   SingleValueHistoryChart,
   fillSingleValueDay,
   splitSingleValueSeriesByTime,
-} from "./history-page";
+} from "./history";
 import { SectionSummaryCard } from "./section-summary-card";
 import type { SiteSnapshot } from "./settings-panel";
 import {

@@ -12,7 +12,7 @@ import {
   fillSingleValueDay,
   invertSingleValueSeries,
   splitSingleValueSeriesByTime,
-} from "./history-page";
+} from "./history";
 import { SectionSummaryCard } from "./section-summary-card";
 import {
   TopLevelDaySelect,

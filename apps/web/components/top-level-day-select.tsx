@@ -7,7 +7,7 @@ import {
   getAvailableLocalDays,
   getCurrentPeriodStart,
   getTodayLocalDayKey,
-} from "./history-page";
+} from "./history";
 
 export function useTopLevelDaySelection({
   archive,
