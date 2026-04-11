@@ -18,6 +18,7 @@ import {
   YAxis,
 } from "recharts";
 import type { ValueType } from "recharts/types/component/DefaultTooltipContent";
+import { resolveRelativeDayParam, toDayQueryParam } from "../lib/day-utils";
 import type { HistoryArchive } from "../lib/ems-bridge";
 import {
   formatAbsolutePowerValue,
@@ -172,9 +173,10 @@ export function HistoryPage({
   const availableDays = getAvailableLocalDays(archive);
   const firstDay = availableDays[0] ?? null;
   const lastDay = availableDays.at(-1) ?? null;
+  const resolvedRequestedDay = resolveRelativeDayParam(requestedDay);
   const selectedDay =
-    requestedDay && availableDays.includes(requestedDay)
-      ? requestedDay
+    resolvedRequestedDay && availableDays.includes(resolvedRequestedDay)
+      ? resolvedRequestedDay
       : lastDay;
   const selectedDayIndex =
     selectedDay === null ? -1 : availableDays.indexOf(selectedDay);
@@ -264,7 +266,7 @@ export function HistoryPage({
     params.set("tab", tab);
 
     if (day) {
-      params.set("day", day);
+      params.set("day", toDayQueryParam(day) ?? day);
     }
 
     router.push(`/history?${params.toString()}`, { scroll: false });

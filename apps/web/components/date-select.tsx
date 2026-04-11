@@ -7,7 +7,9 @@ import {
   ChevronsRight,
 } from "lucide-react";
 import type { ComponentType } from "react";
+import { getRelativeDayLabel } from "../lib/day-utils";
 import { cn } from "../lib/utils";
+import { useAppLocale } from "./locale-provider";
 import {
   Select,
   SelectContent,
@@ -15,6 +17,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select";
+
+const DATE_SELECT_TRIGGER_CLASSNAME =
+  "h-9 w-[8rem] justify-center whitespace-nowrap border-white/8 bg-white/5 px-3 text-center text-sm [&>span]:block [&>span]:truncate [&>span]:whitespace-nowrap [&>span]:text-center [&_svg]:hidden";
 
 type DateSelectProps = {
   availableDays: string[];
@@ -49,6 +54,8 @@ export function DateSelect({
   selectedDay,
   centered = true,
 }: DateSelectProps) {
+  const locale = useAppLocale();
+
   return (
     <div className={cn(centered ? "flex justify-center" : "", className)}>
       <div className="flex flex-wrap items-center justify-center gap-1.5">
@@ -69,13 +76,13 @@ export function DateSelect({
           onValueChange={onSelectDay}
           {...(selectedDay ? { value: selectedDay } : {})}
         >
-          <SelectTrigger className="h-9 w-auto min-w-0 justify-center border-white/8 bg-white/5 px-3 text-center text-sm [&>span]:text-center [&_svg]:hidden">
+          <SelectTrigger className={DATE_SELECT_TRIGGER_CLASSNAME}>
             <SelectValue placeholder="Choose day" />
           </SelectTrigger>
           <SelectContent>
             {availableDays.map((day) => (
               <SelectItem key={day} value={day}>
-                {formatDatePickerLabel(day)}
+                {formatDatePickerLabel(day, locale)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -153,8 +160,14 @@ function TapeDeckButton({
   );
 }
 
-function formatDatePickerLabel(dayKey: string): string {
-  return new Intl.DateTimeFormat(undefined, {
+function formatDatePickerLabel(dayKey: string, locale: string): string {
+  const relativeLabel = getRelativeDayLabel(dayKey);
+
+  if (relativeLabel) {
+    return relativeLabel;
+  }
+
+  return new Intl.DateTimeFormat(locale, {
     day: "2-digit",
     month: "short",
     timeZone: "UTC",

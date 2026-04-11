@@ -1,6 +1,7 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { resolveRelativeDayParam, toDayQueryParam } from "../lib/day-utils";
 import { DateSelect } from "./date-select";
 import {
   getAvailableLocalDays,
@@ -20,9 +21,10 @@ export function useTopLevelDaySelection({
   const searchParams = useSearchParams();
   const availableDays = getAvailableLocalDays(archive);
   const todayKey = getTodayLocalDayKey();
+  const resolvedRequestedDay = resolveRelativeDayParam(requestedDay);
   const selectedDay =
-    requestedDay && availableDays.includes(requestedDay)
-      ? requestedDay
+    resolvedRequestedDay && availableDays.includes(resolvedRequestedDay)
+      ? resolvedRequestedDay
       : todayKey;
   const selectedDayIndex = availableDays.indexOf(selectedDay);
   const firstDay = availableDays[0] ?? selectedDay;
@@ -37,7 +39,7 @@ export function useTopLevelDaySelection({
     const params = new URLSearchParams(searchParams.toString());
 
     if (day) {
-      params.set("day", day);
+      params.set("day", toDayQueryParam(day) ?? day);
     } else {
       params.delete("day");
     }
