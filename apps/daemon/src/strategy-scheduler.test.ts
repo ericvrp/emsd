@@ -5,7 +5,9 @@ import type {
   NormalizedBatteryInfo,
 } from "@emsd/core";
 import {
+  formatScheduledItemCompletion,
   formatDaemonLogTimestamp,
+  getScheduledItemCompletion,
   getTodayTriggerAt,
   shouldCompleteScheduledItem,
   shouldMarkScheduledItemObserved,
@@ -52,7 +54,7 @@ test("shouldCompleteScheduledItem uses the active plan item rather than the pers
     manualTargetSoc: 40,
     targetMethod: "soc",
   });
-  const sample = createSample({ socPercent: 55, status: "idle" });
+  const sample = createSample({ socPercent: 35, status: "idle" });
 
   expect(
     shouldCompleteScheduledItem({
@@ -92,6 +94,67 @@ test("shouldCompleteScheduledItem waits until a scheduled discharge is observed"
       sample,
     }),
   ).toBe(false);
+});
+
+test("shouldCompleteScheduledItem does not stop a scheduled discharge just because status changed", () => {
+  const battery = createBattery({
+    strategyRuntime: {
+      activeItemId: "daily-1",
+      activeStartedAt: "2026-04-09T09:00:00.000Z",
+      activeObservedAt: "2026-04-09T09:00:15.000Z",
+      lastTriggeredAtByItemId: { "daily-1": "2026-04-09T09:00:00.000Z" },
+    },
+  });
+  const item = createDailyItem({
+    id: "daily-1",
+    manualState: "discharging",
+    manualDischargeTargetSoc: 15,
+    manualTargetSoc: 15,
+    targetMethod: "soc",
+  });
+  const sample = createSample({ socPercent: 18, status: "idle" });
+
+  expect(
+    shouldCompleteScheduledItem({
+      battery,
+      item,
+      now: new Date("2026-04-09T09:05:00.000Z"),
+      runtime: battery.strategyRuntime,
+      sample,
+    }),
+  ).toBe(false);
+});
+
+test("getScheduledItemCompletion returns discharge target details when the target is reached", () => {
+  const battery = createBattery({
+    strategyRuntime: {
+      activeItemId: "daily-1",
+      activeStartedAt: "2026-04-09T09:00:00.000Z",
+      activeObservedAt: "2026-04-09T09:00:15.000Z",
+      lastTriggeredAtByItemId: { "daily-1": "2026-04-09T09:00:00.000Z" },
+    },
+  });
+  const item = createDailyItem({
+    id: "daily-1",
+    manualState: "discharging",
+    manualDischargeTargetSoc: 15,
+    manualTargetSoc: 15,
+    targetMethod: "soc",
+  });
+  const completion = getScheduledItemCompletion({
+    battery,
+    item,
+    now: new Date("2026-04-09T09:04:14.000Z"),
+    runtime: battery.strategyRuntime,
+    sample: createSample({ socPercent: 15, status: "discharging" }),
+  });
+
+  if (completion === null) {
+    throw new Error("expected completion details");
+  }
+
+  expect(completion.reason).toBe("discharge-target-reached");
+  expect(formatScheduledItemCompletion(completion)).toContain("targetSoc=15");
 });
 
 test("shouldMarkScheduledItemObserved when the scheduled state is active", () => {

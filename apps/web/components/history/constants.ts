@@ -6,5 +6,5 @@ export const BATTERY_POWER_AXIS_TICKS = [-3000, -1500, 0, 1500, 3000];
 export const LEFT_Y_AXIS_WIDTH = 64;
 export const RIGHT_Y_AXIS_WIDTH = 64;
 export const STANDARD_Y_AXIS_TICK_COUNT = 5;
-export const STANDARD_LEFT_AXIS_MARGIN = 8;
-export const STANDARD_RIGHT_AXIS_MARGIN = 72;
+export const STANDARD_LEFT_AXIS_MARGIN = 4;
+export const STANDARD_RIGHT_AXIS_MARGIN = 4;

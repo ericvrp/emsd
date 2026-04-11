@@ -42,11 +42,12 @@ import {
 import {
   describeStrategyPlanItem,
   formatDaemonLogTimestamp,
+  formatScheduledItemCompletion,
   getDaemonTimeZoneLabel,
+  getScheduledItemCompletion,
   getTodayTriggerAt,
   isItemAlreadyTriggeredToday,
   needsCompletionTracking,
-  shouldCompleteScheduledItem,
   shouldMarkScheduledItemObserved,
   shouldSkipDelayedSocItemBecauseLaterItemIsDue,
   shouldSkipScheduledItem,
@@ -620,15 +621,15 @@ async function runScheduledStrategy(
       );
     }
 
-    if (
-      !shouldCompleteScheduledItem({
-        battery,
-        item: activeItem,
-        now,
-        runtime,
-        sample,
-      })
-    ) {
+    const completion = getScheduledItemCompletion({
+      battery,
+      item: activeItem,
+      now,
+      runtime,
+      sample,
+    });
+
+    if (completion === null) {
       logVerbose(
         verbose,
         `keeping active strategy item for ${battery.id}: ${describeStrategyPlanItem(activeItem)}`,
@@ -637,7 +638,7 @@ async function runScheduledStrategy(
     }
 
     logInfo(
-      `deactivating strategy item for ${battery.id}: ${describeStrategyPlanItemWithIndex(battery, activeItem)} reason=completed`,
+      `deactivating strategy item for ${battery.id}: ${describeStrategyPlanItemWithIndex(battery, activeItem)} ${formatScheduledItemCompletion(completion)}`,
     );
     await restoreFallbackStrategy(
       db,

@@ -34,65 +34,194 @@ export function shouldCompleteScheduledItem(input: {
   runtime: BatteryStrategyRuntimeRecord;
   sample: NormalizedBatteryInfo;
 }): boolean {
+  return getScheduledItemCompletion(input) !== null;
+}
+
+export interface ScheduledItemCompletion {
+  reason:
+    | "missing-start-time"
+    | "duration-elapsed"
+    | "end-time-reached"
+    | "charge-target-reached"
+    | "discharge-target-reached";
+  nowAt: string;
+  observedAt: string | null;
+  startedAt: string | null;
+  state: BatteryStrategyPlanItem["manualState"];
+  status: NormalizedBatteryInfo["status"];
+  socPercent: number | null;
+  targetDurationMinutes?: number | null;
+  targetSoc?: number;
+  endAt?: string;
+}
+
+export function getScheduledItemCompletion(input: {
+  battery: BatteryRecord;
+  item: BatteryStrategyPlanItem;
+  now: Date;
+  runtime: BatteryStrategyRuntimeRecord;
+  sample: NormalizedBatteryInfo;
+}): ScheduledItemCompletion | null {
   const { battery, item, now, runtime, sample } = input;
   const startedAt = runtime.activeStartedAt;
 
   if (!startedAt) {
-    return true;
+    return {
+      reason: "missing-start-time",
+      nowAt: now.toISOString(),
+      observedAt: runtime.activeObservedAt,
+      startedAt: null,
+      state: item.manualState,
+      status: sample.status,
+      socPercent: sample.socPercent,
+    };
   }
 
   if (item.targetMethod === "duration") {
     if (item.targetDurationMinutes === null) {
-      return true;
+      return {
+        reason: "duration-elapsed",
+        nowAt: now.toISOString(),
+        observedAt: runtime.activeObservedAt,
+        startedAt,
+        state: item.manualState,
+        status: sample.status,
+        socPercent: sample.socPercent,
+        targetDurationMinutes: null,
+      };
     }
 
-    return (
-      now.getTime() >=
+    return now.getTime() >=
       new Date(startedAt).getTime() + item.targetDurationMinutes * 60000
-    );
+      ? {
+          reason: "duration-elapsed",
+          nowAt: now.toISOString(),
+          observedAt: runtime.activeObservedAt,
+          startedAt,
+          state: item.manualState,
+          status: sample.status,
+          socPercent: sample.socPercent,
+          targetDurationMinutes: item.targetDurationMinutes,
+        }
+      : null;
   }
 
   if (item.targetMethod === "end-time") {
     const endAt = getScheduledEndAt(item, startedAt);
-    return endAt === null ? true : now.getTime() >= endAt.getTime();
+
+    if (endAt === null) {
+      return {
+        reason: "end-time-reached",
+        nowAt: now.toISOString(),
+        observedAt: runtime.activeObservedAt,
+        startedAt,
+        state: item.manualState,
+        status: sample.status,
+        socPercent: sample.socPercent,
+      };
+    }
+
+    return now.getTime() >= endAt.getTime()
+      ? {
+          reason: "end-time-reached",
+          nowAt: now.toISOString(),
+          observedAt: runtime.activeObservedAt,
+          startedAt,
+          state: item.manualState,
+          status: sample.status,
+          socPercent: sample.socPercent,
+          endAt: endAt.toISOString(),
+        }
+      : null;
   }
 
   if (item.strategyMode !== "manual") {
-    return false;
+    return null;
   }
 
   if (item.manualState === "charging") {
+    const targetSoc = item.manualChargeTargetSoc ?? 100;
+
     if (
       sample.socPercent !== null &&
-      sample.socPercent >= (item.manualChargeTargetSoc ?? 100)
+      sample.socPercent >= targetSoc
     ) {
-      return true;
+      return {
+        reason: "charge-target-reached",
+        nowAt: now.toISOString(),
+        observedAt: runtime.activeObservedAt,
+        startedAt,
+        state: item.manualState,
+        status: sample.status,
+        socPercent: sample.socPercent,
+        targetSoc,
+      };
     }
 
-    if (runtime.activeObservedAt === null) {
-      return false;
-    }
-
-    return sample.status !== "charging";
+    return null;
   }
 
   if (item.manualState === "discharging") {
+    const targetSoc =
+      item.manualDischargeTargetSoc ?? battery.minimumDischargePercent;
+
     if (
       sample.socPercent !== null &&
-      sample.socPercent <=
-        (item.manualDischargeTargetSoc ?? battery.minimumDischargePercent)
+      sample.socPercent <= targetSoc
     ) {
-      return true;
+      return {
+        reason: "discharge-target-reached",
+        nowAt: now.toISOString(),
+        observedAt: runtime.activeObservedAt,
+        startedAt,
+        state: item.manualState,
+        status: sample.status,
+        socPercent: sample.socPercent,
+        targetSoc,
+      };
     }
 
-    if (runtime.activeObservedAt === null) {
-      return false;
-    }
-
-    return sample.status !== "discharging";
+    return null;
   }
 
-  return false;
+  return null;
+}
+
+export function formatScheduledItemCompletion(
+  completion: ScheduledItemCompletion,
+): string {
+  const parts = [
+    `reason=${completion.reason}`,
+    `state=${completion.state ?? "none"}`,
+    `status=${completion.status}`,
+    `soc=${formatNullableNumber(completion.socPercent)}`,
+  ];
+
+  if (completion.targetSoc !== undefined) {
+    parts.push(`targetSoc=${formatNullableNumber(completion.targetSoc)}`);
+  }
+
+  if (completion.targetDurationMinutes !== undefined) {
+    parts.push(
+      `duration=${completion.targetDurationMinutes === null ? "none" : `${completion.targetDurationMinutes}m`}`,
+    );
+  }
+
+  if (completion.startedAt !== null) {
+    parts.push(`startedAt=${completion.startedAt}`);
+  }
+
+  if (completion.observedAt !== null) {
+    parts.push(`observedAt=${completion.observedAt}`);
+  }
+
+  if (completion.endAt !== undefined) {
+    parts.push(`endAt=${completion.endAt}`);
+  }
+
+  parts.push(`nowAt=${completion.nowAt}`);
+
+  return parts.join(" ");
 }
 
 export function shouldSkipScheduledItem(
@@ -306,4 +435,8 @@ function formatLocalTime(date: Date): string {
 
 function pad(value: number): string {
   return String(value).padStart(2, "0");
+}
+
+function formatNullableNumber(value: number | null): string {
+  return value === null ? "unknown" : String(value);
 }
