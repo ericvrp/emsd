@@ -1,18 +1,17 @@
-import { buildPredictedSolarGenerationSeries } from "@emsd/core";
 import { DaemonOfflineState } from "../../components/daemon-offline-state";
 import {
   type SearchParams,
   loadDashboardPageData,
 } from "../../components/dashboard-page-data";
 import { DashboardPageFrame } from "../../components/dashboard-page-frame";
-import { WeatherForecastSection } from "../../components/forecast-page";
+import { PricingSection } from "../../components/pricing-page";
 import { SiteSetupPanel } from "../../components/settings-panel";
 import { getHistoryArchive } from "../../lib/ems-bridge";
 import { getSearchParamValue } from "../../lib/search-params";
 
 export const dynamic = "force-dynamic";
 
-export default async function ForecastPage({
+export default async function PricesPage({
   searchParams,
 }: {
   searchParams?: SearchParams;
@@ -23,32 +22,28 @@ export default async function ForecastPage({
     return <DaemonOfflineState />;
   }
 
-  const { currentSite, generatedAt, weatherForecast, weatherForecastError } =
-    dashboardData;
+  const {
+    currentSite,
+    dynamicPriceSnapshot,
+    dynamicPriceSnapshotError,
+    generatedAt,
+  } = dashboardData;
   const requestedDay = getSearchParamValue(
     dashboardData.resolvedSearchParams.day,
   );
   const historyArchive = currentSite
     ? await getHistoryArchive({ siteId: currentSite.id })
     : null;
-  const predictedSolarGeneration = historyArchive
-    ? buildPredictedSolarGenerationSeries({
-        forecastSamples: historyArchive.solarForecastSamples,
-        solarEnergyProviderSamples: historyArchive.solarEnergyProviderSamples,
-      })
-    : [];
 
   return (
     <DashboardPageFrame currentSite={currentSite} generatedAt={generatedAt}>
       {currentSite && historyArchive ? (
-        <WeatherForecastSection
+        <PricingSection
           archive={historyArchive}
-          error={weatherForecastError}
-          forecast={weatherForecast}
-          predictedSolarGeneration={predictedSolarGeneration}
+          error={dynamicPriceSnapshotError}
           requestedDay={requestedDay}
           site={currentSite}
-          source={currentSite.weatherSources[0] ?? null}
+          snapshot={dynamicPriceSnapshot}
         />
       ) : (
         <SiteSetupPanel />

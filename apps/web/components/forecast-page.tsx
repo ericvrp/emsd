@@ -17,7 +17,11 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { formatPowerValue, formatShortPowerValue } from "../lib/power-format";
+import {
+  formatAbsolutePowerValue,
+  formatPowerValue,
+  formatShortPowerValue,
+} from "../lib/power-format";
 import { UI_CHART_STYLES, UI_COLORS } from "../lib/ui-colors";
 import { MeasuredChartContainer } from "./measured-chart-container";
 import {
@@ -82,9 +86,11 @@ export function WeatherForecastSection({
     aggregatePowerSamples(archive.solarEnergyProviderSamples),
     daySelection.selectedDay,
   );
-  const currentForecastPoint = getCurrentForecastPoint(
-    forecast?.points ?? [],
-    Date.now(),
+  const currentGeneratedPower = getLatestValueAtOrBefore(
+    selectedDayGeneratedSeries,
+    daySelection.nowMarkerPeriodStart ??
+      selectedDayGeneratedSeries.at(-1)?.periodStart ??
+      "",
   );
 
   return (
@@ -93,25 +99,21 @@ export function WeatherForecastSection({
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-300/90">
-            Forecast
+            Solar
           </p>
           <h3 className="mt-2 text-xl font-semibold text-white">
-            Solar forecast for {site.name}
+            Solar generation and forecast for {site.name}
           </h3>
           <p className="mt-2 text-sm leading-6 text-slate-400">
-            Open-Meteo provides the built-in ground sunlight forecast for this
-            site.
+            Compare measured solar output, predicted wattage, and the built-in
+            Open-Meteo sunlight forecast for this site.
           </p>
         </div>
-        <SectionSummaryCard title="Current forecast">
+        <SectionSummaryCard title="Current generating">
           <p className="text-2xl font-semibold text-white sm:text-3xl">
-            {currentForecastPoint === null ||
-            currentForecastPoint.value === null
+            {currentGeneratedPower === null
               ? "Unavailable"
-              : formatForecastSummaryValue(
-                  currentForecastPoint.value,
-                  forecast?.unitLabel ?? "",
-                )}
+              : formatAbsolutePowerValue(currentGeneratedPower)}
           </p>
         </SectionSummaryCard>
       </div>
@@ -212,15 +214,15 @@ function ForecastPredictionChart({
     <div className="space-y-2.5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-wrap gap-2 text-xs font-medium text-slate-300">
-          <LegendChip color={UI_COLORS.forecast} label={forecastLabel} />
-          <LegendChip
-            color={UI_COLORS.solarPrediction}
-            label="Predicted Solar Wattage"
-          />
           <LegendChip
             color={UI_COLORS.solarEnergy}
             label="Generated Wattage"
           />
+          <LegendChip
+            color={UI_COLORS.solarPrediction}
+            label="Predicted Solar Wattage"
+          />
+          <LegendChip color={UI_COLORS.forecast} label={forecastLabel} />
         </div>
         {headerAccessory}
       </div>
@@ -418,6 +420,27 @@ function getCurrentForecastPoint(
   }
 
   return points[points.length - 1] ?? null;
+}
+
+function getLatestValueAtOrBefore(
+  points: Array<{ periodStart: string; value: number | null }>,
+  periodStart: string,
+): number | null {
+  const periodStartMs = new Date(periodStart).getTime();
+
+  for (let index = points.length - 1; index >= 0; index -= 1) {
+    const point = points[index];
+
+    if (!point || new Date(point.periodStart).getTime() > periodStartMs) {
+      continue;
+    }
+
+    if (typeof point.value === "number") {
+      return point.value;
+    }
+  }
+
+  return null;
 }
 
 function formatForecastSummaryValue(value: number, unitLabel: string): string {

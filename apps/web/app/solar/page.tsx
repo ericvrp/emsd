@@ -1,51 +1,54 @@
-import { getServerSession } from "next-auth";
-import { redirect } from "next/navigation";
-import { authOptions } from "../../auth";
+import { buildPredictedSolarGenerationSeries } from "@emsd/core";
 import { DaemonOfflineState } from "../../components/daemon-offline-state";
+import {
+  type SearchParams,
+  loadDashboardPageData,
+} from "../../components/dashboard-page-data";
 import { DashboardPageFrame } from "../../components/dashboard-page-frame";
+import { WeatherForecastSection } from "../../components/forecast-page";
 import { SiteSetupPanel } from "../../components/settings-panel";
-import { SolarEnergyPage } from "../../components/solar-energy-page";
-import { getHistoryArchive, getLiveStatus } from "../../lib/ems-bridge";
+import { getHistoryArchive } from "../../lib/ems-bridge";
 import { getSearchParamValue } from "../../lib/search-params";
 
 export const dynamic = "force-dynamic";
 
-type SearchParams = Promise<Record<string, string | string[] | undefined>>;
-
-export default async function SolarRoute({
+export default async function SolarPage({
   searchParams,
 }: {
   searchParams?: SearchParams;
 }) {
-  const session = await getServerSession(authOptions);
+  const dashboardData = await loadDashboardPageData(searchParams);
 
-  if (!session) {
-    redirect("/login");
-  }
-
-  const snapshot = await getLiveStatus();
-
-  if (!snapshot.daemon.running) {
+  if (dashboardData.offline) {
     return <DaemonOfflineState />;
   }
 
-  const currentSite = snapshot.sites[0] ?? null;
-  const params = (await searchParams) ?? {};
-  const requestedDay = getSearchParamValue(params.day);
+  const { currentSite, generatedAt, weatherForecast, weatherForecastError } =
+    dashboardData;
+  const requestedDay = getSearchParamValue(
+    dashboardData.resolvedSearchParams.day,
+  );
   const historyArchive = currentSite
     ? await getHistoryArchive({ siteId: currentSite.id })
     : null;
+  const predictedSolarGeneration = historyArchive
+    ? buildPredictedSolarGenerationSeries({
+        forecastSamples: historyArchive.solarForecastSamples,
+        solarEnergyProviderSamples: historyArchive.solarEnergyProviderSamples,
+      })
+    : [];
 
   return (
-    <DashboardPageFrame
-      currentSite={currentSite}
-      generatedAt={snapshot.generatedAt}
-    >
+    <DashboardPageFrame currentSite={currentSite} generatedAt={generatedAt}>
       {currentSite && historyArchive ? (
-        <SolarEnergyPage
+        <WeatherForecastSection
           archive={historyArchive}
-          currentSite={currentSite}
+          error={weatherForecastError}
+          forecast={weatherForecast}
+          predictedSolarGeneration={predictedSolarGeneration}
           requestedDay={requestedDay}
+          site={currentSite}
+          source={currentSite.weatherSources[0] ?? null}
         />
       ) : (
         <SiteSetupPanel />
