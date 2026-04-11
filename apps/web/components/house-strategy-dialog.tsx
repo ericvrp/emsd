@@ -32,7 +32,6 @@ interface HouseStrategyDialogProps {
     } | null;
   }>;
   siteId: string;
-  siteName: string;
 }
 
 function getModeIcon(
@@ -83,7 +82,6 @@ function formatStrategyLabel(
 export function HouseStrategyDialog({
   batteries,
   siteId,
-  siteName,
 }: HouseStrategyDialogProps) {
   const [isOpen, setIsOpen] = useState(false);
   const firstBattery = batteries[0];
@@ -157,9 +155,6 @@ export function HouseStrategyDialog({
                     <p className="text-sm font-semibold uppercase tracking-[0.22em] text-cyan-300">
                       Strategy
                     </p>
-                    <h2 className="mt-2 text-xl font-semibold text-white sm:text-2xl">
-                      {siteName}
-                    </h2>
                   </div>
                   <Button
                     aria-label="Close strategy dialog"

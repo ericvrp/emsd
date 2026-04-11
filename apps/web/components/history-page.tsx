@@ -2,7 +2,7 @@
 
 import { CloudSun, Gauge, HandCoins, SunMedium, Zap } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { type ComponentType, type ReactNode, useId } from "react";
+import type { ComponentType, ReactNode } from "react";
 import {
   Area,
   AreaChart,
@@ -388,7 +388,6 @@ function CombinedHistoryChart({
     ...point,
     timestampMs: new Date(point.periodStart).getTime(),
   }));
-  const chartId = useId();
   const powerValues = chartPoints.flatMap((point) => [
     point.currentGridPower,
     point.futureGridPower,
@@ -398,8 +397,6 @@ function CombinedHistoryChart({
     point.futureSolarEnergy,
   ]);
   const axisConfig = buildMirroredYAxis(powerValues);
-  const [min, max] = axisConfig.domain;
-  const chartZeroOffset = max <= 0 ? 0 : min >= 0 ? 1 : max / (max - min);
 
   const hasValues = points.some((point) =>
     [
@@ -434,12 +431,8 @@ function CombinedHistoryChart({
     <div className="space-y-2.5">
       <div className="flex flex-wrap gap-2 text-xs font-medium text-slate-300">
         <LegendChip
-          color={UI_COLORS.batteryPowerCharging}
-          label="Battery Charging Power"
-        />
-        <LegendChip
           color={UI_COLORS.batteryPowerDischarging}
-          label="Battery Discharging Power"
+          label="Battery Power"
         />
         <LegendChip
           color={UI_COLORS.batteryChargeLevel}
@@ -448,8 +441,7 @@ function CombinedHistoryChart({
         <LegendChip color={UI_COLORS.solarEnergy} label="Solar Energy" />
         <LegendChip color={UI_COLORS.forecast} label="Solar Forecast" />
         <LegendChip color={UI_COLORS.price} label="Price" />
-        <LegendChip color={UI_COLORS.gridExport} label="Export" />
-        <LegendChip color={UI_COLORS.gridImport} label="Import" />
+        <LegendChip color={UI_COLORS.gridExport} label="Grid Power" />
       </div>
       <MeasuredChartContainer className="h-[360px] min-w-0 w-full">
         {({ height, width }) => (
@@ -499,84 +491,6 @@ function CombinedHistoryChart({
             />
             <YAxis hide yAxisId="price" />
             <YAxis hide yAxisId="solar" />
-            <defs>
-              <linearGradient
-                id={`gridCurrent-${chartId}`}
-                gradientUnits="userSpaceOnUse"
-                x1="0"
-                y1={12}
-                x2="0"
-                y2={height}
-              >
-                <stop
-                  offset={chartZeroOffset}
-                  stopColor={UI_COLORS.gridExport}
-                  stopOpacity={1}
-                />
-                <stop
-                  offset={chartZeroOffset}
-                  stopColor={UI_COLORS.gridImport}
-                  stopOpacity={1}
-                />
-              </linearGradient>
-              <linearGradient
-                id={`gridFuture-${chartId}`}
-                gradientUnits="userSpaceOnUse"
-                x1="0"
-                y1={12}
-                x2="0"
-                y2={height}
-              >
-                <stop
-                  offset={chartZeroOffset}
-                  stopColor={UI_COLORS.gridExport}
-                  stopOpacity={0.35}
-                />
-                <stop
-                  offset={chartZeroOffset}
-                  stopColor={UI_COLORS.gridImport}
-                  stopOpacity={0.35}
-                />
-              </linearGradient>
-              <linearGradient
-                id={`batteryCurrent-${chartId}`}
-                gradientUnits="userSpaceOnUse"
-                x1="0"
-                y1={12}
-                x2="0"
-                y2={height}
-              >
-                <stop
-                  offset={chartZeroOffset}
-                  stopColor={UI_COLORS.batteryPowerCharging}
-                  stopOpacity={1}
-                />
-                <stop
-                  offset={chartZeroOffset}
-                  stopColor={UI_COLORS.batteryPowerDischarging}
-                  stopOpacity={1}
-                />
-              </linearGradient>
-              <linearGradient
-                id={`batteryFuture-${chartId}`}
-                gradientUnits="userSpaceOnUse"
-                x1="0"
-                y1={12}
-                x2="0"
-                y2={height}
-              >
-                <stop
-                  offset={chartZeroOffset}
-                  stopColor={UI_COLORS.batteryPowerCharging}
-                  stopOpacity={0.35}
-                />
-                <stop
-                  offset={chartZeroOffset}
-                  stopColor={UI_COLORS.batteryPowerDischarging}
-                  stopOpacity={0.35}
-                />
-              </linearGradient>
-            </defs>
             <ReferenceLine
               stroke={UI_COLORS.chartZeroLine}
               strokeDasharray="4 6"
@@ -661,8 +575,8 @@ function CombinedHistoryChart({
               dataKey="currentGridPower"
               dot={false}
               isAnimationActive={false}
-              legendType="none"
-              stroke={`url(#gridCurrent-${chartId})`}
+              name="Grid Power"
+              stroke={UI_COLORS.gridExport}
               strokeLinecap="round"
               strokeLinejoin="round"
               strokeWidth={2.8}
@@ -675,10 +589,11 @@ function CombinedHistoryChart({
               dataKey="futureGridPower"
               dot={false}
               isAnimationActive={false}
-              legendType="none"
-              stroke={`url(#gridFuture-${chartId})`}
+              name="Grid Power"
+              stroke={UI_COLORS.gridExport}
               strokeLinecap="round"
               strokeLinejoin="round"
+              strokeOpacity={0.35}
               strokeWidth={2.8}
               type="monotone"
               yAxisId="power"
@@ -689,8 +604,8 @@ function CombinedHistoryChart({
               dataKey="currentBatteryPower"
               dot={false}
               isAnimationActive={false}
-              legendType="none"
-              stroke={`url(#batteryCurrent-${chartId})`}
+              name="Battery Power"
+              stroke={UI_COLORS.batteryPowerDischarging}
               strokeLinecap="round"
               strokeLinejoin="round"
               strokeWidth={2.8}
@@ -703,10 +618,11 @@ function CombinedHistoryChart({
               dataKey="futureBatteryPower"
               dot={false}
               isAnimationActive={false}
-              legendType="none"
-              stroke={`url(#batteryFuture-${chartId})`}
+              name="Battery Power"
+              stroke={UI_COLORS.batteryPowerDischarging}
               strokeLinecap="round"
               strokeLinejoin="round"
+              strokeOpacity={0.35}
               strokeWidth={2.8}
               type="monotone"
               yAxisId="power"
@@ -777,18 +693,8 @@ export function BatteryHistoryChart({
     <div className="space-y-2.5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-wrap gap-2 text-xs font-medium text-slate-300">
-          <LegendChip
-            color={UI_COLORS.batteryPowerCharging}
-            label="Battery Charging Power"
-          />
-          <LegendChip
-            color={UI_COLORS.batteryPowerDischarging}
-            label="Battery Discharging Power"
-          />
-          <LegendChip
-            color={UI_COLORS.batteryChargeLevel}
-            label="Battery Charge"
-          />
+          <LegendChip color={UI_COLORS.batteryPowerDischarging} label="Power" />
+          <LegendChip color={UI_COLORS.batteryChargeLevel} label="Charge" />
         </div>
         {headerAccessory}
       </div>
@@ -858,46 +764,6 @@ export function BatteryHistoryChart({
                   y={0}
                   yAxisId="power"
                 />
-                <defs>
-                  <linearGradient
-                    id="batteryPowerCurrent"
-                    gradientUnits="userSpaceOnUse"
-                    x1="0"
-                    y1={12}
-                    x2="0"
-                    y2={height}
-                  >
-                    <stop
-                      offset={0.5}
-                      stopColor={UI_COLORS.batteryPowerCharging}
-                      stopOpacity={1}
-                    />
-                    <stop
-                      offset={0.5}
-                      stopColor={UI_COLORS.batteryPowerDischarging}
-                      stopOpacity={1}
-                    />
-                  </linearGradient>
-                  <linearGradient
-                    id="batteryPowerFuture"
-                    gradientUnits="userSpaceOnUse"
-                    x1="0"
-                    y1={12}
-                    x2="0"
-                    y2={height}
-                  >
-                    <stop
-                      offset={0.5}
-                      stopColor={UI_COLORS.batteryPowerCharging}
-                      stopOpacity={0.35}
-                    />
-                    <stop
-                      offset={0.5}
-                      stopColor={UI_COLORS.batteryPowerDischarging}
-                      stopOpacity={0.35}
-                    />
-                  </linearGradient>
-                </defs>
                 <Tooltip
                   content={
                     <BatteryHistoryTooltip
@@ -911,8 +777,8 @@ export function BatteryHistoryChart({
                   dataKey="currentPower"
                   dot={false}
                   isAnimationActive={false}
-                  legendType="none"
-                  stroke="url(#batteryPowerCurrent)"
+                  name="Power"
+                  stroke={UI_COLORS.batteryPowerDischarging}
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeWidth={2.8}
@@ -925,10 +791,11 @@ export function BatteryHistoryChart({
                   dataKey="futurePower"
                   dot={false}
                   isAnimationActive={false}
-                  legendType="none"
-                  stroke="url(#batteryPowerFuture)"
+                  name="Power"
+                  stroke={UI_COLORS.batteryPowerDischarging}
                   strokeLinecap="round"
                   strokeLinejoin="round"
+                  strokeOpacity={0.35}
                   strokeWidth={2.8}
                   type="monotone"
                   yAxisId="power"
@@ -1005,6 +872,7 @@ export function buildBatteryHistoryPoints(
 export function SingleValueHistoryChart({
   accentColor,
   emptyMessage,
+  entryLabelFormatter,
   headerAccessory,
   label,
   nowMarkerPeriodStart,
@@ -1017,6 +885,7 @@ export function SingleValueHistoryChart({
 }: {
   accentColor: string;
   emptyMessage: string;
+  entryLabelFormatter?: (value: number, key?: string) => string;
   headerAccessory?: ReactNode;
   label: string;
   nowMarkerPeriodStart: string | null;
@@ -1154,6 +1023,7 @@ export function SingleValueHistoryChart({
                     <HistoryTooltip
                       formatter={valueFormatter}
                       labelFormatter={formatTooltipTimestamp}
+                      {...(entryLabelFormatter ? { entryLabelFormatter } : {})}
                     />
                   }
                 />
@@ -2128,15 +1998,9 @@ function BatteryHistoryTooltip({
       <div className="space-y-1.5">
         {powerEntry && typeof powerEntry.value === "number" ? (
           <TooltipRow
-            color={
-              powerEntry.value >= 0
-                ? UI_COLORS.batteryPowerCharging
-                : UI_COLORS.batteryPowerDischarging
-            }
+            color={UI_COLORS.batteryPowerDischarging}
             label={
-              powerEntry.value >= 0
-                ? "Battery Charging Power"
-                : "Battery Discharging Power"
+              powerEntry.value >= 0 ? "Charging Power" : "Discharging Power"
             }
             value={formatAbsolutePowerValue(powerEntry.value)}
           />
@@ -2242,10 +2106,7 @@ function CombinedHistoryTooltip({
 
   if (batteryPowerEntry && typeof batteryPowerEntry.value === "number") {
     rows.push({
-      color:
-        batteryPowerEntry.value >= 0
-          ? UI_COLORS.batteryPowerCharging
-          : UI_COLORS.batteryPowerDischarging,
+      color: UI_COLORS.batteryPowerDischarging,
       label:
         batteryPowerEntry.value >= 0
           ? "Battery Charging Power"
@@ -2256,9 +2117,9 @@ function CombinedHistoryTooltip({
 
   if (gridPowerEntry && typeof gridPowerEntry.value === "number") {
     rows.push({
-      color:
-        gridPowerEntry.value >= 0 ? UI_COLORS.gridExport : UI_COLORS.gridImport,
-      label: gridPowerEntry.value >= 0 ? "Export" : "Import",
+      color: UI_COLORS.gridExport,
+      label:
+        gridPowerEntry.value >= 0 ? "Grid Export Power" : "Grid Import Power",
       value: formatAbsolutePowerValue(gridPowerEntry.value),
     });
   }
@@ -2311,12 +2172,14 @@ function TooltipRow({
 
 function HistoryTooltip({
   active,
+  entryLabelFormatter,
   formatter,
   label,
   labelFormatter,
   payload,
 }: {
   active?: boolean;
+  entryLabelFormatter?: (value: number, key?: string) => string;
   formatter: (value: number, key?: string) => string;
   label?: string;
   labelFormatter: (label: string) => string;
@@ -2355,7 +2218,10 @@ function HistoryTooltip({
                   backgroundColor: entry.color ?? UI_COLORS.chartSeriesFallback,
                 }}
               />
-              {entry.name ?? entry.dataKey ?? "Value"}
+              {entryLabelFormatter?.(entry.value, entry.dataKey) ??
+                entry.name ??
+                entry.dataKey ??
+                "Value"}
             </span>
             <span className="font-medium text-white">
               {formatter(entry.value, entry.dataKey)}

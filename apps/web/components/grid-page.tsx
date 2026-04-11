@@ -7,7 +7,7 @@ import {
 } from "../lib/power-format";
 import { UI_COLORS } from "../lib/ui-colors";
 import {
-  SegmentedLineHistoryChart,
+  SingleValueHistoryChart,
   aggregatePowerSamples,
   fillSingleValueDay,
   invertSingleValueSeries,
@@ -61,15 +61,16 @@ export function GridPage({ archive, requestedDay, siteName }: GridPageProps) {
       </div>
 
       <div className="mt-5 space-y-4 rounded-[1.4rem] border border-white/10 bg-white/5 p-4">
-        <SegmentedLineHistoryChart
+        <SingleValueHistoryChart
+          accentColor={UI_COLORS.gridExport}
           emptyMessage="No grid samples for this day."
+          entryLabelFormatter={(value) =>
+            value < 0 ? "Grid Import Power" : "Grid Export Power"
+          }
           headerAccessory={<TopLevelDaySelect daySelection={daySelection} />}
-          negativeColor={UI_COLORS.gridImport}
-          negativeLabel="Import"
+          label="Power"
           nowMarkerPeriodStart={daySelection.nowMarkerPeriodStart}
           points={splitSingleValueSeriesByTime(selectedDayGridSeries)}
-          positiveColor={UI_COLORS.gridExport}
-          positiveLabel="Export"
           valueFormatter={formatAbsolutePowerValue}
           yAxisLabel="Power"
           yAxisFormatter={formatShortPowerValue}

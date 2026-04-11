@@ -40,7 +40,6 @@ export function DashboardPageFrame({
               <HouseStrategyDialog
                 batteries={batteries}
                 siteId={currentSite.id}
-                siteName={currentSite.name}
               />
             ) : null}
             <SettingsDialog>
