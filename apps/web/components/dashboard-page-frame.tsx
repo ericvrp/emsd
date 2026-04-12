@@ -33,6 +33,8 @@ export function DashboardPageFrame({
     <>
       <ToastOnSearchParams />
       <AppShell
+        batteryCount={batteries.length}
+        currentSiteId={currentSite?.id ?? null}
         generatedAt={generatedAt}
         headerActions={
           <>

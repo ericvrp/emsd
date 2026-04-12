@@ -1,11 +1,14 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import type {
   DynamicPricePointRecord,
   DynamicPriceSnapshotRecord,
   HistoryArchive,
 } from "@emsd/core";
+import { logBrowserIntervalHeartbeat } from "../lib/browser-heartbeat";
 import { UI_COLORS } from "../lib/ui-colors";
+import { RefreshWarning } from "./refresh-warning";
 import {
   SingleValueHistoryChart,
   fillSingleValueDay,
@@ -18,11 +21,13 @@ import {
   useTopLevelDaySelection,
 } from "./top-level-day-select";
 
+const GRAPH_REFRESH_INTERVAL_MS = 15 * 60 * 1_000;
+
 export function PricingSection({
-  archive,
+  archive: initialArchive,
   site,
-  snapshot,
-  error,
+  snapshot: initialSnapshot,
+  error: initialError,
   requestedDay,
 }: {
   archive: HistoryArchive;
@@ -31,6 +36,12 @@ export function PricingSection({
   error: string | null;
   requestedDay: string | null;
 }) {
+  const [archive, setArchive] = useState(initialArchive);
+  const [snapshot, setSnapshot] = useState(initialSnapshot);
+  const [error, setError] = useState(initialError);
+  const [graphRefreshError, setGraphRefreshError] = useState<string | null>(
+    null,
+  );
   const daySelection = useTopLevelDaySelection({ archive, requestedDay });
   const selectedDayPricePoints = fillSingleValueDay(
     archive.dynamicPriceSamples.map((sample) => ({
@@ -52,6 +63,78 @@ export function PricingSection({
       ? "Dynamic price data is not available yet."
       : "No price data for this day.";
   const priceAxisDomain = buildPriceAxisDomain(selectedDayPricePoints);
+
+  useEffect(() => {
+    setArchive(initialArchive);
+    setSnapshot(initialSnapshot);
+    setError(initialError);
+  }, [initialArchive, initialError, initialSnapshot]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function refreshGraph() {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+
+      try {
+        const response = await fetch(
+          `/api/prices/graph?siteId=${encodeURIComponent(site.id)}`,
+          { cache: "no-store" },
+        );
+
+        if (response.status === 401) {
+          window.location.href = "/login";
+          return;
+        }
+
+        if (!response.ok) {
+          throw new Error(`Prices graph request failed: ${response.status}`);
+        }
+
+        const payload = (await response.json()) as {
+          archive: HistoryArchive;
+          dynamicPriceSnapshot: DynamicPriceSnapshotRecord | null;
+          dynamicPriceSnapshotError: string | null;
+        };
+
+        if (!cancelled) {
+          setGraphRefreshError(null);
+          setArchive(payload.archive);
+          setSnapshot(payload.dynamicPriceSnapshot);
+          setError(payload.dynamicPriceSnapshotError);
+        }
+      } catch {
+        if (!cancelled) {
+          setGraphRefreshError(
+            "Price graph updates paused. Showing last available data.",
+          );
+        }
+      }
+    }
+
+    void refreshGraph();
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        void refreshGraph();
+      }
+    }
+
+    const interval = window.setInterval(() => {
+      logBrowserIntervalHeartbeat("refresh graph");
+      void refreshGraph();
+    }, GRAPH_REFRESH_INTERVAL_MS);
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [site.id]);
 
   return (
     <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
@@ -91,6 +174,9 @@ export function PricingSection({
         </p>
       ) : (
         <div className="mt-5 space-y-4 rounded-[1.4rem] border border-white/10 bg-white/5 p-4">
+          {graphRefreshError ? (
+            <RefreshWarning message={graphRefreshError} />
+          ) : null}
           <SingleValueHistoryChart
             accentColor={UI_COLORS.price}
             emptyMessage={emptyMessage}

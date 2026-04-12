@@ -1,10 +1,11 @@
 "use client";
 
+import type { HistoryArchive } from "@emsd/core";
 import { useEffect, useState, type ReactNode } from "react";
-import type { HistoryArchive } from "../lib/ems-bridge";
 import { logBrowserIntervalHeartbeat } from "../lib/browser-heartbeat";
 import { formatAbsolutePowerValue } from "../lib/power-format";
 import { BatteryHistoryChart, buildBatteryHistoryPoints } from "./history";
+import { RefreshWarning } from "./refresh-warning";
 import { SectionSummaryCard } from "./section-summary-card";
 import {
   TopLevelDaySelect,
@@ -12,6 +13,7 @@ import {
 } from "./top-level-day-select";
 
 const LIVE_CURRENT_REFRESH_INTERVAL_MS = 5_000;
+const GRAPH_REFRESH_INTERVAL_MS = 60 * 1_000;
 
 type HomeBatteryHistorySectionProps = {
   archive: HistoryArchive;
@@ -25,7 +27,7 @@ type HomeBatteryHistorySectionProps = {
 };
 
 export function HomeBatteryHistorySection({
-  archive,
+  archive: initialArchive,
   children,
   currentChargePercent,
   currentPowerW,
@@ -34,6 +36,7 @@ export function HomeBatteryHistorySection({
   siteId,
   siteName,
 }: HomeBatteryHistorySectionProps) {
+  const [archive, setArchive] = useState(initialArchive);
   const daySelection = useTopLevelDaySelection({ archive, requestedDay });
   const batteryHistoryPoints = buildBatteryHistoryPoints(
     archive.batteryPowerSamples,
@@ -43,12 +46,82 @@ export function HomeBatteryHistorySection({
     useState(currentChargePercent);
   const [liveCurrentPowerW, setLiveCurrentPowerW] = useState(currentPowerW);
   const [liveCurrentState, setLiveCurrentState] = useState(currentState);
+  const [graphRefreshError, setGraphRefreshError] = useState<string | null>(
+    null,
+  );
+  const [currentRefreshError, setCurrentRefreshError] = useState<string | null>(
+    null,
+  );
 
   useEffect(() => {
     setLiveCurrentChargePercent(currentChargePercent);
     setLiveCurrentPowerW(currentPowerW);
     setLiveCurrentState(currentState);
   }, [currentChargePercent, currentPowerW, currentState]);
+
+  useEffect(() => {
+    setArchive(initialArchive);
+  }, [initialArchive]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function refreshGraph() {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+
+      try {
+        const response = await fetch(
+          `/api/history/archive?siteId=${encodeURIComponent(siteId)}`,
+          { cache: "no-store" },
+        );
+
+        if (response.status === 401) {
+          window.location.href = "/login";
+          return;
+        }
+
+        if (!response.ok) {
+          throw new Error(`Battery graph request failed: ${response.status}`);
+        }
+
+        const payload = (await response.json()) as HistoryArchive;
+
+        if (!cancelled) {
+          setGraphRefreshError(null);
+          setArchive(payload);
+        }
+      } catch {
+        if (!cancelled) {
+          setGraphRefreshError(
+            "Battery graph updates paused. Showing last available data.",
+          );
+        }
+      }
+    }
+
+    void refreshGraph();
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        void refreshGraph();
+      }
+    }
+
+    const interval = window.setInterval(() => {
+      logBrowserIntervalHeartbeat("refresh graph");
+      void refreshGraph();
+    }, GRAPH_REFRESH_INTERVAL_MS);
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [siteId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -64,6 +137,11 @@ export function HomeBatteryHistorySection({
           { cache: "no-store" },
         );
 
+        if (response.status === 401) {
+          window.location.href = "/login";
+          return;
+        }
+
         if (!response.ok) {
           throw new Error(`Battery current request failed: ${response.status}`);
         }
@@ -78,6 +156,7 @@ export function HomeBatteryHistorySection({
           return;
         }
 
+        setCurrentRefreshError(null);
         setLiveCurrentChargePercent(
           payload.currentBatteryChargePercent ?? null,
         );
@@ -85,6 +164,9 @@ export function HomeBatteryHistorySection({
         setLiveCurrentState(payload.currentBatteryState ?? null);
       } catch {
         if (!cancelled) {
+          setCurrentRefreshError(
+            "Battery current updates paused. Showing last available data.",
+          );
           setLiveCurrentChargePercent(currentChargePercent);
           setLiveCurrentPowerW(currentPowerW);
           setLiveCurrentState(currentState);
@@ -138,6 +220,12 @@ export function HomeBatteryHistorySection({
       </div>
 
       <div className="mt-5 space-y-4 rounded-[1.4rem] border border-white/10 bg-white/5 p-4">
+        {graphRefreshError ? (
+          <RefreshWarning message={graphRefreshError} />
+        ) : null}
+        {currentRefreshError ? (
+          <RefreshWarning message={currentRefreshError} />
+        ) : null}
         <BatteryHistoryChart
           emptyMessage="No battery samples for this day."
           headerAccessory={<TopLevelDaySelect daySelection={daySelection} />}

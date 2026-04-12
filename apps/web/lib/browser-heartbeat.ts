@@ -1,4 +1,4 @@
-const ENABLE_BROWSER_INTERVAL_HEARTBEAT = true;
+const ENABLE_BROWSER_INTERVAL_HEARTBEAT = false;
 
 export function logBrowserIntervalHeartbeat(label: string): void {
   if (!ENABLE_BROWSER_INTERVAL_HEARTBEAT) {

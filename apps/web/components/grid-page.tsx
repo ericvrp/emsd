@@ -1,13 +1,14 @@
 "use client";
 
+import type { HistoryArchive } from "@emsd/core";
 import { useEffect, useState } from "react";
-import type { HistoryArchive } from "../lib/ems-bridge";
 import { logBrowserIntervalHeartbeat } from "../lib/browser-heartbeat";
 import {
   formatAbsolutePowerValue,
   formatShortPowerValue,
 } from "../lib/power-format";
 import { UI_COLORS } from "../lib/ui-colors";
+import { RefreshWarning } from "./refresh-warning";
 import {
   SingleValueHistoryChart,
   aggregatePowerSamples,
@@ -29,13 +30,15 @@ type GridPageProps = {
 };
 
 const LIVE_CURRENT_REFRESH_INTERVAL_MS = 5_000;
+const GRAPH_REFRESH_INTERVAL_MS = 60 * 1_000;
 
 export function GridPage({
-  archive,
+  archive: initialArchive,
   requestedDay,
   siteId,
   siteName,
 }: GridPageProps) {
+  const [archive, setArchive] = useState(initialArchive);
   const daySelection = useTopLevelDaySelection({ archive, requestedDay });
   const gridSeries = invertSingleValueSeries(
     aggregatePowerSamples(archive.p1MeterSamples),
@@ -51,10 +54,80 @@ export function GridPage({
   const [currentGridPower, setCurrentGridPower] = useState<number | null>(
     archiveCurrentGridPower,
   );
+  const [graphRefreshError, setGraphRefreshError] = useState<string | null>(
+    null,
+  );
+  const [currentRefreshError, setCurrentRefreshError] = useState<string | null>(
+    null,
+  );
 
   useEffect(() => {
     setCurrentGridPower(archiveCurrentGridPower);
   }, [archiveCurrentGridPower]);
+
+  useEffect(() => {
+    setArchive(initialArchive);
+  }, [initialArchive]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function refreshGraph() {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+
+      try {
+        const response = await fetch(
+          `/api/history/archive?siteId=${encodeURIComponent(siteId)}`,
+          { cache: "no-store" },
+        );
+
+        if (response.status === 401) {
+          window.location.href = "/login";
+          return;
+        }
+
+        if (!response.ok) {
+          throw new Error(`Grid graph request failed: ${response.status}`);
+        }
+
+        const payload = (await response.json()) as HistoryArchive;
+
+        if (!cancelled) {
+          setGraphRefreshError(null);
+          setArchive(payload);
+        }
+      } catch {
+        if (!cancelled) {
+          setGraphRefreshError(
+            "Grid graph updates paused. Showing last available data.",
+          );
+        }
+      }
+    }
+
+    void refreshGraph();
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        void refreshGraph();
+      }
+    }
+
+    const interval = window.setInterval(() => {
+      logBrowserIntervalHeartbeat("refresh graph");
+      void refreshGraph();
+    }, GRAPH_REFRESH_INTERVAL_MS);
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [siteId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -70,6 +143,11 @@ export function GridPage({
           { cache: "no-store" },
         );
 
+        if (response.status === 401) {
+          window.location.href = "/login";
+          return;
+        }
+
         if (!response.ok) {
           throw new Error(`Grid current request failed: ${response.status}`);
         }
@@ -82,11 +160,15 @@ export function GridPage({
           return;
         }
 
+        setCurrentRefreshError(null);
         setCurrentGridPower(
           payload.currentGridPowerW ?? archiveCurrentGridPower,
         );
       } catch {
         if (!cancelled) {
+          setCurrentRefreshError(
+            "Grid current updates paused. Showing last available data.",
+          );
           setCurrentGridPower(archiveCurrentGridPower);
         }
       }
@@ -137,6 +219,12 @@ export function GridPage({
       </div>
 
       <div className="mt-5 space-y-4 rounded-[1.4rem] border border-white/10 bg-white/5 p-4">
+        {graphRefreshError ? (
+          <RefreshWarning message={graphRefreshError} />
+        ) : null}
+        {currentRefreshError ? (
+          <RefreshWarning message={currentRefreshError} />
+        ) : null}
         <SingleValueHistoryChart
           accentColor={UI_COLORS.gridExport}
           emptyMessage="No grid samples for this day."

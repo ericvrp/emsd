@@ -5,8 +5,8 @@ import { useEffect, useState } from "react";
 import { logBrowserIntervalHeartbeat } from "../lib/browser-heartbeat";
 
 const DEFAULT_REFRESH_INTERVAL_MS = 5_000;
-const GRAPH_REFRESH_INTERVAL_MS = 60 * 1_000;
-const PRICE_REFRESH_INTERVAL_MS = 15 * 60 * 1_000;
+const CLIENT_GRAPH_REFRESH_PATHS = new Set(["/", "/solar", "/prices", "/grid"]);
+const GRAPH_PAGE_STATE_INTERVAL_MS = 15_000;
 
 function getRefreshHeartbeatLabel(pathname: string): string {
   switch (pathname) {
@@ -27,28 +27,19 @@ function getRefreshHeartbeatLabel(pathname: string): string {
   }
 }
 
-function getRefreshIntervalMs(pathname: string): number {
-  switch (pathname) {
-    case "/":
-    case "/solar":
-    case "/grid":
-      return GRAPH_REFRESH_INTERVAL_MS;
-    case "/prices":
-      return PRICE_REFRESH_INTERVAL_MS;
-    default:
-      return DEFAULT_REFRESH_INTERVAL_MS;
-  }
-}
-
 export function LiveRefreshIndicator({
+  batteryCount,
+  currentSiteId,
   generatedAt,
 }: {
+  batteryCount: number;
+  currentSiteId: string | null;
   generatedAt: string;
 }) {
   const pathname = usePathname();
   const router = useRouter();
   const [isPaused, setIsPaused] = useState(false);
-  const refreshIntervalMs = getRefreshIntervalMs(pathname);
+  const isClientGraphPage = CLIENT_GRAPH_REFRESH_PATHS.has(pathname);
 
   useEffect(() => {
     void generatedAt;
@@ -59,7 +50,7 @@ export function LiveRefreshIndicator({
       const isVisible = document.visibilityState === "visible";
       setIsPaused(!isVisible);
 
-      if (isVisible) {
+      if (isVisible && !isClientGraphPage) {
         router.refresh();
       }
     }
@@ -70,22 +61,98 @@ export function LiveRefreshIndicator({
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [router]);
+  }, [isClientGraphPage, router]);
 
   useEffect(() => {
-    if (isPaused) {
+    if (isPaused || isClientGraphPage) {
       return;
     }
 
     const interval = window.setInterval(() => {
       logBrowserIntervalHeartbeat(getRefreshHeartbeatLabel(pathname));
       router.refresh();
-    }, refreshIntervalMs);
+    }, DEFAULT_REFRESH_INTERVAL_MS);
 
     return () => {
       window.clearInterval(interval);
     };
-  }, [isPaused, pathname, refreshIntervalMs, router]);
+  }, [isClientGraphPage, isPaused, pathname, router]);
+
+  useEffect(() => {
+    if (isPaused || !isClientGraphPage) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function refreshGraphPageState() {
+      try {
+        const response = await fetch("/api/dashboard/state", {
+          cache: "no-store",
+        });
+
+        if (response.status === 401) {
+          window.location.href = "/login";
+          return;
+        }
+
+        if (!response.ok) {
+          throw new Error(`Page state request failed: ${response.status}`);
+        }
+
+        const payload = (await response.json()) as {
+          batteryCount: number;
+          currentSiteId: string | null;
+          daemonRunning: boolean;
+        };
+
+        if (cancelled) {
+          return;
+        }
+
+        const batteryCountChanged =
+          pathname === "/" && payload.batteryCount !== batteryCount;
+        const currentSiteChanged = payload.currentSiteId !== currentSiteId;
+
+        if (
+          !payload.daemonRunning ||
+          batteryCountChanged ||
+          currentSiteChanged
+        ) {
+          router.refresh();
+        }
+      } catch {
+        router.refresh();
+      }
+    }
+
+    void refreshGraphPageState();
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        void refreshGraphPageState();
+      }
+    }
+
+    const interval = window.setInterval(() => {
+      void refreshGraphPageState();
+    }, GRAPH_PAGE_STATE_INTERVAL_MS);
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [
+    batteryCount,
+    currentSiteId,
+    isClientGraphPage,
+    isPaused,
+    pathname,
+    router,
+  ]);
 
   return null;
 }
