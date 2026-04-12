@@ -136,6 +136,52 @@ test("Enphase local provider surfaces missing auth config instead of falling bac
   );
 });
 
+test("Enphase auth bootstrap network errors include the cloud login endpoint", async () => {
+  process.env.ENPHASE_ENLIGHTEN_USERNAME = "user@example.com";
+  process.env.ENPHASE_ENLIGHTEN_PASSWORD = "secret";
+
+  globalThis.fetch = (async (
+    input: string | URL | Request,
+    init?: RequestInit,
+  ) => {
+    const url = String(input);
+
+    if (url === "https://192.168.1.40/info.xml") {
+      expectRejectedTls(init);
+
+      return new Response(
+        `
+          <envoy_info>
+            <device>
+              <software>D8.2.4222</software>
+              <pn>IQ Gateway</pn>
+              <sn>123456789012</sn>
+            </device>
+          </envoy_info>
+        `,
+        { status: 200 },
+      );
+    }
+
+    if (url === "https://192.168.1.40/production.json?details=1") {
+      expectRejectedTls(init);
+      return new Response("unauthorized", { status: 401 });
+    }
+
+    if (url === "https://enlighten.enphaseenergy.com/login/login.json") {
+      throw new Error("Was there a typo in the url or port?");
+    }
+
+    throw new Error(`Unexpected URL: ${url}`);
+  }) as typeof fetch;
+
+  await expect(
+    getSolarEnergyProviderNormalizedInfo(buildProvider()),
+  ).rejects.toThrow(
+    "Enphase Enlighten login request could not connect to https://enlighten.enphaseenergy.com/login/login.json",
+  );
+});
+
 function buildProvider(): SolarEnergyProviderRecord {
   return {
     id: "solar-provider-1",

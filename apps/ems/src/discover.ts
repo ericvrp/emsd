@@ -6,6 +6,7 @@ import type {
   DiscoveredDevice,
   MeterTelemetrySample,
 } from "./discovery-types";
+import { formatFetchError } from "./plugins/shared";
 import {
   type DiscoveryPlugin,
   type DiscoveryRequestDefinition,
@@ -140,11 +141,11 @@ export async function fetchMeterTelemetry(
     return null;
   }
 
-  const response = await fetchDiscoveryResponse(
+  const response = await fetchTelemetryResponse(
     ipAddress,
     plugin,
     plugin.supplementalRequest,
-    { host: ipAddress, verbose: false },
+    "Meter telemetry request",
   );
 
   if (!response || !plugin.parseTelemetry) {
@@ -152,6 +153,61 @@ export async function fetchMeterTelemetry(
   }
 
   return plugin.parseTelemetry(response.responseText) as MeterTelemetrySample;
+}
+
+async function fetchTelemetryResponse(
+  ipAddress: string,
+  plugin: DiscoveryPlugin,
+  request: DiscoveryRequestDefinition,
+  action: string,
+): Promise<{
+  responseText: string;
+  scheme: "https" | "http";
+  url: string;
+}> {
+  const configuredSchemes = plugin.schemes ?? ["https", "http"];
+  const schemes = configuredSchemes.includes("https")
+    ? ["https", ...configuredSchemes.filter((scheme) => scheme !== "https")]
+    : [...configuredSchemes];
+  let lastFailure = `${action} failed for ${ipAddress}.`;
+
+  for (const scheme of schemes) {
+    const url = buildRequestUrl(ipAddress, plugin, request, scheme);
+    const headers = resolveRequestHeaders(request, ipAddress);
+
+    try {
+      const response = await fetch(url, {
+        method: request.method,
+        ...(headers ? { headers } : {}),
+        ...(scheme === "https"
+          ? ({ tls: { rejectUnauthorized: false } } as RequestInit)
+          : {}),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+
+      if (!response.ok) {
+        lastFailure = `${action} failed with HTTP ${response.status} for ${url}`;
+        continue;
+      }
+
+      const responseText = await response.text().catch(() => null);
+
+      if (responseText === null) {
+        lastFailure = `${action} could not read the response body from ${url}`;
+        continue;
+      }
+
+      return {
+        responseText,
+        scheme,
+        url,
+      };
+    } catch (error) {
+      lastFailure = formatFetchError(url, error, action);
+    }
+  }
+
+  throw new Error(lastFailure);
 }
 
 export function getLocalIpv4Subnets(

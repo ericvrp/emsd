@@ -4,6 +4,7 @@ import type {
   BatteryStrategyMode,
   NormalizedBatteryInfo,
 } from "@emsd/core";
+import { fetchWithAction } from "./plugins/shared";
 
 const INDEVOLT_PORT = 8080;
 const INDEVOLT_MAX_POWER_W = 2400;
@@ -217,14 +218,16 @@ async function fetchIndevoltData(
   points: number[],
 ): Promise<Record<string, unknown> | null> {
   const config = JSON.stringify({ t: points }).replaceAll(" ", "");
-  const response = await fetch(
-    `http://${host}:${INDEVOLT_PORT}/rpc/Indevolt.GetData?config=${encodeURIComponent(config)}`,
+  const url = `http://${host}:${INDEVOLT_PORT}/rpc/Indevolt.GetData?config=${encodeURIComponent(config)}`;
+  const response = await fetchWithAction(
+    url,
     { method: "POST" },
+    "Battery telemetry request",
   );
 
   if (!response.ok) {
     throw new Error(
-      `Battery telemetry request failed with HTTP ${response.status}`,
+      `Battery telemetry request failed with HTTP ${response.status} for ${url}`,
     );
   }
 
@@ -240,14 +243,16 @@ async function setIndevoltData(
     " ",
     "",
   );
-  const response = await fetch(
-    `http://${host}:${INDEVOLT_PORT}/rpc/Indevolt.SetData?config=${encodeURIComponent(config)}`,
+  const url = `http://${host}:${INDEVOLT_PORT}/rpc/Indevolt.SetData?config=${encodeURIComponent(config)}`;
+  const response = await fetchWithAction(
+    url,
     { method: "POST" },
+    "Battery control request",
   );
 
   if (!response.ok) {
     throw new Error(
-      `Battery control request failed with HTTP ${response.status}`,
+      `Battery control request failed with HTTP ${response.status} for ${url}`,
     );
   }
 
@@ -264,14 +269,19 @@ async function fetchSonnenJson(
   options: { authenticated: boolean },
 ): Promise<Record<string, unknown> | null> {
   const token = options.authenticated ? getSonnenAuthToken(host) : null;
-  const response = await fetch(`http://${host}${path}`, {
-    method: "GET",
-    headers: buildSonnenHeaders(token),
-  });
+  const url = `http://${host}${path}`;
+  const response = await fetchWithAction(
+    url,
+    {
+      method: "GET",
+      headers: buildSonnenHeaders(token),
+    },
+    "Battery telemetry request",
+  );
 
   if (!response.ok) {
     throw new Error(
-      `Battery telemetry request failed with HTTP ${response.status}`,
+      `Battery telemetry request failed with HTTP ${response.status} for ${url}`,
     );
   }
 
@@ -282,18 +292,23 @@ async function putSonnenConfiguration(
   host: string,
   values: Record<string, string>,
 ): Promise<void> {
-  const response = await fetch(`http://${host}/api/v2/configurations`, {
-    method: "PUT",
-    headers: {
-      ...buildSonnenHeaders(getSonnenAuthToken(host)),
-      "content-type": "application/x-www-form-urlencoded",
+  const url = `http://${host}/api/v2/configurations`;
+  const response = await fetchWithAction(
+    url,
+    {
+      method: "PUT",
+      headers: {
+        ...buildSonnenHeaders(getSonnenAuthToken(host)),
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams(values).toString(),
     },
-    body: new URLSearchParams(values).toString(),
-  });
+    "Battery control request",
+  );
 
   if (!response.ok) {
     throw new Error(
-      `Battery control request failed with HTTP ${response.status}`,
+      `Battery control request failed with HTTP ${response.status} for ${url}`,
     );
   }
 }
@@ -302,17 +317,22 @@ async function fetchHomeWizardJson(
   host: string,
   path: string,
 ): Promise<Record<string, unknown> | null> {
-  const response = await fetch(`https://${host}:${HOMEWIZARD_PORT}${path}`, {
-    method: "GET",
-    headers: buildHomeWizardHeaders(host),
-    tls: {
-      rejectUnauthorized: false,
+  const url = `https://${host}:${HOMEWIZARD_PORT}${path}`;
+  const response = await fetchWithAction(
+    url,
+    {
+      method: "GET",
+      headers: buildHomeWizardHeaders(host),
+      tls: {
+        rejectUnauthorized: false,
+      },
     },
-  });
+    "Battery telemetry request",
+  );
 
   if (!response.ok) {
     throw new Error(
-      `Battery telemetry request failed with HTTP ${response.status}`,
+      `Battery telemetry request failed with HTTP ${response.status} for ${url}`,
     );
   }
 
@@ -326,8 +346,9 @@ async function putHomeWizardBatteries(
     permissions?: string[];
   },
 ): Promise<void> {
-  const response = await fetch(
-    `https://${host}:${HOMEWIZARD_PORT}/api/batteries`,
+  const url = `https://${host}:${HOMEWIZARD_PORT}/api/batteries`;
+  const response = await fetchWithAction(
+    url,
     {
       method: "PUT",
       headers: {
@@ -339,11 +360,12 @@ async function putHomeWizardBatteries(
         rejectUnauthorized: false,
       },
     },
+    "Battery control request",
   );
 
   if (!response.ok) {
     throw new Error(
-      `Battery control request failed with HTTP ${response.status}`,
+      `Battery control request failed with HTTP ${response.status} for ${url}`,
     );
   }
 }
@@ -354,17 +376,19 @@ async function postSonnenSetpoint(
   powerW: number,
 ): Promise<void> {
   const direction = state === "discharging" ? "discharge" : "charge";
-  const response = await fetch(
-    `http://${host}/api/v2/setpoint/${direction}/${powerW}`,
+  const url = `http://${host}/api/v2/setpoint/${direction}/${powerW}`;
+  const response = await fetchWithAction(
+    url,
     {
       method: "POST",
       headers: buildSonnenHeaders(getSonnenAuthToken(host)),
     },
+    "Battery control request",
   );
 
   if (!response.ok) {
     throw new Error(
-      `Battery control request failed with HTTP ${response.status}`,
+      `Battery control request failed with HTTP ${response.status} for ${url}`,
     );
   }
 

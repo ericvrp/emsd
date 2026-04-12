@@ -3,6 +3,7 @@ import type {
   SolarEnergyProviderRecord,
 } from "@emsd/core";
 import {
+  fetchWithAction,
   getStringValue,
   parseJsonObject,
   parseNullableNumber,
@@ -183,13 +184,15 @@ async function fetchEnphaseTextForScheme(
   scheme: "https" | "http",
   options: { allowAuthentication?: boolean; serialHint?: string | null },
 ): Promise<string> {
-  const initialResponse = await fetch(
-    buildEnphaseLocalUrl(host, path, scheme),
+  const url = buildEnphaseLocalUrl(host, path, scheme);
+  const initialResponse = await fetchWithAction(
+    url,
     {
       headers: { accept: "application/json, text/xml;q=0.9, */*;q=0.8" },
       method: "GET",
       ...buildEnphaseTlsOptions(scheme),
     },
+    "Enphase local request",
   );
 
   if (initialResponse.ok) {
@@ -198,7 +201,7 @@ async function fetchEnphaseTextForScheme(
 
   if (initialResponse.status !== 401 || options.allowAuthentication === false) {
     throw new Error(
-      `Enphase request failed with HTTP ${initialResponse.status} for ${scheme}://${host}${path}`,
+      `Enphase request failed with HTTP ${initialResponse.status} for ${url}`,
     );
   }
 
@@ -216,13 +219,14 @@ async function fetchEnphaseTextForScheme(
       error instanceof Error ? error.message : String(error),
     );
   });
-  const authenticatedResponse = await fetch(
-    buildEnphaseLocalUrl(host, path, scheme),
+  const authenticatedResponse = await fetchWithAction(
+    url,
     {
       headers: buildAuthenticatedLocalHeaders(session),
       method: "GET",
       ...buildEnphaseTlsOptions(scheme),
     },
+    "Enphase local request",
   );
 
   if (!authenticatedResponse.ok) {
@@ -231,7 +235,7 @@ async function fetchEnphaseTextForScheme(
     }
 
     throw new EnphaseTerminalError(
-      `Authenticated Enphase request failed with HTTP ${authenticatedResponse.status} for ${scheme}://${host}${path}`,
+      `Authenticated Enphase request failed with HTTP ${authenticatedResponse.status} for ${url}`,
     );
   }
 
@@ -281,17 +285,21 @@ async function fetchEnphaseOwnerToken(input: {
   serialNumber: string;
   username: string;
 }): Promise<string> {
-  const loginResponse = await fetch(ENLIGHTEN_AUTH_URL, {
-    body: new URLSearchParams({
-      "user[email]": input.username,
-      "user[password]": input.password,
-    }).toString(),
-    headers: {
-      accept: "application/json",
-      "content-type": "application/x-www-form-urlencoded",
+  const loginResponse = await fetchWithAction(
+    ENLIGHTEN_AUTH_URL,
+    {
+      body: new URLSearchParams({
+        "user[email]": input.username,
+        "user[password]": input.password,
+      }).toString(),
+      headers: {
+        accept: "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      method: "POST",
     },
-    method: "POST",
-  });
+    "Enphase Enlighten login request",
+  );
 
   if (!loginResponse.ok) {
     throw new Error(
@@ -308,18 +316,22 @@ async function fetchEnphaseOwnerToken(input: {
     throw new Error("Enphase Enlighten login did not return a session_id.");
   }
 
-  const tokenResponse = await fetch(ENLIGHTEN_TOKEN_URL, {
-    body: JSON.stringify({
-      serial_num: input.serialNumber,
-      session_id: sessionId,
-      username: input.username,
-    }),
-    headers: {
-      accept: "application/json, text/plain;q=0.9, */*;q=0.8",
-      "content-type": "application/json",
+  const tokenResponse = await fetchWithAction(
+    ENLIGHTEN_TOKEN_URL,
+    {
+      body: JSON.stringify({
+        serial_num: input.serialNumber,
+        session_id: sessionId,
+        username: input.username,
+      }),
+      headers: {
+        accept: "application/json, text/plain;q=0.9, */*;q=0.8",
+        "content-type": "application/json",
+      },
+      method: "POST",
     },
-    method: "POST",
-  });
+    "Enphase owner token request",
+  );
 
   if (!tokenResponse.ok) {
     throw new Error(
@@ -340,8 +352,9 @@ async function createLocalEnphaseSession(
   host: string,
   token: string,
 ): Promise<EnphaseLocalSession> {
-  const response = await fetch(
-    buildEnphaseLocalUrl(host, "/auth/check_jwt", "https"),
+  const url = buildEnphaseLocalUrl(host, "/auth/check_jwt", "https");
+  const response = await fetchWithAction(
+    url,
     {
       headers: {
         Authorization: `Bearer ${token}`,
@@ -349,11 +362,12 @@ async function createLocalEnphaseSession(
       method: "GET",
       ...buildEnphaseTlsOptions("https"),
     },
+    "Enphase local token exchange",
   );
 
   if (!response.ok) {
     throw new Error(
-      `Enphase local token exchange failed with HTTP ${response.status} for ${host}.`,
+      `Enphase local token exchange failed with HTTP ${response.status} for ${url}.`,
     );
   }
 

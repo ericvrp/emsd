@@ -1,8 +1,9 @@
-import { expect, test } from "bun:test";
+import { afterEach, expect, test } from "bun:test";
 import type { NetworkInterfaceInfo } from "node:os";
 import {
   buildSubnetTargets,
   discoverHostDevices,
+  fetchMeterTelemetry,
   formatDiscoveredDevices,
   formatDiscoveryTarget,
   formatHelpText,
@@ -12,6 +13,12 @@ import {
   parseDiscoverCommandOptions,
   runDiscoverCommand,
 } from "./discover";
+
+const originalFetch = globalThis.fetch;
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+});
 
 test("getDiscoverySignatures exposes the discovery plugin catalog", () => {
   expect(getDiscoverySignatures()).toEqual([
@@ -119,6 +126,16 @@ test("getDiscoverySignatures exposes the discovery plugin catalog", () => {
       },
     },
   ]);
+});
+
+test("fetchMeterTelemetry surfaces endpoint-specific connection errors", async () => {
+  globalThis.fetch = (async () => {
+    throw new Error("Was there a typo in the url or port?");
+  }) as typeof fetch;
+
+  await expect(fetchMeterTelemetry("192.168.1.27")).rejects.toThrow(
+    "Meter telemetry request could not connect to http://192.168.1.27:80/api/v1/data",
+  );
 });
 
 test("parseDiscoverCommandOptions parses verbose and host", () => {
