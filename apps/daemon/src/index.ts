@@ -52,6 +52,13 @@ import {
   shouldSkipDelayedSocItemBecauseLaterItemIsDue,
   shouldSkipScheduledItem,
 } from "./strategy-scheduler";
+import {
+  formatFallbackStrategyRestoreSummary,
+  formatManualStrategyAppliedSummary,
+  formatScheduledStrategyCompletionSummary,
+  formatScheduledStrategyStartedSummary,
+  formatStrategyPlanAppliedSummary,
+} from "./strategy-log";
 
 const lockPath = getDaemonLockPath();
 const POLL_INTERVAL_MS = 5_000;
@@ -186,6 +193,7 @@ function main(): void {
           observedBatteryControls.get(battery.id),
           battery,
           pollStartedAt,
+          options.verbose,
         );
         observedBatteryControls.set(
           battery.id,
@@ -230,8 +238,12 @@ function main(): void {
               minimumDischargePercent: battery.minimumDischargePercent,
             });
 
-            logVerbose(
+            logInfoWithVerboseDetails(
               options.verbose,
+              formatFallbackStrategyRestoreSummary(
+                battery.id,
+                battery.strategyPlan[0],
+              ),
               `restoring default strategy for ${battery.id} after manual mode completed: ${describeStrategyPlanItem(battery.strategyPlan[0])}`,
             );
 
@@ -586,7 +598,13 @@ async function runScheduledStrategy(
         battery.strategyRuntime.activeStartedAt,
         now,
       );
-      logInfo(
+      logInfoWithVerboseDetails(
+        verbose,
+        formatScheduledStrategyStartedSummary(
+          battery.id,
+          activeItem,
+          observedDelay,
+        ),
         `strategy item started for ${battery.id}: ${describeStrategyPlanItemWithIndex(battery, activeItem)}${observedDelay}`,
       );
     }
@@ -607,7 +625,14 @@ async function runScheduledStrategy(
       return;
     }
 
-    logInfo(
+    logInfoWithVerboseDetails(
+      verbose,
+      formatScheduledStrategyCompletionSummary({
+        batteryId: battery.id,
+        item: activeItem,
+        completion,
+        fallbackItem: battery.strategyPlan[0],
+      }),
       `deactivating strategy item for ${battery.id}: ${describeStrategyPlanItemWithIndex(battery, activeItem)} ${formatScheduledItemCompletion(completion)}`,
     );
     await restoreFallbackStrategy(
@@ -711,7 +736,8 @@ async function runScheduledStrategy(
       minimumDischargePercent: battery.minimumDischargePercent,
     });
 
-    logInfo(
+    logVerbose(
+      verbose,
       `activating strategy item for ${battery.id}: ${describeStrategyPlanItemWithIndex(battery, item)}`,
     );
 
@@ -853,6 +879,7 @@ function logAppliedBatteryControlChanges(
   previous: BatteryControlSnapshot | undefined,
   battery: BatteryRecord,
   now: Date,
+  verbose: boolean,
 ): void {
   if (!previous) {
     return;
@@ -865,21 +892,19 @@ function logAppliedBatteryControlChanges(
     previous.strategyPlanSignature !== current.strategyPlanSignature;
 
   if (planChanged) {
-    logInfo(
+    logInfoWithVerboseDetails(
+      verbose,
+      formatStrategyPlanAppliedSummary(battery, now),
       `strategy plan applied for ${battery.id}: default=${describeStrategyPlanItem(battery.strategyPlan[0])} pastToday=${describeTriggeredStrategyItemsBeforeNow(battery, now)} nextToday=${describeNextStrategyItemForToday(battery, now)}`,
     );
   }
 
-  if (manualChanged || planChanged) {
-    if (battery.manualModeActive || battery.strategyMode === "manual") {
-      logInfo(
-        `manual strategy applied for ${battery.id}: ${describeCurrentBatteryStrategy(battery)}`,
-      );
-    } else {
-      logInfo(
-        `automatic strategy applied for ${battery.id}: ${JSON.stringify(battery.strategyPlan)}`,
-      );
-    }
+  if (manualChanged && battery.manualModeActive) {
+    logInfoWithVerboseDetails(
+      verbose,
+      formatManualStrategyAppliedSummary(battery),
+      `manual strategy applied for ${battery.id}: ${describeCurrentBatteryStrategy(battery)}`,
+    );
   }
 }
 
@@ -970,6 +995,15 @@ function logVerbose(enabled: boolean, message: string): void {
   }
 
   console.log(`[${formatDaemonLogTimestamp()}] ${message}`);
+}
+
+function logInfoWithVerboseDetails(
+  verbose: boolean,
+  summary: string,
+  details: string,
+): void {
+  logInfo(summary);
+  logVerbose(verbose, details);
 }
 
 function logInfo(message: string): void {
