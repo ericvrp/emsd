@@ -55,7 +55,6 @@ import {
 
 const lockPath = getDaemonLockPath();
 const POLL_INTERVAL_MS = 5_000;
-const SOLAR_ENERGY_PROVIDER_POLL_INTERVAL_MS = 60 * 1_000;
 const FORECAST_REFRESH_INTERVAL_MS = 15 * 60 * 1_000;
 const DYNAMIC_PRICE_REFRESH_INTERVAL_MS = 15 * 60 * 1_000;
 const FORECAST_HOURS = 48;
@@ -123,9 +122,6 @@ function main(): void {
   logInfo(`Daemon local time zone: ${getDaemonTimeZoneLabel()}`);
   logInfo(`Polling managed devices every ${POLL_INTERVAL_MS / 1000} seconds.`);
   logInfo(
-    `Polling solar energy providers every ${SOLAR_ENERGY_PROVIDER_POLL_INTERVAL_MS / 60_000} minute(s).`,
-  );
-  logInfo(
     `Refreshing solar forecasts at most every ${FORECAST_REFRESH_INTERVAL_MS / 60_000} minutes.`,
   );
   logInfo(
@@ -133,7 +129,6 @@ function main(): void {
   );
 
   let pollInFlight = false;
-  let solarEnergyProviderPollInFlight = false;
   let refreshInFlight = false;
   const observedBatteryControls = new Map(
     batteries.map((battery) => [
@@ -184,6 +179,7 @@ function main(): void {
       const polledBatteries = readBatteries(db);
       const polledMeters = readMeters(db);
       const pollStartedAt = new Date();
+      const polledSolarEnergyProviders = readSolarEnergyProviders(db);
 
       for (const battery of polledBatteries) {
         logAppliedBatteryControlChanges(
@@ -315,28 +311,7 @@ function main(): void {
             observedAt: new Date().toISOString(),
           } satisfies ManagedDeviceTelemetryRecord);
         }),
-      ]);
-    } catch (error) {
-      logError(
-        `telemetry poll failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    } finally {
-      pollInFlight = false;
-    }
-  }
-
-  async function pollSolarEnergyProviders(): Promise<void> {
-    if (solarEnergyProviderPollInFlight) {
-      return;
-    }
-
-    solarEnergyProviderPollInFlight = true;
-
-    try {
-      const providers = readSolarEnergyProviders(db);
-
-      await Promise.all(
-        providers.map(async (provider) => {
+        ...polledSolarEnergyProviders.map(async (provider) => {
           const sample = await getSolarEnergyProviderNormalizedInfo(
             provider,
           ).catch((error: unknown) => {
@@ -361,13 +336,13 @@ function main(): void {
             observedAt: new Date().toISOString(),
           } satisfies ManagedDeviceTelemetryRecord);
         }),
-      );
+      ]);
     } catch (error) {
       logError(
-        `solar energy provider poll failed: ${error instanceof Error ? error.message : String(error)}`,
+        `telemetry poll failed: ${error instanceof Error ? error.message : String(error)}`,
       );
     } finally {
-      solarEnergyProviderPollInFlight = false;
+      pollInFlight = false;
     }
   }
 
@@ -377,7 +352,6 @@ function main(): void {
   logInfo("Polling dynamic prices at startup...");
 
   void pollTelemetry();
-  void pollSolarEnergyProviders();
 
   // const heartbeat = setInterval(() => {
   //   console.log(`[${new Date().toISOString()}] daemon heartbeat`);
@@ -385,9 +359,6 @@ function main(): void {
   const poller = setInterval(() => {
     void pollTelemetry();
   }, POLL_INTERVAL_MS);
-  const solarEnergyProviderPoller = setInterval(() => {
-    void pollSolarEnergyProviders();
-  }, SOLAR_ENERGY_PROVIDER_POLL_INTERVAL_MS);
   const forecastPoller = setInterval(() => {
     void refreshSiteData();
   }, FORECAST_REFRESH_INTERVAL_MS);
@@ -403,7 +374,6 @@ function main(): void {
   function shutdown(signal: string): void {
     // clearInterval(heartbeat);
     clearInterval(poller);
-    clearInterval(solarEnergyProviderPoller);
     clearInterval(forecastPoller);
     clearInterval(pricePoller);
     db.close();

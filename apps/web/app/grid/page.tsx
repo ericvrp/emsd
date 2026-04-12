@@ -45,6 +45,7 @@ export default async function GridRoute({
         <GridPage
           archive={historyArchive}
           requestedDay={requestedDay}
+          siteId={currentSite.id}
           siteName={currentSite.name}
         />
       ) : (

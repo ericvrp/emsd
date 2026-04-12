@@ -105,6 +105,7 @@ export async function StatusScreen({
               currentPowerW={currentBatteryPower}
               currentState={currentBatteryState}
               requestedDay={requestedDay}
+              siteId={currentSite.id}
               siteName={currentSite.name}
             />
           ) : null}

@@ -1,7 +1,8 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { HistoryArchive } from "../lib/ems-bridge";
+import { logBrowserIntervalHeartbeat } from "../lib/browser-heartbeat";
 import { formatAbsolutePowerValue } from "../lib/power-format";
 import { BatteryHistoryChart, buildBatteryHistoryPoints } from "./history";
 import { SectionSummaryCard } from "./section-summary-card";
@@ -10,6 +11,8 @@ import {
   useTopLevelDaySelection,
 } from "./top-level-day-select";
 
+const LIVE_CURRENT_REFRESH_INTERVAL_MS = 5_000;
+
 type HomeBatteryHistorySectionProps = {
   archive: HistoryArchive;
   children?: ReactNode;
@@ -17,6 +20,7 @@ type HomeBatteryHistorySectionProps = {
   currentPowerW: number | null;
   currentState: string | null;
   requestedDay: string | null;
+  siteId: string;
   siteName: string;
 };
 
@@ -27,6 +31,7 @@ export function HomeBatteryHistorySection({
   currentPowerW,
   currentState,
   requestedDay,
+  siteId,
   siteName,
 }: HomeBatteryHistorySectionProps) {
   const daySelection = useTopLevelDaySelection({ archive, requestedDay });
@@ -34,6 +39,80 @@ export function HomeBatteryHistorySection({
     archive.batteryPowerSamples,
     daySelection.selectedDay,
   );
+  const [liveCurrentChargePercent, setLiveCurrentChargePercent] =
+    useState(currentChargePercent);
+  const [liveCurrentPowerW, setLiveCurrentPowerW] = useState(currentPowerW);
+  const [liveCurrentState, setLiveCurrentState] = useState(currentState);
+
+  useEffect(() => {
+    setLiveCurrentChargePercent(currentChargePercent);
+    setLiveCurrentPowerW(currentPowerW);
+    setLiveCurrentState(currentState);
+  }, [currentChargePercent, currentPowerW, currentState]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function refreshCurrentBattery() {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+
+      try {
+        const response = await fetch(
+          `/api/site/current?siteId=${encodeURIComponent(siteId)}`,
+          { cache: "no-store" },
+        );
+
+        if (!response.ok) {
+          throw new Error(`Battery current request failed: ${response.status}`);
+        }
+
+        const payload = (await response.json()) as {
+          currentBatteryChargePercent?: number | null;
+          currentBatteryPowerW?: number | null;
+          currentBatteryState?: string | null;
+        };
+
+        if (cancelled) {
+          return;
+        }
+
+        setLiveCurrentChargePercent(
+          payload.currentBatteryChargePercent ?? null,
+        );
+        setLiveCurrentPowerW(payload.currentBatteryPowerW ?? null);
+        setLiveCurrentState(payload.currentBatteryState ?? null);
+      } catch {
+        if (!cancelled) {
+          setLiveCurrentChargePercent(currentChargePercent);
+          setLiveCurrentPowerW(currentPowerW);
+          setLiveCurrentState(currentState);
+        }
+      }
+    }
+
+    void refreshCurrentBattery();
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        void refreshCurrentBattery();
+      }
+    }
+
+    const interval = window.setInterval(() => {
+      logBrowserIntervalHeartbeat("refresh current");
+      void refreshCurrentBattery();
+    }, LIVE_CURRENT_REFRESH_INTERVAL_MS);
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [currentChargePercent, currentPowerW, currentState, siteId]);
 
   return (
     <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
@@ -47,14 +126,13 @@ export function HomeBatteryHistorySection({
             Battery for {siteName}
           </h3>
           <p className="mt-2 text-sm leading-6 text-slate-400">
-            Recent charging, discharging, and battery charge for the selected
-            day.
+            Charging, discharging, and charge for the selected day.
           </p>
         </div>
         <SectionSummaryCard title="Current battery">
           <p className="text-2xl font-semibold text-white sm:text-3xl">
-            {formatCharge(currentChargePercent)} •{" "}
-            {formatPower(currentPowerW, currentState)}
+            {formatCharge(liveCurrentChargePercent)} •{" "}
+            {formatPower(liveCurrentPowerW, liveCurrentState)}
           </p>
         </SectionSummaryCard>
       </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type {
   HistoryArchive,
   PredictedSolarGenerationPoint,
@@ -22,6 +22,7 @@ import {
   formatPowerValue,
   formatShortPowerValue,
 } from "../lib/power-format";
+import { logBrowserIntervalHeartbeat } from "../lib/browser-heartbeat";
 import { UI_CHART_STYLES, UI_COLORS } from "../lib/ui-colors";
 import { MeasuredChartContainer } from "./measured-chart-container";
 import {
@@ -53,6 +54,8 @@ import {
   useTopLevelDaySelection,
 } from "./top-level-day-select";
 
+const LIVE_SOLAR_REFRESH_INTERVAL_MS = 5_000;
+
 export function WeatherForecastSection({
   archive,
   site,
@@ -78,12 +81,15 @@ export function WeatherForecastSection({
     })),
     daySelection.selectedDay,
   );
+  const generatedSeries = aggregatePowerSamples(
+    archive.solarEnergyProviderSamples,
+  );
   const selectedDayPredictedSeries = fillSingleValueDay(
     predictedSolarGeneration,
     daySelection.selectedDay,
   );
   const selectedDayGeneratedSeries = fillSingleValueDay(
-    aggregatePowerSamples(archive.solarEnergyProviderSamples),
+    generatedSeries,
     daySelection.selectedDay,
   );
   const predictionAccuracySummary = buildSolarPredictionAccuracySummary({
@@ -92,19 +98,91 @@ export function WeatherForecastSection({
     predictedSeries: selectedDayPredictedSeries,
     nowMarkerPeriodStart: daySelection.nowMarkerPeriodStart,
   });
-  const currentGeneratedPower = getLatestValueAtOrBefore(
-    selectedDayGeneratedSeries,
-    daySelection.nowMarkerPeriodStart ??
-      selectedDayGeneratedSeries.at(-1)?.periodStart ??
-      "",
+  const archiveCurrentGeneratedPower = getLatestValueAtOrBefore(
+    generatedSeries,
+    new Date().toISOString(),
   );
+  const liveCurrentGeneratedPower = getCurrentSolarPower(site);
+  const [currentGeneratedPower, setCurrentGeneratedPower] = useState<
+    number | null
+  >(liveCurrentGeneratedPower ?? archiveCurrentGeneratedPower);
+
+  useEffect(() => {
+    setCurrentGeneratedPower(
+      liveCurrentGeneratedPower ?? archiveCurrentGeneratedPower,
+    );
+  }, [archiveCurrentGeneratedPower, liveCurrentGeneratedPower]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function refreshCurrentGeneratedPower() {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+
+      try {
+        const response = await fetch(
+          `/api/solar/current?siteId=${encodeURIComponent(site.id)}`,
+          {
+            cache: "no-store",
+          },
+        );
+
+        if (!response.ok) {
+          throw new Error(`Solar current request failed: ${response.status}`);
+        }
+
+        const payload = (await response.json()) as {
+          currentGeneratedPower?: number | null;
+        };
+
+        if (cancelled) {
+          return;
+        }
+
+        setCurrentGeneratedPower(
+          typeof payload.currentGeneratedPower === "number"
+            ? payload.currentGeneratedPower
+            : archiveCurrentGeneratedPower,
+        );
+      } catch {
+        if (!cancelled) {
+          setCurrentGeneratedPower(archiveCurrentGeneratedPower);
+        }
+      }
+    }
+
+    void refreshCurrentGeneratedPower();
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        void refreshCurrentGeneratedPower();
+      }
+    }
+
+    const interval = window.setInterval(() => {
+      logBrowserIntervalHeartbeat("refresh current");
+      void refreshCurrentGeneratedPower();
+    }, LIVE_SOLAR_REFRESH_INTERVAL_MS);
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [archiveCurrentGeneratedPower, site.id]);
 
   useEffect(() => {
     console.table([
       {
         date: predictionAccuracySummary.date,
         scoringPercentage:
-          predictionAccuracySummary.scoringPercentage ?? "Unavailable",
+          formatAccuracyPercentage(
+            predictionAccuracySummary.scoringPercentage,
+          ) ?? "Unavailable",
         totalAbsoluteError: formatEnergyValue(
           predictionAccuracySummary.totalAbsoluteErrorWh,
         ),
@@ -138,8 +216,7 @@ export function WeatherForecastSection({
             Solar generation and forecast for {site.name}
           </h3>
           <p className="mt-2 text-sm leading-6 text-slate-400">
-            Compare measured solar output, predicted wattage, and the built-in
-            Open-Meteo sunlight forecast for this site.
+            Compare measured, predicted, and forecast solar output.
           </p>
         </div>
         <SectionSummaryCard title="Current generating">
@@ -173,10 +250,17 @@ export function WeatherForecastSection({
             }
             headerAccessory={<TopLevelDaySelect daySelection={daySelection} />}
             nowMarkerPeriodStart={daySelection.nowMarkerPeriodStart}
+            predictionAccuracyPercentage={
+              predictionAccuracySummary.scoringPercentage
+            }
             forecastLabel={forecast?.metricLabel ?? "Solar Forecast"}
-            forecastPoints={splitSingleValueSeriesByTime(selectedDayForecastSeries)}
+            forecastPoints={splitSingleValueSeriesByTime(
+              selectedDayForecastSeries,
+            )}
             forecastUnitLabel={forecast?.unitLabel ?? "W/m²"}
-            generatedPoints={splitSingleValueSeriesByTime(selectedDayGeneratedSeries)}
+            generatedPoints={splitSingleValueSeriesByTime(
+              selectedDayGeneratedSeries,
+            )}
             predictedPoints={splitSingleValueSeriesByTime(
               selectedDayPredictedSeries,
             )}
@@ -195,6 +279,7 @@ function ForecastPredictionChart({
   generatedPoints,
   headerAccessory,
   nowMarkerPeriodStart,
+  predictionAccuracyPercentage,
   predictedPoints,
 }: {
   emptyMessage: string;
@@ -204,6 +289,7 @@ function ForecastPredictionChart({
   generatedPoints: SplitSingleValuePoint[];
   headerAccessory?: ReactNode;
   nowMarkerPeriodStart: string | null;
+  predictionAccuracyPercentage: number | null;
   predictedPoints: SplitSingleValuePoint[];
 }) {
   const chartData = forecastPoints.map((forecastPoint, index) => {
@@ -247,13 +333,12 @@ function ForecastPredictionChart({
     <div className="space-y-2.5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-wrap gap-2 text-xs font-medium text-slate-300">
-          <LegendChip
-            color={UI_COLORS.solarEnergy}
-            label="Generated Wattage"
-          />
+          <LegendChip color={UI_COLORS.solarEnergy} label="Generated Wattage" />
           <LegendChip
             color={UI_COLORS.solarPrediction}
-            label="Predicted Solar Wattage"
+            label={buildPredictedSolarLegendLabel({
+              predictionAccuracyPercentage,
+            })}
           />
           <LegendChip color={UI_COLORS.forecast} label={forecastLabel} />
         </div>
@@ -476,6 +561,20 @@ function getLatestValueAtOrBefore(
   return null;
 }
 
+function getCurrentSolarPower(site: SiteSnapshot): number | null {
+  return site.devices
+    .filter((device) => device.kind === "solar-energy-provider")
+    .reduce<number | null>((total, device) => {
+      const powerW = device.telemetry?.powerW;
+
+      if (typeof powerW !== "number") {
+        return total;
+      }
+
+      return total === null ? powerW : total + powerW;
+    }, null);
+}
+
 function buildSolarPredictionAccuracySummary(input: {
   dayKey: string;
   generatedSeries: Array<{ periodStart: string; value: number | null }>;
@@ -558,6 +657,26 @@ function formatEnergyValue(valueWh: number): string {
   }
 
   return `${valueWh.toFixed(2)} Wh`;
+}
+
+function formatAccuracyPercentage(value: number | null): string | null {
+  return value === null ? null : `${Math.round(value)}%`;
+}
+
+function buildPredictedSolarLegendLabel(input: {
+  predictionAccuracyPercentage: number | null;
+}): string {
+  const parts = ["Predicted Solar Wattage"];
+
+  const accuracyLabel = formatAccuracyPercentage(
+    input.predictionAccuracyPercentage,
+  );
+
+  if (accuracyLabel !== null) {
+    parts.push(accuracyLabel);
+  }
+
+  return parts.join(" • ");
 }
 
 function formatForecastSummaryValue(value: number, unitLabel: string): string {

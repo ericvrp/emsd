@@ -4,6 +4,7 @@ import type { BatteryManualState, BatteryStrategyRecord } from "@emsd/core";
 import { Save } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { setHouseStrategyAction } from "../app/actions";
+import { logBrowserIntervalHeartbeat } from "../lib/browser-heartbeat";
 import { SubmitButton } from "./submit-button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -82,6 +83,7 @@ export function BatteryStrategyForm({
 
   useEffect(() => {
     const interval = window.setInterval(() => {
+      logBrowserIntervalHeartbeat("tick clock");
       setNow(new Date());
     }, 30000);
 

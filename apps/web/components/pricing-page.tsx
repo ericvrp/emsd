@@ -79,7 +79,7 @@ export function PricingSection({
               ? "Unavailable"
               : formatPriceSummaryValue(
                   currentPricePoint.importPrice,
-                  snapshot.currency,
+                  priceCurrency,
                 )}
           </p>
         </SectionSummaryCard>

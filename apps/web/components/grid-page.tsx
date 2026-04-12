@@ -1,6 +1,8 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import type { HistoryArchive } from "../lib/ems-bridge";
+import { logBrowserIntervalHeartbeat } from "../lib/browser-heartbeat";
 import {
   formatAbsolutePowerValue,
   formatShortPowerValue,
@@ -22,21 +24,95 @@ import {
 type GridPageProps = {
   archive: HistoryArchive;
   requestedDay: string | null;
+  siteId: string;
   siteName: string;
 };
 
-export function GridPage({ archive, requestedDay, siteName }: GridPageProps) {
+const LIVE_CURRENT_REFRESH_INTERVAL_MS = 5_000;
+
+export function GridPage({
+  archive,
+  requestedDay,
+  siteId,
+  siteName,
+}: GridPageProps) {
   const daySelection = useTopLevelDaySelection({ archive, requestedDay });
+  const gridSeries = invertSingleValueSeries(
+    aggregatePowerSamples(archive.p1MeterSamples),
+  );
   const selectedDayGridSeries = fillSingleValueDay(
-    invertSingleValueSeries(aggregatePowerSamples(archive.p1MeterSamples)),
+    gridSeries,
     daySelection.selectedDay,
   );
-  const currentGridPower = getLatestValueAtOrBefore(
-    selectedDayGridSeries,
-    daySelection.nowMarkerPeriodStart ??
-      selectedDayGridSeries.at(-1)?.periodStart ??
-      "",
+  const archiveCurrentGridPower = getLatestValueAtOrBefore(
+    gridSeries,
+    new Date().toISOString(),
   );
+  const [currentGridPower, setCurrentGridPower] = useState<number | null>(
+    archiveCurrentGridPower,
+  );
+
+  useEffect(() => {
+    setCurrentGridPower(archiveCurrentGridPower);
+  }, [archiveCurrentGridPower]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function refreshCurrentGrid() {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+
+      try {
+        const response = await fetch(
+          `/api/site/current?siteId=${encodeURIComponent(siteId)}`,
+          { cache: "no-store" },
+        );
+
+        if (!response.ok) {
+          throw new Error(`Grid current request failed: ${response.status}`);
+        }
+
+        const payload = (await response.json()) as {
+          currentGridPowerW?: number | null;
+        };
+
+        if (cancelled) {
+          return;
+        }
+
+        setCurrentGridPower(
+          payload.currentGridPowerW ?? archiveCurrentGridPower,
+        );
+      } catch {
+        if (!cancelled) {
+          setCurrentGridPower(archiveCurrentGridPower);
+        }
+      }
+    }
+
+    void refreshCurrentGrid();
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        void refreshCurrentGrid();
+      }
+    }
+
+    const interval = window.setInterval(() => {
+      logBrowserIntervalHeartbeat("refresh current");
+      void refreshCurrentGrid();
+    }, LIVE_CURRENT_REFRESH_INTERVAL_MS);
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [archiveCurrentGridPower, siteId]);
 
   return (
     <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
@@ -103,6 +179,10 @@ function getLatestValueAtOrBefore(
 
 function formatGridPower(value: number | null): string {
   if (value === null) return "Unavailable";
+
+  if (Math.abs(value) <= 10) {
+    return "Idle";
+  }
 
   const isImporting = value < 0;
   const direction = isImporting ? "Importing" : "Exporting";
