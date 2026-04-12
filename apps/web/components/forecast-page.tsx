@@ -9,6 +9,7 @@ import type {
   WeatherForecastSourceRecord,
 } from "@emsd/core";
 import type { HistoryArchive } from "@emsd/core";
+import { toast } from "sonner";
 import {
   CartesianGrid,
   Line,
@@ -60,7 +61,25 @@ const LIVE_SOLAR_REFRESH_INTERVAL_MS = 5_000;
 const GRAPH_REFRESH_INTERVAL_MS = 60 * 1_000;
 const MAX_SOLAR_PREDICTION_PRECEDING_DAYS = 7;
 const SOLAR_PREDICTION_MATCH_TOLERANCE_MS = 7.5 * 60 * 1_000;
+const SOLAR_PREDICTION_BUCKET_MS = 15 * 60 * 1_000;
 const SOLAR_POWER_AXIS_MAX_W = 6_000;
+
+type SolarPredictionSmoothingMode =
+  | "off"
+  | "weighted-3"
+  | "average-3"
+  | "average-5"
+  | "weighted-5";
+
+const SOLAR_PREDICTION_SMOOTHING_MODES: SolarPredictionSmoothingMode[] = [
+  "off",
+  "weighted-3",
+  "average-3",
+  "average-5",
+  "weighted-5",
+];
+const DEFAULT_SOLAR_PREDICTION_SMOOTHING_MODE: SolarPredictionSmoothingMode =
+  "average-5";
 
 export function WeatherForecastSection({
   archive: initialArchive,
@@ -86,6 +105,12 @@ export function WeatherForecastSection({
   const [currentRefreshError, setCurrentRefreshError] = useState<string | null>(
     null,
   );
+  const [generatedAccuracyFilteringEnabled, setGeneratedAccuracyFilteringEnabled] =
+    useState(true);
+  const [predictionSmoothingMode, setPredictionSmoothingMode] =
+    useState<SolarPredictionSmoothingMode>(
+      DEFAULT_SOLAR_PREDICTION_SMOOTHING_MODE,
+    );
   const daySelection = useTopLevelDaySelection({ archive, requestedDay });
   const selectedDayForecastSeries = fillSingleValueDay(
     archive.solarForecastSamples.map((sample) => ({
@@ -97,8 +122,12 @@ export function WeatherForecastSection({
   const generatedSeries = aggregatePowerSamples(
     archive.solarEnergyProviderSamples,
   );
+  const generatedAccuracySeries = generatedAccuracyFilteringEnabled
+    ? applySolarSeriesSmoothing(generatedSeries, predictionSmoothingMode)
+    : generatedSeries;
   const predictedSolarGeneration = buildPredictedSolarGenerationSeries({
     forecastSamples: archive.solarForecastSamples,
+    smoothingMode: predictionSmoothingMode,
     solarEnergyProviderSamples: archive.solarEnergyProviderSamples,
   });
   const selectedDayPredictedSeries = fillSingleValueDay(
@@ -109,9 +138,13 @@ export function WeatherForecastSection({
     generatedSeries,
     daySelection.selectedDay,
   );
+  const selectedDayGeneratedAccuracySeries = fillSingleValueDay(
+    generatedAccuracySeries,
+    daySelection.selectedDay,
+  );
   const predictionAccuracySummary = buildSolarPredictionAccuracySummary({
     dayKey: daySelection.selectedDay,
-    generatedSeries: selectedDayGeneratedSeries,
+    generatedSeries: selectedDayGeneratedAccuracySeries,
     predictedSeries: selectedDayPredictedSeries,
     nowMarkerPeriodStart: daySelection.nowMarkerPeriodStart,
   });
@@ -304,6 +337,24 @@ export function WeatherForecastSection({
   //   predictionAccuracySummary.usedSamples,
   // ]);
 
+  function handleCyclePredictionSmoothing() {
+    const nextMode = getNextSolarPredictionSmoothingMode(predictionSmoothingMode);
+    setPredictionSmoothingMode(nextMode);
+    toast.success(
+      `Predicted solar smoothing set to ${formatSolarPredictionSmoothingMode(nextMode)}.`,
+    );
+  }
+
+  function handleToggleGeneratedAccuracyFiltering() {
+    const nextEnabled = !generatedAccuracyFilteringEnabled;
+    setGeneratedAccuracyFilteringEnabled(nextEnabled);
+    toast.success(
+      nextEnabled
+        ? `Generated wattage accuracy filtering enabled with ${formatSolarPredictionSmoothingMode(predictionSmoothingMode)}.`
+        : "Generated wattage accuracy filtering disabled.",
+    );
+  }
+
   return (
     <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-sky-300/40 to-transparent" />
@@ -354,11 +405,17 @@ export function WeatherForecastSection({
                 ? "Forecast data is not available yet."
                 : "No forecast data for this day."
             }
+            generatedAccuracyFilteringEnabled={generatedAccuracyFilteringEnabled}
             headerAccessory={<TopLevelDaySelect daySelection={daySelection} />}
             nowMarkerPeriodStart={daySelection.nowMarkerPeriodStart}
+            onToggleGeneratedAccuracyFiltering={
+              handleToggleGeneratedAccuracyFiltering
+            }
+            onCyclePredictionSmoothing={handleCyclePredictionSmoothing}
             predictionAccuracyPercentage={
               predictionAccuracySummary.scoringPercentage
             }
+            predictionSmoothingMode={predictionSmoothingMode}
             forecastLabel={forecast?.metricLabel ?? "Solar Forecast"}
             forecastPoints={splitSingleValueSeriesByTime(
               selectedDayForecastSeries,
@@ -379,23 +436,31 @@ export function WeatherForecastSection({
 
 function ForecastPredictionChart({
   emptyMessage,
+  generatedAccuracyFilteringEnabled,
   forecastLabel,
   forecastPoints,
   forecastUnitLabel,
   generatedPoints,
   headerAccessory,
   nowMarkerPeriodStart,
+  onToggleGeneratedAccuracyFiltering,
+  onCyclePredictionSmoothing,
   predictionAccuracyPercentage,
+  predictionSmoothingMode,
   predictedPoints,
 }: {
   emptyMessage: string;
+  generatedAccuracyFilteringEnabled: boolean;
   forecastLabel: string;
   forecastPoints: SplitSingleValuePoint[];
   forecastUnitLabel: string;
   generatedPoints: SplitSingleValuePoint[];
   headerAccessory?: ReactNode;
   nowMarkerPeriodStart: string | null;
+  onToggleGeneratedAccuracyFiltering: () => void;
+  onCyclePredictionSmoothing: () => void;
   predictionAccuracyPercentage: number | null;
+  predictionSmoothingMode: SolarPredictionSmoothingMode;
   predictedPoints: SplitSingleValuePoint[];
 }) {
   const chartData = forecastPoints.map((forecastPoint, index) => {
@@ -440,12 +505,23 @@ function ForecastPredictionChart({
     <div className="space-y-2.5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-wrap gap-2 text-xs font-medium text-slate-300">
-          <LegendChip color={UI_COLORS.solarEnergy} label="Generated Wattage" />
           <LegendChip
-            color={UI_COLORS.solarPrediction}
+            color={UI_COLORS.solarEnergy}
+            label={buildGeneratedSolarLegendLabel({
+              generatedAccuracyFilteringEnabled,
+              predictionSmoothingMode,
+            })}
+            onClick={onToggleGeneratedAccuracyFiltering}
+            selected={generatedAccuracyFilteringEnabled}
+          />
+          <LegendChip
+            color={UI_COLORS.solarEnergy}
             label={buildPredictedSolarLegendLabel({
               predictionAccuracyPercentage,
+              predictionSmoothingMode,
             })}
+            marker={<PredictedSolarLegendMarker />}
+            onClick={onCyclePredictionSmoothing}
           />
           <LegendChip color={UI_COLORS.forecast} label={forecastLabel} />
         </div>
@@ -595,7 +671,8 @@ function ForecastPredictionChart({
                   dot={false}
                   isAnimationActive={false}
                   name="Predicted Solar Wattage"
-                  stroke={UI_COLORS.solarPrediction}
+                  stroke={UI_COLORS.solarEnergy}
+                  strokeDasharray="1 6"
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeWidth={2.8}
@@ -608,7 +685,8 @@ function ForecastPredictionChart({
                   dot={false}
                   isAnimationActive={false}
                   name="Predicted Solar Wattage"
-                  stroke={UI_COLORS.solarPrediction}
+                  stroke={UI_COLORS.solarEnergy}
+                  strokeDasharray="1 6"
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeOpacity={0.35}
@@ -684,6 +762,7 @@ function getCurrentSolarPower(site: SiteSnapshot): number | null {
 
 function buildPredictedSolarGenerationSeries(input: {
   forecastSamples: SolarForecastSampleRecord[];
+  smoothingMode?: SolarPredictionSmoothingMode;
   solarEnergyProviderSamples: SolarEnergyProviderSampleRecord[];
   targetForecastSamples?: SolarForecastSampleRecord[];
   maxPrecedingDays?: number;
@@ -703,8 +782,10 @@ function buildPredictedSolarGenerationSeries(input: {
     input.maxPrecedingDays ?? MAX_SOLAR_PREDICTION_PRECEDING_DAYS;
   const matchToleranceMs =
     input.matchToleranceMs ?? SOLAR_PREDICTION_MATCH_TOLERANCE_MS;
+  const smoothingMode =
+    input.smoothingMode ?? DEFAULT_SOLAR_PREDICTION_SMOOTHING_MODE;
 
-  return targetSamples.map((sample) => ({
+  const predictedSeries = targetSamples.map((sample) => ({
     periodStart: sample.periodStart,
     value: predictSolarGenerationForForecastSample({
       forecastIndex,
@@ -715,6 +796,126 @@ function buildPredictedSolarGenerationSeries(input: {
       periodStart: sample.periodStart,
     }),
   }));
+
+  return applySolarSeriesSmoothing(predictedSeries, smoothingMode);
+}
+
+function applySolarSeriesSmoothing(
+  series: Array<{ periodStart: string; value: number | null }>,
+  smoothingMode: SolarPredictionSmoothingMode,
+): Array<{ periodStart: string; value: number | null }> {
+  const smoothingWeights = getSolarPredictionSmoothingWeights(smoothingMode);
+
+  if (smoothingWeights === null) {
+    return series;
+  }
+
+  return series.map((point, index) => ({
+    periodStart: point.periodStart,
+    value: buildWeightedPredictionValue(series, index, smoothingWeights),
+  }));
+}
+
+function buildWeightedPredictionValue(
+  series: Array<{ periodStart: string; value: number | null }>,
+  index: number,
+  smoothingWeights: Array<{ offset: number; weight: number }>,
+): number | null {
+  const referencePoint = series[index];
+
+  if (!referencePoint) {
+    return null;
+  }
+
+  let weightedTotal = 0;
+  let totalWeight = 0;
+
+  for (const weightedPoint of smoothingWeights) {
+    const candidateIndex = index + weightedPoint.offset;
+    const candidate = series[candidateIndex];
+
+    if (!candidate || typeof candidate.value !== "number") {
+      continue;
+    }
+
+    if (
+      weightedPoint.offset !== 0 &&
+      !isAdjacentPredictionBucket(
+        referencePoint,
+        candidate,
+        weightedPoint.offset,
+      )
+    ) {
+      continue;
+    }
+
+    weightedTotal += candidate.value * weightedPoint.weight;
+    totalWeight += weightedPoint.weight;
+  }
+
+  if (totalWeight === 0) {
+    return null;
+  }
+
+  return weightedTotal / totalWeight;
+}
+
+function getSolarPredictionSmoothingWeights(
+  smoothingMode: SolarPredictionSmoothingMode,
+): Array<{ offset: number; weight: number }> | null {
+  switch (smoothingMode) {
+    case "off":
+      return null;
+    case "weighted-3":
+      return [
+        { offset: -1, weight: 0.25 },
+        { offset: 0, weight: 0.5 },
+        { offset: 1, weight: 0.25 },
+      ];
+    case "average-3":
+      return [
+        { offset: -1, weight: 1 / 3 },
+        { offset: 0, weight: 1 / 3 },
+        { offset: 1, weight: 1 / 3 },
+      ];
+    case "average-5":
+      return [
+        { offset: -2, weight: 0.2 },
+        { offset: -1, weight: 0.2 },
+        { offset: 0, weight: 0.2 },
+        { offset: 1, weight: 0.2 },
+        { offset: 2, weight: 0.2 },
+      ];
+    case "weighted-5":
+      return [
+        { offset: -2, weight: 0.125 },
+        { offset: -1, weight: 0.125 },
+        { offset: 0, weight: 0.5 },
+        { offset: 1, weight: 0.125 },
+        { offset: 2, weight: 0.125 },
+      ];
+  }
+}
+
+function isAdjacentPredictionBucket(
+  referencePoint: { periodStart: string; value: number | null },
+  candidatePoint: { periodStart: string; value: number | null },
+  offset: number,
+): boolean {
+  const referenceTimestampMs = new Date(referencePoint.periodStart).getTime();
+  const candidateTimestampMs = new Date(candidatePoint.periodStart).getTime();
+
+  if (
+    Number.isNaN(referenceTimestampMs) ||
+    Number.isNaN(candidateTimestampMs)
+  ) {
+    return false;
+  }
+
+  return (
+    candidateTimestampMs - referenceTimestampMs ===
+    offset * SOLAR_PREDICTION_BUCKET_MS
+  );
 }
 
 function predictSolarGenerationForForecastSample(input: {
@@ -993,8 +1194,11 @@ function formatAccuracyPercentage(value: number | null): string | null {
 
 function buildPredictedSolarLegendLabel(input: {
   predictionAccuracyPercentage: number | null;
+  predictionSmoothingMode: SolarPredictionSmoothingMode;
 }): string {
-  const parts = ["Predicted Solar Wattage"];
+  const parts = [
+    `Predicted Solar Wattage (${formatSolarPredictionSmoothingMode(input.predictionSmoothingMode)})`,
+  ];
 
   const accuracyLabel = formatAccuracyPercentage(
     input.predictionAccuracyPercentage,
@@ -1005,6 +1209,65 @@ function buildPredictedSolarLegendLabel(input: {
   }
 
   return parts.join(" • ");
+}
+
+function buildGeneratedSolarLegendLabel(input: {
+  generatedAccuracyFilteringEnabled: boolean;
+  predictionSmoothingMode: SolarPredictionSmoothingMode;
+}): string {
+  if (!input.generatedAccuracyFilteringEnabled) {
+    return "Generated Wattage (Accuracy uses raw samples)";
+  }
+
+  return `Generated Wattage (Accuracy uses ${formatSolarPredictionSmoothingMode(input.predictionSmoothingMode)})`;
+}
+
+function PredictedSolarLegendMarker() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="shrink-0"
+      height="8"
+      viewBox="0 0 18 8"
+      width="18"
+    >
+      <line
+        stroke={UI_COLORS.solarEnergy}
+        strokeDasharray="1 6"
+        strokeLinecap="round"
+        strokeWidth="2.8"
+        x1="1.4"
+        x2="16.6"
+        y1="4"
+        y2="4"
+      />
+    </svg>
+  );
+}
+
+function formatSolarPredictionSmoothingMode(
+  mode: SolarPredictionSmoothingMode,
+): string {
+  switch (mode) {
+    case "off":
+      return "No filter";
+    case "weighted-3":
+      return "25-50-25 filtering";
+    case "average-3":
+      return "Three-sample average";
+    case "average-5":
+      return "Five-sample average";
+    case "weighted-5":
+      return "Five-sample weighted average";
+  }
+}
+
+function getNextSolarPredictionSmoothingMode(
+  currentMode: SolarPredictionSmoothingMode,
+): SolarPredictionSmoothingMode {
+  const currentIndex = SOLAR_PREDICTION_SMOOTHING_MODES.indexOf(currentMode);
+  const nextIndex = (currentIndex + 1) % SOLAR_PREDICTION_SMOOTHING_MODES.length;
+  return SOLAR_PREDICTION_SMOOTHING_MODES[nextIndex] ?? currentMode;
 }
 
 function formatForecastSummaryValue(value: number, unitLabel: string): string {

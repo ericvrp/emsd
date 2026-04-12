@@ -15,6 +15,7 @@ import {
 } from "recharts";
 import { formatShortPowerValue } from "../../lib/power-format";
 import { UI_CHART_STYLES, UI_COLORS } from "../../lib/ui-colors";
+import { cn } from "../../lib/utils";
 import { MeasuredChartContainer } from "../measured-chart-container";
 import {
   BATTERY_POWER_AXIS_DOMAIN,
@@ -44,13 +45,60 @@ import {
   formatTooltipTimestamp,
 } from "./utils";
 
-export function LegendChip({ color, label }: { color: string; label: string }) {
-  return (
-    <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5">
-      <span
-        className="inline-block h-2.5 w-2.5 rounded-full"
-        style={{ backgroundColor: color }}
+export function LegendChip({
+  color,
+  label,
+  marker,
+  onClick,
+  selected,
+}: {
+  color: string;
+  label: string;
+  marker?: ReactNode;
+  onClick?: () => void;
+  selected?: boolean;
+}) {
+  const className = cn(
+    "inline-flex items-center gap-2 rounded-full border px-3 py-1.5",
+    selected
+      ? "border-white/25 bg-white/12 text-white shadow-[0_0_0_1px_rgba(255,255,255,0.04)]"
+      : "border-white/10 bg-white/5",
+    onClick
+      ? "cursor-pointer transition hover:border-white/20 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/50"
+      : null,
+  );
+  const markerNode = marker ?? (
+    <svg
+      aria-hidden="true"
+      className="shrink-0"
+      height="8"
+      viewBox="0 0 18 8"
+      width="18"
+    >
+      <line
+        stroke={color}
+        strokeLinecap="round"
+        strokeWidth="2.8"
+        x1="1.4"
+        x2="16.6"
+        y1="4"
+        y2="4"
       />
+    </svg>
+  );
+
+  if (onClick) {
+    return (
+      <button className={className} onClick={onClick} type="button">
+        {markerNode}
+        {label}
+      </button>
+    );
+  }
+
+  return (
+    <span className={className}>
+      {markerNode}
       {label}
     </span>
   );

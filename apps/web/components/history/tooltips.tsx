@@ -42,11 +42,11 @@ export function HistoryTooltip({
             className="flex items-center justify-between gap-4"
           >
             <span className="flex items-center gap-2 text-slate-200">
-              <span
-                className="inline-block h-2.5 w-2.5 rounded-full"
-                style={{
-                  backgroundColor: entry.color ?? UI_COLORS.chartSeriesFallback,
-                }}
+              <TooltipMarker
+                color={entry.color ?? UI_COLORS.chartSeriesFallback}
+                strokeDasharray={
+                  entry.dataKey?.startsWith("predicted") ? "1 6" : undefined
+                }
               />
               {entryLabelFormatter?.(entry.value, entry.dataKey) ??
                 entry.name ??
@@ -119,6 +119,7 @@ export function BatteryHistoryTooltip({
             label={
               powerEntry.value >= 0 ? "Charging Power" : "Discharging Power"
             }
+            strokeDasharray={undefined}
             value={formatAbsolutePowerValue(powerEntry.value)}
           />
         ) : null}
@@ -126,6 +127,7 @@ export function BatteryHistoryTooltip({
           <TooltipRow
             color={UI_COLORS.batteryChargeLevel}
             label="Battery Charge"
+            strokeDasharray={undefined}
             value={formatPercentValue(chargeEntry.value)}
           />
         ) : null}
@@ -198,6 +200,7 @@ export function SegmentedHistoryTooltip({
         <TooltipRow
           color={seriesColor}
           label={seriesLabel}
+          strokeDasharray={undefined}
           value={valueFormatter(selectedEntry.value)}
         />
       </div>
@@ -208,22 +211,50 @@ export function SegmentedHistoryTooltip({
 function TooltipRow({
   color,
   label,
+  strokeDasharray,
   value,
 }: {
   color: string;
   label: string;
+  strokeDasharray: string | undefined;
   value: string;
 }) {
   return (
     <div className="flex items-center justify-between gap-4">
       <span className="flex items-center gap-2 text-slate-200">
-        <span
-          className="h-2.5 w-2.5 rounded-full"
-          style={{ backgroundColor: color }}
-        />
+        <TooltipMarker color={color} strokeDasharray={strokeDasharray} />
         {label}
       </span>
       <span className="font-medium text-white">{value}</span>
     </div>
+  );
+}
+
+function TooltipMarker({
+  color,
+  strokeDasharray,
+}: {
+  color: string;
+  strokeDasharray: string | undefined;
+}) {
+  return (
+    <svg
+      aria-hidden="true"
+      className="shrink-0"
+      height="8"
+      viewBox="0 0 18 8"
+      width="18"
+    >
+      <line
+        stroke={color}
+        strokeDasharray={strokeDasharray}
+        strokeLinecap="round"
+        strokeWidth="2.8"
+        x1="1.4"
+        x2="16.6"
+        y1="4"
+        y2="4"
+      />
+    </svg>
   );
 }
