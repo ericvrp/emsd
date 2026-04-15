@@ -194,14 +194,14 @@ export function formatBatteryStrategyStatusSummary(
       });
 
   if (!activeItemId) {
-    return `Default: ${defaultSummary}`;
+    return defaultSummary;
   }
 
   const activeItem =
     battery.strategyPlan.find((item) => item.id === activeItemId) ?? null;
 
   if (!activeItem) {
-    return `Default: ${defaultSummary}`;
+    return defaultSummary;
   }
 
   return summarizeActiveStrategy({

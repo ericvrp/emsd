@@ -92,7 +92,7 @@ test("api snapshot returns managed devices with telemetry", async () => {
   expect(snapshot.sites[0]?.id).toBe("home");
   expect(snapshot.sites[0]?.devices).toHaveLength(1);
   expect(snapshot.sites[0]?.devices[0]).toMatchObject({
-    batteryStrategySummary: "Default: Self-consumption",
+    batteryStrategySummary: "Self-consumption",
     id: "battery-1",
     kind: "battery",
     telemetry: {

@@ -198,7 +198,7 @@ test("summarizes a temporary manual override", () => {
 
 test("strategy status summary returns default strategy without active item", () => {
   expect(formatBatteryStrategyStatusSummary(buildBattery())).toBe(
-    "Default: Self-consumption",
+    "Self-consumption",
   );
 });
 
