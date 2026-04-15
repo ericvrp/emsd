@@ -166,13 +166,13 @@ async function fetchTelemetryResponse(
   url: string;
 }> {
   const configuredSchemes = plugin.schemes ?? ["https", "http"];
-  const schemes = configuredSchemes.includes("https")
+  const schemes: Array<"https" | "http"> = configuredSchemes.includes("https")
     ? ["https", ...configuredSchemes.filter((scheme) => scheme !== "https")]
     : [...configuredSchemes];
   let lastFailure = `${action} failed for ${ipAddress}.`;
 
   for (const scheme of schemes) {
-    const url = buildRequestUrl(ipAddress, plugin, request, scheme);
+    const url = buildRequestUrl(ipAddress, plugin, request, scheme as "https" | "http");
     const headers = resolveRequestHeaders(request, ipAddress);
 
     try {

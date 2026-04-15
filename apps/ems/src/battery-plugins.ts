@@ -323,10 +323,7 @@ async function fetchHomeWizardJson(
     {
       method: "GET",
       headers: buildHomeWizardHeaders(host),
-      tls: {
-        rejectUnauthorized: false,
-      },
-    },
+    } as RequestInit & { tls?: { rejectUnauthorized: boolean } },
     "Battery telemetry request",
   );
 
@@ -356,10 +353,7 @@ async function putHomeWizardBatteries(
         "content-type": "application/json",
       },
       body: JSON.stringify(payload),
-      tls: {
-        rejectUnauthorized: false,
-      },
-    },
+    } as RequestInit & { tls?: { rejectUnauthorized: boolean } },
     "Battery control request",
   );
 

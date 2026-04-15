@@ -11,7 +11,7 @@ afterEach(() => {
 test("Indevolt battery connection errors include the telemetry endpoint", async () => {
   globalThis.fetch = (async () => {
     throw new Error("Was there a typo in the url or port?");
-  }) as typeof fetch;
+  }) as unknown as typeof fetch;
 
   await expect(
     createBatteryPlugin(buildBattery()).getNormalizedInfo(),

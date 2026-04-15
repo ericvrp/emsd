@@ -131,7 +131,7 @@ test("getDiscoverySignatures exposes the discovery plugin catalog", () => {
 test("fetchMeterTelemetry surfaces endpoint-specific connection errors", async () => {
   globalThis.fetch = (async () => {
     throw new Error("Was there a typo in the url or port?");
-  }) as typeof fetch;
+  }) as unknown as typeof fetch;
 
   await expect(fetchMeterTelemetry("192.168.1.27")).rejects.toThrow(
     "Meter telemetry request could not connect to http://192.168.1.27:80/api/v1/data",
