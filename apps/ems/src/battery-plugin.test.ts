@@ -51,6 +51,7 @@ function buildBattery(): BatteryRecord {
       activeItemId: null,
       activeStartedAt: null,
       activeObservedAt: null,
+      activeStartSocPercent: null,
       lastTriggeredAtByItemId: {},
     },
     updatedAt: "2026-04-12T00:00:00.000Z",

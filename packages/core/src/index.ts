@@ -45,6 +45,7 @@ export interface BatteryStrategyRuntimeRecord {
   activeItemId: string | null;
   activeStartedAt: string | null;
   activeObservedAt: string | null;
+  activeStartSocPercent: number | null;
   lastTriggeredAtByItemId: Record<string, string>;
 }
 
@@ -299,6 +300,7 @@ export function createBatteryStrategyRuntime(): BatteryStrategyRuntimeRecord {
     activeItemId: null,
     activeStartedAt: null,
     activeObservedAt: null,
+    activeStartSocPercent: null,
     lastTriggeredAtByItemId: {},
   };
 }
@@ -311,6 +313,7 @@ export function clearActiveBatteryStrategyRuntime(
     activeItemId: null,
     activeStartedAt: null,
     activeObservedAt: null,
+    activeStartSocPercent: null,
   };
 }
 
@@ -334,6 +337,7 @@ export function createBatteryStrategyRuntimeForPlanApply(
     activeItemId: null,
     activeStartedAt: null,
     activeObservedAt: null,
+    activeStartSocPercent: null,
     lastTriggeredAtByItemId,
   };
 }
@@ -536,6 +540,11 @@ function normalizeBatteryStrategyPlanItem(
         : null;
   const targetMethod = normalizeTargetMethod(candidate.targetMethod);
   const hasSocTarget = targetMethod === null || targetMethod === "soc";
+  const minimumSocTarget =
+    strategyMode === "manual" &&
+    (manualState === "discharging" || manualState === "idle")
+      ? minimumDischargePercent
+      : 5;
 
   return {
     id:
@@ -593,9 +602,10 @@ function normalizeBatteryStrategyPlanItem(
       hasSocTarget &&
       typeof candidate.manualTargetSoc === "number" &&
       Number.isFinite(candidate.manualTargetSoc)
-        ? clampPercent(candidate.manualTargetSoc, 5)
+        ? clampPercent(candidate.manualTargetSoc, minimumSocTarget)
         : hasSocTarget
-          ? strategyMode === "manual" && manualState === "discharging"
+          ? strategyMode === "manual" &&
+              (manualState === "discharging" || manualState === "idle")
             ? minimumDischargePercent
             : 100
           : null,
@@ -679,6 +689,11 @@ function normalizeBatteryStrategyRuntime(
       typeof candidate.activeObservedAt === "string" &&
       candidate.activeObservedAt.length > 0
         ? candidate.activeObservedAt
+        : null,
+    activeStartSocPercent:
+      typeof candidate.activeStartSocPercent === "number" &&
+      Number.isFinite(candidate.activeStartSocPercent)
+        ? candidate.activeStartSocPercent
         : null,
     lastTriggeredAtByItemId,
   };

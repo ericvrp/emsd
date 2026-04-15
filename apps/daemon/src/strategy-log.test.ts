@@ -34,6 +34,7 @@ test("summarizes a strategy plan update with the next item", () => {
       activeItemId: null,
       activeStartedAt: null,
       activeObservedAt: null,
+      activeStartSocPercent: null,
       lastTriggeredAtByItemId: {
         [buildMorningItem().id]: "2026-04-12T06:00:00.000Z",
       },
@@ -50,6 +51,32 @@ test("summarizes a strategy plan update with the next item", () => {
   );
 });
 
+test("summarizes the nearest upcoming item even when plan order is unsorted", () => {
+  const battery = buildBattery({
+    strategyPlan: [
+      buildDefaultItem(),
+      buildDailyItem(),
+      buildMorningItem({ id: "daily-idle", startTime: "17:37" }),
+    ],
+    strategyRuntime: {
+      activeItemId: null,
+      activeStartedAt: null,
+      activeObservedAt: null,
+      activeStartSocPercent: null,
+      lastTriggeredAtByItemId: {},
+    },
+  });
+
+  expect(
+    formatStrategyPlanAppliedSummary(
+      battery,
+      new Date("2026-04-12T17:35:00.000Z"),
+    ),
+  ).toBe(
+    "strategy plan updated for battery-1: default self-consumption with a 10% discharge floor; next the 17:37 daily schedule: discharge manually to 20% at 2400W",
+  );
+});
+
 test("summarizes scheduled strategy lifecycle in plain English", () => {
   expect(
     formatScheduledStrategyStartedSummary(
@@ -59,6 +86,43 @@ test("summarizes scheduled strategy lifecycle in plain English", () => {
     ),
   ).toBe(
     "the 19:30 daily schedule is now active for battery-1: discharge manually to 80% at 2400W (after 11s)",
+  );
+});
+
+test("includes idle target criteria in scheduled start summary", () => {
+  expect(
+    formatScheduledStrategyStartedSummary(
+      "battery-1",
+      buildDailyItem({
+        manualState: "idle",
+        manualPowerW: null,
+        manualChargeTargetSoc: null,
+        manualDischargeTargetSoc: null,
+        manualTargetSoc: 40,
+      }),
+      "",
+    ),
+  ).toBe(
+    "the 19:30 daily schedule is now active for battery-1: hold the battery idle until 40%",
+  );
+});
+
+test("includes self-consumption target criteria in scheduled start summary", () => {
+  expect(
+    formatScheduledStrategyStartedSummary(
+      "battery-1",
+      buildDailyItem({
+        strategyMode: "self-consumption",
+        manualState: null,
+        manualPowerW: null,
+        manualChargeTargetSoc: null,
+        manualDischargeTargetSoc: null,
+        manualTargetSoc: 55,
+      }),
+      "",
+    ),
+  ).toBe(
+    "the 19:30 daily schedule is now active for battery-1: self-consumption until 55%",
   );
 });
 
@@ -90,6 +154,28 @@ test("summarizes schedule completion and fallback", () => {
   ).toBe(
     "restoring the default strategy for battery-1: self-consumption with a 10% discharge floor",
   );
+});
+
+test("summarizes end-time completion with a local cutoff timestamp", () => {
+  const summary = formatScheduledStrategyCompletionSummary({
+    batteryId: "battery-1",
+    item: buildDailyItem({ targetMethod: "end-time", targetEndTime: "12:59" }),
+    completion: {
+      reason: "end-time-reached",
+      nowAt: "2026-04-15T11:00:02.000Z",
+      observedAt: null,
+      startedAt: "2026-04-15T10:59:00.000Z",
+      state: "idle",
+      status: "idle",
+      socPercent: 52,
+      endAt: "2026-04-15T11:00:00.000Z",
+    },
+    fallbackItem: buildDefaultItem(),
+  });
+
+  expect(summary).toContain("it reached its cutoff at ");
+  expect(summary).toContain(" (local)");
+  expect(summary).not.toContain("T11:00:00.000Z");
 });
 
 test("summarizes a temporary manual override", () => {
@@ -154,7 +240,9 @@ function buildDefaultItem(): BatteryStrategyPlanItem {
   };
 }
 
-function buildMorningItem(): BatteryStrategyPlanItem {
+function buildMorningItem(
+  overrides: Partial<BatteryStrategyPlanItem> = {},
+): BatteryStrategyPlanItem {
   return {
     id: "daily-1",
     kind: "daily",
@@ -169,10 +257,13 @@ function buildMorningItem(): BatteryStrategyPlanItem {
     manualChargeTargetSoc: null,
     manualDischargeTargetSoc: 20,
     manualTargetSoc: 20,
+    ...overrides,
   };
 }
 
-function buildDailyItem(): BatteryStrategyPlanItem {
+function buildDailyItem(
+  overrides: Partial<BatteryStrategyPlanItem> = {},
+): BatteryStrategyPlanItem {
   return {
     id: "daily-2",
     kind: "daily",
@@ -187,6 +278,7 @@ function buildDailyItem(): BatteryStrategyPlanItem {
     manualChargeTargetSoc: null,
     manualDischargeTargetSoc: 80,
     manualTargetSoc: 80,
+    ...overrides,
   };
 }
 
@@ -197,6 +289,7 @@ function buildRuntime(
     activeItemId: null,
     activeStartedAt: null,
     activeObservedAt: null,
+    activeStartSocPercent: null,
     lastTriggeredAtByItemId: {},
     ...overrides,
   };

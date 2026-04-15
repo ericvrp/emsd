@@ -6,6 +6,7 @@ import {
   createBatteryStrategyRuntimeForPlanApply,
   discoverReportJsonSchema,
   getDatabasePath,
+  normalizeBatteryStrategyPlan,
   parseGpsCoordinate,
 } from "./index";
 
@@ -141,6 +142,54 @@ test("createBatteryStrategyRuntimeForPlanApply keeps same-time items pending", (
   );
 
   expect(runtime.lastTriggeredAtByItemId).toEqual({});
+});
+
+test("normalizeBatteryStrategyPlan defaults idle percentage targets to minimum discharge", () => {
+  const normalized = normalizeBatteryStrategyPlan({
+    minimumDischargePercent: 20,
+    strategy: {
+      strategyMode: "self-consumption",
+      manualState: null,
+      manualPowerW: null,
+      manualChargeTargetSoc: 100,
+      manualDischargeTargetSoc: 20,
+      manualTargetSoc: 100,
+    },
+    value: [
+      {
+        id: "default",
+        kind: "default",
+        startTime: null,
+        targetDurationMinutes: null,
+        targetEndTime: null,
+        targetMethod: null,
+        triggerKind: null,
+        strategyMode: "self-consumption",
+        manualState: null,
+        manualPowerW: null,
+        manualChargeTargetSoc: 100,
+        manualDischargeTargetSoc: 20,
+        manualTargetSoc: 100,
+      },
+      {
+        id: "idle-window",
+        kind: "daily",
+        startTime: "08:00",
+        targetDurationMinutes: null,
+        targetEndTime: null,
+        targetMethod: "soc",
+        triggerKind: "daily-time",
+        strategyMode: "manual",
+        manualState: "idle",
+        manualPowerW: null,
+        manualChargeTargetSoc: null,
+        manualDischargeTargetSoc: null,
+        manualTargetSoc: null,
+      },
+    ],
+  });
+
+  expect(normalized[1]?.manualTargetSoc).toBe(20);
 });
 
 test("buildPredictedSolarGenerationSeries uses the average ratio of up to seven preceding days", () => {

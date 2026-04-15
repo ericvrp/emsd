@@ -42,6 +42,8 @@ export interface ScheduledItemCompletion {
     | "missing-start-time"
     | "duration-elapsed"
     | "end-time-reached"
+    | "idle-target-reached"
+    | "self-consumption-target-reached"
     | "charge-target-reached"
     | "discharge-target-reached";
   nowAt: string;
@@ -135,11 +137,7 @@ export function getScheduledItemCompletion(input: {
       : null;
   }
 
-  if (item.strategyMode !== "manual") {
-    return null;
-  }
-
-  if (item.manualState === "charging") {
+  if (item.strategyMode === "manual" && item.manualState === "charging") {
     const targetSoc = item.manualChargeTargetSoc ?? 100;
 
     if (
@@ -161,7 +159,7 @@ export function getScheduledItemCompletion(input: {
     return null;
   }
 
-  if (item.manualState === "discharging") {
+  if (item.strategyMode === "manual" && item.manualState === "discharging") {
     const targetSoc =
       item.manualDischargeTargetSoc ?? battery.minimumDischargePercent;
 
@@ -182,6 +180,56 @@ export function getScheduledItemCompletion(input: {
     }
 
     return null;
+  }
+
+  if (item.strategyMode === "manual" && item.manualState === "idle") {
+    const targetSoc = item.manualTargetSoc ?? battery.minimumDischargePercent;
+
+    if (sample.socPercent !== null && sample.socPercent <= targetSoc) {
+      return {
+        reason: "idle-target-reached",
+        nowAt: now.toISOString(),
+        observedAt: runtime.activeObservedAt,
+        startedAt,
+        state: item.manualState,
+        status: sample.status,
+        socPercent: sample.socPercent,
+        targetSoc,
+      };
+    }
+
+    return null;
+  }
+
+  if (item.strategyMode === "self-consumption") {
+    const targetSoc = item.manualTargetSoc;
+
+    if (targetSoc === null || sample.socPercent === null) {
+      return null;
+    }
+
+    const startSoc = runtime.activeStartSocPercent;
+    const reachedTarget =
+      startSoc !== null
+        ? startSoc <= targetSoc
+          ? sample.socPercent >= targetSoc
+          : sample.socPercent <= targetSoc
+        : sample.socPercent === targetSoc;
+
+    if (!reachedTarget) {
+      return null;
+    }
+
+    return {
+      reason: "self-consumption-target-reached",
+      nowAt: now.toISOString(),
+      observedAt: runtime.activeObservedAt,
+      startedAt,
+      state: item.manualState,
+      status: sample.status,
+      socPercent: sample.socPercent,
+      targetSoc,
+    };
   }
 
   return null;
@@ -330,10 +378,20 @@ export function getScheduledEndAt(
 export function needsCompletionTracking(
   item: BatteryStrategyPlanItem,
 ): boolean {
+  if (item.targetMethod === "duration" || item.targetMethod === "end-time") {
+    return true;
+  }
+
+  if (item.strategyMode === "self-consumption") {
+    return item.manualTargetSoc !== null;
+  }
+
   return (
     item.strategyMode === "manual" &&
     item.manualState !== null &&
-    item.manualState !== "idle"
+    (item.manualState === "idle" ||
+      item.manualState === "charging" ||
+      item.manualState === "discharging")
   );
 }
 
@@ -396,7 +454,7 @@ export function shouldMarkScheduledItemObserved(input: {
 }): boolean {
   if (
     input.runtime.activeObservedAt !== null ||
-    input.item.strategyMode !== "manual"
+    !shouldWaitForObservedStart(input.item)
   ) {
     return false;
   }
@@ -406,6 +464,15 @@ export function shouldMarkScheduledItemObserved(input: {
       input.sample.status === "charging") ||
     (input.item.manualState === "discharging" &&
       input.sample.status === "discharging")
+  );
+}
+
+export function shouldWaitForObservedStart(
+  item: BatteryStrategyPlanItem,
+): boolean {
+  return (
+    item.strategyMode === "manual" &&
+    (item.manualState === "charging" || item.manualState === "discharging")
   );
 }
 

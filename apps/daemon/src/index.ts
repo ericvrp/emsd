@@ -49,6 +49,7 @@ import {
   isItemAlreadyTriggeredToday,
   needsCompletionTracking,
   shouldMarkScheduledItemObserved,
+  shouldWaitForObservedStart,
   shouldSkipDelayedSocItemBecauseLaterItemIsDue,
   shouldSkipScheduledItem,
 } from "./strategy-scheduler";
@@ -233,8 +234,9 @@ function main(): void {
           }
 
           if (shouldRestoreDefaultStrategy(battery, sample)) {
+            const fallbackItem = getFallbackStrategyPlanItem(battery);
             const fallbackStrategy = resolveBatteryStrategyFromPlanItem({
-              item: battery.strategyPlan[0],
+              item: fallbackItem,
               minimumDischargePercent: battery.minimumDischargePercent,
             });
 
@@ -242,9 +244,9 @@ function main(): void {
               options.verbose,
               formatFallbackStrategyRestoreSummary(
                 battery.id,
-                battery.strategyPlan[0],
+                fallbackItem,
               ),
-              `restoring default strategy for ${battery.id} after manual mode completed: ${describeStrategyPlanItem(battery.strategyPlan[0])}`,
+              `restoring default strategy for ${battery.id} after manual mode completed: ${describeStrategyPlanItem(fallbackItem)}`,
             );
 
             await createBatteryPlugin(battery)
@@ -631,7 +633,7 @@ async function runScheduledStrategy(
         batteryId: battery.id,
         item: activeItem,
         completion,
-        fallbackItem: battery.strategyPlan[0],
+        fallbackItem: getFallbackStrategyPlanItem(battery),
       }),
       `deactivating strategy item for ${battery.id}: ${describeStrategyPlanItemWithIndex(battery, activeItem)} ${formatScheduledItemCompletion(completion)}`,
     );
@@ -747,6 +749,9 @@ async function runScheduledStrategy(
       activeItemId: needsCompletionTracking(item) ? item.id : null,
       activeStartedAt: needsCompletionTracking(item) ? now.toISOString() : null,
       activeObservedAt: null,
+      activeStartSocPercent: needsCompletionTracking(item)
+        ? sample.socPercent
+        : null,
       lastTriggeredAtByItemId: {
         ...runtime.lastTriggeredAtByItemId,
         [item.id]: triggerAt.toISOString(),
@@ -765,6 +770,15 @@ async function runScheduledStrategy(
       siteId: battery.siteId,
       strategyRuntime: nextRuntime,
     });
+
+    if (!shouldWaitForObservedStart(item)) {
+      logInfoWithVerboseDetails(
+        verbose,
+        formatScheduledStrategyStartedSummary(battery.id, item, ""),
+        `strategy item started for ${battery.id}: ${describeStrategyPlanItemWithIndex(battery, item)}`,
+      );
+    }
+
     return;
   }
 }
@@ -779,6 +793,18 @@ function getActiveStrategyPlanItem(
   }
 
   return battery.strategyPlan.find((item) => item.id === activeItemId) ?? null;
+}
+
+function getFallbackStrategyPlanItem(
+  battery: Pick<BatteryRecord, "id" | "strategyPlan">,
+): BatteryStrategyPlanItem {
+  const fallbackItem = battery.strategyPlan[0] ?? null;
+
+  if (fallbackItem === null) {
+    throw new Error(`battery ${battery.id} is missing a fallback strategy item`);
+  }
+
+  return fallbackItem;
 }
 
 function describeStrategyPlanItemWithIndex(

@@ -273,7 +273,10 @@ export function BatteryStrategyPlanForm({
                     )}
                   </td>
                   <td className="px-4 py-4">
-                    {action === "charging" || action === "discharging" ? (
+                    {action === "charging" ||
+                    action === "discharging" ||
+                    action === "idle" ||
+                    action === "self-consumption" ? (
                       <div className="grid min-w-[320px] gap-3 md:grid-cols-2">
                         <div className="space-y-2">
                           <Label htmlFor={`${item.id}-target-method`}>
@@ -311,7 +314,7 @@ export function BatteryStrategyPlanForm({
                               id={`${item.id}-target-soc`}
                               max={100}
                               min={
-                                action === "discharging"
+                                action === "discharging" || action === "idle"
                                   ? minimumDischargePercent
                                   : 5
                               }
@@ -330,6 +333,7 @@ export function BatteryStrategyPlanForm({
                               value={String(
                                 getTargetSocValue(
                                   item,
+                                  action,
                                   minimumDischargePercent,
                                 ),
                               )}
@@ -478,10 +482,17 @@ function applyStrategyAction(
       strategyMode: "self-consumption",
       manualState: null,
       manualPowerW: null,
+      manualChargeTargetSoc: null,
+      manualDischargeTargetSoc: null,
+      manualTargetSoc: item.manualTargetSoc ?? 100,
       triggerKind: item.kind === "daily" ? "daily-time" : null,
-      targetDurationMinutes: null,
-      targetEndTime: null,
-      targetMethod: null,
+      targetDurationMinutes:
+        getPersistedTargetMethod(item) === "duration"
+          ? item.targetDurationMinutes
+          : null,
+      targetEndTime:
+        getPersistedTargetMethod(item) === "end-time" ? item.targetEndTime : null,
+      targetMethod: getPersistedTargetMethod(item),
     };
   }
 
@@ -498,16 +509,21 @@ function applyStrategyAction(
         : null,
     manualTargetSoc:
       action === "idle"
-        ? null
+        ? (item.manualTargetSoc ?? minimumDischargePercent)
         : action === "discharging"
           ? (item.manualDischargeTargetSoc ?? minimumDischargePercent)
           : (item.manualChargeTargetSoc ?? 100),
     triggerKind:
       item.kind === "daily" ? (item.triggerKind ?? "daily-time") : null,
     targetDurationMinutes:
-      action === "idle" ? null : (item.targetDurationMinutes ?? null),
-    targetEndTime: action === "idle" ? null : (item.targetEndTime ?? null),
-    targetMethod: action === "idle" ? null : getPersistedTargetMethod(item),
+      getPersistedTargetMethod(item) === "duration"
+        ? (item.targetDurationMinutes ?? null)
+        : null,
+    targetEndTime:
+      getPersistedTargetMethod(item) === "end-time"
+        ? (item.targetEndTime ?? null)
+        : null,
+    targetMethod: getPersistedTargetMethod(item),
   };
 }
 
@@ -529,7 +545,7 @@ function getPersistedTriggerKind(
 
 function updateTargetMethod(
   item: BatteryStrategyPlanItem,
-  action: "charging" | "discharging",
+  action: StrategyAction,
   targetMethod: BatteryStrategyTargetMethod,
   minimumDischargePercent: number,
 ): BatteryStrategyPlanItem {
@@ -548,7 +564,11 @@ function updateTargetMethod(
       manualTargetSoc:
         action === "discharging"
           ? (item.manualDischargeTargetSoc ?? minimumDischargePercent)
-          : (item.manualChargeTargetSoc ?? 100),
+          : action === "charging"
+            ? (item.manualChargeTargetSoc ?? 100)
+            : action === "idle"
+              ? (item.manualTargetSoc ?? minimumDischargePercent)
+              : (item.manualTargetSoc ?? 100),
     };
   }
 
@@ -566,17 +586,19 @@ function updateTargetMethod(
 
 function updateManualTarget(
   item: BatteryStrategyPlanItem,
-  action: "charging" | "discharging",
+  action: StrategyAction,
   value: number | null,
   minimumDischargePercent: number,
 ): BatteryStrategyPlanItem {
   const nextValue =
     value === null
-      ? action === "discharging"
+      ? action === "discharging" || action === "idle"
         ? minimumDischargePercent
         : 100
       : Math.max(
-          action === "discharging" ? minimumDischargePercent : 5,
+          action === "discharging" || action === "idle"
+            ? minimumDischargePercent
+            : 5,
           Math.min(100, Math.round(value)),
         );
 
@@ -592,13 +614,22 @@ function updateManualTarget(
 
 function getTargetSocValue(
   item: BatteryStrategyPlanItem,
+  action: StrategyAction,
   minimumDischargePercent: number,
 ): number {
-  if (item.manualState === "discharging") {
+  if (action === "discharging") {
     return item.manualDischargeTargetSoc ?? minimumDischargePercent;
   }
 
-  return item.manualChargeTargetSoc ?? 100;
+  if (action === "charging") {
+    return item.manualChargeTargetSoc ?? 100;
+  }
+
+  if (action === "idle") {
+    return item.manualTargetSoc ?? minimumDischargePercent;
+  }
+
+  return item.manualTargetSoc ?? 100;
 }
 
 function parseNumber(value: string): number | null {

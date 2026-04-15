@@ -9,8 +9,10 @@ import {
   formatDaemonLogTimestamp,
   getScheduledItemCompletion,
   getTodayTriggerAt,
+  needsCompletionTracking,
   shouldCompleteScheduledItem,
   shouldMarkScheduledItemObserved,
+  shouldWaitForObservedStart,
   shouldSkipDelayedSocItemBecauseLaterItemIsDue,
 } from "./strategy-scheduler";
 
@@ -44,6 +46,7 @@ test("shouldCompleteScheduledItem uses the active plan item rather than the pers
       activeItemId: "daily-1",
       activeStartedAt: "2026-04-09T07:00:00.000Z",
       activeObservedAt: "2026-04-09T07:00:05.000Z",
+      activeStartSocPercent: 50,
       lastTriggeredAtByItemId: { "daily-1": "2026-04-09T07:00:00.000Z" },
     },
   });
@@ -73,6 +76,7 @@ test("shouldCompleteScheduledItem waits until a scheduled discharge is observed"
       activeItemId: "daily-1",
       activeStartedAt: "2026-04-09T09:00:00.000Z",
       activeObservedAt: null,
+      activeStartSocPercent: 50,
       lastTriggeredAtByItemId: { "daily-1": "2026-04-09T09:00:00.000Z" },
     },
   });
@@ -102,6 +106,7 @@ test("shouldCompleteScheduledItem does not stop a scheduled discharge just becau
       activeItemId: "daily-1",
       activeStartedAt: "2026-04-09T09:00:00.000Z",
       activeObservedAt: "2026-04-09T09:00:15.000Z",
+      activeStartSocPercent: 50,
       lastTriggeredAtByItemId: { "daily-1": "2026-04-09T09:00:00.000Z" },
     },
   });
@@ -131,6 +136,7 @@ test("getScheduledItemCompletion returns discharge target details when the targe
       activeItemId: "daily-1",
       activeStartedAt: "2026-04-09T09:00:00.000Z",
       activeObservedAt: "2026-04-09T09:00:15.000Z",
+      activeStartSocPercent: 50,
       lastTriggeredAtByItemId: { "daily-1": "2026-04-09T09:00:00.000Z" },
     },
   });
@@ -157,6 +163,148 @@ test("getScheduledItemCompletion returns discharge target details when the targe
   expect(formatScheduledItemCompletion(completion)).toContain("targetSoc=15");
 });
 
+test("shouldCompleteScheduledItem completes idle mode when SOC drops to target", () => {
+  const battery = createBattery({
+    strategyRuntime: {
+      activeItemId: "daily-1",
+      activeStartedAt: "2026-04-09T09:00:00.000Z",
+      activeObservedAt: null,
+      activeStartSocPercent: 65,
+      lastTriggeredAtByItemId: { "daily-1": "2026-04-09T09:00:00.000Z" },
+    },
+  });
+  const item = createDailyItem({
+    id: "daily-1",
+    strategyMode: "manual",
+    manualState: "idle",
+    manualPowerW: null,
+    manualChargeTargetSoc: null,
+    manualDischargeTargetSoc: null,
+    manualTargetSoc: 45,
+    targetMethod: "soc",
+  });
+
+  expect(
+    shouldCompleteScheduledItem({
+      battery,
+      item,
+      now: new Date("2026-04-09T09:10:00.000Z"),
+      runtime: battery.strategyRuntime,
+      sample: createSample({ socPercent: 45, status: "idle" }),
+    }),
+  ).toBe(true);
+});
+
+test("shouldCompleteScheduledItem completes self-consumption when SOC rises to target", () => {
+  const battery = createBattery({
+    strategyRuntime: {
+      activeItemId: "daily-1",
+      activeStartedAt: "2026-04-09T09:00:00.000Z",
+      activeObservedAt: null,
+      activeStartSocPercent: 40,
+      lastTriggeredAtByItemId: { "daily-1": "2026-04-09T09:00:00.000Z" },
+    },
+  });
+  const item = createDailyItem({
+    id: "daily-1",
+    strategyMode: "self-consumption",
+    manualState: null,
+    manualPowerW: null,
+    manualChargeTargetSoc: null,
+    manualDischargeTargetSoc: null,
+    manualTargetSoc: 55,
+    targetMethod: "soc",
+  });
+
+  expect(
+    shouldCompleteScheduledItem({
+      battery,
+      item,
+      now: new Date("2026-04-09T09:10:00.000Z"),
+      runtime: battery.strategyRuntime,
+      sample: createSample({ socPercent: 55, status: "charging" }),
+    }),
+  ).toBe(true);
+});
+
+test("shouldCompleteScheduledItem completes self-consumption when SOC falls to target", () => {
+  const battery = createBattery({
+    strategyRuntime: {
+      activeItemId: "daily-1",
+      activeStartedAt: "2026-04-09T09:00:00.000Z",
+      activeObservedAt: null,
+      activeStartSocPercent: 80,
+      lastTriggeredAtByItemId: { "daily-1": "2026-04-09T09:00:00.000Z" },
+    },
+  });
+  const item = createDailyItem({
+    id: "daily-1",
+    strategyMode: "self-consumption",
+    manualState: null,
+    manualPowerW: null,
+    manualChargeTargetSoc: null,
+    manualDischargeTargetSoc: null,
+    manualTargetSoc: 60,
+    targetMethod: "soc",
+  });
+
+  expect(
+    shouldCompleteScheduledItem({
+      battery,
+      item,
+      now: new Date("2026-04-09T09:10:00.000Z"),
+      runtime: battery.strategyRuntime,
+      sample: createSample({ socPercent: 60, status: "discharging" }),
+    }),
+  ).toBe(true);
+});
+
+test("needsCompletionTracking includes idle and self-consumption SOC targets", () => {
+  expect(
+    needsCompletionTracking(
+      createDailyItem({
+        strategyMode: "manual",
+        manualState: "idle",
+        targetMethod: "soc",
+      }),
+    ),
+  ).toBe(true);
+
+  expect(
+    needsCompletionTracking(
+      createDailyItem({
+        strategyMode: "self-consumption",
+        manualState: null,
+        manualTargetSoc: 50,
+        targetMethod: "soc",
+      }),
+    ),
+  ).toBe(true);
+});
+
+test("shouldWaitForObservedStart only waits for charging or discharging", () => {
+  expect(
+    shouldWaitForObservedStart(
+      createDailyItem({ strategyMode: "manual", manualState: "charging" }),
+    ),
+  ).toBe(true);
+  expect(
+    shouldWaitForObservedStart(
+      createDailyItem({ strategyMode: "manual", manualState: "discharging" }),
+    ),
+  ).toBe(true);
+  expect(
+    shouldWaitForObservedStart(
+      createDailyItem({ strategyMode: "manual", manualState: "idle" }),
+    ),
+  ).toBe(false);
+  expect(
+    shouldWaitForObservedStart(
+      createDailyItem({ strategyMode: "self-consumption", manualState: null }),
+    ),
+  ).toBe(false);
+});
+
 test("shouldMarkScheduledItemObserved when the scheduled state is active", () => {
   const item = createDailyItem({ id: "daily-1", manualState: "discharging" });
 
@@ -167,6 +315,7 @@ test("shouldMarkScheduledItemObserved when the scheduled state is active", () =>
         activeItemId: "daily-1",
         activeStartedAt: "2026-04-09T09:00:00.000Z",
         activeObservedAt: null,
+        activeStartSocPercent: 50,
         lastTriggeredAtByItemId: { "daily-1": "2026-04-09T09:00:00.000Z" },
       },
       sample: createSample({ status: "discharging" }),
@@ -202,6 +351,7 @@ test("shouldSkipDelayedSocItemBecauseLaterItemIsDue skips older delayed percenta
         activeItemId: null,
         activeStartedAt: null,
         activeObservedAt: null,
+        activeStartSocPercent: null,
         lastTriggeredAtByItemId: {},
       },
     }),
@@ -236,6 +386,7 @@ test("shouldSkipDelayedSocItemBecauseLaterItemIsDue keeps same-time items in arr
         activeItemId: null,
         activeStartedAt: null,
         activeObservedAt: null,
+        activeStartSocPercent: null,
         lastTriggeredAtByItemId: {},
       },
     }),
@@ -267,6 +418,7 @@ function createBattery(overrides: Partial<BatteryRecord> = {}): BatteryRecord {
       activeItemId: null,
       activeStartedAt: null,
       activeObservedAt: null,
+      activeStartSocPercent: null,
       lastTriggeredAtByItemId: {},
     },
     updatedAt: "2026-04-09T00:00:00.000Z",

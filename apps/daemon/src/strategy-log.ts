@@ -5,6 +5,7 @@ import type {
 } from "@emsd/core";
 import type { ScheduledItemCompletion } from "./strategy-scheduler";
 import {
+  formatDaemonLogTimestamp,
   getTodayTriggerAt,
   isItemAlreadyTriggeredToday,
 } from "./strategy-scheduler";
@@ -17,16 +18,24 @@ export function describeStrategyPlanItemHuman(
   }
 
   if (item.strategyMode === "self-consumption") {
-    return item.manualDischargeTargetSoc !== null
+    const summary = item.manualDischargeTargetSoc !== null
       ? `self-consumption with a ${item.manualDischargeTargetSoc}% discharge floor`
       : "self-consumption";
+
+    return joinHumanParts([summary, describeScheduledTargetHuman(item)]);
   }
 
   if (item.strategyMode === "auto") {
     return "automatic control";
   }
 
-  return describeManualStrategyHuman(item);
+  const summary = describeManualStrategyHuman(item);
+
+  if (item.manualState === "idle") {
+    return joinHumanParts([summary, describeScheduledTargetHuman(item)]);
+  }
+
+  return summary;
 }
 
 export function describeCurrentBatteryStrategyHuman(
@@ -169,6 +178,24 @@ function describePower(powerW: number | null): string | null {
   return powerW === null ? null : `at ${powerW}W`;
 }
 
+function describeScheduledTargetHuman(item: BatteryStrategyPlanItem): string | null {
+  if (item.targetMethod === "duration") {
+    return item.targetDurationMinutes === null
+      ? null
+      : `for ${item.targetDurationMinutes} minute(s)`;
+  }
+
+  if (item.targetMethod === "end-time") {
+    return item.targetEndTime === null ? null : `until ${item.targetEndTime}`;
+  }
+
+  if (item.targetMethod === "soc") {
+    return item.manualTargetSoc === null ? null : `until ${item.manualTargetSoc}%`;
+  }
+
+  return null;
+}
+
 function describeStrategyScheduleHuman(item: BatteryStrategyPlanItem): string {
   if (item.kind === "default") {
     return "the default strategy";
@@ -187,6 +214,8 @@ function describeCompletionReasonHuman(
   switch (completion.reason) {
     case "charge-target-reached":
     case "discharge-target-reached":
+    case "idle-target-reached":
+    case "self-consumption-target-reached":
       return completion.targetSoc !== undefined
         ? `it reached ${completion.targetSoc}%`
         : "it reached its target";
@@ -196,17 +225,30 @@ function describeCompletionReasonHuman(
         : `${completion.targetDurationMinutes} minute(s) elapsed`;
     case "end-time-reached":
       return completion.endAt
-        ? `it reached its ${completion.endAt} cutoff`
+        ? `it reached its cutoff at ${formatLocalCutoffTimestamp(completion.endAt)}`
         : "it reached its cutoff time";
     case "missing-start-time":
       return "its runtime state was incomplete";
   }
 }
 
+function formatLocalCutoffTimestamp(value: string): string {
+  const parsed = new Date(value);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
+  return `${formatDaemonLogTimestamp(parsed)} (local)`;
+}
+
 function getNextStrategyItemForToday(
   battery: Pick<BatteryRecord, "strategyPlan" | "strategyRuntime">,
   now: Date,
 ): BatteryStrategyPlanItem | null {
+  let nextItem: BatteryStrategyPlanItem | null = null;
+  let nextTriggerAt: Date | null = null;
+
   for (const item of battery.strategyPlan.slice(1)) {
     const triggerAt = getTodayTriggerAt(item, now);
 
@@ -222,10 +264,13 @@ function getNextStrategyItemForToday(
       continue;
     }
 
-    return item;
+    if (nextTriggerAt === null || triggerAt.getTime() < nextTriggerAt.getTime()) {
+      nextItem = item;
+      nextTriggerAt = triggerAt;
+    }
   }
 
-  return null;
+  return nextItem;
 }
 
 function joinHumanParts(parts: Array<string | null>): string {
