@@ -89,6 +89,24 @@ export function buildNowLabel() {
   };
 }
 
+export function buildLowestLabel() {
+  return {
+    fill: UI_COLORS.success,
+    fontSize: 11,
+    position: "top" as const,
+    value: "Low",
+  };
+}
+
+export function buildHighestLabel() {
+  return {
+    fill: UI_COLORS.error,
+    fontSize: 11,
+    position: "top" as const,
+    value: "High",
+  };
+}
+
 export function buildYAxisLabel(
   value: string,
   position: "insideLeft" | "right",

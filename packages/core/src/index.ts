@@ -2,6 +2,8 @@ import { mkdirSync } from "node:fs";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+export * from "./price-selection";
+
 export const EMSD_NAME = "EMSD";
 
 export type BatteryStatus = "idle" | "charging" | "discharging" | "offline";
@@ -1120,6 +1122,97 @@ function findTimestampInsertionIndex(
   }
 
   return low;
+}
+
+export const PRICE_SELECTION_WINDOW_MS = 60 * 60 * 1_000;
+
+export interface PriceSelectionPoint {
+  periodStart: string;
+  value: number;
+}
+
+export function findPriceSelections(
+  samples: Array<{ periodStart: string; value: number | null }>,
+  windowMs: number = PRICE_SELECTION_WINDOW_MS,
+): {
+  lowest: PriceSelectionPoint[];
+  highest: PriceSelectionPoint[];
+} {
+  if (samples.length === 0) {
+    return { lowest: [], highest: [] };
+  }
+
+  const validSamples = samples
+    .map((sample) => ({
+      periodStart: sample.periodStart,
+      value: sample.value,
+    }))
+    .filter(
+      (sample): sample is { periodStart: string; value: number } =>
+        typeof sample.value === "number" && Number.isFinite(sample.value),
+    )
+    .sort(
+      (left, right) =>
+        new Date(left.periodStart).getTime() -
+        new Date(right.periodStart).getTime(),
+    );
+
+  if (validSamples.length === 0) {
+    return { lowest: [], highest: [] };
+  }
+
+  const lowest: PriceSelectionPoint[] = [];
+  const highest: PriceSelectionPoint[] = [];
+
+  for (let i = 0; i < validSamples.length; i++) {
+    const current = validSamples[i];
+    if (!current) {
+      continue;
+    }
+    const windowStart = new Date(current.periodStart).getTime();
+    const windowEnd = windowStart + windowMs;
+
+    const windowSamples = validSamples.filter((sample) => {
+      const sampleTime = new Date(sample.periodStart).getTime();
+      return sampleTime >= windowStart && sampleTime < windowEnd;
+    });
+
+    if (windowSamples.length === 0) {
+      continue;
+    }
+
+    const windowValues = windowSamples.map((s) => s.value);
+    const windowMin = Math.min(...windowValues);
+    const windowMax = Math.max(...windowValues);
+
+    const minSamples = windowSamples.filter((s) => s.value === windowMin);
+    const maxSamples = windowSamples.filter((s) => s.value === windowMax);
+
+    for (const sample of minSamples) {
+      if (!lowest.some((l) => l.periodStart === sample.periodStart)) {
+        lowest.push({ periodStart: sample.periodStart, value: sample.value });
+      }
+    }
+
+    for (const sample of maxSamples) {
+      if (!highest.some((h) => h.periodStart === sample.periodStart)) {
+        highest.push({ periodStart: sample.periodStart, value: sample.value });
+      }
+    }
+  }
+
+  lowest.sort(
+    (left, right) =>
+      new Date(left.periodStart).getTime() -
+      new Date(right.periodStart).getTime(),
+  );
+  highest.sort(
+    (left, right) =>
+      new Date(left.periodStart).getTime() -
+      new Date(right.periodStart).getTime(),
+  );
+
+  return { lowest, highest };
 }
 
 export function getRepoRoot(): string {

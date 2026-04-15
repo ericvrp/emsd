@@ -10,6 +10,7 @@ export const UI_COLORS = {
   chartTick: "rgba(226,232,240,0.72)",
   chartTickMuted: "rgba(148,163,184,0.75)",
   chartZeroLine: "rgba(148,163,184,0.36)",
+  error: "#f43f5e",
   focus: "rgba(34,211,238,0.5)",
   forecast: "#84cc16",
   gridExport: "#8F71BF",
@@ -18,6 +19,7 @@ export const UI_COLORS = {
   priceSection: "#f59e0b",
   solarEnergy: "#f97316",
   solarPrediction: "#facc15",
+  success: "#34d399",
   textPrimary: "#f8fafc",
 } as const;
 

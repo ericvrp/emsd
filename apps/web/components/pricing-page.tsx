@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import type {
-  DynamicPricePointRecord,
-  DynamicPriceSnapshotRecord,
-  HistoryArchive,
-} from "@emsd/core";
+import { useEffect, useMemo, useState } from "react";
+import {
+  PRICE_SELECTION_WINDOW_MS,
+  findPriceSelections,
+  type DynamicPricePointRecord,
+  type DynamicPriceSnapshotRecord,
+  type HistoryArchive,
+} from "@emsd/core/client";
 import { logBrowserIntervalHeartbeat } from "../lib/browser-heartbeat";
 import { UI_COLORS } from "../lib/ui-colors";
 import { RefreshWarning } from "./refresh-warning";
@@ -63,6 +65,23 @@ export function PricingSection({
       ? "Dynamic price data is not available yet."
       : "No price data for this day.";
   const priceAxisDomain = buildPriceAxisDomain(selectedDayPricePoints);
+  const priceSelections = useMemo(
+    () =>
+      findPriceSelections(
+        archive.dynamicPriceSamples.map((sample) => ({
+          periodStart: sample.periodStart,
+          value: sample.importPrice,
+        })),
+        PRICE_SELECTION_WINDOW_MS,
+      ),
+    [archive.dynamicPriceSamples],
+  );
+  const lowestMarkerPeriodStarts = priceSelections.lowest.map(
+    (p) => p.periodStart,
+  );
+  const highestMarkerPeriodStarts = priceSelections.highest.map(
+    (p) => p.periodStart,
+  );
 
   useEffect(() => {
     setArchive(initialArchive);
@@ -182,6 +201,8 @@ export function PricingSection({
             emptyMessage={emptyMessage}
             headerAccessory={<TopLevelDaySelect daySelection={daySelection} />}
             label="Price"
+            lowestMarkerPeriodStarts={lowestMarkerPeriodStarts}
+            highestMarkerPeriodStarts={highestMarkerPeriodStarts}
             nowMarkerPeriodStart={daySelection.nowMarkerPeriodStart}
             points={splitSingleValueSeriesByTime(selectedDayPricePoints)}
             valueFormatter={(value) =>

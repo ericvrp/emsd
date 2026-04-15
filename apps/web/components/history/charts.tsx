@@ -35,6 +35,8 @@ import {
 } from "./tooltips";
 import type { BatteryHistoryPoint, SplitSingleValuePoint } from "./types";
 import {
+  buildHighestLabel,
+  buildLowestLabel,
   buildMirroredYAxis,
   buildNowLabel,
   buildResponsiveDayTicks,
@@ -289,6 +291,8 @@ export function SingleValueHistoryChart({
   entryLabelFormatter,
   headerAccessory,
   label,
+  lowestMarkerPeriodStarts,
+  highestMarkerPeriodStarts,
   nowMarkerPeriodStart,
   points,
   showLegend = true,
@@ -302,6 +306,8 @@ export function SingleValueHistoryChart({
   entryLabelFormatter?: (value: number, key?: string) => string;
   headerAccessory?: ReactNode;
   label: string;
+  lowestMarkerPeriodStarts?: string[];
+  highestMarkerPeriodStarts?: string[];
   nowMarkerPeriodStart: string | null;
   points: SplitSingleValuePoint[];
   showLegend?: boolean;
@@ -450,6 +456,28 @@ export function SingleValueHistoryChart({
                     yAxisId="left"
                   />
                 ) : null}
+                {lowestMarkerPeriodStarts?.map((periodStart) => (
+                  <ReferenceLine
+                    key={`lowest-${periodStart}`}
+                    label={buildLowestLabel()}
+                    stroke={UI_COLORS.success}
+                    strokeDasharray="2 2"
+                    strokeOpacity={0.7}
+                    x={periodStart}
+                    yAxisId="left"
+                  />
+                ))}
+                {highestMarkerPeriodStarts?.map((periodStart) => (
+                  <ReferenceLine
+                    key={`highest-${periodStart}`}
+                    label={buildHighestLabel()}
+                    stroke={UI_COLORS.error}
+                    strokeDasharray="2 2"
+                    strokeOpacity={0.7}
+                    x={periodStart}
+                    yAxisId="left"
+                  />
+                ))}
                 <Area
                   activeDot={false}
                   dataKey="currentValue"
