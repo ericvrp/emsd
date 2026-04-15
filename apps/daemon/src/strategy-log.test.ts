@@ -8,6 +8,7 @@ import type { ScheduledItemCompletion } from "./strategy-scheduler";
 import {
   describeCurrentBatteryStrategyHuman,
   describeStrategyPlanItemHuman,
+  formatBatteryStrategyStatusSummary,
   formatFallbackStrategyRestoreSummary,
   formatManualStrategyAppliedSummary,
   formatScheduledStrategyCompletionSummary,
@@ -193,6 +194,122 @@ test("summarizes a temporary manual override", () => {
   ).toBe(
     "temporary manual override applied for battery-1: discharge manually to 80% at 2400W",
   );
+});
+
+test("strategy status summary returns default strategy without active item", () => {
+  expect(formatBatteryStrategyStatusSummary(buildBattery())).toBe(
+    "Default: Self-consumption",
+  );
+});
+
+test("strategy status summary reports remaining duration for an active item", () => {
+  expect(
+    formatBatteryStrategyStatusSummary(
+      buildBattery({
+        strategyRuntime: buildRuntime({
+          activeItemId: "daily-2",
+          activeStartedAt: "2026-04-12T17:30:00.000Z",
+        }),
+        strategyPlan: [
+          buildDefaultItem(),
+          buildDailyItem({
+            id: "daily-2",
+            manualState: "charging",
+            targetMethod: "duration",
+            targetDurationMinutes: 30,
+            manualChargeTargetSoc: 95,
+            manualTargetSoc: 95,
+          }),
+        ],
+      }),
+      new Date("2026-04-12T17:37:00.000Z"),
+    ),
+  ).toBe("Charging for 23 minutes");
+});
+
+test("strategy status summary reports discharging target", () => {
+  expect(
+    formatBatteryStrategyStatusSummary(
+      buildBattery({
+        strategyRuntime: buildRuntime({
+          activeItemId: "daily-2",
+          activeStartedAt: "2026-04-12T17:30:00.000Z",
+        }),
+      }),
+    ),
+  ).toBe("Discharging to 80%");
+});
+
+test("strategy status summary reports self-consumption for manual override", () => {
+  expect(
+    formatBatteryStrategyStatusSummary(
+      buildBattery({
+        strategyMode: "self-consumption",
+        manualModeActive: true,
+      }),
+    ),
+  ).toBe("Self-consumption");
+});
+
+test("strategy status summary prefers power for manual discharging override", () => {
+  expect(
+    formatBatteryStrategyStatusSummary(
+      buildBattery({
+        strategyMode: "manual",
+        manualState: "discharging",
+        manualPowerW: 2400,
+        manualDischargeTargetSoc: 10,
+        manualTargetSoc: 10,
+        manualModeActive: true,
+      }),
+    ),
+  ).toBe("Discharging at 2400W to 10%");
+});
+
+test("strategy status summary reports manual override duration", () => {
+  expect(
+    formatBatteryStrategyStatusSummary(
+      buildBattery({
+        strategyMode: "manual",
+        manualState: "discharging",
+        manualPowerW: 2400,
+        manualDischargeTargetSoc: 10,
+        manualTargetSoc: 10,
+        manualModeActive: true,
+        strategyRuntime: buildRuntime({
+          manualTargetMethod: "duration",
+          manualTargetDurationMinutes: 6,
+          manualTargetStartedAt: "2026-04-12T17:30:00.000Z",
+        }),
+      }),
+      new Date("2026-04-12T17:31:10.000Z"),
+    ),
+  ).toBe("Discharging at 2400W for 5 minutes");
+});
+
+test("strategy status summary reports idle without zero target", () => {
+  expect(
+    formatBatteryStrategyStatusSummary(
+      buildBattery({
+        strategyRuntime: buildRuntime({
+          activeItemId: "daily-2",
+          activeStartedAt: "2026-04-12T17:30:00.000Z",
+        }),
+        strategyPlan: [
+          buildDefaultItem(),
+          buildDailyItem({
+            id: "daily-2",
+            manualState: "idle",
+            manualPowerW: null,
+            targetMethod: "soc",
+            manualTargetSoc: 0,
+            manualChargeTargetSoc: null,
+            manualDischargeTargetSoc: null,
+          }),
+        ],
+      }),
+    ),
+  ).toBe("Idle");
 });
 
 function buildBattery(overrides: Partial<BatteryRecord> = {}): BatteryRecord {

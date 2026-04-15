@@ -18,6 +18,8 @@ import { BatteryStrategyPlanForm } from "./battery-strategy-plan-form";
 import { Button } from "./ui/button";
 import { DialogPortal } from "./ui/dialog-portal";
 
+const STRATEGY_REFRESH_INTERVAL_MS = 5_000;
+
 interface HouseStrategyDialogProps {
   batteries: Array<{
     id: string;
@@ -25,6 +27,10 @@ interface HouseStrategyDialogProps {
     minimumDischargePercent: number;
     batteryStrategy: BatteryStrategyRecord | null;
     batteryStrategyPlan: BatteryStrategyPlanRecord;
+    batteryStrategySummary: string | null;
+    batteryManualTargetMethod: "soc" | "duration" | "end-time" | null;
+    batteryManualTargetDurationMinutes: number | null;
+    batteryManualTargetEndTime: string | null;
     batteryManualModeActive: boolean;
     telemetry: {
       socPercent: number | null;
@@ -45,40 +51,6 @@ function ModeIcon({ manualModeActive }: { manualModeActive: boolean }) {
   return <Icon className="h-4 w-4" />;
 }
 
-function formatStrategyLabel(
-  manualModeActive: boolean,
-  strategy: BatteryStrategyRecord,
-  strategyPlan: BatteryStrategyPlanRecord,
-): string {
-  if (manualModeActive) {
-    if (strategy.strategyMode === "self-consumption") {
-      return "Self-consumption";
-    }
-
-    if (strategy.manualState === "charging") {
-      return "Charge";
-    }
-
-    if (strategy.manualState === "discharging") {
-      return "Discharge";
-    }
-
-    return "Idle";
-  }
-
-  const value = strategyPlan[0] ?? null;
-
-  if (!value) {
-    return "Scheduled";
-  }
-
-  if (value.strategyMode === "self-consumption") {
-    return "Self-consumption";
-  }
-
-  return "Manual";
-}
-
 export function HouseStrategyDialog({
   batteries,
   siteId,
@@ -88,6 +60,9 @@ export function HouseStrategyDialog({
   const manualModeActive = batteries.some((b) => b.batteryManualModeActive);
   const [selectedMode, setSelectedMode] = useState<"manual" | "strategy">(
     manualModeActive ? "manual" : "strategy",
+  );
+  const [liveStrategySummary, setLiveStrategySummary] = useState(
+    firstBattery?.batteryStrategySummary ?? "Default strategy",
   );
 
   useEffect(() => {
@@ -114,6 +89,74 @@ export function HouseStrategyDialog({
     }
   }, [isOpen, manualModeActive]);
 
+  useEffect(() => {
+    setLiveStrategySummary(firstBattery?.batteryStrategySummary ?? "Default strategy");
+  }, [firstBattery?.batteryStrategySummary]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function refreshStrategySummary() {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+
+      try {
+        const response = await fetch(
+          `/api/site/current?siteId=${encodeURIComponent(siteId)}`,
+          {
+            cache: "no-store",
+          },
+        );
+
+        if (response.status === 401) {
+          window.location.href = "/login";
+          return;
+        }
+
+        if (!response.ok) {
+          throw new Error(`Strategy current request failed: ${response.status}`);
+        }
+
+        const payload = (await response.json()) as {
+          currentStrategySummary?: string | null;
+        };
+
+        if (cancelled) {
+          return;
+        }
+
+        setLiveStrategySummary(
+          payload.currentStrategySummary ?? firstBattery?.batteryStrategySummary ?? "Default strategy",
+        );
+      } catch {
+        if (!cancelled) {
+          setLiveStrategySummary(firstBattery?.batteryStrategySummary ?? "Default strategy");
+        }
+      }
+    }
+
+    void refreshStrategySummary();
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        void refreshStrategySummary();
+      }
+    }
+
+    const interval = window.setInterval(() => {
+      void refreshStrategySummary();
+    }, STRATEGY_REFRESH_INTERVAL_MS);
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [firstBattery?.batteryStrategySummary, siteId]);
+
   const strategy = firstBattery?.batteryStrategy ?? {
     strategyMode: "self-consumption",
     manualPowerW: null,
@@ -127,22 +170,18 @@ export function HouseStrategyDialog({
   const minimumDischargePercent = firstBattery?.minimumDischargePercent ?? 10;
   const currentSocPercent = firstBattery?.telemetry?.socPercent ?? null;
   const capacityWh = firstBattery?.telemetry?.capacityWh ?? null;
-  const buttonLabel = formatStrategyLabel(
-    manualModeActive,
-    strategy,
-    strategyPlan,
-  );
+  const buttonLabel = liveStrategySummary ?? "Default strategy";
 
   return (
     <>
       <Button
-        aria-label={buttonLabel}
+        aria-label={`Strategy: ${buttonLabel}`}
         onClick={() => setIsOpen(true)}
         type="button"
         variant="ghost"
       >
         <ModeIcon manualModeActive={manualModeActive} />
-        <span className="hidden sm:inline">{buttonLabel}</span>
+        <span>{buttonLabel}</span>
       </Button>
 
       {isOpen ? (
@@ -197,6 +236,15 @@ export function HouseStrategyDialog({
                           hideStrategySelector
                           manualOnly
                           manualModeActive={true}
+                          manualTargetDurationMinutes={
+                            firstBattery?.batteryManualTargetDurationMinutes ?? null
+                          }
+                          manualTargetEndTime={
+                            firstBattery?.batteryManualTargetEndTime ?? null
+                          }
+                          manualTargetMethod={
+                            firstBattery?.batteryManualTargetMethod ?? null
+                          }
                           showContextSummary={false}
                           minimumDischargePercent={minimumDischargePercent}
                           returnPath="/"

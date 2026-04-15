@@ -25,6 +25,9 @@ interface BatteryStrategyFormProps {
   hideStrategySelector?: boolean;
   manualOnly?: boolean;
   manualModeActive?: boolean;
+  manualTargetDurationMinutes?: number | null;
+  manualTargetEndTime?: string | null;
+  manualTargetMethod?: TargetMethod | null;
   showContextSummary?: boolean;
   minimumDischargePercent: number;
   returnPath?: string;
@@ -45,6 +48,9 @@ export function BatteryStrategyForm({
   hideStrategySelector = false,
   manualOnly = false,
   manualModeActive,
+  manualTargetDurationMinutes,
+  manualTargetEndTime,
+  manualTargetMethod,
   showContextSummary = true,
   minimumDischargePercent,
   returnPath,
@@ -76,9 +82,15 @@ export function BatteryStrategyForm({
     useState(
       String(strategy.manualDischargeTargetSoc ?? minimumDischargePercent),
     );
-  const [durationMinutes, setDurationMinutes] = useState("60");
-  const [targetMethod, setTargetMethod] = useState<TargetMethod>("soc");
-  const [endTime, setEndTime] = useState(getDefaultEndTimeValue());
+  const [durationMinutes, setDurationMinutes] = useState(
+    String(manualTargetDurationMinutes ?? 60),
+  );
+  const [targetMethod, setTargetMethod] = useState<TargetMethod>(
+    manualTargetMethod ?? "soc",
+  );
+  const [endTime, setEndTime] = useState(
+    manualTargetEndTime ?? getDefaultEndTimeValue(),
+  );
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
@@ -101,6 +113,12 @@ export function BatteryStrategyForm({
       setStrategyMode("manual");
     }
   }, [manualOnly, strategyMode]);
+
+  useEffect(() => {
+    setTargetMethod(manualTargetMethod ?? "soc");
+    setDurationMinutes(String(manualTargetDurationMinutes ?? 60));
+    setEndTime(manualTargetEndTime ?? getDefaultEndTimeValue());
+  }, [manualTargetDurationMinutes, manualTargetEndTime, manualTargetMethod]);
 
   const parsedManualPowerW = parseOptionalNumber(manualPowerW);
   const parsedManualChargeTargetSoc = parseOptionalNumber(
@@ -229,6 +247,25 @@ export function BatteryStrategyForm({
         type="hidden"
         name="manualTargetSoc"
         value={effectiveManualTargetSoc}
+      />
+      <input
+        type="hidden"
+        name="targetMethod"
+        value={manualState === "idle" ? "soc" : targetMethod}
+      />
+      <input
+        type="hidden"
+        name="targetDurationMinutes"
+        value={
+          targetMethod === "duration" && parsedDurationMinutes !== null
+            ? String(parsedDurationMinutes)
+            : ""
+        }
+      />
+      <input
+        type="hidden"
+        name="targetEndTime"
+        value={targetMethod === "end-time" ? endTime : ""}
       />
       <input
         type="hidden"

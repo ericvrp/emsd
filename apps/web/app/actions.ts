@@ -550,6 +550,12 @@ export async function setHouseStrategyAction(
         formData,
         "manualModeActive",
       );
+      const targetMethodRaw = optionalStringValue(formData, "targetMethod");
+      const targetDurationMinutesRaw = optionalStringValue(
+        formData,
+        "targetDurationMinutes",
+      );
+      const targetEndTimeRaw = optionalStringValue(formData, "targetEndTime");
       const manualTargetSocRaw = optionalStringValue(
         formData,
         "manualTargetSoc",
@@ -579,6 +585,20 @@ export async function setHouseStrategyAction(
           manualTargetSocRaw === null || manualTargetSocRaw.length === 0
             ? null
             : Number(manualTargetSocRaw),
+        targetMethod:
+          targetMethodRaw === "soc" ||
+          targetMethodRaw === "duration" ||
+          targetMethodRaw === "end-time"
+            ? targetMethodRaw
+            : null,
+        targetDurationMinutes:
+          targetDurationMinutesRaw === null || targetDurationMinutesRaw.length === 0
+            ? null
+            : Number(targetDurationMinutesRaw),
+        targetEndTime:
+          targetEndTimeRaw === null || targetEndTimeRaw.length === 0
+            ? null
+            : targetEndTimeRaw,
         manualModeActive: manualModeActiveRaw === "true",
         strategyMode:
           strategyMode === "manual" ||

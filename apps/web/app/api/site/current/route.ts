@@ -48,6 +48,10 @@ export async function GET(request: NextRequest) {
         batteries[0]?.state ??
         null)
       : null;
+  const currentStrategySummary =
+    batteries.find(
+      (battery) => typeof battery.batteryStrategySummary === "string",
+    )?.batteryStrategySummary ?? null;
   const currentGridPowerW =
     site?.devices
       .filter((device) => device.kind === "meter")
@@ -77,6 +81,7 @@ export async function GET(request: NextRequest) {
     currentBatteryChargePercent,
     currentBatteryPowerW,
     currentBatteryState,
+    currentStrategySummary,
     currentGridPowerW,
     currentSolarPowerW,
   });

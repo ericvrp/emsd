@@ -47,6 +47,10 @@ export interface BatteryStrategyRuntimeRecord {
   activeObservedAt: string | null;
   activeStartSocPercent: number | null;
   lastTriggeredAtByItemId: Record<string, string>;
+  manualTargetMethod?: BatteryStrategyTargetMethod | null;
+  manualTargetDurationMinutes?: number | null;
+  manualTargetEndTime?: string | null;
+  manualTargetStartedAt?: string | null;
 }
 
 export interface NormalizedBatteryInfo extends BatteryStrategyRecord {
@@ -285,6 +289,10 @@ export interface ManagedDeviceRecord {
   state: ManagedDeviceState;
   batteryStrategy: BatteryStrategyRecord | null;
   batteryStrategyPlan: BatteryStrategyPlanRecord | null;
+  batteryStrategySummary: string | null;
+  batteryManualTargetMethod: BatteryStrategyTargetMethod | null;
+  batteryManualTargetDurationMinutes: number | null;
+  batteryManualTargetEndTime: string | null;
   batteryManualModeActive: boolean;
   minimumDischargePercent: number | null;
   updatedAt: string;
@@ -302,6 +310,10 @@ export function createBatteryStrategyRuntime(): BatteryStrategyRuntimeRecord {
     activeObservedAt: null,
     activeStartSocPercent: null,
     lastTriggeredAtByItemId: {},
+    manualTargetMethod: null,
+    manualTargetDurationMinutes: null,
+    manualTargetEndTime: null,
+    manualTargetStartedAt: null,
   };
 }
 
@@ -314,6 +326,10 @@ export function clearActiveBatteryStrategyRuntime(
     activeStartedAt: null,
     activeObservedAt: null,
     activeStartSocPercent: null,
+    manualTargetMethod: null,
+    manualTargetDurationMinutes: null,
+    manualTargetEndTime: null,
+    manualTargetStartedAt: null,
   };
 }
 
@@ -339,6 +355,10 @@ export function createBatteryStrategyRuntimeForPlanApply(
     activeObservedAt: null,
     activeStartSocPercent: null,
     lastTriggeredAtByItemId,
+    manualTargetMethod: null,
+    manualTargetDurationMinutes: null,
+    manualTargetEndTime: null,
+    manualTargetStartedAt: null,
   };
 }
 
@@ -696,6 +716,21 @@ function normalizeBatteryStrategyRuntime(
         ? candidate.activeStartSocPercent
         : null,
     lastTriggeredAtByItemId,
+    manualTargetMethod: normalizeTargetMethod(candidate.manualTargetMethod),
+    manualTargetDurationMinutes:
+      normalizeTargetMethod(candidate.manualTargetMethod) === "duration"
+        ? normalizeTargetDurationMinutes(candidate.manualTargetDurationMinutes)
+        : null,
+    manualTargetEndTime:
+      normalizeTargetMethod(candidate.manualTargetMethod) === "end-time" &&
+      isDailyStartTime(candidate.manualTargetEndTime ?? null)
+        ? (candidate.manualTargetEndTime ?? null)
+        : null,
+    manualTargetStartedAt:
+      typeof candidate.manualTargetStartedAt === "string" &&
+      candidate.manualTargetStartedAt.length > 0
+        ? candidate.manualTargetStartedAt
+        : null,
   };
 }
 

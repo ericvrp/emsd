@@ -76,6 +76,7 @@ import {
   updateSite,
   updateWeatherForecastSource,
 } from "./managed-site-store";
+import { formatBatteryStrategyStatusSummary } from "../../daemon/src/strategy-log";
 import { getSolarEnergyProviderNormalizedInfo } from "./plugins/solar-energy-provider";
 
 interface ApiSuccess<T> {
@@ -303,6 +304,7 @@ function createManagedSolarEnergyProviderFromDiscovered(
 
 function toManagedDeviceRecord(
   record: BatteryRecord | MeterRecord | SolarEnergyProviderRecord,
+  now: Date,
 ): ManagedDeviceRecord {
   if ("plugin" in record) {
     if (!("minimumDischargePercent" in record)) {
@@ -318,6 +320,10 @@ function toManagedDeviceRecord(
         state: record.connected ? "connected" : "offline",
         batteryStrategy: null,
         batteryStrategyPlan: null,
+        batteryStrategySummary: null,
+        batteryManualTargetMethod: null,
+        batteryManualTargetDurationMinutes: null,
+        batteryManualTargetEndTime: null,
         batteryManualModeActive: false,
         minimumDischargePercent: null,
         updatedAt: record.updatedAt,
@@ -343,6 +349,11 @@ function toManagedDeviceRecord(
         strategyMode: record.strategyMode,
       },
       batteryStrategyPlan: record.strategyPlan,
+      batteryStrategySummary: formatBatteryStrategyStatusSummary(record, now),
+      batteryManualTargetMethod: record.strategyRuntime.manualTargetMethod ?? null,
+      batteryManualTargetDurationMinutes:
+        record.strategyRuntime.manualTargetDurationMinutes ?? null,
+      batteryManualTargetEndTime: record.strategyRuntime.manualTargetEndTime ?? null,
       batteryManualModeActive: record.manualModeActive,
       minimumDischargePercent: record.minimumDischargePercent,
       updatedAt: record.updatedAt,
@@ -361,6 +372,10 @@ function toManagedDeviceRecord(
     state: record.connected ? "connected" : "offline",
     batteryStrategy: null,
     batteryStrategyPlan: null,
+    batteryStrategySummary: null,
+    batteryManualTargetMethod: null,
+    batteryManualTargetDurationMinutes: null,
+    batteryManualTargetEndTime: null,
     batteryManualModeActive: false,
     minimumDischargePercent: null,
     updatedAt: record.updatedAt,
@@ -394,17 +409,20 @@ function loadTelemetryByDeviceId(): Map<string, ManagedDeviceTelemetryRecord> {
 }
 
 function buildSnapshot(): DashboardSnapshot {
+  const now = new Date();
   const sites = listSites();
   const telemetryByDeviceId = loadTelemetryByDeviceId();
 
   return {
-    generatedAt: new Date().toISOString(),
+    generatedAt: now.toISOString(),
     sites: sites.map((site) => ({
       ...site,
       devices: [
-        ...listBatteries(site.id).map(toManagedDeviceRecord),
-        ...listMeters(site.id).map(toManagedDeviceRecord),
-        ...listSolarEnergyProviders(site.id).map(toManagedDeviceRecord),
+        ...listBatteries(site.id).map((record) => toManagedDeviceRecord(record, now)),
+        ...listMeters(site.id).map((record) => toManagedDeviceRecord(record, now)),
+        ...listSolarEnergyProviders(site.id).map((record) =>
+          toManagedDeviceRecord(record, now),
+        ),
       ].map(
         (device): ManagedDeviceStatusRecord => ({
           ...device,
@@ -637,6 +655,7 @@ export async function runApiAction(
 
       return toManagedDeviceRecord(
         createManagedBatteryFromDiscovered(discovered, siteId),
+        new Date(),
       );
     }
 
@@ -653,7 +672,7 @@ export async function runApiAction(
         );
       }
 
-      return toManagedDeviceRecord(battery);
+      return toManagedDeviceRecord(battery, new Date());
     }
 
     case "battery-set-minimum-discharge-percent": {
@@ -674,7 +693,7 @@ export async function runApiAction(
         );
       }
 
-      return toManagedDeviceRecord(battery);
+      return toManagedDeviceRecord(battery, new Date());
     }
 
     case "battery-delete": {
@@ -689,7 +708,7 @@ export async function runApiAction(
         );
       }
 
-      return toManagedDeviceRecord(battery);
+      return toManagedDeviceRecord(battery, new Date());
     }
 
     case "house-strategy-set": {
@@ -731,6 +750,18 @@ export async function runApiAction(
         typeof input.manualTargetSoc === "number"
           ? input.manualTargetSoc
           : firstBattery.manualTargetSoc;
+      const manualTargetMethod =
+        input.targetMethod === "soc" ||
+        input.targetMethod === "duration" ||
+        input.targetMethod === "end-time"
+          ? input.targetMethod
+          : null;
+      const manualTargetDurationMinutes =
+        typeof input.targetDurationMinutes === "number"
+          ? input.targetDurationMinutes
+          : null;
+      const manualTargetEndTime =
+        typeof input.targetEndTime === "string" ? input.targetEndTime : null;
 
       for (const battery of batteries) {
         try {
@@ -754,13 +785,17 @@ export async function runApiAction(
           manualPowerW,
           manualState,
           manualTargetSoc,
+          manualTargetMethod,
+          manualTargetDurationMinutes,
+          manualTargetEndTime,
           manualModeActive: input.manualModeActive === true,
           strategyMode,
         },
         siteId,
       );
 
-      return updated.map(toManagedDeviceRecord);
+      const now = new Date();
+      return updated.map((record) => toManagedDeviceRecord(record, now));
     }
 
     case "house-strategy-plan-set": {
@@ -812,7 +847,8 @@ export async function runApiAction(
         siteId,
       );
 
-      return updated.map(toManagedDeviceRecord);
+      const now = new Date();
+      return updated.map((record) => toManagedDeviceRecord(record, now));
     }
 
     case "meter-create": {
@@ -827,6 +863,7 @@ export async function runApiAction(
 
       return toManagedDeviceRecord(
         createManagedMeterFromDiscovered(discovered, siteId),
+        new Date(),
       );
     }
 
@@ -842,6 +879,7 @@ export async function runApiAction(
 
       return toManagedDeviceRecord(
         createManagedSolarEnergyProviderFromDiscovered(discovered, siteId),
+        new Date(),
       );
     }
 
@@ -902,7 +940,7 @@ export async function runApiAction(
         );
       }
 
-      return toManagedDeviceRecord(meter);
+      return toManagedDeviceRecord(meter, new Date());
     }
 
     case "meter-delete": {
@@ -917,7 +955,7 @@ export async function runApiAction(
         );
       }
 
-      return toManagedDeviceRecord(meter);
+      return toManagedDeviceRecord(meter, new Date());
     }
 
     case "solar-energy-provider-delete": {
@@ -932,7 +970,7 @@ export async function runApiAction(
         );
       }
 
-      return toManagedDeviceRecord(provider);
+      return toManagedDeviceRecord(provider, new Date());
     }
 
     case "weather-create":

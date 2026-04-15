@@ -7,6 +7,7 @@ import {
   type BatteryStrategyMode,
   type BatteryStrategyPlanRecord,
   type BatteryStrategyRecord,
+  type BatteryStrategyTargetMethod,
   type BatteryStrategyRuntimeRecord,
   type DynamicPriceSourceRecord,
   type MeterRecord,
@@ -186,6 +187,9 @@ interface UpdateBatteryStrategyInput {
   manualChargeTargetSoc?: number | null;
   manualDischargeTargetSoc?: number | null;
   manualTargetSoc?: number | null;
+  manualTargetMethod?: BatteryStrategyTargetMethod | null;
+  manualTargetDurationMinutes?: number | null;
+  manualTargetEndTime?: string | null;
   manualModeActive?: boolean;
 }
 
@@ -784,9 +788,42 @@ export function setHouseStrategy(
     }
 
     for (const battery of batteries) {
-      const nextRuntime = stringifyBatteryStrategyRuntime(
-        clearActiveBatteryStrategyRuntime(battery.strategyRuntime),
+      const baseRuntime = clearActiveBatteryStrategyRuntime(
+        battery.strategyRuntime,
       );
+      const nextRuntime = stringifyBatteryStrategyRuntime({
+        ...baseRuntime,
+        manualTargetMethod:
+          input.manualModeActive === true &&
+          input.strategyMode === "manual" &&
+          (input.manualState === "charging" ||
+            input.manualState === "discharging")
+            ? input.manualTargetMethod ?? "soc"
+            : null,
+        manualTargetDurationMinutes:
+          input.manualModeActive === true &&
+          input.strategyMode === "manual" &&
+          (input.manualState === "charging" ||
+            input.manualState === "discharging") &&
+          input.manualTargetMethod === "duration"
+            ? input.manualTargetDurationMinutes ?? null
+            : null,
+        manualTargetEndTime:
+          input.manualModeActive === true &&
+          input.strategyMode === "manual" &&
+          (input.manualState === "charging" ||
+            input.manualState === "discharging") &&
+          input.manualTargetMethod === "end-time"
+            ? input.manualTargetEndTime ?? null
+            : null,
+        manualTargetStartedAt:
+          input.manualModeActive === true &&
+          input.strategyMode === "manual" &&
+          (input.manualState === "charging" ||
+            input.manualState === "discharging")
+            ? new Date().toISOString()
+            : null,
+      });
 
       db.query(
         `

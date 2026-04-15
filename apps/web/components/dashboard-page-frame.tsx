@@ -25,6 +25,11 @@ export function DashboardPageFrame({
         minimumDischargePercent: device.minimumDischargePercent ?? 10,
         batteryStrategy: device.batteryStrategy,
         batteryStrategyPlan: device.batteryStrategyPlan ?? [],
+        batteryStrategySummary: device.batteryStrategySummary,
+        batteryManualTargetMethod: device.batteryManualTargetMethod,
+        batteryManualTargetDurationMinutes:
+          device.batteryManualTargetDurationMinutes,
+        batteryManualTargetEndTime: device.batteryManualTargetEndTime,
         batteryManualModeActive: device.batteryManualModeActive ?? false,
         telemetry: device.telemetry,
       })) ?? [];

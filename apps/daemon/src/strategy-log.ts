@@ -123,6 +123,104 @@ export function formatManualStrategyAppliedSummary(
   return `${prefix} for ${battery.id}: ${describeCurrentBatteryStrategyHuman(battery)}`;
 }
 
+export function formatBatteryStrategyStatusSummary(
+  battery: Pick<
+    BatteryRecord,
+    | "strategyMode"
+    | "manualState"
+    | "manualPowerW"
+    | "manualChargeTargetSoc"
+    | "manualDischargeTargetSoc"
+    | "manualTargetSoc"
+    | "manualModeActive"
+    | "minimumDischargePercent"
+    | "strategyPlan"
+    | "strategyRuntime"
+  >,
+  now: Date = new Date(),
+): string {
+  if (battery.manualModeActive) {
+    return summarizeActiveStrategy({
+      strategyMode: battery.strategyMode,
+      manualState: battery.manualState,
+      manualPowerW: battery.manualPowerW,
+      manualChargeTargetSoc: battery.manualChargeTargetSoc,
+      manualDischargeTargetSoc: battery.manualDischargeTargetSoc,
+      manualTargetSoc: battery.manualTargetSoc,
+      minimumDischargePercent: battery.minimumDischargePercent,
+      targetDurationMinutes:
+        battery.strategyRuntime.manualTargetDurationMinutes ?? null,
+      targetEndTime: battery.strategyRuntime.manualTargetEndTime ?? null,
+      activeStartedAt: battery.strategyRuntime.manualTargetStartedAt ?? null,
+      targetMethod: battery.strategyRuntime.manualTargetMethod ?? null,
+      preferPowerWhenAvailable: true,
+      now,
+    });
+  }
+
+  const activeItemId = battery.strategyRuntime.activeItemId;
+  const fallbackItem = battery.strategyPlan[0] ?? null;
+
+  const defaultSummary = fallbackItem
+    ? summarizeActiveStrategy({
+        strategyMode: fallbackItem.strategyMode,
+        manualState: fallbackItem.manualState,
+        manualPowerW: fallbackItem.manualPowerW,
+        manualChargeTargetSoc: fallbackItem.manualChargeTargetSoc,
+        manualDischargeTargetSoc: fallbackItem.manualDischargeTargetSoc,
+        manualTargetSoc: fallbackItem.manualTargetSoc,
+        minimumDischargePercent: battery.minimumDischargePercent,
+        targetMethod: fallbackItem.targetMethod,
+        targetDurationMinutes: fallbackItem.targetDurationMinutes,
+        targetEndTime: fallbackItem.targetEndTime,
+        activeStartedAt: null,
+        preferPowerWhenAvailable: false,
+        now,
+      })
+    : summarizeActiveStrategy({
+        strategyMode: battery.strategyMode,
+        manualState: battery.manualState,
+        manualPowerW: battery.manualPowerW,
+        manualChargeTargetSoc: battery.manualChargeTargetSoc,
+        manualDischargeTargetSoc: battery.manualDischargeTargetSoc,
+        manualTargetSoc: battery.manualTargetSoc,
+        minimumDischargePercent: battery.minimumDischargePercent,
+        targetMethod: null,
+        targetDurationMinutes: null,
+        targetEndTime: null,
+        activeStartedAt: null,
+        preferPowerWhenAvailable: false,
+        now,
+      });
+
+  if (!activeItemId) {
+    return `Default: ${defaultSummary}`;
+  }
+
+  const activeItem =
+    battery.strategyPlan.find((item) => item.id === activeItemId) ?? null;
+
+  if (!activeItem) {
+    return `Default: ${defaultSummary}`;
+  }
+
+  return summarizeActiveStrategy({
+    strategyMode: activeItem.strategyMode,
+    manualState: activeItem.manualState,
+    manualPowerW: activeItem.manualPowerW,
+    manualChargeTargetSoc: activeItem.manualChargeTargetSoc,
+    manualDischargeTargetSoc: activeItem.manualDischargeTargetSoc,
+    manualTargetSoc: activeItem.manualTargetSoc,
+    minimumDischargePercent: battery.minimumDischargePercent,
+    targetMethod: activeItem.targetMethod,
+    targetDurationMinutes: activeItem.targetDurationMinutes,
+    targetEndTime: activeItem.targetEndTime,
+    activeStartedAt: battery.strategyRuntime.activeStartedAt,
+    preferPowerWhenAvailable: false,
+    now,
+  });
+}
+
 function describeManualStrategyHuman(
   strategy: Pick<
     BatteryStrategyRecord,
@@ -176,6 +274,158 @@ function describeDischargeTarget(
 
 function describePower(powerW: number | null): string | null {
   return powerW === null ? null : `at ${powerW}W`;
+}
+
+function summarizeActiveStrategy(input: {
+  strategyMode: BatteryStrategyRecord["strategyMode"];
+  manualState: BatteryStrategyRecord["manualState"];
+  manualPowerW: BatteryStrategyRecord["manualPowerW"];
+  manualChargeTargetSoc: BatteryStrategyRecord["manualChargeTargetSoc"];
+  manualDischargeTargetSoc: BatteryStrategyRecord["manualDischargeTargetSoc"];
+  manualTargetSoc: BatteryStrategyRecord["manualTargetSoc"];
+  minimumDischargePercent: number;
+  targetMethod: BatteryStrategyPlanItem["targetMethod"];
+  targetDurationMinutes: BatteryStrategyPlanItem["targetDurationMinutes"];
+  targetEndTime: BatteryStrategyPlanItem["targetEndTime"];
+  activeStartedAt: string | null;
+  preferPowerWhenAvailable: boolean;
+  now: Date;
+}): string {
+  if (input.strategyMode === "self-consumption") {
+    return "Self-consumption";
+  }
+
+  if (input.strategyMode === "auto") {
+    return "Automatic strategy";
+  }
+
+  if (input.manualState === "charging") {
+    return describeActionWithTarget("Charging", {
+      powerW: input.manualPowerW,
+      preferPowerWhenAvailable: input.preferPowerWhenAvailable,
+      defaultTargetSoc: input.manualChargeTargetSoc ?? input.manualTargetSoc,
+      targetMethod: input.targetMethod,
+      targetDurationMinutes: input.targetDurationMinutes,
+      targetEndTime: input.targetEndTime,
+      activeStartedAt: input.activeStartedAt,
+      now: input.now,
+    });
+  }
+
+  if (input.manualState === "discharging") {
+    return describeActionWithTarget("Discharging", {
+      powerW: input.manualPowerW,
+      preferPowerWhenAvailable: input.preferPowerWhenAvailable,
+      defaultTargetSoc:
+        input.manualDischargeTargetSoc ??
+        input.manualTargetSoc ??
+        input.minimumDischargePercent,
+      targetMethod: input.targetMethod,
+      targetDurationMinutes: input.targetDurationMinutes,
+      targetEndTime: input.targetEndTime,
+      activeStartedAt: input.activeStartedAt,
+      now: input.now,
+    });
+  }
+
+  if (input.manualState === "idle") {
+    return describeActionWithTarget("Idle", {
+      powerW: input.manualPowerW,
+      preferPowerWhenAvailable: input.preferPowerWhenAvailable,
+      defaultTargetSoc: input.manualTargetSoc,
+      targetMethod: input.targetMethod,
+      targetDurationMinutes: input.targetDurationMinutes,
+      targetEndTime: input.targetEndTime,
+      activeStartedAt: input.activeStartedAt,
+      now: input.now,
+    });
+  }
+
+  return "Manual strategy";
+}
+
+function describeActionWithTarget(
+  action: "Charging" | "Discharging" | "Idle",
+  input: {
+    powerW: number | null;
+    preferPowerWhenAvailable: boolean;
+    defaultTargetSoc: number | null;
+    targetMethod: BatteryStrategyPlanItem["targetMethod"];
+    targetDurationMinutes: BatteryStrategyPlanItem["targetDurationMinutes"];
+    targetEndTime: BatteryStrategyPlanItem["targetEndTime"];
+    activeStartedAt: string | null;
+    now: Date;
+  },
+): string {
+  let targetLabel: string | null = null;
+
+  if (input.targetMethod === "duration") {
+    const durationLabel = formatDurationTargetLabel({
+      targetDurationMinutes: input.targetDurationMinutes,
+      activeStartedAt: input.activeStartedAt,
+      now: input.now,
+    });
+
+    targetLabel = durationLabel ? `for ${durationLabel}` : null;
+  }
+
+  if (targetLabel === null && input.targetMethod === "end-time") {
+    targetLabel = input.targetEndTime ? `until ${input.targetEndTime}` : null;
+  }
+
+  if (
+    targetLabel === null &&
+    !(action === "Idle" && input.defaultTargetSoc !== null && input.defaultTargetSoc <= 0)
+  ) {
+    targetLabel =
+      input.defaultTargetSoc === null ? null : `to ${input.defaultTargetSoc}%`;
+  }
+
+  if (
+    input.preferPowerWhenAvailable &&
+    input.powerW !== null &&
+    input.powerW > 0
+  ) {
+    return targetLabel
+      ? `${action} at ${input.powerW}W ${targetLabel}`
+      : `${action} at ${input.powerW}W`;
+  }
+
+  return targetLabel ? `${action} ${targetLabel}` : action;
+}
+
+function formatDurationTargetLabel(input: {
+  targetDurationMinutes: number | null;
+  activeStartedAt: string | null;
+  now: Date;
+}): string | null {
+  if (input.targetDurationMinutes === null || input.targetDurationMinutes <= 0) {
+    return null;
+  }
+
+  if (input.activeStartedAt === null) {
+    return formatMinuteCount(input.targetDurationMinutes);
+  }
+
+  const startedAt = new Date(input.activeStartedAt).getTime();
+
+  if (Number.isNaN(startedAt)) {
+    return formatMinuteCount(input.targetDurationMinutes);
+  }
+
+  const remainingMinutes = Math.max(
+    1,
+    Math.ceil(
+      (startedAt + input.targetDurationMinutes * 60_000 - input.now.getTime()) /
+        60_000,
+    ),
+  );
+
+  return formatMinuteCount(remainingMinutes);
+}
+
+function formatMinuteCount(value: number): string {
+  return value === 1 ? "1 minute" : `${value} minutes`;
 }
 
 function describeScheduledTargetHuman(item: BatteryStrategyPlanItem): string | null {

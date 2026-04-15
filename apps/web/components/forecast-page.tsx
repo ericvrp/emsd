@@ -62,7 +62,7 @@ const GRAPH_REFRESH_INTERVAL_MS = 60 * 1_000;
 const MAX_SOLAR_PREDICTION_PRECEDING_DAYS = 7;
 const SOLAR_PREDICTION_MATCH_TOLERANCE_MS = 7.5 * 60 * 1_000;
 const SOLAR_PREDICTION_BUCKET_MS = 15 * 60 * 1_000;
-const SOLAR_POWER_AXIS_MAX_W = 6_000;
+const SOLAR_POWER_AXIS_MAX_W = 4_000;
 
 type SolarPredictionSmoothingMode =
   | "off"
@@ -105,8 +105,10 @@ export function WeatherForecastSection({
   const [currentRefreshError, setCurrentRefreshError] = useState<string | null>(
     null,
   );
-  const [generatedAccuracyFilteringEnabled, setGeneratedAccuracyFilteringEnabled] =
-    useState(true);
+  const [
+    generatedAccuracyFilteringEnabled,
+    setGeneratedAccuracyFilteringEnabled,
+  ] = useState(true);
   const [predictionSmoothingMode, setPredictionSmoothingMode] =
     useState<SolarPredictionSmoothingMode>(
       DEFAULT_SOLAR_PREDICTION_SMOOTHING_MODE,
@@ -338,7 +340,9 @@ export function WeatherForecastSection({
   // ]);
 
   function handleCyclePredictionSmoothing() {
-    const nextMode = getNextSolarPredictionSmoothingMode(predictionSmoothingMode);
+    const nextMode = getNextSolarPredictionSmoothingMode(
+      predictionSmoothingMode,
+    );
     setPredictionSmoothingMode(nextMode);
     toast.success(
       `Predicted solar smoothing set to ${formatSolarPredictionSmoothingMode(nextMode)}.`,
@@ -405,7 +409,9 @@ export function WeatherForecastSection({
                 ? "Forecast data is not available yet."
                 : "No forecast data for this day."
             }
-            generatedAccuracyFilteringEnabled={generatedAccuracyFilteringEnabled}
+            generatedAccuracyFilteringEnabled={
+              generatedAccuracyFilteringEnabled
+            }
             headerAccessory={<TopLevelDaySelect daySelection={daySelection} />}
             nowMarkerPeriodStart={daySelection.nowMarkerPeriodStart}
             onToggleGeneratedAccuracyFiltering={
@@ -1266,7 +1272,8 @@ function getNextSolarPredictionSmoothingMode(
   currentMode: SolarPredictionSmoothingMode,
 ): SolarPredictionSmoothingMode {
   const currentIndex = SOLAR_PREDICTION_SMOOTHING_MODES.indexOf(currentMode);
-  const nextIndex = (currentIndex + 1) % SOLAR_PREDICTION_SMOOTHING_MODES.length;
+  const nextIndex =
+    (currentIndex + 1) % SOLAR_PREDICTION_SMOOTHING_MODES.length;
   return SOLAR_PREDICTION_SMOOTHING_MODES[nextIndex] ?? currentMode;
 }
 

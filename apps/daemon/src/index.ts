@@ -233,7 +233,7 @@ function main(): void {
             });
           }
 
-          if (shouldRestoreDefaultStrategy(battery, sample)) {
+          if (shouldRestoreDefaultStrategy(battery, sample, pollStartedAt)) {
             const fallbackItem = getFallbackStrategyPlanItem(battery);
             const fallbackStrategy = resolveBatteryStrategyFromPlanItem({
               item: fallbackItem,
@@ -523,6 +523,7 @@ function shouldMarkManualModeStarted(
 function shouldRestoreDefaultStrategy(
   battery: BatteryRecord,
   sample: NormalizedBatteryInfo,
+  now: Date,
 ): boolean {
   if (
     !battery.manualModeActive ||
@@ -533,6 +534,14 @@ function shouldRestoreDefaultStrategy(
   }
 
   if (battery.manualState === "charging") {
+    if (hasManualDurationExpired(battery, now)) {
+      return true;
+    }
+
+    if (hasManualEndTimeElapsed(battery, now)) {
+      return true;
+    }
+
     if (
       sample.socPercent !== null &&
       battery.manualChargeTargetSoc !== null &&
@@ -545,6 +554,14 @@ function shouldRestoreDefaultStrategy(
   }
 
   if (battery.manualState === "discharging") {
+    if (hasManualDurationExpired(battery, now)) {
+      return true;
+    }
+
+    if (hasManualEndTimeElapsed(battery, now)) {
+      return true;
+    }
+
     if (
       sample.socPercent !== null &&
       battery.manualDischargeTargetSoc !== null &&
@@ -557,6 +574,61 @@ function shouldRestoreDefaultStrategy(
   }
 
   return true;
+}
+
+function hasManualDurationExpired(battery: BatteryRecord, now: Date): boolean {
+  if (battery.strategyRuntime.manualTargetMethod !== "duration") {
+    return false;
+  }
+
+  const durationMinutes = battery.strategyRuntime.manualTargetDurationMinutes;
+  const startedAt = battery.strategyRuntime.manualTargetStartedAt;
+
+  if (
+    durationMinutes === null ||
+    durationMinutes === undefined ||
+    durationMinutes <= 0 ||
+    !startedAt
+  ) {
+    return false;
+  }
+
+  const startedAtMs = new Date(startedAt).getTime();
+
+  if (Number.isNaN(startedAtMs)) {
+    return false;
+  }
+
+  return now.getTime() >= startedAtMs + durationMinutes * 60_000;
+}
+
+function hasManualEndTimeElapsed(battery: BatteryRecord, now: Date): boolean {
+  if (battery.strategyRuntime.manualTargetMethod !== "end-time") {
+    return false;
+  }
+
+  const endTime = battery.strategyRuntime.manualTargetEndTime;
+  const startedAt = battery.strategyRuntime.manualTargetStartedAt;
+
+  if (!endTime || !startedAt) {
+    return false;
+  }
+
+  const [hoursPart, minutesPart] = endTime.split(":");
+  const startedAtDate = new Date(startedAt);
+
+  if (Number.isNaN(startedAtDate.getTime())) {
+    return false;
+  }
+
+  const endAt = new Date(startedAtDate);
+  endAt.setHours(Number(hoursPart ?? "0"), Number(minutesPart ?? "0"), 0, 0);
+
+  if (endAt.getTime() <= startedAtDate.getTime()) {
+    endAt.setDate(endAt.getDate() + 1);
+  }
+
+  return now.getTime() >= endAt.getTime();
 }
 
 async function runScheduledStrategy(

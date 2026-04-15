@@ -92,6 +92,7 @@ test("api snapshot returns managed devices with telemetry", async () => {
   expect(snapshot.sites[0]?.id).toBe("home");
   expect(snapshot.sites[0]?.devices).toHaveLength(1);
   expect(snapshot.sites[0]?.devices[0]).toMatchObject({
+    batteryStrategySummary: "Default: Self-consumption",
     id: "battery-1",
     kind: "battery",
     telemetry: {
@@ -209,6 +210,75 @@ test("api history archive returns stored battery, price, and forecast data", asy
   expect(archive.solarEnergyProviderSamples).toHaveLength(1);
   expect(archive.solarForecastSamples).toHaveLength(1);
   expect(archive.dynamicPriceSamples).toHaveLength(1);
+});
+
+test("house-strategy-set persists manual target method metadata", async () => {
+  const databasePath = createTempDatabase();
+
+  globalThis.fetch = Object.assign(
+    async () =>
+      new Response(JSON.stringify({ result: true }), {
+        headers: { "content-type": "application/json" },
+        status: 200,
+      }),
+    {
+      preconnect: originalFetch.preconnect.bind(originalFetch),
+    },
+  ) as typeof fetch;
+
+  createSite(
+    {
+      id: "home",
+      location: "52.367600, 4.904100",
+      name: "Home",
+    },
+    databasePath,
+  );
+  createBattery(
+    {
+      connected: true,
+      enabled: true,
+      id: "battery-1",
+      ipAddress: "192.168.1.10",
+      minimumDischargePercent: 10,
+      model: "indevolt-battery",
+      name: "Battery",
+      plugin: "indevolt-battery",
+      status: "idle",
+    },
+    "home",
+    databasePath,
+  );
+
+  await runApiAction("house-strategy-set", {
+    manualChargeTargetSoc: 100,
+    manualDischargeTargetSoc: 10,
+    manualModeActive: true,
+    manualPowerW: 2400,
+    manualState: "discharging",
+    manualTargetSoc: 10,
+    siteId: "home",
+    strategyMode: "manual",
+    targetDurationMinutes: 6,
+    targetEndTime: null,
+    targetMethod: "duration",
+  });
+
+  const updated = getBattery("battery-1", "home", databasePath);
+
+  expect(updated?.strategyRuntime.manualTargetMethod).toBe("duration");
+  expect(updated?.strategyRuntime.manualTargetDurationMinutes).toBe(6);
+  expect(updated?.strategyRuntime.manualTargetEndTime).toBeNull();
+  expect(updated?.strategyRuntime.manualTargetStartedAt).toEqual(
+    expect.any(String),
+  );
+
+  const snapshot = (await runApiAction("snapshot")) as DashboardSnapshot;
+  const device = snapshot.sites[0]?.devices[0];
+
+  expect(device?.batteryManualTargetMethod).toBe("duration");
+  expect(device?.batteryManualTargetDurationMinutes).toBe(6);
+  expect(device?.batteryManualTargetEndTime).toBeNull();
 });
 
 test("house-strategy-plan-set applies the fallback and skips earlier same-day items", async () => {
