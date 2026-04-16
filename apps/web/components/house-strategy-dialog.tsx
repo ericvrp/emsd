@@ -181,7 +181,7 @@ export function HouseStrategyDialog({
         variant="ghost"
       >
         <ModeIcon manualModeActive={manualModeActive} />
-        <span>{buttonLabel}</span>
+        <span className="hidden md:inline">{buttonLabel}</span>
       </Button>
 
       {isOpen ? (
@@ -193,6 +193,9 @@ export function HouseStrategyDialog({
                   <div>
                     <p className="text-sm font-semibold uppercase tracking-[0.22em] text-cyan-300">
                       Strategy
+                    </p>
+                    <p className="mt-2 text-base text-slate-400">
+                      Current: {liveStrategySummary ?? "Default strategy"}
                     </p>
                   </div>
                   <Button

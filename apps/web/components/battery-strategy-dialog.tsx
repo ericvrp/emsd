@@ -77,7 +77,7 @@ export function BatteryStrategyDialog({
         variant="ghost"
       >
         <CurrentModeIcon manualModeActive={manualModeActive} />
-        <span className="hidden sm:inline">
+        <span className="hidden md:inline">
           {formatStrategyLabel({ manualModeActive, strategy, strategyPlan })}
         </span>
       </Button>
