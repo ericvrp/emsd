@@ -39,6 +39,7 @@ import {
   readWeatherForecast,
   readWeatherForecastSources,
 } from "../../daemon/src/database";
+import { formatBatteryStrategyStatusSummary } from "../../daemon/src/strategy-log";
 import { createBatteryPlugin } from "./battery-plugins";
 import {
   type DiscoveredDevice,
@@ -76,7 +77,6 @@ import {
   updateSite,
   updateWeatherForecastSource,
 } from "./managed-site-store";
-import { formatBatteryStrategyStatusSummary } from "../../daemon/src/strategy-log";
 import { getSolarEnergyProviderNormalizedInfo } from "./plugins/solar-energy-provider";
 
 interface ApiSuccess<T> {
@@ -350,10 +350,12 @@ function toManagedDeviceRecord(
       },
       batteryStrategyPlan: record.strategyPlan,
       batteryStrategySummary: formatBatteryStrategyStatusSummary(record, now),
-      batteryManualTargetMethod: record.strategyRuntime.manualTargetMethod ?? null,
+      batteryManualTargetMethod:
+        record.strategyRuntime.manualTargetMethod ?? null,
       batteryManualTargetDurationMinutes:
         record.strategyRuntime.manualTargetDurationMinutes ?? null,
-      batteryManualTargetEndTime: record.strategyRuntime.manualTargetEndTime ?? null,
+      batteryManualTargetEndTime:
+        record.strategyRuntime.manualTargetEndTime ?? null,
       batteryManualModeActive: record.manualModeActive,
       minimumDischargePercent: record.minimumDischargePercent,
       updatedAt: record.updatedAt,
@@ -418,8 +420,12 @@ function buildSnapshot(): DashboardSnapshot {
     sites: sites.map((site) => ({
       ...site,
       devices: [
-        ...listBatteries(site.id).map((record) => toManagedDeviceRecord(record, now)),
-        ...listMeters(site.id).map((record) => toManagedDeviceRecord(record, now)),
+        ...listBatteries(site.id).map((record) =>
+          toManagedDeviceRecord(record, now),
+        ),
+        ...listMeters(site.id).map((record) =>
+          toManagedDeviceRecord(record, now),
+        ),
         ...listSolarEnergyProviders(site.id).map((record) =>
           toManagedDeviceRecord(record, now),
         ),

@@ -18,9 +18,10 @@ export function describeStrategyPlanItemHuman(
   }
 
   if (item.strategyMode === "self-consumption") {
-    const summary = item.manualDischargeTargetSoc !== null
-      ? `self-consumption with a ${item.manualDischargeTargetSoc}% discharge floor`
-      : "self-consumption";
+    const summary =
+      item.manualDischargeTargetSoc !== null
+        ? `self-consumption with a ${item.manualDischargeTargetSoc}% discharge floor`
+        : "self-consumption";
 
     return joinHumanParts([summary, describeScheduledTargetHuman(item)]);
   }
@@ -375,7 +376,11 @@ function describeActionWithTarget(
 
   if (
     targetLabel === null &&
-    !(action === "Idle" && input.defaultTargetSoc !== null && input.defaultTargetSoc <= 0)
+    !(
+      action === "Idle" &&
+      input.defaultTargetSoc !== null &&
+      input.defaultTargetSoc <= 0
+    )
   ) {
     targetLabel =
       input.defaultTargetSoc === null ? null : `to ${input.defaultTargetSoc}%`;
@@ -399,7 +404,10 @@ function formatDurationTargetLabel(input: {
   activeStartedAt: string | null;
   now: Date;
 }): string | null {
-  if (input.targetDurationMinutes === null || input.targetDurationMinutes <= 0) {
+  if (
+    input.targetDurationMinutes === null ||
+    input.targetDurationMinutes <= 0
+  ) {
     return null;
   }
 
@@ -428,7 +436,9 @@ function formatMinuteCount(value: number): string {
   return value === 1 ? "1 minute" : `${value} minutes`;
 }
 
-function describeScheduledTargetHuman(item: BatteryStrategyPlanItem): string | null {
+function describeScheduledTargetHuman(
+  item: BatteryStrategyPlanItem,
+): string | null {
   if (item.targetMethod === "duration") {
     return item.targetDurationMinutes === null
       ? null
@@ -440,7 +450,9 @@ function describeScheduledTargetHuman(item: BatteryStrategyPlanItem): string | n
   }
 
   if (item.targetMethod === "soc") {
-    return item.manualTargetSoc === null ? null : `until ${item.manualTargetSoc}%`;
+    return item.manualTargetSoc === null
+      ? null
+      : `until ${item.manualTargetSoc}%`;
   }
 
   return null;
@@ -514,7 +526,10 @@ function getNextStrategyItemForToday(
       continue;
     }
 
-    if (nextTriggerAt === null || triggerAt.getTime() < nextTriggerAt.getTime()) {
+    if (
+      nextTriggerAt === null ||
+      triggerAt.getTime() < nextTriggerAt.getTime()
+    ) {
       nextItem = item;
       nextTriggerAt = triggerAt;
     }

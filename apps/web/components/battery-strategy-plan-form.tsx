@@ -6,7 +6,7 @@ import type {
   BatteryStrategyPlanRecord,
   BatteryStrategyTargetMethod,
   BatteryStrategyTriggerKind,
-} from "@emsd/core";
+} from "@emsd/core/client";
 import {
   ArrowDown,
   ArrowUp,
@@ -491,7 +491,9 @@ function applyStrategyAction(
           ? item.targetDurationMinutes
           : null,
       targetEndTime:
-        getPersistedTargetMethod(item) === "end-time" ? item.targetEndTime : null,
+        getPersistedTargetMethod(item) === "end-time"
+          ? item.targetEndTime
+          : null,
       targetMethod: getPersistedTargetMethod(item),
     };
   }

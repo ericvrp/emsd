@@ -140,10 +140,7 @@ export function getScheduledItemCompletion(input: {
   if (item.strategyMode === "manual" && item.manualState === "charging") {
     const targetSoc = item.manualChargeTargetSoc ?? 100;
 
-    if (
-      sample.socPercent !== null &&
-      sample.socPercent >= targetSoc
-    ) {
+    if (sample.socPercent !== null && sample.socPercent >= targetSoc) {
       return {
         reason: "charge-target-reached",
         nowAt: now.toISOString(),
@@ -163,10 +160,7 @@ export function getScheduledItemCompletion(input: {
     const targetSoc =
       item.manualDischargeTargetSoc ?? battery.minimumDischargePercent;
 
-    if (
-      sample.socPercent !== null &&
-      sample.socPercent <= targetSoc
-    ) {
+    if (sample.socPercent !== null && sample.socPercent <= targetSoc) {
       return {
         reason: "discharge-target-reached",
         nowAt: now.toISOString(),

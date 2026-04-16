@@ -383,6 +383,10 @@ function buildHistoricalGenerationDays(
     const dayOffset = index + 1;
     const date = new Date(targetPeriodStart);
     date.setDate(date.getDate() - dayOffset);
-    return buildGenerationSample("solar-1", date.toISOString(), getValue(dayOffset));
+    return buildGenerationSample(
+      "solar-1",
+      date.toISOString(),
+      getValue(dayOffset),
+    );
   });
 }

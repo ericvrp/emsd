@@ -1,6 +1,9 @@
 "use client";
 
-import type { BatteryManualState, BatteryStrategyRecord } from "@emsd/core";
+import type {
+  BatteryManualState,
+  BatteryStrategyRecord,
+} from "@emsd/core/client";
 import { Save } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { setHouseStrategyAction } from "../app/actions";

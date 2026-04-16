@@ -100,7 +100,10 @@ export function findPriceSelections(
         (h) => h.periodStart === current.periodStart,
       );
       if (!alreadyIncluded) {
-        highest.push({ periodStart: current.periodStart, value: current.value });
+        highest.push({
+          periodStart: current.periodStart,
+          value: current.value,
+        });
       }
     }
   }

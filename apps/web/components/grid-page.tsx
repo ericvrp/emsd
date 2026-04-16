@@ -1,6 +1,6 @@
 "use client";
 
-import type { HistoryArchive } from "@emsd/core";
+import type { HistoryArchive } from "@emsd/core/client";
 import { useEffect, useState } from "react";
 import { logBrowserIntervalHeartbeat } from "../lib/browser-heartbeat";
 import {
@@ -8,7 +8,6 @@ import {
   formatShortPowerValue,
 } from "../lib/power-format";
 import { UI_COLORS } from "../lib/ui-colors";
-import { RefreshWarning } from "./refresh-warning";
 import {
   SingleValueHistoryChart,
   aggregatePowerSamples,
@@ -16,6 +15,7 @@ import {
   invertSingleValueSeries,
   splitSingleValueSeriesByTime,
 } from "./history";
+import { RefreshWarning } from "./refresh-warning";
 import { SectionSummaryCard } from "./section-summary-card";
 import {
   TopLevelDaySelect,

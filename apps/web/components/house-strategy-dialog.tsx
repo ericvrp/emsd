@@ -3,7 +3,7 @@
 import type {
   BatteryStrategyPlanRecord,
   BatteryStrategyRecord,
-} from "@emsd/core";
+} from "@emsd/core/client";
 import { CalendarClock, Hand, X } from "lucide-react";
 import type { ComponentType } from "react";
 import { useEffect, useState } from "react";
@@ -90,7 +90,9 @@ export function HouseStrategyDialog({
   }, [isOpen, manualModeActive]);
 
   useEffect(() => {
-    setLiveStrategySummary(firstBattery?.batteryStrategySummary ?? "Default strategy");
+    setLiveStrategySummary(
+      firstBattery?.batteryStrategySummary ?? "Default strategy",
+    );
   }, [firstBattery?.batteryStrategySummary]);
 
   useEffect(() => {
@@ -115,7 +117,9 @@ export function HouseStrategyDialog({
         }
 
         if (!response.ok) {
-          throw new Error(`Strategy current request failed: ${response.status}`);
+          throw new Error(
+            `Strategy current request failed: ${response.status}`,
+          );
         }
 
         const payload = (await response.json()) as {
@@ -127,11 +131,15 @@ export function HouseStrategyDialog({
         }
 
         setLiveStrategySummary(
-          payload.currentStrategySummary ?? firstBattery?.batteryStrategySummary ?? "Default strategy",
+          payload.currentStrategySummary ??
+            firstBattery?.batteryStrategySummary ??
+            "Default strategy",
         );
       } catch {
         if (!cancelled) {
-          setLiveStrategySummary(firstBattery?.batteryStrategySummary ?? "Default strategy");
+          setLiveStrategySummary(
+            firstBattery?.batteryStrategySummary ?? "Default strategy",
+          );
         }
       }
     }
@@ -240,7 +248,8 @@ export function HouseStrategyDialog({
                           manualOnly
                           manualModeActive={true}
                           manualTargetDurationMinutes={
-                            firstBattery?.batteryManualTargetDurationMinutes ?? null
+                            firstBattery?.batteryManualTargetDurationMinutes ??
+                            null
                           }
                           manualTargetEndTime={
                             firstBattery?.batteryManualTargetEndTime ?? null

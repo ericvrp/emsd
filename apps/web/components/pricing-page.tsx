@@ -1,21 +1,21 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
 import {
-  PRICE_SELECTION_WINDOW_MS,
-  findPriceSelections,
   type DynamicPricePointRecord,
   type DynamicPriceSnapshotRecord,
   type HistoryArchive,
+  PRICE_SELECTION_WINDOW_MS,
+  findPriceSelections,
 } from "@emsd/core/client";
+import { useEffect, useMemo, useState } from "react";
 import { logBrowserIntervalHeartbeat } from "../lib/browser-heartbeat";
 import { UI_COLORS } from "../lib/ui-colors";
-import { RefreshWarning } from "./refresh-warning";
 import {
   SingleValueHistoryChart,
   fillSingleValueDay,
   splitSingleValueSeriesByTime,
 } from "./history";
+import { RefreshWarning } from "./refresh-warning";
 import { SectionSummaryCard } from "./section-summary-card";
 import type { SiteSnapshot } from "./settings-panel";
 import {

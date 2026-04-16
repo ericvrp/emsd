@@ -1,4 +1,5 @@
 export * from "./price-selection";
+export * from "./solar-prediction";
 
 export type {
   BatteryStatus,

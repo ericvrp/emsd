@@ -3,7 +3,7 @@
 import type {
   BatteryStrategyPlanRecord,
   BatteryStrategyRecord,
-} from "@emsd/core";
+} from "@emsd/core/client";
 import { CalendarClock, Hand, X } from "lucide-react";
 import type { ComponentType } from "react";
 import { useEffect, useState } from "react";

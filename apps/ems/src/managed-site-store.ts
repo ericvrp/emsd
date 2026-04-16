@@ -7,8 +7,8 @@ import {
   type BatteryStrategyMode,
   type BatteryStrategyPlanRecord,
   type BatteryStrategyRecord,
-  type BatteryStrategyTargetMethod,
   type BatteryStrategyRuntimeRecord,
+  type BatteryStrategyTargetMethod,
   type DynamicPriceSourceRecord,
   type MeterRecord,
   type SiteRecord,
@@ -798,7 +798,7 @@ export function setHouseStrategy(
           input.strategyMode === "manual" &&
           (input.manualState === "charging" ||
             input.manualState === "discharging")
-            ? input.manualTargetMethod ?? "soc"
+            ? (input.manualTargetMethod ?? "soc")
             : null,
         manualTargetDurationMinutes:
           input.manualModeActive === true &&
@@ -806,7 +806,7 @@ export function setHouseStrategy(
           (input.manualState === "charging" ||
             input.manualState === "discharging") &&
           input.manualTargetMethod === "duration"
-            ? input.manualTargetDurationMinutes ?? null
+            ? (input.manualTargetDurationMinutes ?? null)
             : null,
         manualTargetEndTime:
           input.manualModeActive === true &&
@@ -814,7 +814,7 @@ export function setHouseStrategy(
           (input.manualState === "charging" ||
             input.manualState === "discharging") &&
           input.manualTargetMethod === "end-time"
-            ? input.manualTargetEndTime ?? null
+            ? (input.manualTargetEndTime ?? null)
             : null,
         manualTargetStartedAt:
           input.manualModeActive === true &&

@@ -40,6 +40,13 @@ import {
   upsertWeatherForecast,
 } from "./database";
 import {
+  formatFallbackStrategyRestoreSummary,
+  formatManualStrategyAppliedSummary,
+  formatScheduledStrategyCompletionSummary,
+  formatScheduledStrategyStartedSummary,
+  formatStrategyPlanAppliedSummary,
+} from "./strategy-log";
+import {
   describeStrategyPlanItem,
   formatDaemonLogTimestamp,
   formatScheduledItemCompletion,
@@ -49,17 +56,10 @@ import {
   isItemAlreadyTriggeredToday,
   needsCompletionTracking,
   shouldMarkScheduledItemObserved,
-  shouldWaitForObservedStart,
   shouldSkipDelayedSocItemBecauseLaterItemIsDue,
   shouldSkipScheduledItem,
+  shouldWaitForObservedStart,
 } from "./strategy-scheduler";
-import {
-  formatFallbackStrategyRestoreSummary,
-  formatManualStrategyAppliedSummary,
-  formatScheduledStrategyCompletionSummary,
-  formatScheduledStrategyStartedSummary,
-  formatStrategyPlanAppliedSummary,
-} from "./strategy-log";
 
 const lockPath = getDaemonLockPath();
 const POLL_INTERVAL_MS = 5_000;
@@ -242,10 +242,7 @@ function main(): void {
 
             logInfoWithVerboseDetails(
               options.verbose,
-              formatFallbackStrategyRestoreSummary(
-                battery.id,
-                fallbackItem,
-              ),
+              formatFallbackStrategyRestoreSummary(battery.id, fallbackItem),
               `restoring default strategy for ${battery.id} after manual mode completed: ${describeStrategyPlanItem(fallbackItem)}`,
             );
 
@@ -873,7 +870,9 @@ function getFallbackStrategyPlanItem(
   const fallbackItem = battery.strategyPlan[0] ?? null;
 
   if (fallbackItem === null) {
-    throw new Error(`battery ${battery.id} is missing a fallback strategy item`);
+    throw new Error(
+      `battery ${battery.id} is missing a fallback strategy item`,
+    );
   }
 
   return fallbackItem;

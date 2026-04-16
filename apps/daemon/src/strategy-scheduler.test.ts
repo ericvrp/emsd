@@ -5,15 +5,15 @@ import type {
   NormalizedBatteryInfo,
 } from "@emsd/core";
 import {
-  formatScheduledItemCompletion,
   formatDaemonLogTimestamp,
+  formatScheduledItemCompletion,
   getScheduledItemCompletion,
   getTodayTriggerAt,
   needsCompletionTracking,
   shouldCompleteScheduledItem,
   shouldMarkScheduledItemObserved,
-  shouldWaitForObservedStart,
   shouldSkipDelayedSocItemBecauseLaterItemIsDue,
+  shouldWaitForObservedStart,
 } from "./strategy-scheduler";
 
 test("formatDaemonLogTimestamp uses local wall-clock formatting", () => {

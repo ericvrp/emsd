@@ -592,7 +592,8 @@ export async function setHouseStrategyAction(
             ? targetMethodRaw
             : null,
         targetDurationMinutes:
-          targetDurationMinutesRaw === null || targetDurationMinutesRaw.length === 0
+          targetDurationMinutesRaw === null ||
+          targetDurationMinutesRaw.length === 0
             ? null
             : Number(targetDurationMinutesRaw),
         targetEndTime:

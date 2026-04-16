@@ -1,7 +1,7 @@
 "use client";
 
-import type { HistoryArchive } from "@emsd/core";
-import { useEffect, useState, type ReactNode } from "react";
+import type { HistoryArchive } from "@emsd/core/client";
+import { type ReactNode, useEffect, useState } from "react";
 import { logBrowserIntervalHeartbeat } from "../lib/browser-heartbeat";
 import { formatAbsolutePowerValue } from "../lib/power-format";
 import { BatteryHistoryChart, buildBatteryHistoryPoints } from "./history";

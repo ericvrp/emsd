@@ -6,13 +6,13 @@ import type {
   DiscoveredDevice,
   MeterTelemetrySample,
 } from "./discovery-types";
-import { formatFetchError } from "./plugins/shared";
 import {
   type DiscoveryPlugin,
   type DiscoveryRequestDefinition,
   type DiscoverySignatureDefinition,
   discoveryPlugins,
 } from "./plugins";
+import { formatFetchError } from "./plugins/shared";
 
 export type {
   BatteryTelemetrySample,
@@ -172,7 +172,12 @@ async function fetchTelemetryResponse(
   let lastFailure = `${action} failed for ${ipAddress}.`;
 
   for (const scheme of schemes) {
-    const url = buildRequestUrl(ipAddress, plugin, request, scheme as "https" | "http");
+    const url = buildRequestUrl(
+      ipAddress,
+      plugin,
+      request,
+      scheme as "https" | "http",
+    );
     const headers = resolveRequestHeaders(request, ipAddress);
 
     try {

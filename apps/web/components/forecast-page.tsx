@@ -1,15 +1,19 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
 import type {
+  HistoryArchive,
   SolarEnergyProviderSampleRecord,
   SolarForecastSampleRecord,
   WeatherForecastPointRecord,
   WeatherForecastRecord,
   WeatherForecastSourceRecord,
-} from "@emsd/core";
-import type { HistoryArchive } from "@emsd/core";
-import { toast } from "sonner";
+} from "@emsd/core/client";
+import {
+  MAX_SOLAR_PREDICTION_PRECEDING_DAYS,
+  SOLAR_PREDICTION_MATCH_TOLERANCE_MS,
+  buildPredictedSolarGenerationSeries,
+} from "@emsd/core/client";
+import { type ReactNode, useEffect, useState } from "react";
 import {
   CartesianGrid,
   Line,
@@ -19,14 +23,14 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { toast } from "sonner";
+import { logBrowserIntervalHeartbeat } from "../lib/browser-heartbeat";
 import {
   formatAbsolutePowerValue,
   formatPowerValue,
   formatShortPowerValue,
 } from "../lib/power-format";
-import { logBrowserIntervalHeartbeat } from "../lib/browser-heartbeat";
 import { UI_CHART_STYLES, UI_COLORS } from "../lib/ui-colors";
-import { MeasuredChartContainer } from "./measured-chart-container";
 import {
   LegendChip,
   aggregatePowerSamples,
@@ -49,18 +53,17 @@ import {
   formatDayTick,
   formatTooltipTimestamp,
 } from "./history/utils";
+import { MeasuredChartContainer } from "./measured-chart-container";
+import { RefreshWarning } from "./refresh-warning";
 import { SectionSummaryCard } from "./section-summary-card";
 import type { SiteSnapshot } from "./settings-panel";
 import {
   TopLevelDaySelect,
   useTopLevelDaySelection,
 } from "./top-level-day-select";
-import { RefreshWarning } from "./refresh-warning";
 
 const LIVE_SOLAR_REFRESH_INTERVAL_MS = 5_000;
 const GRAPH_REFRESH_INTERVAL_MS = 60 * 1_000;
-const MAX_SOLAR_PREDICTION_PRECEDING_DAYS = 7;
-const SOLAR_PREDICTION_MATCH_TOLERANCE_MS = 7.5 * 60 * 1_000;
 const SOLAR_PREDICTION_BUCKET_MS = 15 * 60 * 1_000;
 const SOLAR_POWER_AXIS_MAX_W = 4_000;
 
@@ -113,6 +116,23 @@ export function WeatherForecastSection({
     useState<SolarPredictionSmoothingMode>(
       DEFAULT_SOLAR_PREDICTION_SMOOTHING_MODE,
     );
+  const [useImprovedAlgorithm, setUseImprovedAlgorithm] = useState(true);
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("solar-prediction-improved-algorithm");
+      if (saved !== null) {
+        setUseImprovedAlgorithm(saved === "true");
+      }
+    }
+  }, []);
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem(
+        "solar-prediction-improved-algorithm",
+        useImprovedAlgorithm.toString(),
+      );
+    }
+  }, [useImprovedAlgorithm]);
   const daySelection = useTopLevelDaySelection({ archive, requestedDay });
   const selectedDayForecastSeries = fillSingleValueDay(
     archive.solarForecastSamples.map((sample) => ({
@@ -129,8 +149,9 @@ export function WeatherForecastSection({
     : generatedSeries;
   const predictedSolarGeneration = buildPredictedSolarGenerationSeries({
     forecastSamples: archive.solarForecastSamples,
-    smoothingMode: predictionSmoothingMode,
     solarEnergyProviderSamples: archive.solarEnergyProviderSamples,
+    minForecastWm2: useImprovedAlgorithm ? 5 : 0,
+    useOutlierRemoval: useImprovedAlgorithm,
   });
   const selectedDayPredictedSeries = fillSingleValueDay(
     predictedSolarGeneration,
@@ -359,6 +380,16 @@ export function WeatherForecastSection({
     );
   }
 
+  function handleToggleImprovedAlgorithm() {
+    const next = !useImprovedAlgorithm;
+    setUseImprovedAlgorithm(next);
+    toast.success(
+      next
+        ? "Solar prediction algorithm: improved (threshold 5 W/m², outlier removal)"
+        : "Solar prediction algorithm: legacy (no threshold, simple mean)",
+    );
+  }
+
   return (
     <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-sky-300/40 to-transparent" />
@@ -422,6 +453,8 @@ export function WeatherForecastSection({
               predictionAccuracySummary.scoringPercentage
             }
             predictionSmoothingMode={predictionSmoothingMode}
+            improvedAlgorithmEnabled={useImprovedAlgorithm}
+            onToggleImprovedAlgorithm={handleToggleImprovedAlgorithm}
             forecastLabel={forecast?.metricLabel ?? "Solar Forecast"}
             forecastPoints={splitSingleValueSeriesByTime(
               selectedDayForecastSeries,
@@ -453,6 +486,8 @@ function ForecastPredictionChart({
   onCyclePredictionSmoothing,
   predictionAccuracyPercentage,
   predictionSmoothingMode,
+  improvedAlgorithmEnabled,
+  onToggleImprovedAlgorithm,
   predictedPoints,
 }: {
   emptyMessage: string;
@@ -467,6 +502,8 @@ function ForecastPredictionChart({
   onCyclePredictionSmoothing: () => void;
   predictionAccuracyPercentage: number | null;
   predictionSmoothingMode: SolarPredictionSmoothingMode;
+  improvedAlgorithmEnabled: boolean;
+  onToggleImprovedAlgorithm: () => void;
   predictedPoints: SplitSingleValuePoint[];
 }) {
   const chartData = forecastPoints.map((forecastPoint, index) => {
@@ -507,6 +544,9 @@ function ForecastPredictionChart({
     [0, SOLAR_POWER_AXIS_MAX_W],
   );
 
+  const forecastLegendLabel =
+    forecastLabel + (improvedAlgorithmEnabled ? " (improved)" : " (legacy)");
+
   return (
     <div className="space-y-2.5">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -529,7 +569,12 @@ function ForecastPredictionChart({
             marker={<PredictedSolarLegendMarker />}
             onClick={onCyclePredictionSmoothing}
           />
-          <LegendChip color={UI_COLORS.forecast} label={forecastLabel} />
+          <LegendChip
+            color={UI_COLORS.forecast}
+            label={forecastLegendLabel}
+            onClick={onToggleImprovedAlgorithm}
+            selected={improvedAlgorithmEnabled}
+          />
         </div>
         {headerAccessory}
       </div>
@@ -766,46 +811,6 @@ function getCurrentSolarPower(site: SiteSnapshot): number | null {
     }, null);
 }
 
-function buildPredictedSolarGenerationSeries(input: {
-  forecastSamples: SolarForecastSampleRecord[];
-  smoothingMode?: SolarPredictionSmoothingMode;
-  solarEnergyProviderSamples: SolarEnergyProviderSampleRecord[];
-  targetForecastSamples?: SolarForecastSampleRecord[];
-  maxPrecedingDays?: number;
-  matchToleranceMs?: number;
-}): Array<{ periodStart: string; value: number | null }> {
-  const forecastIndex = buildTimestampedValueIndex(
-    input.forecastSamples.map((sample) => ({
-      timestamp: sample.periodStart,
-      value: sample.ghiWm2 ?? sample.value,
-    })),
-  );
-  const generationIndex = buildTimestampedValueIndex(
-    aggregateSolarGenerationByPeriodStart(input.solarEnergyProviderSamples),
-  );
-  const targetSamples = input.targetForecastSamples ?? input.forecastSamples;
-  const maxPrecedingDays =
-    input.maxPrecedingDays ?? MAX_SOLAR_PREDICTION_PRECEDING_DAYS;
-  const matchToleranceMs =
-    input.matchToleranceMs ?? SOLAR_PREDICTION_MATCH_TOLERANCE_MS;
-  const smoothingMode =
-    input.smoothingMode ?? DEFAULT_SOLAR_PREDICTION_SMOOTHING_MODE;
-
-  const predictedSeries = targetSamples.map((sample) => ({
-    periodStart: sample.periodStart,
-    value: predictSolarGenerationForForecastSample({
-      forecastIndex,
-      generationIndex,
-      forecastValue: sample.ghiWm2 ?? sample.value,
-      maxPrecedingDays,
-      matchToleranceMs,
-      periodStart: sample.periodStart,
-    }),
-  }));
-
-  return applySolarSeriesSmoothing(predictedSeries, smoothingMode);
-}
-
 function applySolarSeriesSmoothing(
   series: Array<{ periodStart: string; value: number | null }>,
   smoothingMode: SolarPredictionSmoothingMode,
@@ -922,192 +927,6 @@ function isAdjacentPredictionBucket(
     candidateTimestampMs - referenceTimestampMs ===
     offset * SOLAR_PREDICTION_BUCKET_MS
   );
-}
-
-function predictSolarGenerationForForecastSample(input: {
-  forecastIndex: TimestampedValueIndex;
-  generationIndex: TimestampedValueIndex;
-  forecastValue: number | null;
-  maxPrecedingDays: number;
-  matchToleranceMs: number;
-  periodStart: string;
-}): number | null {
-  if (input.forecastValue === null) {
-    return null;
-  }
-
-  if (input.forecastValue === 0) {
-    return 0;
-  }
-
-  const targetDate = new Date(input.periodStart);
-
-  if (Number.isNaN(targetDate.getTime())) {
-    return null;
-  }
-
-  const ratios: number[] = [];
-
-  for (let dayOffset = 1; dayOffset <= input.maxPrecedingDays; dayOffset += 1) {
-    const historicalDate = new Date(targetDate);
-    historicalDate.setDate(historicalDate.getDate() - dayOffset);
-
-    const historicalTimestampMs = historicalDate.getTime();
-    const forecastMatch = findClosestTimestampedValueWithin(
-      input.forecastIndex,
-      historicalTimestampMs,
-      input.matchToleranceMs,
-    );
-    const generationMatch = findClosestTimestampedValueWithin(
-      input.generationIndex,
-      historicalTimestampMs,
-      input.matchToleranceMs,
-    );
-
-    if (
-      forecastMatch === null ||
-      generationMatch === null ||
-      forecastMatch.value === null ||
-      generationMatch.value === null ||
-      forecastMatch.value <= 0
-    ) {
-      continue;
-    }
-
-    ratios.push(generationMatch.value / forecastMatch.value);
-  }
-
-  if (ratios.length === 0) {
-    return null;
-  }
-
-  const averageRatio =
-    ratios.reduce((total, ratio) => total + ratio, 0) / ratios.length;
-  return input.forecastValue * averageRatio;
-}
-
-interface TimestampedValuePoint {
-  timestampMs: number;
-  value: number | null;
-}
-
-interface TimestampedValueIndex {
-  points: TimestampedValuePoint[];
-  timestampsMs: number[];
-}
-
-function aggregateSolarGenerationByPeriodStart(
-  samples: SolarEnergyProviderSampleRecord[],
-): Array<{ timestamp: string; value: number | null }> {
-  const aggregated = new Map<string, { hasValue: boolean; total: number }>();
-
-  for (const sample of samples) {
-    const current = aggregated.get(sample.periodStart) ?? {
-      hasValue: false,
-      total: 0,
-    };
-
-    if (typeof sample.powerW === "number") {
-      current.hasValue = true;
-      current.total += sample.powerW;
-    }
-
-    aggregated.set(sample.periodStart, current);
-  }
-
-  return [...aggregated.entries()]
-    .map(([timestamp, entry]) => ({
-      timestamp,
-      value: entry.hasValue ? entry.total : null,
-    }))
-    .sort(
-      (left, right) =>
-        new Date(left.timestamp).getTime() -
-        new Date(right.timestamp).getTime(),
-    );
-}
-
-function buildTimestampedValueIndex(
-  values: Array<{ timestamp: string; value: number | null }>,
-): TimestampedValueIndex {
-  const points = values
-    .map((value) => ({
-      timestampMs: new Date(value.timestamp).getTime(),
-      value: value.value,
-    }))
-    .filter((value) => Number.isFinite(value.timestampMs))
-    .sort((left, right) => left.timestampMs - right.timestampMs);
-
-  return {
-    points,
-    timestampsMs: points.map((point) => point.timestampMs),
-  };
-}
-
-function findClosestTimestampedValueWithin(
-  index: TimestampedValueIndex,
-  targetTimestampMs: number,
-  maxDeltaMs: number,
-): TimestampedValuePoint | null {
-  if (!Number.isFinite(targetTimestampMs) || index.points.length === 0) {
-    return null;
-  }
-
-  const insertionIndex = findTimestampInsertionIndex(
-    index.timestampsMs,
-    targetTimestampMs,
-  );
-  let closest: TimestampedValuePoint | null = null;
-
-  for (const candidateIndex of [insertionIndex - 1, insertionIndex]) {
-    const candidate = index.points[candidateIndex];
-
-    if (!candidate) {
-      continue;
-    }
-
-    if (
-      closest === null ||
-      Math.abs(candidate.timestampMs - targetTimestampMs) <
-        Math.abs(closest.timestampMs - targetTimestampMs)
-    ) {
-      closest = candidate;
-    }
-  }
-
-  if (
-    closest === null ||
-    Math.abs(closest.timestampMs - targetTimestampMs) > maxDeltaMs
-  ) {
-    return null;
-  }
-
-  return closest;
-}
-
-function findTimestampInsertionIndex(
-  timestampsMs: number[],
-  targetTimestampMs: number,
-): number {
-  let low = 0;
-  let high = timestampsMs.length;
-
-  while (low < high) {
-    const middle = Math.floor((low + high) / 2);
-    const value = timestampsMs[middle];
-
-    if (value === undefined) {
-      break;
-    }
-
-    if (value < targetTimestampMs) {
-      low = middle + 1;
-    } else {
-      high = middle;
-    }
-  }
-
-  return low;
 }
 
 function buildSolarPredictionAccuracySummary(input: {

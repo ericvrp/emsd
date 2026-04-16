@@ -5,7 +5,7 @@ import type {
   ManagedDeviceStatusRecord,
   SiteRecord,
   WeatherForecastSourceRecord,
-} from "@emsd/core";
+} from "@emsd/core/client";
 import {
   HardDrive,
   Home,

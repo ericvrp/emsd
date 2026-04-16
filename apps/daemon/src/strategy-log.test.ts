@@ -4,7 +4,6 @@ import type {
   BatteryStrategyPlanItem,
   BatteryStrategyRuntimeRecord,
 } from "@emsd/core";
-import type { ScheduledItemCompletion } from "./strategy-scheduler";
 import {
   describeCurrentBatteryStrategyHuman,
   describeStrategyPlanItemHuman,
@@ -15,6 +14,7 @@ import {
   formatScheduledStrategyStartedSummary,
   formatStrategyPlanAppliedSummary,
 } from "./strategy-log";
+import type { ScheduledItemCompletion } from "./strategy-scheduler";
 
 test("describes self-consumption in human terms", () => {
   expect(describeCurrentBatteryStrategyHuman(buildBattery())).toBe(

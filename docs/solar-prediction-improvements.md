@@ -27,7 +27,7 @@ From database query at 14:45 UTC:
 
 ## Requirements
 
-1. **Forecast threshold**: Exclude days where forecast < 10 W/m²
+1. **Forecast threshold**: Exclude days where forecast < 5 W/m²
 2. **Outlier removal**: Use Winsorized mean - drop min and max ratios when we have ≥4 valid ratios
 3. **Smoothing**: Keep as UI-only concern (separate from core algorithm, like current behavior)
 4. **Temporary UI toggle**: Ground light pill toggles new vs old behavior for debugging
@@ -49,7 +49,7 @@ From database query at 14:45 UTC:
    interface SolarPredictionOptions {
      maxPrecedingDays?: number;        // Default: 7
      matchToleranceMs?: number;      // Default: 7.5 * 60 * 1000
-     minForecastWm2?: number;        // Default: 0 (new: 10)
+      minForecastWm2?: number;        // Default: 0 (new: 5)
      useOutlierRemoval?: boolean;      // Default: false (new: true)
    }
    ```
@@ -68,7 +68,7 @@ Add tests:
 - `winsorized mean keeps all when < 4 ratios`
 
 Update existing tests in `packages/core/src/index.test.ts` to use new defaults:
-- Test expectations reflect threshold 10 and winsorize enabled
+- Test expectations reflect threshold 5 and winsorize enabled
 
 ### Phase 3: Update UI to Use New Algorithm
 
@@ -81,7 +81,7 @@ Update existing tests in `packages/core/src/index.test.ts` to use new defaults:
    const predictedSolarGeneration = buildPredictedSolarGenerationSeries({
      forecastSamples: archive.solarForecastSamples,
      solarEnergyProviderSamples: archive.solarEnergyProviderSamples,
-     minForecastWm2: 10,
+      minForecastWm2: 5,
      useOutlierRemoval: predictionMode === 'improved',
    });
    ```
@@ -125,11 +125,11 @@ Steps to verify implementation:
        AND f.value > 0
    )
    SELECT
-     (SELECT AVG(ratio) FROM ratios WHERE forecast >= 10) as mean_filtered,
-     (SELECT AVG(ratio) FROM ratios WHERE forecast >= 10 ORDER BY ratio LIMIT 1 OFFSET 2) as winsorized_mean;
+      (SELECT AVG(ratio) FROM ratios WHERE forecast >= 5) as mean_filtered,
+      (SELECT AVG(ratio) FROM ratios WHERE forecast >= 5 ORDER BY ratio LIMIT 1 OFFSET 2) as winsorized_mean;
    ```
 
-   Expected: ~5.49 (filtered mean), ~5.22 (winsorized)
+    Expected: ~12.91 (filtered mean includes outlier), ~5.93 (winsorized)
 
 4. **Visual verification:**
    - Navigate to `/solar` page
@@ -138,16 +138,16 @@ Steps to verify implementation:
 
 ## To-Do List
 
-- [ ] Phase 1: Create `packages/core/src/solar-prediction.ts` with new algorithm
-- [ ] Phase 1: Add `SolarPredictionOptions` interface
-- [ ] Phase 1: Implement threshold filtering (minForecastWm2)
-- [ ] Phase 1: Implement Winsorized mean outlier removal
-- [ ] Phase 2: Create `packages/core/src/solar-prediction.test.ts`
-- [ ] Phase 2: Update tests in `packages/core/src/index.test.ts`
-- [ ] Phase 3: Update `forecast-page.tsx` to use core algorithm with options
-- [ ] Phase 4: Add temporary toggle state for prediction mode
-- [ ] Phase 4: Make ground light pill clickable for toggle
-- [ ] Phase 5: Run tests and verify with database query
+- [x] Phase 1: Create `packages/core/src/solar-prediction.ts` with new algorithm
+- [x] Phase 1: Add `SolarPredictionOptions` interface
+- [x] Phase 1: Implement threshold filtering (minForecastWm2)
+- [x] Phase 1: Implement Winsorized mean outlier removal
+- [x] Phase 2: Create `packages/core/src/solar-prediction.test.ts`
+- [x] Phase 2: Update tests in `packages/core/src/index.test.ts`
+- [x] Phase 3: Update `forecast-page.tsx` to use core algorithm with options
+- [x] Phase 4: Add temporary toggle state for prediction mode
+- [x] Phase 4: Make ground light pill clickable for toggle
+- [x] Phase 5: Run tests and verify with database query
 - [ ] Phase 5: Visual verification on `/solar` page
 
 ## Notes
@@ -156,3 +156,15 @@ Steps to verify implementation:
 - **Backward compatibility**: Keep legacy behavior as default initially, then flip to new after verification
 - **Smoothing**: Continues to be applied in UI layer, not core algorithm
 - **Daemon integration**: The core module can be imported by daemon once `"expected-solar"` trigger is implemented
+- **Threshold update**: Changed from 10 W/m² to 5 W/m² after initial verification
+
+## Current Status (2026‑04‑16)
+
+- Core module and tests: ✅
+- UI integration with toggle: ✅
+- Lint and typecheck: ✅
+- Database verification: ✅ (winsorized mean ≈ 5.93)
+- Node built‑in import fix: ✅ (updated client components to import from `@emsd/core/client`)
+- Visual verification: pending (Next.js build now succeeds; please verify toggle on /solar page)
+
+The improved algorithm is active by default; clicking the “Solar Forecast” legend pill toggles between improved (threshold 5 W/m², Winsorized mean) and legacy (no threshold, simple mean).
