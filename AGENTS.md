@@ -97,12 +97,18 @@
 - The daemon creates the SQLite schema but does not seed mock battery data.
 - `ems discover` reports devices that are reachable during the current scan without persisting a discovery history.
 - The EMS command app currently supports managed battery and meter commands for the default site.
+- The EMS command app supports solar energy provider plugins (Enphase and SolarEdge) for reading solar production data.
 - The web app currently exposes live battery status, managed device settings, battery strategy schedule editing, and a temporary battery `Now Mode` manual override.
 - Battery strategy schedules are persisted as a full array on each battery record.
 - The first strategy schedule item acts as the default fallback strategy.
 - Daily manual strategy items persist their target method and timing details, including percentage, duration, or end time.
 - Strategy schedule items now persist an explicit trigger kind so the current `daily-time` trigger can expand later to price, weather, or expected-solar triggers without reshaping the saved plan.
 - A temporary battery `Now Mode` override is persisted separately from the saved strategy schedule and the daemon restores the fallback strategy after the override completes.
+
+## Plugin Dependencies
+
+- SolarEdge local plugin uses pure TypeScript Protocol Buffer decoding and requires no external dependencies.
+- Enphase local plugin uses HTTP/HTTPS requests; environment variables may be required for cloud authentication when HTTPS fails.
 
 ## Package-Specific Scripts
 

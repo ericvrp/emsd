@@ -125,6 +125,21 @@ test("getDiscoverySignatures exposes the discovery plugin catalog", () => {
         match: ["<sn>\\d+</sn>", "<(software|pn)>"],
       },
     },
+    {
+      pluginType: "solar-energy-provider",
+      category: "solar-energy-provider",
+      model: "solaredge-local",
+      name: "SolarEdge Inverter",
+      port: 80,
+      schemes: ["http"],
+      request: {
+        path: "/",
+        method: "GET",
+      },
+      response: {
+        match: ["SolarEdge", "SetApp"],
+      },
+    },
   ]);
 });
 

@@ -56,24 +56,28 @@ Key characteristics for EMSD integration:
 - Data reported **aggregated** by the inverter; the local API does not expose per‑optimizer time series
 - Optimizer health (online status, voltage, current, temperature) is available as averages via the `maintenance` endpoint
 
-## Python Wrapper
+## API Protocol
 
-The community‑maintained Python library [`solaredge‑local`](https://pypi.org/project/solaredge‑local/) provides a convenient interface. Install with:
+The SolarEdge local API uses Protocol Buffers (protobuf) over HTTP GET requests. All endpoints under `/web/v1/` return binary protobuf payloads. There is no authentication required.
 
-```bash
-pip3 install solaredge‑local
-```
+### Status Endpoint Structure
 
-Basic usage:
+The main endpoint for production data is `GET /web/v1/status`. The response is a protobuf message with this structure (simplified):
 
-```python
-from solaredge_local import SolarEdge
-
-client = SolarEdge("http://<inverter‑ip>")
-status = client.get_status()           # production, energy totals, grid measurements
-maintenance = client.get_maintenance() # optimizer details, diagnostics
-information = client.get_information() # software versions, error logs
-power_control = client.get_power_control() # power‑control related settings
+```protobuf
+message Status {
+  float powerWatt = 3;           // current production power (W)
+  float voltage = 4;             // grid voltage (V)
+  float frequencyHz = 5;         // grid frequency (Hz)
+  message EnergyStatistics {
+    float today = 1;             // energy today (Wh)
+    float thisMonth = 2;         // energy this month (Wh)
+    float thisYear = 3;          // energy this year (Wh)
+    float total = 4;             // lifetime energy (Wh)
+  }
+  EnergyStatistics energy = 15;
+  // ... other fields omitted
+}
 ```
 
 ## API Endpoints
@@ -239,7 +243,7 @@ The inverter calculates average values across all online optimizers; individual 
 
 1. **Verify local access** – browse to the inverter’s IP address before coding.
 2. **Firmware warning** – recent firmware may disable the local API. If the web interface is inaccessible, the API will not work.
-3. **Use the Python wrapper** – the `solaredge‑local` library handles protobuf decoding and provides a convenient object model.
+3. **Use the TypeScript implementation** – EMSD includes a pure TypeScript Protocol Buffer decoder that extracts power and energy data without Python dependencies.
 4. **Polling interval** – the inverter may throttle frequent requests. The Home Assistant integration uses a 10‑second throttle.
 5. **Meter interpretation** – confirm which meter index corresponds to import vs. export by comparing with the inverter’s web interface or known power flow.
 6. **Optimizer data** – optimizer‑level details are only available as averages; per‑optimizer monitoring requires the SolarEdge cloud API.
@@ -288,6 +292,44 @@ http://192.168.1.100/web/v1/maintenance
 http://192.168.1.100/web/v1/information
 http://192.168.1.100/web/v1/power_control
 ```
+
+## EMSD Plugin Implementation
+
+The EMSD SolarEdge plugin uses a pure TypeScript implementation that directly queries the inverter's local API and decodes the Protocol Buffer responses without Python dependencies.
+
+### Requirements
+
+- No external dependencies beyond Bun/Node.js
+- The inverter must have local API enabled (see firmware warning above)
+
+### How It Works
+
+1. The plugin sends an HTTP GET request to `http://<inverter‑ip>/web/v1/status`
+2. The binary protobuf response is decoded using a custom Protocol Buffer decoder implemented in TypeScript
+3. The plugin extracts the `powerWatt` field (field 3) and returns it as the current production power
+4. If the request or decoding fails, the provider is marked as `offline`
+
+### Discovery
+
+The discovery plugin sends an HTTP GET request to the inverter's root path (`/`) and looks for "SolarEdge" or "SetApp" in the response. If found, a supplemental request is sent to `/web/v1/status` to parse the current power from the protobuf response. The device is reported as a SolarEdge inverter with its current power output.
+
+### Telemetry Polling
+
+The daemon periodically calls `getSolarEnergyProviderNormalizedInfo`, which fetches the status endpoint and decodes the protobuf response. If the request fails or the response cannot be decoded, the provider is marked as `offline` and `currentPowerW` is `null`.
+
+### Configuration
+
+No additional environment variables are required. The plugin uses the inverter's IP address stored in the managed device record.
+
+### Protocol Buffer Decoding
+
+The plugin includes a minimal Protocol Buffer decoder that understands the SolarEdge status message structure:
+- Field 3: `powerWatt` (float)
+- Field 4: `voltage` (float)
+- Field 5: `frequencyHz` (float)
+- Field 15: nested `EnergyStatistics` message containing `today`, `thisMonth`, `thisYear`, `total` (float)
+
+The decoder skips unknown fields and wire types, ensuring forward compatibility with future firmware updates.
 
 ## Practical Recommendation
 

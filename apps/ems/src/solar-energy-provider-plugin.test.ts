@@ -182,6 +182,34 @@ test("Enphase auth bootstrap network errors include the cloud login endpoint", a
   );
 });
 
+test("SolarEdge local solar energy provider fetches current production", async () => {
+  globalThis.fetch = (async (
+    input: string | URL | Request,
+    init?: RequestInit,
+  ) => {
+    const url = String(input);
+
+    if (url === "http://192.168.1.50/web/v1/status") {
+      // Simple protobuf response with powerWatt = 1500.0 (field 3, wire type 5)
+      // Tag: field 3, wire type 5 => (3 << 3) | 5 = 29 (0x1D)
+      // Float 1500.0 = 0x44BB8000 (little endian bytes: 0x00 0x80 0xBB 0x44)
+      const bytes = new Uint8Array([0x1d, 0x00, 0x80, 0xbb, 0x44]);
+      return new Response(bytes, { status: 200 });
+    }
+
+    throw new Error(`Unexpected URL: ${url}`);
+  }) as typeof fetch;
+
+  const info = await getSolarEnergyProviderNormalizedInfo(
+    buildSolarEdgeProvider(),
+  );
+
+  expect(info).toEqual({
+    currentPowerW: 1500,
+    status: "connected",
+  });
+});
+
 function buildProvider(): SolarEnergyProviderRecord {
   return {
     id: "solar-provider-1",
@@ -192,6 +220,20 @@ function buildProvider(): SolarEnergyProviderRecord {
     enabled: true,
     connected: true,
     serialNumber: "123456789012",
+    updatedAt: "2026-04-09T00:00:00.000Z",
+  };
+}
+
+function buildSolarEdgeProvider(): SolarEnergyProviderRecord {
+  return {
+    id: "solar-provider-2",
+    siteId: "home",
+    name: "SolarEdge Inverter",
+    plugin: "solaredge-local",
+    ipAddress: "192.168.1.50",
+    enabled: true,
+    connected: true,
+    serialNumber: "SE3000H-123456",
     updatedAt: "2026-04-09T00:00:00.000Z",
   };
 }
