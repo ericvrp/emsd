@@ -15,6 +15,7 @@ This document is a corrected implementation plan only. It does not include code 
 - Add colored background state bands for the four supported strategy states.
 - Keep the battery power and charge lines as the primary data series.
 - Show the exact user-facing strategy label on hover.
+- Show whether the active state was manual or automatic in the hover details.
 - Keep wording aligned with the current strategy dialog.
 
 ## Existing Constraints
@@ -55,6 +56,7 @@ What the user sees:
 - soft full-height background bands showing which strategy state was active at a given time
 - a legend for the four states
 - hover text that combines the battery point data with the active strategy label for that time window
+- hover text that also shows whether the state was manual or automatic
 
 Why this first:
 
@@ -90,6 +92,7 @@ Notes:
 - `display_label` preserves the historical hover text even if the current plan is edited.
 - `display_state` is the chart coloring key, such as `self-consumption`, `charging`, `discharging`, or `idle`.
 - `source` can distinguish `manual`, `schedule`, and `fallback`.
+- the stored history should support rendering a simple manual versus automatic distinction in the UI.
 
 ### 2. Record transitions in the daemon when state changes
 
@@ -179,8 +182,13 @@ This should feel like one chart with layered meaning, not two stacked charts.
 - Hover should show:
   - formatted time range
   - exact stored `display_label`
+  - whether the active state was `Manual` or `Automatic` at that time
   - battery power and charge values already shown for that point
   - optional secondary detail like `Manual`, `Scheduled`, or trigger type when available
+
+The minimum requirement is that the tooltip shows whether the state was manual or automatic.
+
+The graph should also be evaluated for a lightweight on-chart indication of manual versus automatic state, as long as it remains readable and does not clutter the battery chart.
 
 ### Legend And Filter Pills
 
@@ -260,12 +268,14 @@ The graph plan should use `Self-consumption`, not `Self-Conservation`.
 - Add strategy overlay rendering to the existing battery chart.
 - Reuse day selector, refresh warnings, and section summary patterns already present on the battery page.
 - Add a small semantic legend for the four states.
+- Include manual versus automatic state in the overlay tooltip, and test whether a compact on-chart marker remains readable.
 - Verify mobile and desktop layouts.
 
 ## Validation Checklist
 
 - Transition history is written when strategy state changes, not just on a 15-minute sample boundary.
 - Hover labels remain correct after the user edits the current strategy plan.
+- Tooltips show whether the state was manual or automatic.
 - Current-day graph refresh shows newly started or completed strategy states.
 - Day navigation shows correct clipped ranges at midnight boundaries.
 - Labels match the strategy dialog exactly.
