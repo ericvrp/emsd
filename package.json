@@ -29,6 +29,7 @@
     "ems": "bun run --cwd apps/ems ems --",
     "battery:list": "bun run --cwd apps/ems ems -- battery list",
     "discover": "bun run --cwd apps/ems ems -- discover",
+    "solar:score": "bun run scripts/score-solar-prediction.ts",
     "web:dev": "bun run --cwd apps/web dev",
     "web:build": "bun run --cwd apps/web build",
     "web:start": "bun run --cwd apps/web start"

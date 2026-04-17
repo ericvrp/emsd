@@ -40,6 +40,7 @@
 - Lint the repo: `bun run lint`
 - Format the repo: `bun run format`
 - Run all tests: `bun run test`
+- Score solar prediction quality over local history: `bun run solar:score`
 
 ### Daemon Commands
 

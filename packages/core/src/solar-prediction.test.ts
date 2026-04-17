@@ -2,6 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import {
   MAX_SOLAR_PREDICTION_PRECEDING_DAYS,
   SOLAR_PREDICTION_MATCH_TOLERANCE_MS,
+  buildSolarPredictionAccuracySummary,
   buildPredictedSolarGenerationSeries,
 } from "./solar-prediction";
 
@@ -105,7 +106,7 @@ test("threshold default is 5 W/m²", () => {
   expect(prediction?.value).toBeCloseTo(1350, 10);
 });
 
-test("winsorized mean drops min and max when >= 4 ratios", () => {
+test("v1 uses trimmed mean when outlier removal is enabled", () => {
   const targetPeriodStart = "2026-04-09T12:00:00.000Z";
   const forecastSamples = [
     buildForecastSample(targetPeriodStart, 100),
@@ -119,6 +120,7 @@ test("winsorized mean drops min and max when >= 4 ratios", () => {
   );
 
   const [prediction] = buildPredictedSolarGenerationSeries({
+    algorithmVersion: "v1",
     forecastSamples,
     solarEnergyProviderSamples,
     useOutlierRemoval: true,
@@ -127,6 +129,60 @@ test("winsorized mean drops min and max when >= 4 ratios", () => {
   // Ratios: [1,2,3,4,5,6], drop 1 and 6 -> average of 2,3,4,5 = 3.5
   // Forecast 100 * 3.5 = 350
   expect(prediction?.value).toBeCloseTo(350, 10);
+});
+
+test("v2 uses winsorized mean when >= 4 ratios", () => {
+  const targetPeriodStart = "2026-04-09T12:00:00.000Z";
+  const forecastSamples = [
+    buildForecastSample(targetPeriodStart, 100),
+    ...buildHistoricalForecastDays(targetPeriodStart, 6, 50),
+  ];
+  const solarEnergyProviderSamples = buildHistoricalGenerationDays(
+    targetPeriodStart,
+    6,
+    (dayOffset) => dayOffset * 50,
+  );
+
+  const [prediction] = buildPredictedSolarGenerationSeries({
+    algorithmVersion: "v2",
+    forecastSamples,
+    solarEnergyProviderSamples,
+  });
+
+  // v2 now blends robust ratios with calibrated regression and clips to observed history.
+  expect(prediction?.value).toBeCloseTo(250, 10);
+});
+
+test("v1 and v2 diverge on asymmetric ratios", () => {
+  const targetPeriodStart = "2026-04-09T12:00:00.000Z";
+  const forecastSamples = [
+    buildForecastSample(targetPeriodStart, 100),
+    ...buildHistoricalForecastDays(targetPeriodStart, 5, 100),
+  ];
+  const ratios = [0, 1, 2, 100, 101];
+  const solarEnergyProviderSamples = buildHistoricalGenerationDays(
+    targetPeriodStart,
+    ratios.length,
+    (dayOffset) => {
+      const ratio = ratios[dayOffset - 1];
+      return ratio === undefined ? 0 : ratio * 100;
+    },
+  );
+
+  const [trimmedPrediction] = buildPredictedSolarGenerationSeries({
+    algorithmVersion: "v1",
+    forecastSamples,
+    solarEnergyProviderSamples,
+  });
+  const [winsorizedPrediction] = buildPredictedSolarGenerationSeries({
+    algorithmVersion: "v2",
+    forecastSamples,
+    solarEnergyProviderSamples,
+  });
+
+  // v2 still diverges from v1, but regression reduces the influence of the extreme ratios.
+  expect(trimmedPrediction?.value).toBeCloseTo(3433.333333, 6);
+  expect(winsorizedPrediction?.value).toBeCloseTo(2035.912409, 6);
 });
 
 test("winsorized mean keeps all ratios when < 4", () => {
@@ -142,13 +198,100 @@ test("winsorized mean keeps all ratios when < 4", () => {
   );
 
   const [prediction] = buildPredictedSolarGenerationSeries({
+    algorithmVersion: "v2",
     forecastSamples,
     solarEnergyProviderSamples,
-    useOutlierRemoval: true,
   });
 
-  // Only 2 ratios: 2 and 4, average = 3, forecast 100 * 3 = 300
-  expect(prediction?.value).toBeCloseTo(300, 10);
+  // With limited history, regression plus observed-max clipping keeps the result bounded.
+  expect(prediction?.value).toBeCloseTo(200, 10);
+});
+
+test("v2 favors more recent matches than older matches", () => {
+  const targetPeriodStart = "2026-04-09T12:00:00.000Z";
+  const forecastSamples = [
+    buildForecastSample(targetPeriodStart, 100),
+    ...buildHistoricalForecastDays(targetPeriodStart, 3, 100),
+  ];
+  const solarEnergyProviderSamples = buildHistoricalGenerationDays(
+    targetPeriodStart,
+    3,
+    (dayOffset) => (dayOffset === 1 ? 100 : 400),
+  );
+
+  const [prediction] = buildPredictedSolarGenerationSeries({
+    algorithmVersion: "v2",
+    forecastSamples,
+    solarEnergyProviderSamples,
+  });
+
+  // Ratios: [1,4,4], weighted by 1, 1/2, 1/3 => 26/11 ~= 2.36364.
+  expect(prediction?.value).toBeCloseTo(236.363636, 6);
+});
+
+test("v2 clips peak predictions to observed site maximum", () => {
+  const targetPeriodStart = "2026-04-09T12:00:00.000Z";
+  const forecastSamples = [
+    buildForecastSample(targetPeriodStart, 400),
+    ...buildHistoricalForecastDays(targetPeriodStart, 4, 200),
+  ];
+  const solarEnergyProviderSamples = buildHistoricalGenerationDays(
+    targetPeriodStart,
+    4,
+    () => 200,
+  );
+
+  const [v1Prediction] = buildPredictedSolarGenerationSeries({
+    algorithmVersion: "v1",
+    forecastSamples,
+    solarEnergyProviderSamples,
+  });
+  const [v2Prediction] = buildPredictedSolarGenerationSeries({
+    algorithmVersion: "v2",
+    forecastSamples,
+    solarEnergyProviderSamples,
+  });
+
+  expect(v1Prediction?.value).toBeCloseTo(400, 10);
+  expect(v2Prediction?.value).toBeCloseTo(200, 10);
+});
+
+test("v2 beats v1 when low-forecast days inflate raw ratios", () => {
+  const targetPeriodStart = "2026-04-09T12:00:00.000Z";
+  const expectedActualPower = 180;
+  const forecastSamples = [
+    buildForecastSample(targetPeriodStart, 200),
+    buildForecastSample("2026-04-08T12:00:00.000Z", 20),
+    buildForecastSample("2026-04-07T12:00:00.000Z", 20),
+    buildForecastSample("2026-04-06T12:00:00.000Z", 200),
+    buildForecastSample("2026-04-05T12:00:00.000Z", 200),
+    buildForecastSample("2026-04-04T12:00:00.000Z", 200),
+  ];
+  const solarEnergyProviderSamples = [
+    buildGenerationSample("solar-1", "2026-04-08T12:00:00.000Z", 40),
+    buildGenerationSample("solar-1", "2026-04-07T12:00:00.000Z", 40),
+    buildGenerationSample("solar-1", "2026-04-06T12:00:00.000Z", 180),
+    buildGenerationSample("solar-1", "2026-04-05T12:00:00.000Z", 180),
+    buildGenerationSample("solar-1", "2026-04-04T12:00:00.000Z", 180),
+  ];
+
+  const [v1Prediction] = buildPredictedSolarGenerationSeries({
+    algorithmVersion: "v1",
+    forecastSamples,
+    solarEnergyProviderSamples,
+  });
+  const [v2Prediction] = buildPredictedSolarGenerationSeries({
+    algorithmVersion: "v2",
+    forecastSamples,
+    solarEnergyProviderSamples,
+  });
+
+  const v1Error = Math.abs((v1Prediction?.value ?? 0) - expectedActualPower);
+  const v2Error = Math.abs((v2Prediction?.value ?? 0) - expectedActualPower);
+
+  expect(v1Prediction?.value).toBeCloseTo(253.333333, 6);
+  expect(v2Prediction?.value).toBeCloseTo(180, 10);
+  expect(v2Error).toBeLessThan(v1Error);
 });
 
 test("outlier removal defaults to enabled", () => {
@@ -196,6 +339,53 @@ test("can disable outlier removal", () => {
   expect(prediction?.value).toBeCloseTo(600, 10);
 });
 
+test("v0 keeps the legacy no-threshold simple mean behavior", () => {
+  const targetPeriodStart = "2026-04-09T12:00:00.000Z";
+  const forecastSamples = [
+    buildForecastSample(targetPeriodStart, 200),
+    buildForecastSample("2026-04-08T12:00:00.000Z", 5),
+    buildForecastSample("2026-04-07T12:00:00.000Z", 100),
+  ];
+  const solarEnergyProviderSamples = [
+    buildGenerationSample("solar-1", "2026-04-08T12:00:00.000Z", 60),
+    buildGenerationSample("solar-1", "2026-04-07T12:00:00.000Z", 150),
+  ];
+
+  const [prediction] = buildPredictedSolarGenerationSeries({
+    algorithmVersion: "v0",
+    forecastSamples,
+    solarEnergyProviderSamples,
+  });
+
+  expect(prediction?.value).toBeCloseTo(1350, 10);
+});
+
+test("v2 ignores low-light history but still tolerates missing periods", () => {
+  const targetPeriodStart = "2026-04-09T12:00:00.000Z";
+  const forecastSamples = [
+    buildForecastSample(targetPeriodStart, 150),
+    buildForecastSample("2026-04-08T12:00:00.000Z", 3),
+    buildForecastSample("2026-04-07T12:00:00.000Z", 100),
+    buildForecastSample("2026-04-06T12:00:00.000Z", null),
+    buildForecastSample("2026-04-05T12:00:00.000Z", 80),
+  ];
+  const solarEnergyProviderSamples = [
+    buildGenerationSample("solar-1", "2026-04-08T12:00:00.000Z", 500),
+    buildGenerationSample("solar-1", "2026-04-07T12:00:00.000Z", 200),
+    buildGenerationSample("solar-1", "2026-04-06T12:00:00.000Z", 300),
+    buildGenerationSample("solar-1", "2026-04-05T12:00:00.000Z", 80),
+  ];
+
+  const [prediction] = buildPredictedSolarGenerationSeries({
+    algorithmVersion: "v2",
+    forecastSamples,
+    solarEnergyProviderSamples,
+  });
+
+  // v2 now favors the closer 100 W/m² history over the 80 W/m² history.
+  expect(prediction?.value).toBeCloseTo(266.843038, 6);
+});
+
 test("zero forecast returns zero even with threshold", () => {
   const targetPeriodStart = "2026-04-09T12:00:00.000Z";
   const [prediction] = buildPredictedSolarGenerationSeries({
@@ -236,4 +426,25 @@ test("forecast below threshold but historical above threshold still excluded", (
 
   // Current forecast is 5 (<10) => return 0, regardless of history
   expect(prediction?.value).toBe(0);
+});
+
+test("accuracy summary reports separate energy and timing accuracy", () => {
+  const summary = buildSolarPredictionAccuracySummary({
+    generatedSeries: [
+      { periodStart: "2026-04-09T12:00:00.000Z", value: 1000 },
+      { periodStart: "2026-04-09T12:15:00.000Z", value: 1000 },
+    ],
+    predictedSeries: [
+      { periodStart: "2026-04-09T12:00:00.000Z", value: 800 },
+      { periodStart: "2026-04-09T12:15:00.000Z", value: 1000 },
+    ],
+  });
+
+  expect(summary.totalGeneratedWh).toBe(500);
+  expect(summary.totalPredictedWh).toBe(450);
+  expect(summary.energyDeltaWh).toBe(50);
+  expect(summary.energyAccuracyPercentage).toBe(90);
+  expect(summary.timingAccuracyPercentage).toBe(90);
+  expect(summary.overallAccuracyPercentage).toBe(90);
+  expect(summary.scoringPercentage).toBe(90);
 });

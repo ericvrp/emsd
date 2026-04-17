@@ -3,14 +3,14 @@
 import type {
   HistoryArchive,
   SolarEnergyProviderSampleRecord,
+  SolarPredictionAlgorithmVersion,
   SolarForecastSampleRecord,
   WeatherForecastPointRecord,
   WeatherForecastRecord,
   WeatherForecastSourceRecord,
 } from "@emsd/core/client";
 import {
-  MAX_SOLAR_PREDICTION_PRECEDING_DAYS,
-  SOLAR_PREDICTION_MATCH_TOLERANCE_MS,
+  buildSolarPredictionAccuracySummary,
   buildPredictedSolarGenerationSeries,
 } from "@emsd/core/client";
 import { type ReactNode, useEffect, useState } from "react";
@@ -83,6 +83,13 @@ const SOLAR_PREDICTION_SMOOTHING_MODES: SolarPredictionSmoothingMode[] = [
 ];
 const DEFAULT_SOLAR_PREDICTION_SMOOTHING_MODE: SolarPredictionSmoothingMode =
   "average-5";
+const SOLAR_PREDICTION_ALGORITHM_VERSIONS: SolarPredictionAlgorithmVersion[] = [
+  "v0",
+  "v1",
+  "v2",
+];
+const DEFAULT_SOLAR_PREDICTION_ALGORITHM_VERSION: SolarPredictionAlgorithmVersion =
+  "v2";
 
 export function WeatherForecastSection({
   archive: initialArchive,
@@ -116,23 +123,10 @@ export function WeatherForecastSection({
     useState<SolarPredictionSmoothingMode>(
       DEFAULT_SOLAR_PREDICTION_SMOOTHING_MODE,
     );
-  const [useImprovedAlgorithm, setUseImprovedAlgorithm] = useState(true);
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("solar-prediction-improved-algorithm");
-      if (saved !== null) {
-        setUseImprovedAlgorithm(saved === "true");
-      }
-    }
-  }, []);
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem(
-        "solar-prediction-improved-algorithm",
-        useImprovedAlgorithm.toString(),
-      );
-    }
-  }, [useImprovedAlgorithm]);
+  const [predictionAlgorithmVersion, setPredictionAlgorithmVersion] =
+    useState<SolarPredictionAlgorithmVersion>(
+      DEFAULT_SOLAR_PREDICTION_ALGORITHM_VERSION,
+    );
   const daySelection = useTopLevelDaySelection({ archive, requestedDay });
   const selectedDayForecastSeries = fillSingleValueDay(
     archive.solarForecastSamples.map((sample) => ({
@@ -148,10 +142,9 @@ export function WeatherForecastSection({
     ? applySolarSeriesSmoothing(generatedSeries, predictionSmoothingMode)
     : generatedSeries;
   const predictedSolarGeneration = buildPredictedSolarGenerationSeries({
+    algorithmVersion: predictionAlgorithmVersion,
     forecastSamples: archive.solarForecastSamples,
     solarEnergyProviderSamples: archive.solarEnergyProviderSamples,
-    minForecastWm2: useImprovedAlgorithm ? 5 : 0,
-    useOutlierRemoval: useImprovedAlgorithm,
   });
   const selectedDayPredictedSeries = fillSingleValueDay(
     predictedSolarGeneration,
@@ -166,7 +159,6 @@ export function WeatherForecastSection({
     daySelection.selectedDay,
   );
   const predictionAccuracySummary = buildSolarPredictionAccuracySummary({
-    dayKey: daySelection.selectedDay,
     generatedSeries: selectedDayGeneratedAccuracySeries,
     predictedSeries: selectedDayPredictedSeries,
     nowMarkerPeriodStart: daySelection.nowMarkerPeriodStart,
@@ -331,35 +323,6 @@ export function WeatherForecastSection({
     };
   }, [archiveCurrentGeneratedPower, site.id]);
 
-  // useEffect(() => {
-  //   console.table([
-  //     {
-  //       date: predictionAccuracySummary.date,
-  //       scoringPercentage:
-  //         formatAccuracyPercentage(
-  //           predictionAccuracySummary.scoringPercentage,
-  //         ) ?? "Unavailable",
-  //       totalAbsoluteError: formatEnergyValue(
-  //         predictionAccuracySummary.totalAbsoluteErrorWh,
-  //       ),
-  //       totalGeneratedEnergy: formatEnergyValue(
-  //         predictionAccuracySummary.totalGeneratedWh,
-  //       ),
-  //       totalPredictedEnergy: formatEnergyValue(
-  //         predictionAccuracySummary.totalPredictedWh,
-  //       ),
-  //       usedSamples: predictionAccuracySummary.usedSamples,
-  //     },
-  //   ]);
-  // }, [
-  //   predictionAccuracySummary.date,
-  //   predictionAccuracySummary.scoringPercentage,
-  //   predictionAccuracySummary.totalAbsoluteErrorWh,
-  //   predictionAccuracySummary.totalGeneratedWh,
-  //   predictionAccuracySummary.totalPredictedWh,
-  //   predictionAccuracySummary.usedSamples,
-  // ]);
-
   function handleCyclePredictionSmoothing() {
     const nextMode = getNextSolarPredictionSmoothingMode(
       predictionSmoothingMode,
@@ -380,13 +343,13 @@ export function WeatherForecastSection({
     );
   }
 
-  function handleToggleImprovedAlgorithm() {
-    const next = !useImprovedAlgorithm;
-    setUseImprovedAlgorithm(next);
+  function handleCyclePredictionAlgorithm() {
+    const nextVersion = getNextSolarPredictionAlgorithmVersion(
+      predictionAlgorithmVersion,
+    );
+    setPredictionAlgorithmVersion(nextVersion);
     toast.success(
-      next
-        ? "Solar prediction algorithm: improved (threshold 5 W/m², outlier removal)"
-        : "Solar prediction algorithm: legacy (no threshold, simple mean)",
+      `Solar prediction algorithm set to ${formatSolarPredictionAlgorithmVersion(nextVersion)}.`,
     );
   }
 
@@ -405,13 +368,33 @@ export function WeatherForecastSection({
             Compare measured, predicted, and forecast solar output.
           </p>
         </div>
-        <SectionSummaryCard title="Current generating">
-          <p className="text-2xl font-semibold text-white sm:text-3xl">
-            {currentGeneratedPower === null
-              ? "Unavailable"
-              : formatAbsolutePowerValue(currentGeneratedPower)}
-          </p>
-        </SectionSummaryCard>
+        <div className="flex flex-wrap justify-end gap-3">
+          <SectionSummaryCard title="Energy accuracy">
+            <p className="text-2xl font-semibold text-white sm:text-3xl">
+              {formatEnergyAccuracyHeadline(predictionAccuracySummary)}
+            </p>
+            <p className="mt-2 text-xs text-amber-100/80">
+              {formatEnergyValue(predictionAccuracySummary.totalGeneratedWh)} actual
+            </p>
+          </SectionSummaryCard>
+          <SectionSummaryCard title="Timing accuracy">
+            <p className="text-2xl font-semibold text-white sm:text-3xl">
+              {formatAccuracyPercentage(
+                predictionAccuracySummary.timingAccuracyPercentage,
+              ) ?? "Unavailable"}
+            </p>
+            <p className="mt-2 text-xs text-amber-100/80">
+              {formatEnergyDeltaValue(predictionAccuracySummary.energyDeltaWh)} difference
+            </p>
+          </SectionSummaryCard>
+          <SectionSummaryCard title="Current generating">
+            <p className="text-2xl font-semibold text-white sm:text-3xl">
+              {currentGeneratedPower === null
+                ? "Unavailable"
+                : formatAbsolutePowerValue(currentGeneratedPower)}
+            </p>
+          </SectionSummaryCard>
+        </div>
       </div>
 
       {site.location.trim().length === 0 ? (
@@ -450,11 +433,11 @@ export function WeatherForecastSection({
             }
             onCyclePredictionSmoothing={handleCyclePredictionSmoothing}
             predictionAccuracyPercentage={
-              predictionAccuracySummary.scoringPercentage
+              predictionAccuracySummary.overallAccuracyPercentage
             }
             predictionSmoothingMode={predictionSmoothingMode}
-            improvedAlgorithmEnabled={useImprovedAlgorithm}
-            onToggleImprovedAlgorithm={handleToggleImprovedAlgorithm}
+            predictionAlgorithmVersion={predictionAlgorithmVersion}
+            onCyclePredictionAlgorithm={handleCyclePredictionAlgorithm}
             forecastLabel={forecast?.metricLabel ?? "Solar Forecast"}
             forecastPoints={splitSingleValueSeriesByTime(
               selectedDayForecastSeries,
@@ -486,8 +469,8 @@ function ForecastPredictionChart({
   onCyclePredictionSmoothing,
   predictionAccuracyPercentage,
   predictionSmoothingMode,
-  improvedAlgorithmEnabled,
-  onToggleImprovedAlgorithm,
+  predictionAlgorithmVersion,
+  onCyclePredictionAlgorithm,
   predictedPoints,
 }: {
   emptyMessage: string;
@@ -502,8 +485,8 @@ function ForecastPredictionChart({
   onCyclePredictionSmoothing: () => void;
   predictionAccuracyPercentage: number | null;
   predictionSmoothingMode: SolarPredictionSmoothingMode;
-  improvedAlgorithmEnabled: boolean;
-  onToggleImprovedAlgorithm: () => void;
+  predictionAlgorithmVersion: SolarPredictionAlgorithmVersion;
+  onCyclePredictionAlgorithm: () => void;
   predictedPoints: SplitSingleValuePoint[];
 }) {
   const chartData = forecastPoints.map((forecastPoint, index) => {
@@ -544,8 +527,7 @@ function ForecastPredictionChart({
     [0, SOLAR_POWER_AXIS_MAX_W],
   );
 
-  const forecastLegendLabel =
-    forecastLabel + (improvedAlgorithmEnabled ? " (improved)" : " (legacy)");
+  const forecastLegendLabel = `${forecastLabel} (${formatSolarPredictionAlgorithmVersion(predictionAlgorithmVersion)})`;
 
   return (
     <div className="space-y-2.5">
@@ -572,8 +554,8 @@ function ForecastPredictionChart({
           <LegendChip
             color={UI_COLORS.forecast}
             label={forecastLegendLabel}
-            onClick={onToggleImprovedAlgorithm}
-            selected={improvedAlgorithmEnabled}
+            onClick={onCyclePredictionAlgorithm}
+            selected
           />
         </div>
         {headerAccessory}
@@ -929,82 +911,6 @@ function isAdjacentPredictionBucket(
   );
 }
 
-function buildSolarPredictionAccuracySummary(input: {
-  dayKey: string;
-  generatedSeries: Array<{ periodStart: string; value: number | null }>;
-  nowMarkerPeriodStart: string | null;
-  predictedSeries: Array<{ periodStart: string; value: number | null }>;
-}): {
-  date: string;
-  scoringPercentage: number | null;
-  totalAbsoluteErrorWh: number;
-  totalGeneratedWh: number;
-  totalPredictedWh: number;
-  usedSamples: number;
-} {
-  let totalAbsoluteError = 0;
-  let totalGeneratedW = 0;
-  let totalPredictedW = 0;
-  let denominator = 0;
-  let usedSamples = 0;
-  const nowMarkerMs = input.nowMarkerPeriodStart
-    ? new Date(input.nowMarkerPeriodStart).getTime()
-    : null;
-
-  for (let index = 0; index < input.predictedSeries.length; index += 1) {
-    const predictedPoint = input.predictedSeries[index];
-    const generatedPoint = input.generatedSeries[index];
-
-    if (!predictedPoint || !generatedPoint) {
-      continue;
-    }
-
-    const periodStartMs = new Date(predictedPoint.periodStart).getTime();
-
-    if (
-      nowMarkerMs !== null &&
-      !Number.isNaN(periodStartMs) &&
-      periodStartMs > nowMarkerMs
-    ) {
-      continue;
-    }
-
-    if (
-      typeof predictedPoint.value !== "number" ||
-      typeof generatedPoint.value !== "number"
-    ) {
-      continue;
-    }
-
-    totalPredictedW += predictedPoint.value;
-    totalGeneratedW += generatedPoint.value;
-    totalAbsoluteError += Math.abs(predictedPoint.value - generatedPoint.value);
-    denominator += Math.max(predictedPoint.value, generatedPoint.value);
-    usedSamples += 1;
-  }
-
-  const scoringPercentage =
-    usedSamples === 0
-      ? null
-      : denominator === 0
-        ? 100
-        : Math.max(0, 100 * (1 - totalAbsoluteError / denominator));
-
-  return {
-    date: input.dayKey,
-    scoringPercentage:
-      scoringPercentage === null ? null : Number(scoringPercentage.toFixed(2)),
-    totalAbsoluteErrorWh: convertWattSampleSumToWh(totalAbsoluteError),
-    totalGeneratedWh: convertWattSampleSumToWh(totalGeneratedW),
-    totalPredictedWh: convertWattSampleSumToWh(totalPredictedW),
-    usedSamples,
-  };
-}
-
-function convertWattSampleSumToWh(totalWattSamples: number): number {
-  return Number((totalWattSamples * 0.25).toFixed(2));
-}
-
 function formatEnergyValue(valueWh: number): string {
   if (Math.abs(valueWh) > 999) {
     return `${(valueWh / 1000).toFixed(2)} kWh`;
@@ -1013,8 +919,26 @@ function formatEnergyValue(valueWh: number): string {
   return `${valueWh.toFixed(2)} Wh`;
 }
 
+function formatEnergyDeltaValue(valueWh: number): string {
+  return `${formatEnergyValue(valueWh)}`;
+}
+
 function formatAccuracyPercentage(value: number | null): string | null {
   return value === null ? null : `${Math.round(value)}%`;
+}
+
+function formatEnergyAccuracyHeadline(input: {
+  energyAccuracyPercentage: number | null;
+  totalGeneratedWh: number;
+  totalPredictedWh: number;
+}): string {
+  const accuracyLabel = formatAccuracyPercentage(input.energyAccuracyPercentage);
+
+  if (accuracyLabel === null) {
+    return "Unavailable";
+  }
+
+  return `${formatEnergyValue(input.totalPredictedWh)} vs ${formatEnergyValue(input.totalGeneratedWh)} (${accuracyLabel})`;
 }
 
 function buildPredictedSolarLegendLabel(input: {
@@ -1030,7 +954,7 @@ function buildPredictedSolarLegendLabel(input: {
   );
 
   if (accuracyLabel !== null) {
-    parts.push(accuracyLabel);
+    parts.push(`Accuracy ${accuracyLabel}`);
   }
 
   return parts.join(" • ");
@@ -1085,6 +1009,30 @@ function formatSolarPredictionSmoothingMode(
     case "weighted-5":
       return "Five-sample weighted average";
   }
+}
+
+function formatSolarPredictionAlgorithmVersion(
+  version: SolarPredictionAlgorithmVersion,
+): string {
+  switch (version) {
+    case "v0":
+      return "v0 legacy";
+    case "v1":
+      return "v1 trimmed";
+    case "v2":
+      return "v2 winsorized";
+  }
+}
+
+function getNextSolarPredictionAlgorithmVersion(
+  currentVersion: SolarPredictionAlgorithmVersion,
+): SolarPredictionAlgorithmVersion {
+  const currentIndex = SOLAR_PREDICTION_ALGORITHM_VERSIONS.indexOf(
+    currentVersion,
+  );
+  const nextIndex =
+    (currentIndex + 1) % SOLAR_PREDICTION_ALGORITHM_VERSIONS.length;
+  return SOLAR_PREDICTION_ALGORITHM_VERSIONS[nextIndex] ?? currentVersion;
 }
 
 function getNextSolarPredictionSmoothingMode(

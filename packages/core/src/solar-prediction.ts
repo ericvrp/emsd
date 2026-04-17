@@ -5,18 +5,51 @@ import type {
 
 export const MAX_SOLAR_PREDICTION_PRECEDING_DAYS = 7;
 export const SOLAR_PREDICTION_MATCH_TOLERANCE_MS = 7.5 * 60 * 1_000;
+export const DEFAULT_SOLAR_PREDICTION_ALGORITHM_VERSION = "v1";
+const V2_FORECAST_SIMILARITY_EXPONENT = 1.5;
+
+export type SolarPredictionAlgorithmVersion = "v0" | "v1" | "v2";
 
 export interface PredictedSolarGenerationPoint {
   periodStart: string;
   value: number | null;
 }
 
+export interface SolarPredictionAccuracySummary {
+  energyAccuracyPercentage: number | null;
+  energyDeltaWh: number;
+  overallAccuracyPercentage: number | null;
+  scoringPercentage: number | null;
+  timingAccuracyPercentage: number | null;
+  totalAbsoluteErrorWh: number;
+  totalGeneratedWh: number;
+  totalPredictedWh: number;
+  usedSamples: number;
+}
+
 export interface SolarPredictionOptions {
+  algorithmVersion?: SolarPredictionAlgorithmVersion;
   maxPrecedingDays?: number;
   matchToleranceMs?: number;
   minForecastWm2?: number;
   useOutlierRemoval?: boolean;
   targetForecastSamples?: SolarForecastSampleRecord[];
+}
+
+interface ResolvedSolarPredictionOptions {
+  algorithmVersion: SolarPredictionAlgorithmVersion;
+  matchToleranceMs: number;
+  maxPrecedingDays: number;
+  minForecastWm2: number;
+  targetForecastSamples: SolarForecastSampleRecord[] | undefined;
+}
+
+interface HistoricalMatchSample {
+  dayOffset: number;
+  forecastValue: number;
+  generationValue: number;
+  ratio: number;
+  similarityWeight: number;
 }
 
 interface TimestampedValuePoint {
@@ -143,14 +176,167 @@ function findClosestTimestampedValueWithin(
   return closest;
 }
 
-function computeMeanWithOutlierRemoval(ratios: number[]): number {
-  if (ratios.length < 4) {
-    return ratios.reduce((total, ratio) => total + ratio, 0) / ratios.length;
+function computeMean(values: number[]): number {
+  return values.reduce((total, value) => total + value, 0) / values.length;
+}
+
+function computeTrimmedMean(samples: HistoricalMatchSample[]): number {
+  if (samples.length < 4) {
+    return computeMean(samples.map((sample) => sample.ratio));
   }
 
-  const sorted = [...ratios].sort((a, b) => a - b);
+  const sorted = [...samples].sort((a, b) => a.ratio - b.ratio);
   const trimmed = sorted.slice(1, -1);
-  return trimmed.reduce((total, ratio) => total + ratio, 0) / trimmed.length;
+  return computeMean(trimmed.map((sample) => sample.ratio));
+}
+
+function computeRecencyWeightedMean(samples: HistoricalMatchSample[]): number {
+  let weightedTotal = 0;
+  let totalWeight = 0;
+
+  for (const sample of samples) {
+    const weight = buildWeightedSampleWeight(sample);
+    weightedTotal += sample.ratio * weight;
+    totalWeight += weight;
+  }
+
+  return totalWeight === 0 ? computeMean(samples.map((sample) => sample.ratio)) : weightedTotal / totalWeight;
+}
+
+function computeWinsorizedWeightedMean(samples: HistoricalMatchSample[]): number {
+  if (samples.length < 4) {
+    return computeRecencyWeightedMean(samples);
+  }
+
+  const sorted = [...samples].sort((a, b) => a.ratio - b.ratio);
+  const lowerReplacement = sorted[1]?.ratio;
+  const upperReplacement = sorted[sorted.length - 2]?.ratio;
+
+  if (lowerReplacement === undefined || upperReplacement === undefined) {
+    return computeRecencyWeightedMean(samples);
+  }
+
+  const winsorized = samples.map((sample) => ({
+    ...sample,
+    ratio: Math.min(Math.max(sample.ratio, lowerReplacement), upperReplacement),
+  }));
+
+  return computeRecencyWeightedMean(winsorized);
+}
+
+function resolveSolarPredictionOptions(
+  input: SolarPredictionOptions,
+): ResolvedSolarPredictionOptions {
+  const algorithmVersion =
+    input.algorithmVersion ?? DEFAULT_SOLAR_PREDICTION_ALGORITHM_VERSION;
+
+  const defaultMinForecastWm2 = algorithmVersion === "v0" ? 0 : 5;
+
+  return {
+    algorithmVersion,
+    matchToleranceMs:
+      input.matchToleranceMs ?? SOLAR_PREDICTION_MATCH_TOLERANCE_MS,
+    maxPrecedingDays:
+      input.maxPrecedingDays ?? MAX_SOLAR_PREDICTION_PRECEDING_DAYS,
+    minForecastWm2: input.minForecastWm2 ?? defaultMinForecastWm2,
+    targetForecastSamples: input.targetForecastSamples,
+  };
+}
+
+function buildAverageRatio(
+  samples: HistoricalMatchSample[],
+  algorithmVersion: SolarPredictionAlgorithmVersion,
+  useOutlierRemoval?: boolean,
+): number {
+  if (algorithmVersion === "v0") {
+    return computeMean(samples.map((sample) => sample.ratio));
+  }
+
+  if (algorithmVersion === "v2") {
+    return computeWinsorizedWeightedMean(samples);
+  }
+
+  if (useOutlierRemoval === false) {
+    return computeMean(samples.map((sample) => sample.ratio));
+  }
+
+  return computeTrimmedMean(samples);
+}
+
+function buildRecencyWeight(dayOffset: number): number {
+  return 1 / dayOffset;
+}
+
+function buildForecastSimilarityWeight(
+  targetForecastValue: number,
+  historicalForecastValue: number,
+): number {
+  const maxForecastValue = Math.max(targetForecastValue, historicalForecastValue);
+
+  if (maxForecastValue <= 0) {
+    return 1;
+  }
+
+  return (
+    Math.min(targetForecastValue, historicalForecastValue) / maxForecastValue
+  ) ** V2_FORECAST_SIMILARITY_EXPONENT;
+}
+
+function buildWeightedSampleWeight(sample: HistoricalMatchSample): number {
+  return buildRecencyWeight(sample.dayOffset) * sample.similarityWeight;
+}
+
+function computeObservedGenerationCeiling(
+  generationIndex: TimestampedValueIndex,
+): number | null {
+  let ceiling: number | null = null;
+
+  for (const point of generationIndex.points) {
+    if (typeof point.value !== "number") {
+      continue;
+    }
+
+    ceiling = ceiling === null ? point.value : Math.max(ceiling, point.value);
+  }
+
+  return ceiling;
+}
+
+function computeWeightedRegressionRatio(samples: HistoricalMatchSample[]): number {
+  let numerator = 0;
+  let denominator = 0;
+
+  for (const sample of samples) {
+    const weight = buildWeightedSampleWeight(sample);
+    numerator += weight * sample.forecastValue * sample.generationValue;
+    denominator += weight * sample.forecastValue * sample.forecastValue;
+  }
+
+  if (denominator === 0) {
+    return computeRecencyWeightedMean(samples);
+  }
+
+  return numerator / denominator;
+}
+
+function buildV2PredictionValue(input: {
+  forecastValue: number;
+  generationCeiling: number | null;
+  samples: HistoricalMatchSample[];
+}): number {
+  const robustRatio = computeWinsorizedWeightedMean(input.samples);
+  const regressionRatio = computeWeightedRegressionRatio(input.samples);
+  const calibrationWeight = Math.min(0.85, 0.35 + input.samples.length * 0.1);
+  const blendedRatio =
+    robustRatio * (1 - calibrationWeight) +
+    regressionRatio * calibrationWeight;
+  const predictedValue = input.forecastValue * blendedRatio;
+
+  if (input.generationCeiling === null) {
+    return predictedValue;
+  }
+
+  return Math.min(predictedValue, input.generationCeiling);
 }
 
 function predictSolarGenerationForForecastSample(
@@ -161,6 +347,7 @@ function predictSolarGenerationForForecastSample(
   matchToleranceMs: number,
   periodStart: string,
   minForecastWm2: number,
+  algorithmVersion: SolarPredictionAlgorithmVersion,
   useOutlierRemoval: boolean,
 ): number | null {
   if (forecastValue === null) {
@@ -177,7 +364,7 @@ function predictSolarGenerationForForecastSample(
     return null;
   }
 
-  const ratios: number[] = [];
+  const matchSamples: HistoricalMatchSample[] = [];
 
   for (let dayOffset = 1; dayOffset <= maxPrecedingDays; dayOffset += 1) {
     const historicalDate = new Date(targetDate);
@@ -206,20 +393,40 @@ function predictSolarGenerationForForecastSample(
       continue;
     }
 
-    ratios.push(generationMatch.value / forecastMatch.value);
+    matchSamples.push({
+      dayOffset,
+      forecastValue: forecastMatch.value,
+      generationValue: generationMatch.value,
+      ratio: generationMatch.value / forecastMatch.value,
+      similarityWeight: buildForecastSimilarityWeight(
+        forecastValue,
+        forecastMatch.value,
+      ),
+    });
   }
 
-  if (ratios.length === 0) {
+  if (matchSamples.length === 0) {
     return null;
   }
 
-  const averageRatio = useOutlierRemoval
-    ? computeMeanWithOutlierRemoval(ratios)
-    : ratios.reduce((total, ratio) => total + ratio, 0) / ratios.length;
+  if (algorithmVersion === "v2") {
+    return buildV2PredictionValue({
+      forecastValue,
+      generationCeiling: computeObservedGenerationCeiling(generationIndex),
+      samples: matchSamples,
+    });
+  }
+
+  const averageRatio = buildAverageRatio(
+    matchSamples,
+    algorithmVersion,
+    useOutlierRemoval,
+  );
   return forecastValue * averageRatio;
 }
 
 export function buildPredictedSolarGenerationSeries(input: {
+  algorithmVersion?: SolarPredictionAlgorithmVersion;
   forecastSamples: SolarForecastSampleRecord[];
   solarEnergyProviderSamples: SolarEnergyProviderSampleRecord[];
   targetForecastSamples?: SolarForecastSampleRecord[];
@@ -228,6 +435,7 @@ export function buildPredictedSolarGenerationSeries(input: {
   minForecastWm2?: number;
   useOutlierRemoval?: boolean;
 }): PredictedSolarGenerationPoint[] {
+  const resolvedOptions = resolveSolarPredictionOptions(input);
   const forecastIndex = buildTimestampedValueIndex(
     input.forecastSamples.map((sample) => ({
       timestamp: sample.periodStart,
@@ -237,12 +445,8 @@ export function buildPredictedSolarGenerationSeries(input: {
   const generationIndex = buildTimestampedValueIndex(
     aggregateSolarGenerationByPeriodStart(input.solarEnergyProviderSamples),
   );
-  const targetSamples = input.targetForecastSamples ?? input.forecastSamples;
-  const maxPrecedingDays =
-    input.maxPrecedingDays ?? MAX_SOLAR_PREDICTION_PRECEDING_DAYS;
-  const matchToleranceMs =
-    input.matchToleranceMs ?? SOLAR_PREDICTION_MATCH_TOLERANCE_MS;
-  const minForecastWm2 = input.minForecastWm2 ?? 5;
+  const targetSamples =
+    resolvedOptions.targetForecastSamples ?? input.forecastSamples;
   const useOutlierRemoval = input.useOutlierRemoval ?? true;
 
   return targetSamples.map((sample) => ({
@@ -251,11 +455,111 @@ export function buildPredictedSolarGenerationSeries(input: {
       forecastIndex,
       generationIndex,
       sample.ghiWm2 ?? sample.value,
-      maxPrecedingDays,
-      matchToleranceMs,
+      resolvedOptions.maxPrecedingDays,
+      resolvedOptions.matchToleranceMs,
       sample.periodStart,
-      minForecastWm2,
-      useOutlierRemoval,
+      resolvedOptions.minForecastWm2,
+      resolvedOptions.algorithmVersion,
+      resolvedOptions.algorithmVersion === "v0"
+        ? false
+        : resolvedOptions.algorithmVersion === "v1"
+          ? useOutlierRemoval
+          : true,
     ),
   }));
+}
+
+export function buildSolarPredictionAccuracySummary(input: {
+  generatedSeries: Array<{ periodStart: string; value: number | null }>;
+  nowMarkerPeriodStart?: string | null;
+  predictedSeries: Array<{ periodStart: string; value: number | null }>;
+}): SolarPredictionAccuracySummary {
+  let totalAbsoluteError = 0;
+  let totalGeneratedW = 0;
+  let totalPredictedW = 0;
+  let denominator = 0;
+  let usedSamples = 0;
+  const nowMarkerMs = input.nowMarkerPeriodStart
+    ? new Date(input.nowMarkerPeriodStart).getTime()
+    : null;
+
+  for (let index = 0; index < input.predictedSeries.length; index += 1) {
+    const predictedPoint = input.predictedSeries[index];
+    const generatedPoint = input.generatedSeries[index];
+
+    if (!predictedPoint || !generatedPoint) {
+      continue;
+    }
+
+    const periodStartMs = new Date(predictedPoint.periodStart).getTime();
+
+    if (
+      nowMarkerMs !== null &&
+      !Number.isNaN(periodStartMs) &&
+      periodStartMs > nowMarkerMs
+    ) {
+      continue;
+    }
+
+    if (
+      typeof predictedPoint.value !== "number" ||
+      typeof generatedPoint.value !== "number"
+    ) {
+      continue;
+    }
+
+    totalPredictedW += predictedPoint.value;
+    totalGeneratedW += generatedPoint.value;
+    totalAbsoluteError += Math.abs(predictedPoint.value - generatedPoint.value);
+    denominator += Math.max(predictedPoint.value, generatedPoint.value);
+    usedSamples += 1;
+  }
+
+  const timingAccuracyPercentage =
+    usedSamples === 0
+      ? null
+      : denominator === 0
+        ? 100
+        : Math.max(0, 100 * (1 - totalAbsoluteError / denominator));
+  const totalPredictedWh = Number((totalPredictedW * 0.25).toFixed(2));
+  const totalGeneratedWh = Number((totalGeneratedW * 0.25).toFixed(2));
+  const totalAbsoluteErrorWh = Number((totalAbsoluteError * 0.25).toFixed(2));
+  const energyScaleWh = Math.max(totalPredictedWh, totalGeneratedWh);
+  const energyDeltaWh = Number(
+    Math.abs(totalPredictedWh - totalGeneratedWh).toFixed(2),
+  );
+  const energyAccuracyPercentage =
+    usedSamples === 0
+      ? null
+      : energyScaleWh === 0
+        ? 100
+        : Math.max(0, 100 * (1 - energyDeltaWh / energyScaleWh));
+  const overallAccuracyPercentage =
+    energyAccuracyPercentage === null || timingAccuracyPercentage === null
+      ? null
+      : (energyAccuracyPercentage + timingAccuracyPercentage) / 2;
+
+  return {
+    energyAccuracyPercentage:
+      energyAccuracyPercentage === null
+        ? null
+        : Number(energyAccuracyPercentage.toFixed(2)),
+    energyDeltaWh,
+    overallAccuracyPercentage:
+      overallAccuracyPercentage === null
+        ? null
+        : Number(overallAccuracyPercentage.toFixed(2)),
+    scoringPercentage:
+      timingAccuracyPercentage === null
+        ? null
+        : Number(timingAccuracyPercentage.toFixed(2)),
+    timingAccuracyPercentage:
+      timingAccuracyPercentage === null
+        ? null
+        : Number(timingAccuracyPercentage.toFixed(2)),
+    totalAbsoluteErrorWh,
+    totalGeneratedWh,
+    totalPredictedWh,
+    usedSamples,
+  };
 }
