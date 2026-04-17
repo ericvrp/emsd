@@ -1,4 +1,8 @@
 import type { ValueType } from "recharts/types/component/DefaultTooltipContent";
+import type {
+  BatteryStrategyHistoryDisplayState,
+  BatteryStrategyHistorySource,
+} from "@emsd/core/client";
 
 export type SingleValuePoint = {
   periodStart: string;
@@ -31,12 +35,20 @@ export type BatteryHistoryPoint = {
   futureChargingPower: number | null;
   futureDischargingPower: number | null;
   futurePower: number | null;
+  overlayColor: string | null;
+  overlayStroke: string | null;
+  overlayStrokeWidth: number;
+  overlayValue: number | null;
   periodStart: string;
+  strategyDisplayLabel: string | null;
+  strategyDisplayState: BatteryStrategyHistoryDisplayState | null;
+  strategySource: BatteryStrategyHistorySource | null;
 };
 
 export type TooltipPayloadEntry = {
   color?: string;
   dataKey?: string;
   name?: string;
+  payload?: unknown;
   value?: ValueType;
 };

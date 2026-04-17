@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { DashboardSnapshot, HistoryArchive } from "@emsd/core";
 import {
   openDaemonDatabase,
+  upsertBatteryStrategyHistoryState,
   upsertDynamicPriceSnapshot,
   upsertManagedDeviceTelemetry,
   upsertWeatherForecast,
@@ -82,6 +83,19 @@ test("api snapshot returns managed devices with telemetry", async () => {
       socPercent: 62,
       state: "discharging",
     });
+    upsertBatteryStrategyHistoryState(db, {
+      activeItemId: null,
+      batteryId: "battery-1",
+      displayLabel: "Self-consumption",
+      displayState: "self-consumption",
+      endedAt: null,
+      manualState: null,
+      observedAt: "2026-04-09T08:30:00.000Z",
+      siteId: "home",
+      source: "automatic",
+      startedAt: "2026-04-09T08:25:00.000Z",
+      strategyMode: "self-consumption",
+    });
   } finally {
     db.close();
   }
@@ -152,6 +166,19 @@ test("api history archive returns stored battery, price, and forecast data", asy
       socPercent: null,
       state: "connected",
     });
+    upsertBatteryStrategyHistoryState(db, {
+      activeItemId: null,
+      batteryId: "battery-1",
+      displayLabel: "Self-consumption",
+      displayState: "self-consumption",
+      endedAt: null,
+      manualState: null,
+      observedAt: "2026-04-09T08:30:00.000Z",
+      siteId: "home",
+      source: "automatic",
+      startedAt: "2026-04-09T08:25:00.000Z",
+      strategyMode: "self-consumption",
+    });
 
     upsertWeatherForecast(db, "home", {
       generatedAt: "2026-04-09T08:00:00.000Z",
@@ -205,6 +232,11 @@ test("api history archive returns stored battery, price, and forecast data", asy
   expect(archive.batteryPowerSamples[0]).toMatchObject({
     powerW: -950,
     socPercent: 62,
+  });
+  expect(archive.batteryStrategyHistory).toHaveLength(1);
+  expect(archive.batteryStrategyHistory[0]).toMatchObject({
+    displayLabel: "Self-consumption",
+    source: "automatic",
   });
   expect(archive.p1MeterSamples).toHaveLength(1);
   expect(archive.solarEnergyProviderSamples).toHaveLength(1);

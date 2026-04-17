@@ -1,4 +1,6 @@
-import { BATTERY_POWER_AXIS_DOMAIN, HISTORY_STEP_MS } from "./constants";
+import type { BatteryStrategyHistoryRecord } from "@emsd/core/client";
+import { UI_COLORS } from "../../lib/ui-colors";
+import { HISTORY_STEP_MS } from "./constants";
 import type {
   BatteryHistoryPoint,
   SignedValuePoint,
@@ -150,6 +152,7 @@ export function buildBatteryHistoryPoints(
     powerW: number | null;
     socPercent: number | null;
   }>,
+  strategyHistory: BatteryStrategyHistoryRecord[],
   dayKey: string,
 ): BatteryHistoryPoint[] {
   const batterySeries = createSignedSeries(
@@ -164,6 +167,7 @@ export function buildBatteryHistoryPoints(
       fillSingleValueDay(batteryChargeSeries, dayKey),
     ),
     power: splitSignedSeriesByTime(fillSignedDay(batterySeries, dayKey)),
+    strategyHistory,
   });
 }
 
@@ -211,9 +215,20 @@ function aggregateBatteryChargeSamples(
 function combineBatteryHistorySeries(input: {
   charge: SplitSingleValuePoint[];
   power: SplitSignedValuePoint[];
+  strategyHistory: BatteryStrategyHistoryRecord[];
 }): BatteryHistoryPoint[] {
+  const historyForDisplay = getStrategyHistoryForPrimaryBattery(
+    input.strategyHistory,
+    input.power[0]?.periodStart ?? null,
+  );
+
   return input.power.map((powerPoint, index) => {
     const chargePoint = input.charge[index];
+    const strategyEntry = findStrategyEntryAtPeriodStart(
+      historyForDisplay,
+      powerPoint.periodStart,
+    );
+    const overlay = buildStrategyOverlayStyle(strategyEntry?.source ?? null, strategyEntry?.displayState ?? null);
 
     return {
       currentChargePercent: chargePoint?.currentValue ?? null,
@@ -226,9 +241,90 @@ function combineBatteryHistorySeries(input: {
       futureDischargingPower: powerPoint.futureNegativeValue,
       futurePower:
         powerPoint.futurePositiveValue ?? powerPoint.futureNegativeValue,
+      overlayColor: overlay.color,
+      overlayStroke: overlay.stroke,
+      overlayStrokeWidth: overlay.strokeWidth,
+      overlayValue: strategyEntry ? 1 : null,
       periodStart: powerPoint.periodStart,
+      strategyDisplayLabel: strategyEntry?.displayLabel ?? null,
+      strategyDisplayState: strategyEntry?.displayState ?? null,
+      strategySource: strategyEntry?.source ?? null,
     };
   });
+}
+
+function getStrategyHistoryForPrimaryBattery(
+  strategyHistory: BatteryStrategyHistoryRecord[],
+  _periodStart: string | null,
+): BatteryStrategyHistoryRecord[] {
+  const batteryId = strategyHistory[0]?.batteryId ?? null;
+
+  if (batteryId === null) {
+    return [];
+  }
+
+  return strategyHistory.filter((entry) => entry.batteryId === batteryId);
+}
+
+function findStrategyEntryAtPeriodStart(
+  strategyHistory: BatteryStrategyHistoryRecord[],
+  periodStart: string,
+): BatteryStrategyHistoryRecord | null {
+  const targetMs = new Date(periodStart).getTime();
+
+  if (Number.isNaN(targetMs)) {
+    return null;
+  }
+
+  return (
+    strategyHistory.find((entry) => {
+      const startedAtMs = new Date(entry.startedAt).getTime();
+      const endedAtMs = entry.endedAt ? new Date(entry.endedAt).getTime() : null;
+
+      if (Number.isNaN(startedAtMs)) {
+        return false;
+      }
+
+      return (
+        startedAtMs <= targetMs &&
+        (endedAtMs === null || Number.isNaN(endedAtMs) || targetMs < endedAtMs)
+      );
+    }) ?? null
+  );
+}
+
+function buildStrategyOverlayStyle(
+  source: BatteryHistoryPoint["strategySource"],
+  displayState: BatteryHistoryPoint["strategyDisplayState"],
+): { color: string | null; stroke: string | null; strokeWidth: number } {
+  if (displayState === null) {
+    return { color: null, stroke: null, strokeWidth: 0 };
+  }
+
+  const color = getStrategyOverlayColor(displayState);
+
+  void source;
+
+  return {
+    color,
+    stroke: null,
+    strokeWidth: 0,
+  };
+}
+
+function getStrategyOverlayColor(
+  displayState: NonNullable<BatteryHistoryPoint["strategyDisplayState"]>,
+): string {
+  switch (displayState) {
+    case "charge":
+      return UI_COLORS.strategyCharge;
+    case "discharge":
+      return UI_COLORS.strategyDischarge;
+    case "idle":
+      return UI_COLORS.strategyIdle;
+    case "self-consumption":
+      return UI_COLORS.strategySelfConsumption;
+  }
 }
 
 function createLocalDayPeriods(dayKey: string): string[] {

@@ -24,6 +24,7 @@ import { getWeatherForecast } from "../../ems/src/plugins/solar-forecast";
 import { formatDaemonHelpText, parseDaemonOptions } from "./daemon-options";
 import {
   openDaemonDatabase,
+  readBatteryById,
   readBatteries,
   readDynamicPriceSnapshot,
   readDynamicPriceSources,
@@ -35,6 +36,7 @@ import {
   updateBatteryManualModeStarted,
   updateBatteryStrategyRuntime,
   updateBatteryStrategyState,
+  upsertBatteryStrategyHistoryState,
   upsertDynamicPriceSnapshot,
   upsertManagedDeviceTelemetry,
   upsertWeatherForecast,
@@ -286,6 +288,15 @@ function main(): void {
             );
           }
 
+          const effectiveBattery =
+            readBatteryById(db, battery.siteId, battery.id) ?? battery;
+          const observedAt = new Date().toISOString();
+
+          upsertBatteryStrategyHistoryState(
+            db,
+            buildBatteryStrategyHistoryRecord(effectiveBattery, observedAt),
+          );
+
           upsertManagedDeviceTelemetry(db, {
             deviceId: battery.id,
             siteId: battery.siteId,
@@ -294,7 +305,7 @@ function main(): void {
             powerW: sample.currentW,
             socPercent: sample.socPercent,
             state: sample.status,
-            observedAt: new Date().toISOString(),
+            observedAt,
           } satisfies ManagedDeviceTelemetryRecord);
         }),
         ...polledMeters.map(async (meter) => {
@@ -515,6 +526,60 @@ function shouldMarkManualModeStarted(
       (battery.manualState === "discharging" &&
         sample.status === "discharging"))
   );
+}
+
+function buildBatteryStrategyHistoryRecord(
+  battery: BatteryRecord,
+  observedAt: string,
+): import("@emsd/core").BatteryStrategyHistoryRecord {
+  return {
+    activeItemId: battery.strategyRuntime.activeItemId,
+    batteryId: battery.id,
+    displayLabel: getBatteryStrategyDisplayLabel(battery),
+    displayState: getBatteryStrategyDisplayState(battery),
+    endedAt: null,
+    manualState: battery.manualState,
+    observedAt,
+    siteId: battery.siteId,
+    source: battery.manualModeActive ? "manual" : "automatic",
+    startedAt: observedAt,
+    strategyMode: battery.strategyMode,
+  };
+}
+
+function getBatteryStrategyDisplayState(
+  battery: Pick<BatteryRecord, "strategyMode" | "manualState">,
+): import("@emsd/core").BatteryStrategyHistoryDisplayState {
+  if (battery.strategyMode === "self-consumption") {
+    return "self-consumption";
+  }
+
+  if (battery.manualState === "charging") {
+    return "charge";
+  }
+
+  if (battery.manualState === "discharging") {
+    return "discharge";
+  }
+
+  return "idle";
+}
+
+function getBatteryStrategyDisplayLabel(
+  battery: Pick<BatteryRecord, "strategyMode" | "manualState">,
+): string {
+  const displayState = getBatteryStrategyDisplayState(battery);
+
+  switch (displayState) {
+    case "self-consumption":
+      return "Self-consumption";
+    case "charge":
+      return "Charge";
+    case "discharge":
+      return "Discharge";
+    case "idle":
+      return "Idle";
+  }
 }
 
 function shouldRestoreDefaultStrategy(

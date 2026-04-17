@@ -1,9 +1,8 @@
 import {
   formatAbsolutePowerValue,
-  formatPowerValue,
 } from "../../lib/power-format";
 import { UI_COLORS } from "../../lib/ui-colors";
-import type { TooltipPayloadEntry } from "./types";
+import type { BatteryHistoryPoint, TooltipPayloadEntry } from "./types";
 import { deduplicateTooltipEntries, formatPercentValue } from "./utils";
 
 export function HistoryTooltip({
@@ -104,8 +103,16 @@ export function BatteryHistoryTooltip({
         entry.dataKey === "currentChargePercent" &&
         typeof entry.value === "number",
     );
+  const point = payload.find((entry) => entry.payload)?.payload as
+    | BatteryHistoryPoint
+    | undefined;
+  const strategyLabel = formatStrategyTooltipLabel(
+    point?.strategyDisplayState ?? null,
+    point?.strategyDisplayLabel ?? null,
+  );
+  const strategySource = point?.strategySource ?? null;
 
-  if (!powerEntry && !chargeEntry) return null;
+  if (!powerEntry && !chargeEntry && !strategyLabel) return null;
 
   return (
     <div className="rounded-2xl border border-white/10 bg-slate-950/95 px-3 py-2 text-sm text-slate-50 shadow-[0_24px_70px_rgba(2,6,23,0.6)] backdrop-blur">
@@ -131,9 +138,60 @@ export function BatteryHistoryTooltip({
             value={formatPercentValue(chargeEntry.value)}
           />
         ) : null}
+        {strategyLabel ? (
+          <TooltipRow
+            color={getStrategyTooltipColor(point?.strategyDisplayState ?? null)}
+            label="Strategy"
+            strokeDasharray={undefined}
+            value={strategyLabel}
+          />
+        ) : null}
+        {strategySource ? (
+          <TooltipRow
+            color={UI_COLORS.textPrimary}
+            label="Source"
+            strokeDasharray={strategySource === "manual" ? undefined : "2 3"}
+            value={strategySource === "manual" ? "Manual" : "Automatic"}
+          />
+        ) : null}
       </div>
     </div>
   );
+}
+
+function formatStrategyTooltipLabel(
+  displayState: BatteryHistoryPoint["strategyDisplayState"],
+  fallbackLabel: string | null,
+): string | null {
+  switch (displayState) {
+    case "charge":
+      return "Charging";
+    case "discharge":
+      return "Discharging";
+    case "idle":
+      return "Idle";
+    case "self-consumption":
+      return "Self-consumption";
+    default:
+      return fallbackLabel;
+  }
+}
+
+function getStrategyTooltipColor(
+  displayState: BatteryHistoryPoint["strategyDisplayState"],
+): string {
+  switch (displayState) {
+    case "charge":
+      return UI_COLORS.strategyCharge;
+    case "discharge":
+      return UI_COLORS.strategyDischarge;
+    case "idle":
+      return UI_COLORS.strategyIdle;
+    case "self-consumption":
+      return UI_COLORS.strategySelfConsumption;
+    default:
+      return UI_COLORS.chartSeriesFallback;
+  }
 }
 
 export function SegmentedHistoryTooltip({

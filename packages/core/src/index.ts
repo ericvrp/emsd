@@ -13,6 +13,14 @@ export type BatteryStrategyMode = "auto" | "manual" | "self-consumption";
 
 export type BatteryManualState = "idle" | "charging" | "discharging";
 
+export type BatteryStrategyHistorySource = "manual" | "automatic";
+
+export type BatteryStrategyHistoryDisplayState =
+  | "self-consumption"
+  | "charge"
+  | "discharge"
+  | "idle";
+
 export interface BatteryStrategyRecord {
   strategyMode: BatteryStrategyMode;
   manualPowerW: number | null;
@@ -54,6 +62,20 @@ export interface BatteryStrategyRuntimeRecord {
   manualTargetDurationMinutes?: number | null;
   manualTargetEndTime?: string | null;
   manualTargetStartedAt?: string | null;
+}
+
+export interface BatteryStrategyHistoryRecord {
+  activeItemId: string | null;
+  batteryId: string;
+  displayLabel: string;
+  displayState: BatteryStrategyHistoryDisplayState;
+  endedAt: string | null;
+  manualState: BatteryManualState | null;
+  observedAt: string;
+  siteId: string;
+  source: BatteryStrategyHistorySource;
+  startedAt: string;
+  strategyMode: BatteryStrategyMode;
 }
 
 export interface NormalizedBatteryInfo extends BatteryStrategyRecord {
@@ -890,6 +912,7 @@ export interface BulkDiscoveryAddResult {
 
 export interface HistoryArchive {
   batteryPowerSamples: BatteryPowerSampleRecord[];
+  batteryStrategyHistory: BatteryStrategyHistoryRecord[];
   dynamicPriceSamples: DynamicPriceSampleRecord[];
   p1MeterSamples: P1MeterSampleRecord[];
   siteId: string;

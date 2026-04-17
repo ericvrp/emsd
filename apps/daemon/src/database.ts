@@ -2,6 +2,7 @@ import { Database } from "bun:sqlite";
 import {
   type BatteryPowerSampleRecord,
   type BatteryRecord,
+  type BatteryStrategyHistoryRecord,
   type BatteryStrategyRecord,
   type BatteryStrategyRuntimeRecord,
   type DynamicPriceSampleRecord,
@@ -155,6 +156,21 @@ interface BatteryPowerSampleRow {
   observed_at: string;
   power_w: number | null;
   soc_percent: number | null;
+}
+
+interface BatteryStrategyHistoryRow {
+  id: number;
+  active_item_id: string | null;
+  battery_id: string;
+  display_label: string;
+  display_state: BatteryStrategyHistoryRecord["displayState"];
+  ended_at: string | null;
+  manual_state: BatteryStrategyHistoryRecord["manualState"];
+  observed_at: string;
+  site_id: string;
+  source: BatteryStrategyHistoryRecord["source"];
+  started_at: string;
+  strategy_mode: BatteryStrategyHistoryRecord["strategyMode"];
 }
 
 interface SolarEnergyProviderSampleRow {
@@ -364,6 +380,31 @@ export function openDaemonDatabase(databasePath = getDatabasePath()): Database {
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_battery_power_samples_site_period
     ON battery_power_samples (site_id, period_start);
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS battery_strategy_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      site_id TEXT NOT NULL,
+      battery_id TEXT NOT NULL,
+      started_at TEXT NOT NULL,
+      ended_at TEXT,
+      observed_at TEXT NOT NULL,
+      source TEXT NOT NULL,
+      strategy_mode TEXT NOT NULL,
+      manual_state TEXT,
+      active_item_id TEXT,
+      display_label TEXT NOT NULL,
+      display_state TEXT NOT NULL,
+      FOREIGN KEY(site_id) REFERENCES sites(id)
+    );
+  `);
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_battery_strategy_history_site_started
+    ON battery_strategy_history (site_id, started_at);
+  `);
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_battery_strategy_history_battery_open
+    ON battery_strategy_history (site_id, battery_id, ended_at, started_at);
   `);
   db.exec(`
     CREATE TABLE IF NOT EXISTS solar_energy_provider_samples (
@@ -1193,6 +1234,151 @@ export function readBatteryPowerSamples(
   }));
 }
 
+export function readBatteryStrategyHistory(
+  db: Database,
+  siteId: string,
+): BatteryStrategyHistoryRecord[] {
+  const rows = db
+    .query<BatteryStrategyHistoryRow, [string]>(
+      `
+        SELECT
+          id,
+          site_id,
+          battery_id,
+          started_at,
+          ended_at,
+          observed_at,
+          source,
+          strategy_mode,
+          manual_state,
+          active_item_id,
+          display_label,
+          display_state
+        FROM battery_strategy_history
+        WHERE site_id = ?1
+        ORDER BY started_at ASC, id ASC
+      `,
+    )
+    .all(siteId);
+
+  return rows.map((row) => ({
+    activeItemId: row.active_item_id,
+    batteryId: row.battery_id,
+    displayLabel: row.display_label,
+    displayState: row.display_state,
+    endedAt: row.ended_at,
+    manualState: row.manual_state,
+    observedAt: row.observed_at,
+    siteId: row.site_id,
+    source: row.source,
+    startedAt: row.started_at,
+    strategyMode: row.strategy_mode,
+  }));
+}
+
+export function readBatteryById(
+  db: Database,
+  siteId: string,
+  batteryId: string,
+): BatteryRecord | null {
+  return (
+    readBatteries(db).find(
+      (battery) => battery.siteId === siteId && battery.id === batteryId,
+    ) ?? null
+  );
+}
+
+export function upsertBatteryStrategyHistoryState(
+  db: Database,
+  record: BatteryStrategyHistoryRecord,
+): void {
+  const latest = db
+    .query<BatteryStrategyHistoryRow, [string, string]>(
+      `
+        SELECT
+          id,
+          site_id,
+          battery_id,
+          started_at,
+          ended_at,
+          observed_at,
+          source,
+          strategy_mode,
+          manual_state,
+          active_item_id,
+          display_label,
+          display_state
+        FROM battery_strategy_history
+        WHERE site_id = ?1 AND battery_id = ?2
+        ORDER BY started_at DESC, id DESC
+        LIMIT 1
+      `,
+    )
+    .get(record.siteId, record.batteryId);
+
+  if (
+    latest &&
+    latest.ended_at === null &&
+    latest.source === record.source &&
+    latest.strategy_mode === record.strategyMode &&
+    latest.manual_state === record.manualState &&
+    latest.active_item_id === record.activeItemId &&
+    latest.display_label === record.displayLabel &&
+    latest.display_state === record.displayState
+  ) {
+    db.query(
+      `
+        UPDATE battery_strategy_history
+        SET observed_at = ?2
+        WHERE id = ?1
+      `,
+    ).run(latest.id, record.observedAt);
+    return;
+  }
+
+  if (latest && latest.ended_at === null) {
+    db.query(
+      `
+        UPDATE battery_strategy_history
+        SET ended_at = ?2, observed_at = ?3
+        WHERE id = ?1
+      `,
+    ).run(latest.id, record.startedAt, record.observedAt);
+  }
+
+  db.query(
+    `
+      INSERT INTO battery_strategy_history (
+        site_id,
+        battery_id,
+        started_at,
+        ended_at,
+        observed_at,
+        source,
+        strategy_mode,
+        manual_state,
+        active_item_id,
+        display_label,
+        display_state
+      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+    `,
+  ).run(
+    record.siteId,
+    record.batteryId,
+    record.startedAt,
+    record.endedAt,
+    record.observedAt,
+    record.source,
+    record.strategyMode,
+    record.manualState,
+    record.activeItemId,
+    record.displayLabel,
+    record.displayState,
+  );
+
+  deleteExpiredHistory(db, "battery_strategy_history", "started_at");
+}
+
 export function readSolarEnergyProviderSamples(
   db: Database,
   siteId: string,
@@ -1378,6 +1564,16 @@ function getSampleRetentionCutoff(now = new Date()): string {
 
 function deleteExpiredSamples(db: Database, tableName: string): void {
   db.query(`DELETE FROM ${tableName} WHERE period_start < ?1`).run(
+    getSampleRetentionCutoff(),
+  );
+}
+
+function deleteExpiredHistory(
+  db: Database,
+  tableName: string,
+  timeColumn: string,
+): void {
+  db.query(`DELETE FROM ${tableName} WHERE ${timeColumn} < ?1`).run(
     getSampleRetentionCutoff(),
   );
 }

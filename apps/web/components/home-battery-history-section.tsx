@@ -40,6 +40,7 @@ export function HomeBatteryHistorySection({
   const daySelection = useTopLevelDaySelection({ archive, requestedDay });
   const batteryHistoryPoints = buildBatteryHistoryPoints(
     archive.batteryPowerSamples,
+    archive.batteryStrategyHistory,
     daySelection.selectedDay,
   );
   const [liveCurrentChargePercent, setLiveCurrentChargePercent] =

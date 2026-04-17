@@ -20,6 +20,12 @@ export const UI_COLORS = {
   solarEnergy: "#f97316",
   solarPrediction: "#facc15",
   success: "#34d399",
+  strategyAutomaticBorder: "rgba(255,255,255,0)",
+  strategyCharge: "rgba(52,211,153,0.38)",
+  strategyDischarge: "rgba(56,189,248,0.38)",
+  strategyIdle: "rgba(226,232,240,0.22)",
+  strategyManualBorder: "rgba(248,250,252,0.45)",
+  strategySelfConsumption: "rgba(249,115,22,0.38)",
   textPrimary: "#f8fafc",
 } as const;
 

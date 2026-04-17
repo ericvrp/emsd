@@ -125,8 +125,9 @@ export function BatteryHistoryChart({
       point.futureDischargingPower,
       point.currentChargePercent,
       point.futureChargePercent,
-    ].some((value) => typeof value === "number"),
+      ].some((value) => typeof value === "number"),
   );
+  const strategyStates = getBatteryStrategyLegendItems(points);
 
   return (
     <div className="space-y-2.5">
@@ -134,6 +135,14 @@ export function BatteryHistoryChart({
         <div className="flex flex-wrap gap-2 text-xs font-medium text-slate-300">
           <LegendChip color={UI_COLORS.batteryPowerDischarging} label="Power" />
           <LegendChip color={UI_COLORS.batteryChargeLevel} label="Charge" />
+          {strategyStates.map((state) => (
+            <LegendChip
+              key={state.label}
+              color={state.color}
+              label={state.label}
+              marker={<StrategyLegendMarker color={state.color} />}
+            />
+          ))}
         </div>
         {headerAccessory}
       </div>
@@ -146,7 +155,7 @@ export function BatteryHistoryChart({
             );
 
             return (
-              <LineChart
+              <ComposedChart
                 data={points}
                 height={height}
                 margin={{
@@ -197,6 +206,7 @@ export function BatteryHistoryChart({
                   width={RIGHT_Y_AXIS_WIDTH}
                   yAxisId="charge"
                 />
+                <YAxis domain={[0, 1]} hide yAxisId="overlay" />
                 <ReferenceLine
                   stroke={UI_COLORS.chartZeroLine}
                   strokeDasharray="4 6"
@@ -210,6 +220,21 @@ export function BatteryHistoryChart({
                     />
                   }
                 />
+                <Bar
+                  barSize={Math.max(8, Math.floor(width / Math.max(points.length, 1)))}
+                  dataKey="overlayValue"
+                  isAnimationActive={false}
+                  yAxisId="overlay"
+                >
+                  {points.map((point) => (
+                    <Cell
+                      fill={point.overlayColor ?? "transparent"}
+                      key={`${point.periodStart}-overlay`}
+                      stroke={point.overlayStroke ?? "transparent"}
+                      strokeWidth={point.overlayStrokeWidth}
+                    />
+                  ))}
+                </Bar>
                 <Line
                   activeDot={false}
                   connectNulls={false}
@@ -275,13 +300,78 @@ export function BatteryHistoryChart({
                     yAxisId="power"
                   />
                 ) : null}
-              </LineChart>
+              </ComposedChart>
             );
           }}
         </MeasuredChartContainer>
         {!hasValues ? <EmptyChartMessage message={emptyMessage} /> : null}
       </div>
     </div>
+  );
+}
+
+function getBatteryStrategyLegendItems(points: BatteryHistoryPoint[]): Array<{
+  color: string;
+  label: string;
+}> {
+  const presentStates = new Set(
+    points
+      .map((point) => point.strategyDisplayState)
+      .filter((value): value is NonNullable<typeof value> => value !== null),
+  );
+
+  const orderedStates: Array<NonNullable<BatteryHistoryPoint["strategyDisplayState"]>> = [
+    "self-consumption",
+    "charge",
+    "discharge",
+    "idle",
+  ];
+
+  return orderedStates
+    .filter((state) => presentStates.has(state))
+    .map((state) => ({
+      color: getStrategyLegendColor(state),
+      label: getStrategyLegendLabel(state),
+    }));
+}
+
+function getStrategyLegendColor(
+  state: NonNullable<BatteryHistoryPoint["strategyDisplayState"]>,
+): string {
+  switch (state) {
+    case "self-consumption":
+      return UI_COLORS.strategySelfConsumption;
+    case "charge":
+      return UI_COLORS.strategyCharge;
+    case "discharge":
+      return UI_COLORS.strategyDischarge;
+    case "idle":
+      return UI_COLORS.strategyIdle;
+  }
+}
+
+function getStrategyLegendLabel(
+  state: NonNullable<BatteryHistoryPoint["strategyDisplayState"]>,
+): string {
+  switch (state) {
+    case "self-consumption":
+      return "Self-consumption";
+    case "charge":
+      return "Charging";
+    case "discharge":
+      return "Discharging";
+    case "idle":
+      return "Idle";
+  }
+}
+
+function StrategyLegendMarker({ color }: { color: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="h-2.5 w-4 rounded-sm border border-white/10"
+      style={{ backgroundColor: color }}
+    />
   );
 }
 

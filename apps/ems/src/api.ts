@@ -27,6 +27,7 @@ import {
   deleteWeatherForecast,
   openDaemonDatabase,
   readBatteryPowerSamples,
+  readBatteryStrategyHistory,
   readDynamicPriceSamples,
   readDynamicPriceSnapshot,
   readDynamicPriceSources,
@@ -598,6 +599,7 @@ export async function runApiAction(
       try {
         return {
           batteryPowerSamples: readBatteryPowerSamples(db, siteId),
+          batteryStrategyHistory: readBatteryStrategyHistory(db, siteId),
           dynamicPriceSamples: readDynamicPriceSamples(db, siteId),
           p1MeterSamples: readP1MeterSamples(db, siteId),
           siteId,
