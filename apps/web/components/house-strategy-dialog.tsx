@@ -5,6 +5,7 @@ import type {
   BatteryStrategyRecord,
 } from "@emsd/core/client";
 import { CalendarClock, Hand, X } from "lucide-react";
+import { usePathname, useSearchParams } from "next/navigation";
 import type { ComponentType } from "react";
 import { useEffect, useState } from "react";
 import {
@@ -56,11 +57,14 @@ export function HouseStrategyDialog({
   siteId,
 }: HouseStrategyDialogProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const firstBattery = batteries[0];
   const manualModeActive = batteries.some((b) => b.batteryManualModeActive);
   const [selectedMode, setSelectedMode] = useState<"manual" | "strategy">(
     manualModeActive ? "manual" : "strategy",
   );
+  const returnPath = buildReturnPath(pathname, searchParams);
   const [liveStrategySummary, setLiveStrategySummary] = useState(
     firstBattery?.batteryStrategySummary ?? "Default strategy",
   );
@@ -259,7 +263,7 @@ export function HouseStrategyDialog({
                           }
                           showContextSummary={false}
                           minimumDischargePercent={minimumDischargePercent}
-                          returnPath="/"
+                          returnPath={returnPath}
                           siteId={siteId}
                           strategy={strategy}
                           submitLabel="Save"
@@ -270,7 +274,7 @@ export function HouseStrategyDialog({
                           batteryId="house"
                           batteryName="All batteries"
                           minimumDischargePercent={minimumDischargePercent}
-                          returnPath="/"
+                          returnPath={returnPath}
                           siteId={siteId}
                           strategyPlan={strategyPlan}
                           submitLabel="Save"
@@ -312,4 +316,13 @@ function ModeSwitchButton({
       {label}
     </button>
   );
+}
+
+function buildReturnPath(
+  pathname: string,
+  searchParams: ReturnType<typeof useSearchParams>,
+): string {
+  const search = searchParams.toString();
+
+  return search ? `${pathname}?${search}` : pathname;
 }

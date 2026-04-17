@@ -5,6 +5,7 @@ import type {
   BatteryStrategyRecord,
 } from "@emsd/core/client";
 import { CalendarClock, Hand, X } from "lucide-react";
+import { usePathname, useSearchParams } from "next/navigation";
 import type { ComponentType } from "react";
 import { useEffect, useState } from "react";
 import { BatteryStrategyForm } from "./battery-strategy-form";
@@ -39,6 +40,9 @@ export function BatteryStrategyDialog({
   const [selectedMode, setSelectedMode] = useState<"manual" | "strategy">(
     manualModeActive ? "manual" : "strategy",
   );
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const returnPath = buildReturnPath(pathname, searchParams);
 
   useEffect(() => {
     if (!isOpen) {
@@ -139,7 +143,7 @@ export function BatteryStrategyDialog({
                             manualModeActive={true}
                             showContextSummary={false}
                             minimumDischargePercent={minimumDischargePercent}
-                            returnPath="/"
+                            returnPath={returnPath}
                             siteId={siteId}
                             strategy={strategy}
                             submitLabel="Apply"
@@ -147,14 +151,14 @@ export function BatteryStrategyDialog({
                         </div>
                       </div>
                     ) : (
-                      <BatteryStrategyPlanForm
-                        batteryId={batteryId}
-                        batteryName={batteryName}
-                        minimumDischargePercent={minimumDischargePercent}
-                        returnPath="/"
-                        siteId={siteId}
-                        strategyPlan={strategyPlan}
-                      />
+                        <BatteryStrategyPlanForm
+                          batteryId={batteryId}
+                          batteryName={batteryName}
+                          minimumDischargePercent={minimumDischargePercent}
+                          returnPath={returnPath}
+                          siteId={siteId}
+                          strategyPlan={strategyPlan}
+                        />
                     )}
                   </div>
                 </div>
@@ -239,4 +243,13 @@ function formatStrategyLabel(input: {
   }
 
   return "Scheduled";
+}
+
+function buildReturnPath(
+  pathname: string,
+  searchParams: ReturnType<typeof useSearchParams>,
+): string {
+  const search = searchParams.toString();
+
+  return search ? `${pathname}?${search}` : pathname;
 }
