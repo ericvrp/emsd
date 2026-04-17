@@ -232,6 +232,7 @@ export function HomeBatteryHistorySection({
           headerAccessory={<TopLevelDaySelect daySelection={daySelection} />}
           nowMarkerPeriodStart={daySelection.nowMarkerPeriodStart}
           points={batteryHistoryPoints}
+          strategyHistory={archive.batteryStrategyHistory}
         />
       </div>
       {children ? <div className="mt-6">{children}</div> : null}

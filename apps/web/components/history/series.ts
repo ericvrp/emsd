@@ -1,4 +1,7 @@
-import type { BatteryStrategyHistoryRecord } from "@emsd/core/client";
+import type {
+  BatteryStrategyHistoryDisplayState,
+  BatteryStrategyHistoryRecord,
+} from "@emsd/core/client";
 import { UI_COLORS } from "../../lib/ui-colors";
 import { HISTORY_STEP_MS } from "./constants";
 import type {
@@ -169,6 +172,61 @@ export function buildBatteryHistoryPoints(
     power: splitSignedSeriesByTime(fillSignedDay(batterySeries, dayKey)),
     strategyHistory,
   });
+}
+
+export function buildExactBatteryStrategySegments(input: {
+  chartEndMs: number;
+  chartStartMs: number;
+  cutoffMs: number | null;
+  strategyHistory: BatteryStrategyHistoryRecord[];
+}): Array<{
+  endMs: number;
+  startMs: number;
+  state: BatteryStrategyHistoryDisplayState;
+}> {
+  const historyForDisplay = getStrategyHistoryForPrimaryBattery(
+    input.strategyHistory,
+    null,
+  );
+  const segments: Array<{
+    endMs: number;
+    startMs: number;
+    state: BatteryStrategyHistoryDisplayState;
+  }> = [];
+  const clipEndMs =
+    input.cutoffMs === null
+      ? input.chartEndMs
+      : Math.min(input.cutoffMs, input.chartEndMs);
+
+  if (clipEndMs <= input.chartStartMs) {
+    return [];
+  }
+
+  for (const entry of historyForDisplay) {
+    const startedAtMs = new Date(entry.startedAt).getTime();
+    const endedAtMs = entry.endedAt ? new Date(entry.endedAt).getTime() : null;
+
+    if (Number.isNaN(startedAtMs)) {
+      continue;
+    }
+
+    const effectiveEndMs =
+      endedAtMs !== null && !Number.isNaN(endedAtMs) ? endedAtMs : clipEndMs;
+    const startMs = Math.max(startedAtMs, input.chartStartMs);
+    const endMs = Math.min(effectiveEndMs, clipEndMs);
+
+    if (endMs <= startMs) {
+      continue;
+    }
+
+    segments.push({
+      endMs,
+      startMs,
+      state: entry.displayState,
+    });
+  }
+
+  return segments;
 }
 
 function createSingleValueSeries(

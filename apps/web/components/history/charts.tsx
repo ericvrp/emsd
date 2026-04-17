@@ -1,3 +1,4 @@
+import type { BatteryStrategyHistoryRecord } from "@emsd/core/client";
 import type { ReactNode } from "react";
 import {
   Area,
@@ -29,6 +30,7 @@ import {
   STANDARD_LEFT_AXIS_MARGIN,
   STANDARD_RIGHT_AXIS_MARGIN,
 } from "./constants";
+import { buildExactBatteryStrategySegments } from "./series";
 import {
   BatteryHistoryTooltip,
   HistoryTooltip,
@@ -112,11 +114,13 @@ export function BatteryHistoryChart({
   headerAccessory,
   nowMarkerPeriodStart,
   points,
+  strategyHistory,
 }: {
   emptyMessage: string;
   headerAccessory?: ReactNode;
   nowMarkerPeriodStart: string | null;
   points: BatteryHistoryPoint[];
+  strategyHistory: BatteryStrategyHistoryRecord[];
 }) {
   const hasValues = points.some((point) =>
     [
@@ -128,11 +132,27 @@ export function BatteryHistoryChart({
       point.futureChargePercent,
       ].some((value) => typeof value === "number"),
   );
-  const strategyStates = getBatteryStrategyLegendItems(points);
-  const strategySegments = buildBatteryStrategyOverlaySegments(
-    points,
-    nowMarkerPeriodStart,
-  );
+  const chartData = points.map((point) => ({
+    ...point,
+    timestampMs: new Date(point.periodStart).getTime(),
+  }));
+  const firstPeriodStartMs = chartData[0]?.timestampMs ?? 0;
+  const lastPeriodStartMs = chartData.at(-1)?.timestampMs ?? 0;
+  const xAxisDomain: [number, number] = [
+    firstPeriodStartMs,
+    lastPeriodStartMs + HISTORY_STEP_MS,
+  ];
+  const cutoffMs =
+    nowMarkerPeriodStart === null
+      ? null
+      : new Date(nowMarkerPeriodStart).getTime();
+  const strategySegments = buildExactBatteryStrategySegments({
+    chartEndMs: xAxisDomain[1],
+    chartStartMs: xAxisDomain[0],
+    cutoffMs,
+    strategyHistory,
+  });
+  const strategyStates = getBatteryStrategyLegendItems(strategySegments);
 
   return (
     <div className="space-y-2.5">
@@ -155,13 +175,13 @@ export function BatteryHistoryChart({
         <MeasuredChartContainer className="h-[360px] min-w-0 w-full">
           {({ height, width }) => {
             const xAxisTicks = buildResponsiveDayTicks(
-              points.map((point) => point.periodStart),
+              chartData.map((point) => point.timestampMs),
               width,
             );
 
             return (
               <ComposedChart
-                data={points}
+                data={chartData}
                 height={height}
                 margin={{
                   top: 12,
@@ -178,13 +198,15 @@ export function BatteryHistoryChart({
                 />
                 <XAxis
                   axisLine={false}
-                  dataKey="periodStart"
+                  dataKey="timestampMs"
+                  domain={xAxisDomain}
                   interval={0}
                   minTickGap={28}
                   tick={UI_CHART_STYLES.axisTick}
                   tickFormatter={formatDayTick}
                   tickLine={false}
                   ticks={xAxisTicks}
+                  type="number"
                 />
                 <YAxis
                   axisLine={false}
@@ -227,15 +249,15 @@ export function BatteryHistoryChart({
                 />
                 {strategySegments.map((segment) => (
                   <ReferenceArea
-                    fill={segment.color}
+                    fill={getStrategyLegendColor(segment.state)}
                     fillOpacity={1}
                     ifOverflow="hidden"
-                    key={`${segment.state}-${segment.start}-${segment.end}`}
-                    stroke={segment.color}
+                    key={`${segment.state}-${segment.startMs}-${segment.endMs}`}
+                    stroke={getStrategyLegendColor(segment.state)}
                     strokeOpacity={0.95}
                     strokeWidth={1.2}
-                    x1={segment.start}
-                    x2={segment.end}
+                    x1={segment.startMs}
+                    x2={segment.endMs}
                     y1={BATTERY_POWER_AXIS_DOMAIN[0]}
                     y2={BATTERY_POWER_AXIS_DOMAIN[1]}
                     yAxisId="power"
@@ -302,7 +324,7 @@ export function BatteryHistoryChart({
                     strokeDasharray="4 4"
                     strokeOpacity={0.8}
                     strokeWidth={2}
-                    x={nowMarkerPeriodStart}
+                    x={new Date(nowMarkerPeriodStart).getTime()}
                     yAxisId="power"
                   />
                 ) : null}
@@ -316,14 +338,18 @@ export function BatteryHistoryChart({
   );
 }
 
-function getBatteryStrategyLegendItems(points: BatteryHistoryPoint[]): Array<{
+function getBatteryStrategyLegendItems(
+  segments: Array<{
+    endMs: number;
+    startMs: number;
+    state: NonNullable<BatteryHistoryPoint["strategyDisplayState"]>;
+  }>,
+): Array<{
   color: string;
   label: string;
 }> {
   const presentStates = new Set(
-    points
-      .map((point) => point.strategyDisplayState)
-      .filter((value): value is NonNullable<typeof value> => value !== null),
+    segments.map((segment) => segment.state),
   );
 
   const orderedStates: Array<NonNullable<BatteryHistoryPoint["strategyDisplayState"]>> = [
@@ -379,112 +405,6 @@ function StrategyLegendMarker({ color }: { color: string }) {
       style={{ backgroundColor: color }}
     />
   );
-}
-
-function buildBatteryStrategyOverlaySegments(
-  points: BatteryHistoryPoint[],
-  nowMarkerPeriodStart: string | null,
-): Array<{
-  color: string;
-  end: string;
-  start: string;
-  state: NonNullable<BatteryHistoryPoint["strategyDisplayState"]>;
-}> {
-  const segments: Array<{
-    color: string;
-    end: string;
-    start: string;
-    state: NonNullable<BatteryHistoryPoint["strategyDisplayState"]>;
-  }> = [];
-
-  let currentSegment:
-    | {
-        color: string;
-        end: string;
-        start: string;
-        state: NonNullable<BatteryHistoryPoint["strategyDisplayState"]>;
-      }
-    | null = null;
-
-  for (const [index, point] of points.entries()) {
-    if (
-      nowMarkerPeriodStart !== null &&
-      point.periodStart >= nowMarkerPeriodStart
-    ) {
-      if (currentSegment !== null) {
-        segments.push(currentSegment);
-        currentSegment = null;
-      }
-      break;
-    }
-
-    const state = point.strategyDisplayState;
-    const pointEnd = getBatteryStrategySegmentPointEnd(
-      points,
-      index,
-      nowMarkerPeriodStart,
-    );
-
-    if (state === null) {
-      if (currentSegment !== null) {
-        segments.push(currentSegment);
-        currentSegment = null;
-      }
-      continue;
-    }
-
-    if (currentSegment === null || currentSegment.state !== state) {
-      if (currentSegment !== null) {
-        segments.push(currentSegment);
-      }
-
-      currentSegment = {
-        color: getStrategyLegendColor(state),
-        end: pointEnd,
-        start: point.periodStart,
-        state,
-      };
-      continue;
-    }
-
-    currentSegment.end = pointEnd;
-  }
-
-  if (currentSegment !== null) {
-    segments.push(currentSegment);
-  }
-
-  return segments;
-}
-
-function getBatteryStrategySegmentPointEnd(
-  points: BatteryHistoryPoint[],
-  index: number,
-  nowMarkerPeriodStart: string | null,
-): string {
-  const pointPeriodStart = points[index]?.periodStart;
-  const nextPointPeriodStart = points[index + 1]?.periodStart;
-
-  if (nextPointPeriodStart !== undefined) {
-    if (
-      nowMarkerPeriodStart !== null &&
-      nextPointPeriodStart > nowMarkerPeriodStart
-    ) {
-      return nowMarkerPeriodStart;
-    }
-
-    return nextPointPeriodStart;
-  }
-
-  if (nowMarkerPeriodStart !== null) {
-    return nowMarkerPeriodStart;
-  }
-
-  if (pointPeriodStart === undefined) {
-    return new Date(HISTORY_STEP_MS).toISOString();
-  }
-
-  return new Date(new Date(pointPeriodStart).getTime() + HISTORY_STEP_MS).toISOString();
 }
 
 export function SingleValueHistoryChart({
