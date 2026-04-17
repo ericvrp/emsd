@@ -25,7 +25,7 @@ export const UI_COLORS = {
   strategyDischarge: "#7dd3fc",
   strategyIdle: "#b6bfcb",
   strategyManualBorder: "rgba(248,250,252,0.45)",
-  strategySelfConsumption: "#c9c06f",
+  strategySelfConsumption: "#b9ad5a",
   textPrimary: "#f8fafc",
 } as const;
 

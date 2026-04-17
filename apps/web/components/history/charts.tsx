@@ -129,7 +129,10 @@ export function BatteryHistoryChart({
       ].some((value) => typeof value === "number"),
   );
   const strategyStates = getBatteryStrategyLegendItems(points);
-  const strategySegments = buildBatteryStrategyOverlaySegments(points);
+  const strategySegments = buildBatteryStrategyOverlaySegments(
+    points,
+    nowMarkerPeriodStart,
+  );
 
   return (
     <div className="space-y-2.5">
@@ -378,7 +381,10 @@ function StrategyLegendMarker({ color }: { color: string }) {
   );
 }
 
-function buildBatteryStrategyOverlaySegments(points: BatteryHistoryPoint[]): Array<{
+function buildBatteryStrategyOverlaySegments(
+  points: BatteryHistoryPoint[],
+  nowMarkerPeriodStart: string | null,
+): Array<{
   color: string;
   end: string;
   start: string;
@@ -400,8 +406,24 @@ function buildBatteryStrategyOverlaySegments(points: BatteryHistoryPoint[]): Arr
       }
     | null = null;
 
-  for (const point of points) {
+  for (const [index, point] of points.entries()) {
+    if (
+      nowMarkerPeriodStart !== null &&
+      point.periodStart >= nowMarkerPeriodStart
+    ) {
+      if (currentSegment !== null) {
+        segments.push(currentSegment);
+        currentSegment = null;
+      }
+      break;
+    }
+
     const state = point.strategyDisplayState;
+    const pointEnd = getBatteryStrategySegmentPointEnd(
+      points,
+      index,
+      nowMarkerPeriodStart,
+    );
 
     if (state === null) {
       if (currentSegment !== null) {
@@ -418,14 +440,14 @@ function buildBatteryStrategyOverlaySegments(points: BatteryHistoryPoint[]): Arr
 
       currentSegment = {
         color: getStrategyLegendColor(state),
-        end: point.periodStart,
+        end: pointEnd,
         start: point.periodStart,
         state,
       };
       continue;
     }
 
-    currentSegment.end = point.periodStart;
+    currentSegment.end = pointEnd;
   }
 
   if (currentSegment !== null) {
@@ -433,6 +455,36 @@ function buildBatteryStrategyOverlaySegments(points: BatteryHistoryPoint[]): Arr
   }
 
   return segments;
+}
+
+function getBatteryStrategySegmentPointEnd(
+  points: BatteryHistoryPoint[],
+  index: number,
+  nowMarkerPeriodStart: string | null,
+): string {
+  const pointPeriodStart = points[index]?.periodStart;
+  const nextPointPeriodStart = points[index + 1]?.periodStart;
+
+  if (nextPointPeriodStart !== undefined) {
+    if (
+      nowMarkerPeriodStart !== null &&
+      nextPointPeriodStart > nowMarkerPeriodStart
+    ) {
+      return nowMarkerPeriodStart;
+    }
+
+    return nextPointPeriodStart;
+  }
+
+  if (nowMarkerPeriodStart !== null) {
+    return nowMarkerPeriodStart;
+  }
+
+  if (pointPeriodStart === undefined) {
+    return new Date(HISTORY_STEP_MS).toISOString();
+  }
+
+  return new Date(new Date(pointPeriodStart).getTime() + HISTORY_STEP_MS).toISOString();
 }
 
 export function SingleValueHistoryChart({
