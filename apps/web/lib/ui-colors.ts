@@ -21,11 +21,11 @@ export const UI_COLORS = {
   solarPrediction: "#facc15",
   success: "#34d399",
   strategyAutomaticBorder: "rgba(255,255,255,0)",
-  strategyCharge: "rgba(52,211,153,0.38)",
-  strategyDischarge: "rgba(56,189,248,0.38)",
-  strategyIdle: "rgba(226,232,240,0.22)",
+  strategyCharge: "#34d399",
+  strategyDischarge: "#7dd3fc",
+  strategyIdle: "#b6bfcb",
   strategyManualBorder: "rgba(248,250,252,0.45)",
-  strategySelfConsumption: "rgba(249,115,22,0.38)",
+  strategySelfConsumption: "#c9c06f",
   textPrimary: "#f8fafc",
 } as const;
 

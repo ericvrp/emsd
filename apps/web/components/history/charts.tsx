@@ -8,6 +8,7 @@ import {
   ComposedChart,
   Line,
   LineChart,
+  ReferenceArea,
   ReferenceLine,
   Tooltip,
   XAxis,
@@ -128,6 +129,7 @@ export function BatteryHistoryChart({
       ].some((value) => typeof value === "number"),
   );
   const strategyStates = getBatteryStrategyLegendItems(points);
+  const strategySegments = buildBatteryStrategyOverlaySegments(points);
 
   return (
     <div className="space-y-2.5">
@@ -220,21 +222,22 @@ export function BatteryHistoryChart({
                     />
                   }
                 />
-                <Bar
-                  barSize={Math.max(8, Math.floor(width / Math.max(points.length, 1)))}
-                  dataKey="overlayValue"
-                  isAnimationActive={false}
-                  yAxisId="overlay"
-                >
-                  {points.map((point) => (
-                    <Cell
-                      fill={point.overlayColor ?? "transparent"}
-                      key={`${point.periodStart}-overlay`}
-                      stroke={point.overlayStroke ?? "transparent"}
-                      strokeWidth={point.overlayStrokeWidth}
-                    />
-                  ))}
-                </Bar>
+                {strategySegments.map((segment) => (
+                  <ReferenceArea
+                    fill={segment.color}
+                    fillOpacity={1}
+                    ifOverflow="hidden"
+                    key={`${segment.state}-${segment.start}-${segment.end}`}
+                    stroke={segment.color}
+                    strokeOpacity={0.95}
+                    strokeWidth={1.2}
+                    x1={segment.start}
+                    x2={segment.end}
+                    y1={BATTERY_POWER_AXIS_DOMAIN[0]}
+                    y2={BATTERY_POWER_AXIS_DOMAIN[1]}
+                    yAxisId="power"
+                  />
+                ))}
                 <Line
                   activeDot={false}
                   connectNulls={false}
@@ -373,6 +376,63 @@ function StrategyLegendMarker({ color }: { color: string }) {
       style={{ backgroundColor: color }}
     />
   );
+}
+
+function buildBatteryStrategyOverlaySegments(points: BatteryHistoryPoint[]): Array<{
+  color: string;
+  end: string;
+  start: string;
+  state: NonNullable<BatteryHistoryPoint["strategyDisplayState"]>;
+}> {
+  const segments: Array<{
+    color: string;
+    end: string;
+    start: string;
+    state: NonNullable<BatteryHistoryPoint["strategyDisplayState"]>;
+  }> = [];
+
+  let currentSegment:
+    | {
+        color: string;
+        end: string;
+        start: string;
+        state: NonNullable<BatteryHistoryPoint["strategyDisplayState"]>;
+      }
+    | null = null;
+
+  for (const point of points) {
+    const state = point.strategyDisplayState;
+
+    if (state === null) {
+      if (currentSegment !== null) {
+        segments.push(currentSegment);
+        currentSegment = null;
+      }
+      continue;
+    }
+
+    if (currentSegment === null || currentSegment.state !== state) {
+      if (currentSegment !== null) {
+        segments.push(currentSegment);
+      }
+
+      currentSegment = {
+        color: getStrategyLegendColor(state),
+        end: point.periodStart,
+        start: point.periodStart,
+        state,
+      };
+      continue;
+    }
+
+    currentSegment.end = point.periodStart;
+  }
+
+  if (currentSegment !== null) {
+    segments.push(currentSegment);
+  }
+
+  return segments;
 }
 
 export function SingleValueHistoryChart({

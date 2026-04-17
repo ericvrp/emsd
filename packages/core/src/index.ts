@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 export * from "./price-selection";
 export * from "./solar-prediction";
+export * from "./solar-prediction-smoothing";
 
 export const EMSD_NAME = "EMSD";
 
@@ -918,6 +919,8 @@ export interface HistoryArchive {
   siteId: string;
   solarEnergyProviderSamples: SolarEnergyProviderSampleRecord[];
   solarForecastSamples: SolarForecastSampleRecord[];
+  solarPredictedGeneration: Array<{ periodStart: string; value: number | null }>;
+  solarPredictionAlgorithmVersion: "v2";
 }
 
 export const PRICE_SELECTION_WINDOW_MS = 60 * 60 * 1_000;

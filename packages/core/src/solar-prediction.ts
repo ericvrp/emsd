@@ -5,10 +5,10 @@ import type {
 
 export const MAX_SOLAR_PREDICTION_PRECEDING_DAYS = 7;
 export const SOLAR_PREDICTION_MATCH_TOLERANCE_MS = 7.5 * 60 * 1_000;
-export const DEFAULT_SOLAR_PREDICTION_ALGORITHM_VERSION = "v1";
+export const DEFAULT_SOLAR_PREDICTION_ALGORITHM_VERSION = "v2";
 const V2_FORECAST_SIMILARITY_EXPONENT = 1.5;
 
-export type SolarPredictionAlgorithmVersion = "v0" | "v1" | "v2";
+export type SolarPredictionAlgorithmVersion = "v2";
 
 export interface PredictedSolarGenerationPoint {
   periodStart: string;
@@ -28,16 +28,13 @@ export interface SolarPredictionAccuracySummary {
 }
 
 export interface SolarPredictionOptions {
-  algorithmVersion?: SolarPredictionAlgorithmVersion;
   maxPrecedingDays?: number;
   matchToleranceMs?: number;
   minForecastWm2?: number;
-  useOutlierRemoval?: boolean;
   targetForecastSamples?: SolarForecastSampleRecord[];
 }
 
 interface ResolvedSolarPredictionOptions {
-  algorithmVersion: SolarPredictionAlgorithmVersion;
   matchToleranceMs: number;
   maxPrecedingDays: number;
   minForecastWm2: number;
@@ -180,16 +177,6 @@ function computeMean(values: number[]): number {
   return values.reduce((total, value) => total + value, 0) / values.length;
 }
 
-function computeTrimmedMean(samples: HistoricalMatchSample[]): number {
-  if (samples.length < 4) {
-    return computeMean(samples.map((sample) => sample.ratio));
-  }
-
-  const sorted = [...samples].sort((a, b) => a.ratio - b.ratio);
-  const trimmed = sorted.slice(1, -1);
-  return computeMean(trimmed.map((sample) => sample.ratio));
-}
-
 function computeRecencyWeightedMean(samples: HistoricalMatchSample[]): number {
   let weightedTotal = 0;
   let totalWeight = 0;
@@ -227,40 +214,14 @@ function computeWinsorizedWeightedMean(samples: HistoricalMatchSample[]): number
 function resolveSolarPredictionOptions(
   input: SolarPredictionOptions,
 ): ResolvedSolarPredictionOptions {
-  const algorithmVersion =
-    input.algorithmVersion ?? DEFAULT_SOLAR_PREDICTION_ALGORITHM_VERSION;
-
-  const defaultMinForecastWm2 = algorithmVersion === "v0" ? 0 : 5;
-
   return {
-    algorithmVersion,
     matchToleranceMs:
       input.matchToleranceMs ?? SOLAR_PREDICTION_MATCH_TOLERANCE_MS,
     maxPrecedingDays:
       input.maxPrecedingDays ?? MAX_SOLAR_PREDICTION_PRECEDING_DAYS,
-    minForecastWm2: input.minForecastWm2 ?? defaultMinForecastWm2,
+    minForecastWm2: input.minForecastWm2 ?? 5,
     targetForecastSamples: input.targetForecastSamples,
   };
-}
-
-function buildAverageRatio(
-  samples: HistoricalMatchSample[],
-  algorithmVersion: SolarPredictionAlgorithmVersion,
-  useOutlierRemoval?: boolean,
-): number {
-  if (algorithmVersion === "v0") {
-    return computeMean(samples.map((sample) => sample.ratio));
-  }
-
-  if (algorithmVersion === "v2") {
-    return computeWinsorizedWeightedMean(samples);
-  }
-
-  if (useOutlierRemoval === false) {
-    return computeMean(samples.map((sample) => sample.ratio));
-  }
-
-  return computeTrimmedMean(samples);
 }
 
 function buildRecencyWeight(dayOffset: number): number {
@@ -347,8 +308,6 @@ function predictSolarGenerationForForecastSample(
   matchToleranceMs: number,
   periodStart: string,
   minForecastWm2: number,
-  algorithmVersion: SolarPredictionAlgorithmVersion,
-  useOutlierRemoval: boolean,
 ): number | null {
   if (forecastValue === null) {
     return null;
@@ -409,31 +368,20 @@ function predictSolarGenerationForForecastSample(
     return null;
   }
 
-  if (algorithmVersion === "v2") {
-    return buildV2PredictionValue({
-      forecastValue,
-      generationCeiling: computeObservedGenerationCeiling(generationIndex),
-      samples: matchSamples,
-    });
-  }
-
-  const averageRatio = buildAverageRatio(
-    matchSamples,
-    algorithmVersion,
-    useOutlierRemoval,
-  );
-  return forecastValue * averageRatio;
+  return buildV2PredictionValue({
+    forecastValue,
+    generationCeiling: computeObservedGenerationCeiling(generationIndex),
+    samples: matchSamples,
+  });
 }
 
 export function buildPredictedSolarGenerationSeries(input: {
-  algorithmVersion?: SolarPredictionAlgorithmVersion;
   forecastSamples: SolarForecastSampleRecord[];
   solarEnergyProviderSamples: SolarEnergyProviderSampleRecord[];
   targetForecastSamples?: SolarForecastSampleRecord[];
   maxPrecedingDays?: number;
   matchToleranceMs?: number;
   minForecastWm2?: number;
-  useOutlierRemoval?: boolean;
 }): PredictedSolarGenerationPoint[] {
   const resolvedOptions = resolveSolarPredictionOptions(input);
   const forecastIndex = buildTimestampedValueIndex(
@@ -447,7 +395,6 @@ export function buildPredictedSolarGenerationSeries(input: {
   );
   const targetSamples =
     resolvedOptions.targetForecastSamples ?? input.forecastSamples;
-  const useOutlierRemoval = input.useOutlierRemoval ?? true;
 
   return targetSamples.map((sample) => ({
     periodStart: sample.periodStart,
@@ -459,12 +406,6 @@ export function buildPredictedSolarGenerationSeries(input: {
       resolvedOptions.matchToleranceMs,
       sample.periodStart,
       resolvedOptions.minForecastWm2,
-      resolvedOptions.algorithmVersion,
-      resolvedOptions.algorithmVersion === "v0"
-        ? false
-        : resolvedOptions.algorithmVersion === "v1"
-          ? useOutlierRemoval
-          : true,
     ),
   }));
 }

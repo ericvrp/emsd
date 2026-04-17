@@ -1,5 +1,6 @@
 export * from "./price-selection";
 export * from "./solar-prediction";
+export * from "./solar-prediction-smoothing";
 
 export type {
   BatteryStatus,

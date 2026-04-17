@@ -35,7 +35,11 @@ export type BatteryHistoryPoint = {
   futureChargingPower: number | null;
   futureDischargingPower: number | null;
   futurePower: number | null;
+  overlayCharge: number | null;
   overlayColor: string | null;
+  overlayDischarge: number | null;
+  overlayIdle: number | null;
+  overlaySelfConsumption: number | null;
   overlayStroke: string | null;
   overlayStrokeWidth: number;
   overlayValue: number | null;

@@ -1,5 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import {
+  DEFAULT_SOLAR_PREDICTION_SMOOTHING_MODE,
+  applySolarSeriesSmoothing,
   type BatteryManualState,
   type BatteryRecord,
   type BatteryStrategyMode,
@@ -18,6 +20,7 @@ import {
   type SiteRecord,
   type SolarEnergyProviderRecord,
   type WeatherForecastRecord,
+  buildPredictedSolarGenerationSeries,
   createBatteryStrategyRuntimeForPlanApply,
   getDaemonLockPath,
   normalizeBatteryStrategyPlan,
@@ -597,17 +600,25 @@ export async function runApiAction(
       const db = openDaemonDatabase();
 
       try {
+        const solarEnergyProviderSamples = readSolarEnergyProviderSamples(db, siteId);
+        const solarForecastSamples = readSolarForecastSamples(db, siteId);
+
         return {
           batteryPowerSamples: readBatteryPowerSamples(db, siteId),
           batteryStrategyHistory: readBatteryStrategyHistory(db, siteId),
           dynamicPriceSamples: readDynamicPriceSamples(db, siteId),
           p1MeterSamples: readP1MeterSamples(db, siteId),
           siteId,
-          solarEnergyProviderSamples: readSolarEnergyProviderSamples(
-            db,
-            siteId,
+          solarEnergyProviderSamples,
+          solarForecastSamples,
+          solarPredictedGeneration: applySolarSeriesSmoothing(
+            buildPredictedSolarGenerationSeries({
+              forecastSamples: solarForecastSamples,
+              solarEnergyProviderSamples,
+            }),
+            DEFAULT_SOLAR_PREDICTION_SMOOTHING_MODE,
           ),
-          solarForecastSamples: readSolarForecastSamples(db, siteId),
+          solarPredictionAlgorithmVersion: "v2",
         };
       } finally {
         db.close();

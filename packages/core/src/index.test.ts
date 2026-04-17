@@ -192,7 +192,7 @@ test("normalizeBatteryStrategyPlan defaults idle percentage targets to minimum d
   expect(normalized[1]?.manualTargetSoc).toBe(20);
 });
 
-test("buildPredictedSolarGenerationSeries uses the average ratio of up to seven preceding days", () => {
+test("buildPredictedSolarGenerationSeries uses the current v2 predictor over preceding days", () => {
   const targetPeriodStart = "2026-04-09T12:00:00.000Z";
   const currentForecastWm2 = 250;
   const forecastSamples = [
@@ -211,7 +211,7 @@ test("buildPredictedSolarGenerationSeries uses the average ratio of up to seven 
   });
 
   expect(prediction?.periodStart).toBe(targetPeriodStart);
-  expect(prediction?.value).toBeCloseTo(260, 10);
+  expect(prediction?.value).toBeCloseTo(256.873278, 6);
 });
 
 test("buildPredictedSolarGenerationSeries matches the closest timestamps within tolerance", () => {
@@ -231,7 +231,7 @@ test("buildPredictedSolarGenerationSeries matches the closest timestamps within 
 
   expect(prediction).toEqual({
     periodStart: targetPeriodStart,
-    value: 300,
+    value: 150,
   });
 });
 
@@ -281,7 +281,7 @@ test("buildPredictedSolarGenerationSeries aggregates multiple solar providers", 
 
   expect(prediction).toEqual({
     periodStart: targetPeriodStart,
-    value: 225,
+    value: 150,
   });
 });
 
@@ -306,7 +306,7 @@ test("buildPredictedSolarGenerationSeries skips zero and missing historical fore
 
   expect(prediction).toEqual({
     periodStart: targetPeriodStart,
-    value: 300,
+    value: 150,
   });
 });
 

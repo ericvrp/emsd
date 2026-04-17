@@ -1265,7 +1265,7 @@ export function readBatteryStrategyHistory(
     activeItemId: row.active_item_id,
     batteryId: row.battery_id,
     displayLabel: row.display_label,
-    displayState: row.display_state,
+    displayState: normalizeBatteryStrategyHistoryDisplayState(row.display_state),
     endedAt: row.ended_at,
     manualState: row.manual_state,
     observedAt: row.observed_at,
@@ -1324,7 +1324,8 @@ export function upsertBatteryStrategyHistoryState(
     latest.manual_state === record.manualState &&
     latest.active_item_id === record.activeItemId &&
     latest.display_label === record.displayLabel &&
-    latest.display_state === record.displayState
+    normalizeBatteryStrategyHistoryDisplayState(latest.display_state) ===
+      record.displayState
   ) {
     db.query(
       `
@@ -1377,6 +1378,24 @@ export function upsertBatteryStrategyHistoryState(
   );
 
   deleteExpiredHistory(db, "battery_strategy_history", "started_at");
+}
+
+function normalizeBatteryStrategyHistoryDisplayState(
+  value: string,
+): BatteryStrategyHistoryRecord["displayState"] {
+  switch (value) {
+    case "charging":
+      return "charge";
+    case "discharging":
+      return "discharge";
+    case "self-consumption":
+    case "charge":
+    case "discharge":
+    case "idle":
+      return value;
+    default:
+      return "idle";
+  }
 }
 
 export function readSolarEnergyProviderSamples(

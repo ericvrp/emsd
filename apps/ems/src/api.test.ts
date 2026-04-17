@@ -4,6 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { DashboardSnapshot, HistoryArchive } from "@emsd/core";
 import {
+  DEFAULT_SOLAR_PREDICTION_SMOOTHING_MODE,
+  applySolarSeriesSmoothing,
+  buildPredictedSolarGenerationSeries,
+} from "@emsd/core";
+import {
   openDaemonDatabase,
   upsertBatteryStrategyHistoryState,
   upsertDynamicPriceSnapshot,
@@ -311,6 +316,134 @@ test("house-strategy-set persists manual target method metadata", async () => {
   expect(device?.batteryManualTargetMethod).toBe("duration");
   expect(device?.batteryManualTargetDurationMinutes).toBe(6);
   expect(device?.batteryManualTargetEndTime).toBeNull();
+});
+
+test("history-get-archive applies default prediction smoothing server-side", async () => {
+  const databasePath = createTempDatabase();
+
+  createSite(
+    {
+      id: "home",
+      location: "52.367600, 4.904100",
+      name: "Home",
+    },
+    databasePath,
+  );
+
+  const db = openDaemonDatabase(databasePath);
+
+  try {
+    upsertWeatherForecast(db, "home", {
+      generatedAt: "2026-04-09T08:00:00.000Z",
+      hours: 48,
+      location: "52.367600, 4.904100",
+      metricLabel: "Solar irradiance",
+      periodMinutes: 15,
+      points: [
+        {
+          airTempC: 12.4,
+          cloudOpacityPercent: 35,
+          ghiWm2: 200,
+          period: "PT15M",
+          periodEnd: "2026-04-08T10:15:00.000Z",
+          value: 200,
+        },
+        {
+          airTempC: 13.1,
+          cloudOpacityPercent: 30,
+          ghiWm2: 300,
+          period: "PT15M",
+          periodEnd: "2026-04-08T10:30:00.000Z",
+          value: 300,
+        },
+        {
+          airTempC: 13.7,
+          cloudOpacityPercent: 25,
+          ghiWm2: 400,
+          period: "PT15M",
+          periodEnd: "2026-04-08T10:45:00.000Z",
+          value: 400,
+        },
+        {
+          airTempC: 14.2,
+          cloudOpacityPercent: 20,
+          ghiWm2: 200,
+          period: "PT15M",
+          periodEnd: "2026-04-09T10:15:00.000Z",
+          value: 200,
+        },
+        {
+          airTempC: 14.8,
+          cloudOpacityPercent: 18,
+          ghiWm2: 300,
+          period: "PT15M",
+          periodEnd: "2026-04-09T10:30:00.000Z",
+          value: 300,
+        },
+        {
+          airTempC: 15.1,
+          cloudOpacityPercent: 15,
+          ghiWm2: 400,
+          period: "PT15M",
+          periodEnd: "2026-04-09T10:45:00.000Z",
+          value: 400,
+        },
+      ],
+      provider: "open-meteo",
+      providerLabel: "Open-Meteo",
+      sourceId: null,
+      sourceName: "Open-Meteo",
+      unitLabel: "W/m²",
+    });
+
+    upsertManagedDeviceTelemetry(db, {
+      capacityWh: null,
+      deviceId: "solar-1",
+      kind: "solar-energy-provider",
+      observedAt: "2026-04-08T10:00:00.000Z",
+      powerW: 100,
+      siteId: "home",
+      socPercent: null,
+      state: "connected",
+    });
+    upsertManagedDeviceTelemetry(db, {
+      capacityWh: null,
+      deviceId: "solar-1",
+      kind: "solar-energy-provider",
+      observedAt: "2026-04-08T10:15:00.000Z",
+      powerW: 300,
+      siteId: "home",
+      socPercent: null,
+      state: "connected",
+    });
+    upsertManagedDeviceTelemetry(db, {
+      capacityWh: null,
+      deviceId: "solar-1",
+      kind: "solar-energy-provider",
+      observedAt: "2026-04-08T10:30:00.000Z",
+      powerW: 200,
+      siteId: "home",
+      socPercent: null,
+      state: "connected",
+    });
+  } finally {
+    db.close();
+  }
+
+  const archive = (await runApiAction("history-get-archive", {
+    siteId: "home",
+  })) as HistoryArchive;
+
+  const expected = applySolarSeriesSmoothing(
+    buildPredictedSolarGenerationSeries({
+      forecastSamples: archive.solarForecastSamples,
+      solarEnergyProviderSamples: archive.solarEnergyProviderSamples,
+    }),
+    DEFAULT_SOLAR_PREDICTION_SMOOTHING_MODE,
+  );
+
+  expect(archive.solarPredictionAlgorithmVersion).toBe("v2");
+  expect(archive.solarPredictedGeneration).toEqual(expected);
 });
 
 test("house-strategy-plan-set applies the fallback and skips earlier same-day items", async () => {

@@ -1,10 +1,14 @@
 import {
+  applySolarSeriesSmoothing,
   buildPredictedSolarGenerationSeries,
   buildSolarPredictionAccuracySummary,
+  DEFAULT_SOLAR_PREDICTION_SMOOTHING_MODE,
+  formatSolarPredictionSmoothingMode,
   getDatabasePath,
+  SOLAR_PREDICTION_SMOOTHING_MODES,
   type SolarEnergyProviderSampleRecord,
   type SolarForecastSampleRecord,
-  type SolarPredictionAlgorithmVersion,
+  type SolarPredictionSmoothingMode,
 } from "../packages/core/src/index";
 import {
   openDaemonDatabase,
@@ -14,18 +18,19 @@ import {
 } from "../apps/daemon/src/database";
 
 const DEFAULT_DAY_COUNT = 7;
-const ALGORITHM_VERSIONS: SolarPredictionAlgorithmVersion[] = ["v0", "v1", "v2"];
+const DEFAULT_TOP_COMBINATIONS = 10;
 
 interface ScriptOptions {
   days: number;
   siteId: string | null;
+  top: number;
 }
 
 interface DayScoreRow {
   date: string;
   energyAccuracyPercentage: number | null;
   energyDeltaWh: number;
-  scoringPercentage: number | null;
+  overallAccuracyPercentage: number | null;
   timingAccuracyPercentage: number | null;
   totalAbsoluteErrorWh: number;
   totalGeneratedWh: number;
@@ -33,9 +38,32 @@ interface DayScoreRow {
   usedSamples: number;
 }
 
+interface EvaluationCombination {
+  generatedSmoothingMode: SolarPredictionSmoothingMode;
+  predictedSmoothingMode: SolarPredictionSmoothingMode;
+}
+
+interface CombinationScoreSummary extends EvaluationCombination {
+  averageEnergyAccuracy: number | null;
+  averageOverallAccuracy: number | null;
+  averageTimingAccuracy: number | null;
+  isCurrentServerDefault: boolean;
+  totalAbsoluteErrorWh: number;
+  totalEnergyDeltaWh: number;
+  totalGeneratedWh: number;
+  totalPredictedWh: number;
+  totalUsedSamples: number;
+}
+
+const CURRENT_SERVER_DEFAULT: EvaluationCombination = {
+  generatedSmoothingMode: DEFAULT_SOLAR_PREDICTION_SMOOTHING_MODE,
+  predictedSmoothingMode: DEFAULT_SOLAR_PREDICTION_SMOOTHING_MODE,
+};
+
 function parseArgs(args: string[]): ScriptOptions {
   let days = DEFAULT_DAY_COUNT;
   let siteId: string | null = null;
+  let top = DEFAULT_TOP_COMBINATIONS;
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
@@ -60,6 +88,16 @@ function parseArgs(args: string[]): ScriptOptions {
       continue;
     }
 
+    if (arg === "--top") {
+      const value = Number(args[index + 1]);
+      if (!Number.isInteger(value) || value <= 0) {
+        throw new Error("--top must be a positive integer.");
+      }
+      top = value;
+      index += 1;
+      continue;
+    }
+
     if (arg === "--help" || arg === "-h") {
       printHelp();
       process.exit(0);
@@ -68,18 +106,21 @@ function parseArgs(args: string[]): ScriptOptions {
     throw new Error(`Unknown argument: ${arg}`);
   }
 
-  return { days, siteId };
+  return { days, siteId, top };
 }
 
 function printHelp(): void {
-  console.log([
-    "Score solar prediction quality for v0, v1, and v2.",
-    "",
-    "Usage:",
-    "  bun run solar:score",
-    "  bun run solar:score -- --days 7",
-    "  bun run solar:score -- --site <site-id>",
-  ].join("\n"));
+  console.log(
+    [
+      "Score solar prediction quality for smoothing combinations around the current algorithm.",
+      "",
+      "Usage:",
+      "  bun run solar:score",
+      "  bun run solar:score -- --days 7",
+      "  bun run solar:score -- --site <site-id>",
+      "  bun run solar:score -- --top 15",
+    ].join("\n"),
+  );
 }
 
 function getDayKey(timestamp: string): string {
@@ -122,7 +163,9 @@ function collectCandidateDays(input: {
   forecastSamples: SolarForecastSampleRecord[];
   generatedSeries: Array<{ periodStart: string; value: number | null }>;
 }): string[] {
-  const forecastDays = new Set(input.forecastSamples.map((sample) => getDayKey(sample.periodStart)));
+  const forecastDays = new Set(
+    input.forecastSamples.map((sample) => getDayKey(sample.periodStart)),
+  );
   const generatedDays = new Set(
     input.generatedSeries
       .filter((sample) => typeof sample.value === "number")
@@ -137,9 +180,9 @@ function collectCandidateDays(input: {
     .sort((left, right) => left.localeCompare(right));
 }
 
-function scoreAlgorithmByDay(input: {
-  algorithmVersion: SolarPredictionAlgorithmVersion;
+function scoreCombinationByDay(input: {
   candidateDays: string[];
+  combination: EvaluationCombination;
   forecastSamples: SolarForecastSampleRecord[];
   generatedSeries: Array<{ periodStart: string; value: number | null }>;
   solarEnergyProviderSamples: SolarEnergyProviderSampleRecord[];
@@ -152,16 +195,21 @@ function scoreAlgorithmByDay(input: {
     const targetForecastSamples = input.forecastSamples.filter(
       (sample) => getDayKey(sample.periodStart) === day,
     );
-    const predictedSeries = buildPredictedSolarGenerationSeries({
-      algorithmVersion: input.algorithmVersion,
-      forecastSamples: input.forecastSamples,
-      solarEnergyProviderSamples: input.solarEnergyProviderSamples,
-      targetForecastSamples,
-    });
-    const generatedSeries = targetForecastSamples.map((sample) => ({
-      periodStart: sample.periodStart,
-      value: actualByPeriodStart.get(sample.periodStart) ?? null,
-    }));
+    const predictedSeries = applySolarSeriesSmoothing(
+      buildPredictedSolarGenerationSeries({
+        forecastSamples: input.forecastSamples,
+        solarEnergyProviderSamples: input.solarEnergyProviderSamples,
+        targetForecastSamples,
+      }),
+      input.combination.predictedSmoothingMode,
+    );
+    const generatedSeries = applySolarSeriesSmoothing(
+      targetForecastSamples.map((sample) => ({
+        periodStart: sample.periodStart,
+        value: actualByPeriodStart.get(sample.periodStart) ?? null,
+      })),
+      input.combination.generatedSmoothingMode,
+    );
     const summary = buildSolarPredictionAccuracySummary({
       generatedSeries,
       predictedSeries,
@@ -171,7 +219,7 @@ function scoreAlgorithmByDay(input: {
       date: day,
       energyAccuracyPercentage: summary.energyAccuracyPercentage,
       energyDeltaWh: summary.energyDeltaWh,
-      scoringPercentage: summary.scoringPercentage,
+      overallAccuracyPercentage: summary.overallAccuracyPercentage,
       timingAccuracyPercentage: summary.timingAccuracyPercentage,
       totalAbsoluteErrorWh: summary.totalAbsoluteErrorWh,
       totalGeneratedWh: summary.totalGeneratedWh,
@@ -181,25 +229,9 @@ function scoreAlgorithmByDay(input: {
   });
 }
 
-function averageScore(rows: DayScoreRow[]): number | null {
+function averageScore(rows: DayScoreRow[], selector: (row: DayScoreRow) => number | null) {
   const values = rows
-    .map((row) => row.energyAccuracyPercentage)
-    .filter((value): value is number => typeof value === "number");
-
-  if (values.length === 0) {
-    return null;
-  }
-
-  return Number(
-    (values.reduce((total, value) => total + value, 0) / values.length).toFixed(
-      2,
-    ),
-  );
-}
-
-function averageTimingScore(rows: DayScoreRow[]): number | null {
-  const values = rows
-    .map((row) => row.timingAccuracyPercentage)
+    .map(selector)
     .filter((value): value is number => typeof value === "number");
 
   if (values.length === 0) {
@@ -215,6 +247,82 @@ function averageTimingScore(rows: DayScoreRow[]): number | null {
 
 function sumBy(rows: DayScoreRow[], selector: (row: DayScoreRow) => number): number {
   return Number(rows.reduce((total, row) => total + selector(row), 0).toFixed(2));
+}
+
+function buildEvaluationCombinations(): EvaluationCombination[] {
+  return SOLAR_PREDICTION_SMOOTHING_MODES.flatMap((generatedSmoothingMode) =>
+    SOLAR_PREDICTION_SMOOTHING_MODES.map((predictedSmoothingMode) => ({
+      generatedSmoothingMode,
+      predictedSmoothingMode,
+    })),
+  );
+}
+
+function compareNullableDescending(left: number | null, right: number | null): number {
+  if (left === null && right === null) {
+    return 0;
+  }
+
+  if (left === null) {
+    return 1;
+  }
+
+  if (right === null) {
+    return -1;
+  }
+
+  return right - left;
+}
+
+function isSameCombination(
+  left: EvaluationCombination,
+  right: EvaluationCombination,
+): boolean {
+  return (
+    left.generatedSmoothingMode === right.generatedSmoothingMode &&
+    left.predictedSmoothingMode === right.predictedSmoothingMode
+  );
+}
+
+function buildCombinationSummary(
+  combination: EvaluationCombination,
+  rows: DayScoreRow[],
+): CombinationScoreSummary {
+  return {
+    ...combination,
+    averageEnergyAccuracy: averageScore(rows, (row) => row.energyAccuracyPercentage),
+    averageOverallAccuracy: averageScore(rows, (row) => row.overallAccuracyPercentage),
+    averageTimingAccuracy: averageScore(rows, (row) => row.timingAccuracyPercentage),
+    isCurrentServerDefault: isSameCombination(combination, CURRENT_SERVER_DEFAULT),
+    totalAbsoluteErrorWh: sumBy(rows, (row) => row.totalAbsoluteErrorWh),
+    totalEnergyDeltaWh: sumBy(rows, (row) => row.energyDeltaWh),
+    totalGeneratedWh: sumBy(rows, (row) => row.totalGeneratedWh),
+    totalPredictedWh: sumBy(rows, (row) => row.totalPredictedWh),
+    totalUsedSamples: sumBy(rows, (row) => row.usedSamples),
+  };
+}
+
+function formatSummaryRow(summary: CombinationScoreSummary) {
+  return {
+    generated: formatSolarPredictionSmoothingMode(summary.generatedSmoothingMode),
+    predicted: formatSolarPredictionSmoothingMode(summary.predictedSmoothingMode),
+    averageOverallAccuracy: summary.averageOverallAccuracy,
+    averageEnergyAccuracy: summary.averageEnergyAccuracy,
+    averageTimingAccuracy: summary.averageTimingAccuracy,
+    totalEnergyDeltaWh: summary.totalEnergyDeltaWh,
+    totalAbsoluteErrorWh: summary.totalAbsoluteErrorWh,
+    totalGeneratedWh: summary.totalGeneratedWh,
+    totalPredictedWh: summary.totalPredictedWh,
+    totalUsedSamples: summary.totalUsedSamples,
+    currentServerDefault: summary.isCurrentServerDefault ? "yes" : "",
+  };
+}
+
+function formatCombinationLabel(combination: EvaluationCombination): string {
+  return [
+    `generated ${formatSolarPredictionSmoothingMode(combination.generatedSmoothingMode)}`,
+    `predicted ${formatSolarPredictionSmoothingMode(combination.predictedSmoothingMode)}`,
+  ].join(" | ");
 }
 
 async function main(): Promise<void> {
@@ -256,61 +364,103 @@ async function main(): Promise<void> {
     console.log(`Database: ${getDatabasePath()}`);
     console.log(`Site: ${site.name} (${site.id})`);
     console.log(`Days scored: ${candidateDays.join(", ")}`);
+    console.log(`Current server default: ${formatCombinationLabel(CURRENT_SERVER_DEFAULT)}`);
 
-    const scoresByAlgorithm = Object.fromEntries(
-      ALGORITHM_VERSIONS.map((algorithmVersion) => [
-        algorithmVersion,
-        scoreAlgorithmByDay({
-          algorithmVersion,
-          candidateDays,
-          forecastSamples,
-          generatedSeries,
-          solarEnergyProviderSamples,
-        }),
-      ]),
-    ) as Record<SolarPredictionAlgorithmVersion, DayScoreRow[]>;
+    const scoredCombinations = buildEvaluationCombinations().map((combination) => {
+      const rows = scoreCombinationByDay({
+        candidateDays,
+        combination,
+        forecastSamples,
+        generatedSeries,
+        solarEnergyProviderSamples,
+      });
 
-    console.log("\nAverage scores:");
+      return {
+        combination,
+        rows,
+        summary: buildCombinationSummary(combination, rows),
+      };
+    });
+
+    const rankedSummaries = scoredCombinations
+      .map((entry) => entry.summary)
+      .sort((left, right) => {
+        const overallOrder = compareNullableDescending(
+          left.averageOverallAccuracy,
+          right.averageOverallAccuracy,
+        );
+
+        if (overallOrder !== 0) {
+          return overallOrder;
+        }
+
+        const energyOrder = compareNullableDescending(
+          left.averageEnergyAccuracy,
+          right.averageEnergyAccuracy,
+        );
+
+        if (energyOrder !== 0) {
+          return energyOrder;
+        }
+
+        return left.totalAbsoluteErrorWh - right.totalAbsoluteErrorWh;
+      });
+
+    const currentServerDefaultSummary = rankedSummaries.find((summary) =>
+      summary.isCurrentServerDefault,
+    );
+    const bestSummary = rankedSummaries[0] ?? null;
+
+    console.log("\nCurrent server default:");
     console.table(
-      ALGORITHM_VERSIONS.map((algorithmVersion) => {
-        const rows = scoresByAlgorithm[algorithmVersion];
-        return {
-          algorithm: algorithmVersion,
-          averageEnergyAccuracy: averageScore(rows),
-          averageTimingAccuracy: averageTimingScore(rows),
-          totalEnergyDeltaWh: sumBy(rows, (row) => row.energyDeltaWh),
-          totalAbsoluteErrorWh: sumBy(rows, (row) => row.totalAbsoluteErrorWh),
-          totalGeneratedWh: sumBy(rows, (row) => row.totalGeneratedWh),
-          totalPredictedWh: sumBy(rows, (row) => row.totalPredictedWh),
-          totalUsedSamples: sumBy(rows, (row) => row.usedSamples),
-        };
-      }),
+      currentServerDefaultSummary
+        ? [formatSummaryRow(currentServerDefaultSummary)]
+        : [],
     );
 
-    console.log("\nPer-day scores:");
+    console.log("\nBest combination:");
+    console.table(bestSummary ? [formatSummaryRow(bestSummary)] : []);
+
+    console.log(`\nTop ${Math.min(options.top, rankedSummaries.length)} combinations:`);
     console.table(
-      candidateDays.map((day) => ({
-        date: day,
-        v0Energy:
-          scoresByAlgorithm.v0.find((row) => row.date === day)
-            ?.energyAccuracyPercentage ?? null,
-        v1Energy:
-          scoresByAlgorithm.v1.find((row) => row.date === day)
-            ?.energyAccuracyPercentage ?? null,
-        v2Energy:
-          scoresByAlgorithm.v2.find((row) => row.date === day)
-            ?.energyAccuracyPercentage ?? null,
-        v0Timing:
-          scoresByAlgorithm.v0.find((row) => row.date === day)
-            ?.timingAccuracyPercentage ?? null,
-        v1Timing:
-          scoresByAlgorithm.v1.find((row) => row.date === day)
-            ?.timingAccuracyPercentage ?? null,
-        v2Timing:
-          scoresByAlgorithm.v2.find((row) => row.date === day)
-            ?.timingAccuracyPercentage ?? null,
-      })),
+      rankedSummaries.slice(0, options.top).map((summary) => formatSummaryRow(summary)),
     );
+
+    if (bestSummary !== null) {
+      const bestRows = scoredCombinations.find((entry) =>
+        isSameCombination(entry.combination, bestSummary),
+      )?.rows;
+      const currentRows = currentServerDefaultSummary
+        ? scoredCombinations.find((entry) =>
+            isSameCombination(entry.combination, currentServerDefaultSummary),
+          )?.rows
+        : undefined;
+
+      if (bestRows) {
+        console.log("\nPer-day default vs best overall:");
+        console.table(
+          candidateDays.map((day) => ({
+            date: day,
+            currentDefaultOverall:
+              currentRows?.find((row) => row.date === day)?.overallAccuracyPercentage ??
+              null,
+            bestOverall:
+              bestRows.find((row) => row.date === day)?.overallAccuracyPercentage ?? null,
+            currentDefaultEnergy:
+              currentRows?.find((row) => row.date === day)?.energyAccuracyPercentage ??
+              null,
+            bestEnergy:
+              bestRows.find((row) => row.date === day)?.energyAccuracyPercentage ?? null,
+            currentDefaultTiming:
+              currentRows?.find((row) => row.date === day)?.timingAccuracyPercentage ??
+              null,
+            bestTiming:
+              bestRows.find((row) => row.date === day)?.timingAccuracyPercentage ?? null,
+          })),
+        );
+        console.log(`Best combination label: ${formatCombinationLabel(bestSummary)}`);
+      }
+    }
   } finally {
     db.close();
   }

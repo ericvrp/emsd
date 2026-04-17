@@ -241,7 +241,12 @@ function combineBatteryHistorySeries(input: {
       futureDischargingPower: powerPoint.futureNegativeValue,
       futurePower:
         powerPoint.futurePositiveValue ?? powerPoint.futureNegativeValue,
+      overlayCharge: strategyEntry?.displayState === "charge" ? 1 : null,
       overlayColor: overlay.color,
+      overlayDischarge: strategyEntry?.displayState === "discharge" ? 1 : null,
+      overlayIdle: strategyEntry?.displayState === "idle" ? 1 : null,
+      overlaySelfConsumption:
+        strategyEntry?.displayState === "self-consumption" ? 1 : null,
       overlayStroke: overlay.stroke,
       overlayStrokeWidth: overlay.strokeWidth,
       overlayValue: strategyEntry ? 1 : null,
