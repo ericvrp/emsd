@@ -1,13 +1,11 @@
 "use client";
 
-import {
-  type DynamicPricePointRecord,
-  type DynamicPriceSnapshotRecord,
-  type HistoryArchive,
-  PRICE_SELECTION_WINDOW_MS,
-  findPriceSelections,
+import type {
+  DynamicPricePointRecord,
+  DynamicPriceSnapshotRecord,
+  HistoryArchive,
 } from "@emsd/core/client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { logBrowserIntervalHeartbeat } from "../lib/browser-heartbeat";
 import { UI_COLORS } from "../lib/ui-colors";
 import {
@@ -30,17 +28,27 @@ export function PricingSection({
   site,
   snapshot: initialSnapshot,
   error: initialError,
+  highestMarkerPeriodStarts: initialHighestMarkerPeriodStarts,
+  lowestMarkerPeriodStarts: initialLowestMarkerPeriodStarts,
   requestedDay,
 }: {
   archive: HistoryArchive;
   site: SiteSnapshot;
   snapshot: DynamicPriceSnapshotRecord | null;
   error: string | null;
+  highestMarkerPeriodStarts: string[];
+  lowestMarkerPeriodStarts: string[];
   requestedDay: string | null;
 }) {
   const [archive, setArchive] = useState(initialArchive);
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [error, setError] = useState(initialError);
+  const [highestMarkerPeriodStarts, setHighestMarkerPeriodStarts] = useState(
+    initialHighestMarkerPeriodStarts,
+  );
+  const [lowestMarkerPeriodStarts, setLowestMarkerPeriodStarts] = useState(
+    initialLowestMarkerPeriodStarts,
+  );
   const [graphRefreshError, setGraphRefreshError] = useState<string | null>(
     null,
   );
@@ -65,29 +73,20 @@ export function PricingSection({
       ? "Dynamic price data is not available yet."
       : "No price data for this day.";
   const priceAxisDomain = buildPriceAxisDomain(selectedDayPricePoints);
-  const priceSelections = useMemo(
-    () =>
-      findPriceSelections(
-        archive.dynamicPriceSamples.map((sample) => ({
-          periodStart: sample.periodStart,
-          value: sample.importPrice,
-        })),
-        PRICE_SELECTION_WINDOW_MS,
-      ),
-    [archive.dynamicPriceSamples],
-  );
-  const lowestMarkerPeriodStarts = priceSelections.lowest.map(
-    (p) => p.periodStart,
-  );
-  const highestMarkerPeriodStarts = priceSelections.highest.map(
-    (p) => p.periodStart,
-  );
 
   useEffect(() => {
     setArchive(initialArchive);
     setSnapshot(initialSnapshot);
     setError(initialError);
-  }, [initialArchive, initialError, initialSnapshot]);
+    setHighestMarkerPeriodStarts(initialHighestMarkerPeriodStarts);
+    setLowestMarkerPeriodStarts(initialLowestMarkerPeriodStarts);
+  }, [
+    initialArchive,
+    initialError,
+    initialHighestMarkerPeriodStarts,
+    initialLowestMarkerPeriodStarts,
+    initialSnapshot,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -116,6 +115,8 @@ export function PricingSection({
           archive: HistoryArchive;
           dynamicPriceSnapshot: DynamicPriceSnapshotRecord | null;
           dynamicPriceSnapshotError: string | null;
+          highestMarkerPeriodStarts: string[];
+          lowestMarkerPeriodStarts: string[];
         };
 
         if (!cancelled) {
@@ -123,6 +124,8 @@ export function PricingSection({
           setArchive(payload.archive);
           setSnapshot(payload.dynamicPriceSnapshot);
           setError(payload.dynamicPriceSnapshotError);
+          setHighestMarkerPeriodStarts(payload.highestMarkerPeriodStarts);
+          setLowestMarkerPeriodStarts(payload.lowestMarkerPeriodStarts);
         }
       } catch {
         if (!cancelled) {

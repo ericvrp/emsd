@@ -7,6 +7,7 @@ import {
   getHistoryArchive,
   getLiveStatus,
 } from "../../../../lib/ems-bridge";
+import { buildPriceMarkerPeriodStarts } from "../../../../lib/price-selection";
 
 export const dynamic = "force-dynamic";
 
@@ -40,9 +41,14 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  const { highestMarkerPeriodStarts, lowestMarkerPeriodStarts } =
+    buildPriceMarkerPeriodStarts(archive);
+
   return NextResponse.json({
     archive,
     dynamicPriceSnapshot,
     dynamicPriceSnapshotError,
+    highestMarkerPeriodStarts,
+    lowestMarkerPeriodStarts,
   });
 }

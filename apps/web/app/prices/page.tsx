@@ -7,6 +7,7 @@ import { DashboardPageFrame } from "../../components/dashboard-page-frame";
 import { PricingSection } from "../../components/pricing-page";
 import { SiteSetupPanel } from "../../components/settings-panel";
 import { getHistoryArchive } from "../../lib/ems-bridge";
+import { buildPriceMarkerPeriodStarts } from "../../lib/price-selection";
 import { getSearchParamValue } from "../../lib/search-params";
 
 export const dynamic = "force-dynamic";
@@ -34,13 +35,18 @@ export default async function PricesPage({
   const historyArchive = currentSite
     ? await getHistoryArchive({ siteId: currentSite.id })
     : null;
+  const priceMarkers = historyArchive
+    ? buildPriceMarkerPeriodStarts(historyArchive)
+    : null;
 
   return (
     <DashboardPageFrame currentSite={currentSite} generatedAt={generatedAt}>
-      {currentSite && historyArchive ? (
+      {currentSite && historyArchive && priceMarkers ? (
         <PricingSection
           archive={historyArchive}
           error={dynamicPriceSnapshotError}
+          highestMarkerPeriodStarts={priceMarkers.highestMarkerPeriodStarts}
+          lowestMarkerPeriodStarts={priceMarkers.lowestMarkerPeriodStarts}
           requestedDay={requestedDay}
           site={currentSite}
           snapshot={dynamicPriceSnapshot}
