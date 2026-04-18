@@ -24,10 +24,11 @@ import { getWeatherForecast } from "../../ems/src/plugins/solar-forecast";
 import { formatDaemonHelpText, parseDaemonOptions } from "./daemon-options";
 import {
   openDaemonDatabase,
-  readBatteryById,
-  readBatteries,
-  readDynamicPriceSnapshot,
-  readDynamicPriceSources,
+    readBatteryById,
+    readBatteries,
+    readDynamicPriceSamples,
+    readDynamicPriceSnapshot,
+    readDynamicPriceSources,
   readMeters,
   readSites,
   readSolarEnergyProviders,
@@ -53,8 +54,9 @@ import {
   formatDaemonLogTimestamp,
   formatScheduledItemCompletion,
   getDaemonTimeZoneLabel,
+  getNextStrategyTriggerAt,
   getScheduledItemCompletion,
-  getTodayTriggerAt,
+  getStrategyTriggerAt,
   isItemAlreadyTriggeredToday,
   needsCompletionTracking,
   shouldMarkScheduledItemObserved,
@@ -783,11 +785,20 @@ async function runScheduledStrategy(
     return;
   }
 
-  const dueItems = battery.strategyPlan.slice(1);
+  const dueItems = battery.strategyPlan.slice(1).filter((item) => item.enabled);
+  const dynamicPriceSamples = dueItems.some(
+    (item) => item.triggerKind === "low-price" || item.triggerKind === "high-price",
+  )
+    ? readDynamicPriceSamples(db, battery.siteId)
+    : [];
   let runtime = battery.strategyRuntime;
 
   for (const [index, item] of dueItems.entries()) {
-    const triggerAt = getTodayTriggerAt(item, now);
+    const triggerAt = getStrategyTriggerAt({
+      item,
+      now,
+      ...(dynamicPriceSamples.length > 0 ? { dynamicPriceSamples } : {}),
+    });
 
     if (!triggerAt) {
       logVerbose(
@@ -821,6 +832,7 @@ async function runScheduledStrategy(
 
     if (
       shouldSkipDelayedSocItemBecauseLaterItemIsDue({
+        ...(dynamicPriceSamples.length > 0 ? { dynamicPriceSamples } : {}),
         items: dueItems,
         currentIndex: index,
         currentTriggerAt: triggerAt,
@@ -1052,12 +1064,27 @@ function logAppliedBatteryControlChanges(
   const manualChanged = previous.manualSignature !== current.manualSignature;
   const planChanged =
     previous.strategyPlanSignature !== current.strategyPlanSignature;
+  let dynamicPriceSamples: ReturnType<typeof readDynamicPriceSamples> = [];
+
+  if (
+    battery.strategyPlan.some(
+      (item) => item.triggerKind === "low-price" || item.triggerKind === "high-price",
+    )
+  ) {
+    const db = openDaemonDatabase();
+
+    try {
+      dynamicPriceSamples = readDynamicPriceSamples(db, battery.siteId);
+    } finally {
+      db.close();
+    }
+  }
 
   if (planChanged) {
     logInfoWithVerboseDetails(
       verbose,
-      formatStrategyPlanAppliedSummary(battery, now),
-      `strategy plan applied for ${battery.id}: default=${describeStrategyPlanItem(battery.strategyPlan[0])} pastToday=${describeTriggeredStrategyItemsBeforeNow(battery, now)} nextToday=${describeNextStrategyItemForToday(battery, now)}`,
+      formatStrategyPlanAppliedSummary(battery, now, dynamicPriceSamples),
+      `strategy plan applied for ${battery.id}: default=${describeStrategyPlanItem(battery.strategyPlan[0])} pastToday=${describeTriggeredStrategyItemsBeforeNow(battery, now, dynamicPriceSamples)} nextToday=${describeNextStrategyItemForToday(battery, now, dynamicPriceSamples)}`,
     );
   }
 
@@ -1102,9 +1129,14 @@ function describeCurrentBatteryStrategy(battery: BatteryRecord): string {
 function describeTriggeredStrategyItemsBeforeNow(
   battery: BatteryRecord,
   now: Date,
+  dynamicPriceSamples: ReturnType<typeof readDynamicPriceSamples> = [],
 ): string {
   const items = battery.strategyPlan.slice(1).flatMap((item) => {
-    const triggerAt = getTodayTriggerAt(item, now);
+    if (!item.enabled) {
+      return [];
+    }
+
+    const triggerAt = getNextStrategyTriggerAt({ item, now, dynamicPriceSamples });
 
     if (
       triggerAt === null ||
@@ -1129,9 +1161,14 @@ function describeTriggeredStrategyItemsBeforeNow(
 function describeNextStrategyItemForToday(
   battery: BatteryRecord,
   now: Date,
+  dynamicPriceSamples: ReturnType<typeof readDynamicPriceSamples> = [],
 ): string {
   for (const item of battery.strategyPlan.slice(1)) {
-    const triggerAt = getTodayTriggerAt(item, now);
+    if (!item.enabled) {
+      continue;
+    }
+
+    const triggerAt = getStrategyTriggerAt({ item, now, dynamicPriceSamples });
 
     if (
       triggerAt === null ||

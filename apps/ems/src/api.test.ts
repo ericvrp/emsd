@@ -318,6 +318,75 @@ test("house-strategy-set persists manual target method metadata", async () => {
   expect(device?.batteryManualTargetEndTime).toBeNull();
 });
 
+test("house-strategy-set clears stale manual fields for self-consumption", async () => {
+  const databasePath = createTempDatabase();
+
+  globalThis.fetch = Object.assign(
+    async () =>
+      new Response(JSON.stringify({ result: true }), {
+        headers: { "content-type": "application/json" },
+        status: 200,
+      }),
+    {
+      preconnect: originalFetch.preconnect.bind(originalFetch),
+    },
+  ) as typeof fetch;
+
+  createSite(
+    {
+      id: "home",
+      location: "52.367600, 4.904100",
+      name: "Home",
+    },
+    databasePath,
+  );
+  createBattery(
+    {
+      connected: true,
+      enabled: true,
+      id: "battery-1",
+      ipAddress: "192.168.1.10",
+      minimumDischargePercent: 11,
+      model: "indevolt-battery",
+      name: "Battery",
+      plugin: "indevolt-battery",
+      status: "idle",
+      strategyMode: "manual",
+      manualState: "discharging",
+      manualPowerW: 2400,
+      manualChargeTargetSoc: 100,
+      manualDischargeTargetSoc: 25,
+      manualTargetSoc: 25,
+    },
+    "home",
+    databasePath,
+  );
+
+  await runApiAction("house-strategy-set", {
+    manualChargeTargetSoc: 100,
+    manualDischargeTargetSoc: 25,
+    manualModeActive: true,
+    manualPowerW: 2400,
+    manualState: "discharging",
+    manualTargetSoc: 25,
+    siteId: "home",
+    strategyMode: "self-consumption",
+    targetDurationMinutes: null,
+    targetEndTime: null,
+    targetMethod: "soc",
+  });
+
+  const updated = getBattery("battery-1", "home", databasePath);
+
+  expect(updated?.strategyMode).toBe("self-consumption");
+  expect(updated?.manualState).toBeNull();
+  expect(updated?.manualPowerW).toBeNull();
+  expect(updated?.manualChargeTargetSoc).toBe(100);
+  expect(updated?.manualDischargeTargetSoc).toBe(11);
+  expect(updated?.manualTargetSoc).toBe(100);
+  expect(updated?.strategyRuntime.manualTargetMethod).toBeNull();
+});
+
 test("history-get-archive applies default prediction smoothing server-side", async () => {
   const databasePath = createTempDatabase();
 
@@ -559,6 +628,238 @@ test("house-strategy-plan-set applies the fallback and skips earlier same-day it
   ).toEqual(["morning"]);
 });
 
+test("house-strategy-plan-set accepts low and high price triggers", async () => {
+  const databasePath = createTempDatabase();
+
+  globalThis.fetch = Object.assign(
+    async () =>
+      new Response(JSON.stringify({ result: true }), {
+        headers: { "content-type": "application/json" },
+        status: 200,
+      }),
+    {
+      preconnect: originalFetch.preconnect.bind(originalFetch),
+    },
+  ) as typeof fetch;
+
+  createSite(
+    {
+      id: "home",
+      location: "52.3676,4.9041",
+      name: "Home",
+    },
+    databasePath,
+  );
+  createBattery(
+    {
+      connected: true,
+      enabled: true,
+      id: "battery-1",
+      ipAddress: "192.168.1.10",
+      minimumDischargePercent: 10,
+      model: "indevolt-battery",
+      name: "Battery",
+      plugin: "indevolt-battery",
+      status: "idle",
+    },
+    "home",
+    databasePath,
+  );
+
+  await runApiAction("house-strategy-plan-set", {
+    siteId: "home",
+    strategyPlan: [
+      {
+        id: "default",
+        kind: "default",
+        startTime: null,
+        targetDurationMinutes: null,
+        targetEndTime: null,
+        targetMethod: null,
+        triggerKind: null,
+        strategyMode: "self-consumption",
+        manualState: null,
+        manualPowerW: null,
+        manualChargeTargetSoc: 100,
+        manualDischargeTargetSoc: 10,
+        manualTargetSoc: 100,
+      },
+      {
+        enabled: false,
+        id: "cheap",
+        kind: "daily",
+        startTime: "08:00",
+        targetDurationMinutes: null,
+        targetEndTime: null,
+        targetMethod: "soc",
+        triggerKind: "low-price",
+        strategyMode: "manual",
+        manualState: "charging",
+        manualPowerW: 2400,
+        manualChargeTargetSoc: 90,
+        manualDischargeTargetSoc: null,
+        manualTargetSoc: 90,
+      },
+      {
+        enabled: true,
+        id: "expensive",
+        kind: "daily",
+        startTime: "08:00",
+        targetDurationMinutes: null,
+        targetEndTime: null,
+        targetMethod: "soc",
+        triggerKind: "high-price",
+        strategyMode: "manual",
+        manualState: "discharging",
+        manualPowerW: 2400,
+        manualChargeTargetSoc: null,
+        manualDischargeTargetSoc: 20,
+        manualTargetSoc: 20,
+      },
+    ],
+  });
+
+  const updated = getBattery("battery-1", "home", databasePath);
+
+  expect(updated?.strategyPlan[1]?.triggerKind).toBe("low-price");
+  expect(updated?.strategyPlan[1]?.enabled).toBe(false);
+  expect(updated?.strategyPlan[2]?.triggerKind).toBe("high-price");
+  expect(updated?.strategyPlan[2]?.enabled).toBe(true);
+});
+
+test("house-strategy-plan-set marks past same-day high-price markers as already triggered", async () => {
+  const databasePath = createTempDatabase();
+
+  globalThis.fetch = Object.assign(
+    async () =>
+      new Response(JSON.stringify({ result: true }), {
+        headers: { "content-type": "application/json" },
+        status: 200,
+      }),
+    {
+      preconnect: originalFetch.preconnect.bind(originalFetch),
+    },
+  ) as typeof fetch;
+
+  await withFrozenDate("2026-04-18T10:30:00.000Z", async () => {
+    createSite(
+      {
+        id: "home",
+        location: "52.3676,4.9041",
+        name: "Home",
+      },
+      databasePath,
+    );
+    createBattery(
+      {
+        connected: true,
+        enabled: true,
+        id: "battery-1",
+        ipAddress: "192.168.1.10",
+        minimumDischargePercent: 10,
+        model: "indevolt-battery",
+        name: "Battery",
+        plugin: "indevolt-battery",
+        status: "idle",
+      },
+      "home",
+      databasePath,
+    );
+
+    const db = openDaemonDatabase(databasePath);
+
+    try {
+      upsertDynamicPriceSnapshot(db, "home", {
+        currency: "EUR",
+        generatedAt: "2026-04-18T09:50:00.000Z",
+        points: [
+          {
+            currency: "EUR",
+            importPrice: 0.1,
+            startsAt: "2026-04-18T06:00:00.000Z",
+          },
+          {
+            currency: "EUR",
+            importPrice: 0.4,
+            startsAt: "2026-04-18T10:00:00.000Z",
+          },
+          {
+            currency: "EUR",
+            importPrice: 0.1,
+            startsAt: "2026-04-18T14:00:00.000Z",
+          },
+          {
+            currency: "EUR",
+            importPrice: 0.1,
+            startsAt: "2026-04-18T18:00:00.000Z",
+          },
+          {
+            currency: "EUR",
+            importPrice: 0.5,
+            startsAt: "2026-04-18T21:00:00.000Z",
+          },
+          {
+            currency: "EUR",
+            importPrice: 0.1,
+            startsAt: "2026-04-18T23:00:00.000Z",
+          },
+        ],
+        provider: "tibber",
+        providerLabel: "Tibber",
+        siteId: "home",
+        sourceId: null,
+        sourceName: "Tibber",
+      });
+    } finally {
+      db.close();
+    }
+
+    await runApiAction("house-strategy-plan-set", {
+      siteId: "home",
+      strategyPlan: [
+        {
+          enabled: true,
+          id: "default",
+          kind: "default",
+          startTime: null,
+          targetDurationMinutes: null,
+          targetEndTime: null,
+          targetMethod: null,
+          triggerKind: null,
+          strategyMode: "self-consumption",
+          manualState: null,
+          manualPowerW: null,
+          manualChargeTargetSoc: 100,
+          manualDischargeTargetSoc: 10,
+          manualTargetSoc: 100,
+        },
+        {
+          enabled: true,
+          id: "expensive",
+          kind: "daily",
+          startTime: "08:00",
+          targetDurationMinutes: null,
+          targetEndTime: null,
+          targetMethod: "soc",
+          triggerKind: "high-price",
+          strategyMode: "manual",
+          manualState: "discharging",
+          manualPowerW: 2400,
+          manualChargeTargetSoc: null,
+          manualDischargeTargetSoc: 20,
+          manualTargetSoc: 20,
+        },
+      ],
+    });
+
+    const updated = getBattery("battery-1", "home", databasePath);
+
+    expect(updated?.strategyRuntime.lastTriggeredAtByItemId.expensive).toBe(
+      "2026-04-18T10:00:00.000Z",
+    );
+  });
+});
+
 function formatEarlierTodayTime(now: Date): string {
   const value = new Date(now);
 
@@ -589,4 +890,27 @@ function formatLaterTodayTime(now: Date): string {
 
 function pad(value: number): string {
   return String(value).padStart(2, "0");
+}
+
+async function withFrozenDate<T>(isoString: string, run: () => Promise<T>): Promise<T> {
+  const RealDate = Date;
+  const frozenTime = new RealDate(isoString).getTime();
+
+  class FrozenDate extends RealDate {
+    constructor(value?: string | number | Date) {
+      super(value === undefined ? frozenTime : value);
+    }
+
+    static now(): number {
+      return frozenTime;
+    }
+  }
+
+  globalThis.Date = FrozenDate as DateConstructor;
+
+  try {
+    return await run();
+  } finally {
+    globalThis.Date = RealDate;
+  }
 }

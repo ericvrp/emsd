@@ -1,7 +1,6 @@
 "use client";
 
 import type {
-  BatteryManualState,
   BatteryStrategyPlanItem,
   BatteryStrategyPlanRecord,
   BatteryStrategyTargetMethod,
@@ -13,6 +12,8 @@ import {
   Battery,
   BatteryCharging,
   BatteryIcon,
+  Eye,
+  EyeOff,
   Plus,
   Save,
   Trash2,
@@ -21,6 +22,10 @@ import {
 import { useState } from "react";
 import { setHouseStrategyPlanAction } from "../app/actions";
 import { UI_STYLES } from "../lib/ui-colors";
+import {
+  applyStrategyAction,
+  type StrategyAction,
+} from "./battery-strategy-plan-logic";
 import { SubmitButton } from "./submit-button";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -32,8 +37,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select";
-
-type StrategyAction = "self-consumption" | BatteryManualState;
 
 interface BatteryStrategyPlanFormProps {
   action?: typeof setHouseStrategyPlanAction;
@@ -145,7 +148,9 @@ export function BatteryStrategyPlanForm({
               return (
                 <tr
                   key={item.id}
-                  className="border-b border-white/8 align-top last:border-b-0"
+                  className={`border-b border-white/8 align-top last:border-b-0 ${
+                    !item.enabled ? "opacity-55" : ""
+                  }`}
                 >
                   <td className="px-4 py-4">
                     {isDefault ? null : (
@@ -158,6 +163,7 @@ export function BatteryStrategyPlanForm({
                             Start method
                           </Label>
                           <Select
+                            disabled={!item.enabled}
                             onValueChange={(value: string) =>
                               updateItem(item.id, (currentItem) => ({
                                 ...currentItem,
@@ -174,14 +180,11 @@ export function BatteryStrategyPlanForm({
                               <SelectItem value="daily-time">
                                 Scheduled time
                               </SelectItem>
-                              <SelectItem disabled value="dynamic-price">
-                                Dynamic price signal
+                              <SelectItem value="low-price">
+                                Low price
                               </SelectItem>
-                              <SelectItem disabled value="weather">
-                                Weather forecast
-                              </SelectItem>
-                              <SelectItem disabled value="expected-solar">
-                                Expected solar output
+                              <SelectItem value="high-price">
+                                High price
                               </SelectItem>
                             </SelectContent>
                           </Select>
@@ -195,6 +198,7 @@ export function BatteryStrategyPlanForm({
                               Start time
                             </Label>
                             <Input
+                              disabled={!item.enabled}
                               id={`${item.id}-start-time`}
                               onChange={(event) =>
                                 updateItem(item.id, (currentItem) => ({
@@ -216,6 +220,7 @@ export function BatteryStrategyPlanForm({
                         {isDefault ? "Fallback action" : "Action"}
                       </Label>
                       <Select
+                        disabled={!item.enabled}
                         onValueChange={(value: string) =>
                           updateItem(item.id, (currentItem) =>
                             applyStrategyAction(
@@ -253,6 +258,7 @@ export function BatteryStrategyPlanForm({
                         <div className="space-y-2">
                           <Label htmlFor={`${item.id}-power`}>Power (W)</Label>
                           <Input
+                            disabled={!item.enabled}
                             id={`${item.id}-power`}
                             max={2400}
                             min={0}
@@ -283,6 +289,7 @@ export function BatteryStrategyPlanForm({
                             Target method
                           </Label>
                           <Select
+                            disabled={!item.enabled}
                             onValueChange={(value: string) =>
                               updateItem(item.id, (currentItem) =>
                                 updateTargetMethod(
@@ -311,6 +318,7 @@ export function BatteryStrategyPlanForm({
                               Target percentage
                             </Label>
                             <Input
+                              disabled={!item.enabled}
                               id={`${item.id}-target-soc`}
                               max={100}
                               min={
@@ -346,6 +354,7 @@ export function BatteryStrategyPlanForm({
                               Duration (minutes)
                             </Label>
                             <Input
+                              disabled={!item.enabled}
                               id={`${item.id}-duration`}
                               min={1}
                               onChange={(event) =>
@@ -367,6 +376,7 @@ export function BatteryStrategyPlanForm({
                               End time
                             </Label>
                             <Input
+                              disabled={!item.enabled}
                               id={`${item.id}-end-time`}
                               onChange={(event) =>
                                 updateItem(item.id, (currentItem) => ({
@@ -387,6 +397,21 @@ export function BatteryStrategyPlanForm({
                   <td className="px-4 py-4">
                     {isDefault ? null : (
                       <div className="flex justify-end gap-2">
+                        <Button
+                          aria-label={item.enabled ? "Disable item" : "Enable item"}
+                          className="h-9 w-9 px-0"
+                          onClick={() =>
+                            updateItem(item.id, (currentItem) => ({
+                              ...currentItem,
+                              enabled: !currentItem.enabled,
+                            }))
+                          }
+                          title={item.enabled ? "Disable item" : "Enable item"}
+                          type="button"
+                          variant="ghost"
+                        >
+                          {item.enabled ? <EyeOff size={14} /> : <Eye size={14} />}
+                        </Button>
                         <Button
                           aria-label={`Move daily item ${index} up`}
                           className="h-9 w-9 px-0"
@@ -447,6 +472,7 @@ function createDailyPlanItem(
   minimumDischargePercent: number,
 ): BatteryStrategyPlanItem {
   return {
+    enabled: true,
     id: createLocalStrategyPlanId(),
     kind: "daily",
     startTime: "08:00",
@@ -469,64 +495,6 @@ function getStrategyAction(item: BatteryStrategyPlanItem): StrategyAction {
   }
 
   return item.manualState ?? "idle";
-}
-
-function applyStrategyAction(
-  item: BatteryStrategyPlanItem,
-  action: StrategyAction,
-  minimumDischargePercent: number,
-): BatteryStrategyPlanItem {
-  if (action === "self-consumption") {
-    return {
-      ...item,
-      strategyMode: "self-consumption",
-      manualState: null,
-      manualPowerW: null,
-      manualChargeTargetSoc: null,
-      manualDischargeTargetSoc: null,
-      manualTargetSoc: item.manualTargetSoc ?? 100,
-      triggerKind: item.kind === "daily" ? "daily-time" : null,
-      targetDurationMinutes:
-        getPersistedTargetMethod(item) === "duration"
-          ? item.targetDurationMinutes
-          : null,
-      targetEndTime:
-        getPersistedTargetMethod(item) === "end-time"
-          ? item.targetEndTime
-          : null,
-      targetMethod: getPersistedTargetMethod(item),
-    };
-  }
-
-  return {
-    ...item,
-    strategyMode: "manual",
-    manualState: action,
-    manualPowerW: action === "idle" ? null : (item.manualPowerW ?? 2400),
-    manualChargeTargetSoc:
-      action === "charging" ? (item.manualChargeTargetSoc ?? 100) : null,
-    manualDischargeTargetSoc:
-      action === "discharging"
-        ? (item.manualDischargeTargetSoc ?? minimumDischargePercent)
-        : null,
-    manualTargetSoc:
-      action === "idle"
-        ? (item.manualTargetSoc ?? minimumDischargePercent)
-        : action === "discharging"
-          ? (item.manualDischargeTargetSoc ?? minimumDischargePercent)
-          : (item.manualChargeTargetSoc ?? 100),
-    triggerKind:
-      item.kind === "daily" ? (item.triggerKind ?? "daily-time") : null,
-    targetDurationMinutes:
-      getPersistedTargetMethod(item) === "duration"
-        ? (item.targetDurationMinutes ?? null)
-        : null,
-    targetEndTime:
-      getPersistedTargetMethod(item) === "end-time"
-        ? (item.targetEndTime ?? null)
-        : null,
-    targetMethod: getPersistedTargetMethod(item),
-  };
 }
 
 function createLocalStrategyPlanId(): string {

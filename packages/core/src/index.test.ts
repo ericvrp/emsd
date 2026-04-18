@@ -49,6 +49,7 @@ test("createBatteryStrategyRuntimeForPlanApply marks earlier same-day items as t
   const runtime = createBatteryStrategyRuntimeForPlanApply(
     [
       {
+        enabled: true,
         id: "default",
         kind: "default",
         startTime: null,
@@ -64,6 +65,7 @@ test("createBatteryStrategyRuntimeForPlanApply marks earlier same-day items as t
         manualTargetSoc: 100,
       },
       {
+        enabled: true,
         id: "morning",
         kind: "daily",
         startTime: "07:00",
@@ -79,6 +81,7 @@ test("createBatteryStrategyRuntimeForPlanApply marks earlier same-day items as t
         manualTargetSoc: 40,
       },
       {
+        enabled: true,
         id: "evening",
         kind: "daily",
         startTime: "21:00",
@@ -108,6 +111,7 @@ test("createBatteryStrategyRuntimeForPlanApply keeps same-time items pending", (
   const runtime = createBatteryStrategyRuntimeForPlanApply(
     [
       {
+        enabled: true,
         id: "default",
         kind: "default",
         startTime: null,
@@ -123,6 +127,7 @@ test("createBatteryStrategyRuntimeForPlanApply keeps same-time items pending", (
         manualTargetSoc: 100,
       },
       {
+        enabled: true,
         id: "start-now",
         kind: "daily",
         startTime: "15:00",
@@ -157,6 +162,7 @@ test("normalizeBatteryStrategyPlan defaults idle percentage targets to minimum d
     },
     value: [
       {
+        enabled: true,
         id: "default",
         kind: "default",
         startTime: null,
@@ -172,6 +178,7 @@ test("normalizeBatteryStrategyPlan defaults idle percentage targets to minimum d
         manualTargetSoc: 100,
       },
       {
+        enabled: true,
         id: "idle-window",
         kind: "daily",
         startTime: "08:00",
@@ -190,6 +197,139 @@ test("normalizeBatteryStrategyPlan defaults idle percentage targets to minimum d
   });
 
   expect(normalized[1]?.manualTargetSoc).toBe(20);
+});
+
+test("normalizeBatteryStrategyPlan accepts low and high price triggers and drops removed placeholders", () => {
+  const normalized = normalizeBatteryStrategyPlan({
+    minimumDischargePercent: 20,
+    strategy: {
+      strategyMode: "self-consumption",
+      manualState: null,
+      manualPowerW: null,
+      manualChargeTargetSoc: 100,
+      manualDischargeTargetSoc: 20,
+      manualTargetSoc: 100,
+    },
+    value: [
+      {
+        enabled: true,
+        id: "default",
+        kind: "default",
+        startTime: null,
+        targetDurationMinutes: null,
+        targetEndTime: null,
+        targetMethod: null,
+        triggerKind: null,
+        strategyMode: "self-consumption",
+        manualState: null,
+        manualPowerW: null,
+        manualChargeTargetSoc: 100,
+        manualDischargeTargetSoc: 20,
+        manualTargetSoc: 100,
+      },
+      {
+        enabled: true,
+        id: "low",
+        kind: "daily",
+        startTime: "08:00",
+        targetDurationMinutes: null,
+        targetEndTime: null,
+        targetMethod: "soc",
+        triggerKind: "low-price",
+        strategyMode: "manual",
+        manualState: "idle",
+        manualPowerW: null,
+        manualChargeTargetSoc: null,
+        manualDischargeTargetSoc: null,
+        manualTargetSoc: 20,
+      },
+      {
+        enabled: true,
+        id: "high",
+        kind: "daily",
+        startTime: "08:00",
+        targetDurationMinutes: null,
+        targetEndTime: null,
+        targetMethod: "soc",
+        triggerKind: "high-price",
+        strategyMode: "manual",
+        manualState: "idle",
+        manualPowerW: null,
+        manualChargeTargetSoc: null,
+        manualDischargeTargetSoc: null,
+        manualTargetSoc: 20,
+      },
+      {
+        enabled: true,
+        id: "legacy",
+        kind: "daily",
+        startTime: "08:00",
+        targetDurationMinutes: null,
+        targetEndTime: null,
+        targetMethod: "soc",
+        triggerKind: "dynamic-price",
+        strategyMode: "manual",
+        manualState: "idle",
+        manualPowerW: null,
+        manualChargeTargetSoc: null,
+        manualDischargeTargetSoc: null,
+        manualTargetSoc: 20,
+      },
+    ],
+  });
+
+  expect(normalized[1]?.triggerKind).toBe("low-price");
+  expect(normalized[2]?.triggerKind).toBe("high-price");
+  expect(normalized[3]?.triggerKind).toBe("daily-time");
+});
+
+test("normalizeBatteryStrategyPlan defaults enabled to true", () => {
+  const normalized = normalizeBatteryStrategyPlan({
+    minimumDischargePercent: 20,
+    strategy: {
+      strategyMode: "self-consumption",
+      manualState: null,
+      manualPowerW: null,
+      manualChargeTargetSoc: 100,
+      manualDischargeTargetSoc: 20,
+      manualTargetSoc: 100,
+    },
+    value: [
+      {
+        id: "default",
+        kind: "default",
+        startTime: null,
+        targetDurationMinutes: null,
+        targetEndTime: null,
+        targetMethod: null,
+        triggerKind: null,
+        strategyMode: "self-consumption",
+        manualState: null,
+        manualPowerW: null,
+        manualChargeTargetSoc: 100,
+        manualDischargeTargetSoc: 20,
+        manualTargetSoc: 100,
+      },
+      {
+        id: "daily",
+        kind: "daily",
+        startTime: "08:00",
+        targetDurationMinutes: null,
+        targetEndTime: null,
+        targetMethod: "soc",
+        triggerKind: "daily-time",
+        strategyMode: "manual",
+        manualState: "idle",
+        manualPowerW: null,
+        manualChargeTargetSoc: null,
+        manualDischargeTargetSoc: null,
+        manualTargetSoc: 20,
+      },
+    ],
+  });
+
+  expect(normalized[0]?.enabled).toBe(true);
+  expect(normalized[1]?.enabled).toBe(true);
 });
 
 test("buildPredictedSolarGenerationSeries uses the current v2 predictor over preceding days", () => {

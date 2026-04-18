@@ -44,6 +44,7 @@ import {
   readWeatherForecastSources,
 } from "../../daemon/src/database";
 import { formatBatteryStrategyStatusSummary } from "../../daemon/src/strategy-log";
+import { getStrategyTriggerAt } from "../../daemon/src/strategy-scheduler";
 import { createBatteryPlugin } from "./battery-plugins";
 import {
   type DiscoveredDevice,
@@ -584,6 +585,34 @@ function clampNullableManualTargetSoc(
   return clampManualTargetSoc(value, state, minimumDischargePercent);
 }
 
+function createBatteryStrategyRuntimeForPlanSave(input: {
+  now: Date;
+  plan: BatteryStrategyPlanRecord;
+  dynamicPriceSamples: ReturnType<typeof readDynamicPriceSamples>;
+}) {
+  const runtime = createBatteryStrategyRuntimeForPlanApply(input.plan, input.now);
+
+  for (const item of input.plan.slice(1)) {
+    if (!item.enabled || item.triggerKind === "daily-time") {
+      continue;
+    }
+
+    const triggerAt = getStrategyTriggerAt({
+      item,
+      now: input.now,
+      dynamicPriceSamples: input.dynamicPriceSamples,
+    });
+
+    if (triggerAt === null || triggerAt.getTime() >= input.now.getTime()) {
+      continue;
+    }
+
+    runtime.lastTriggeredAtByItemId[item.id] = triggerAt.toISOString();
+  }
+
+  return runtime;
+}
+
 export async function runApiAction(
   action: string,
   input: Record<string, unknown> = {},
@@ -781,16 +810,28 @@ export async function runApiAction(
           : null;
       const manualTargetEndTime =
         typeof input.targetEndTime === "string" ? input.targetEndTime : null;
+      const normalizedManualState =
+        strategyMode === "manual" ? manualState : null;
+      const normalizedManualPowerW =
+        strategyMode === "manual" ? manualPowerW : null;
+      const normalizedManualChargeTargetSoc =
+        strategyMode === "manual" ? manualChargeTargetSoc : 100;
+      const normalizedManualDischargeTargetSoc =
+        strategyMode === "manual"
+          ? manualDischargeTargetSoc
+          : firstBattery.minimumDischargePercent;
+      const normalizedManualTargetSoc =
+        strategyMode === "manual" ? manualTargetSoc : 100;
 
       for (const battery of batteries) {
         try {
           await createBatteryPlugin(battery).setStrategy({
-            manualChargeTargetSoc,
-            manualDischargeTargetSoc,
+            manualChargeTargetSoc: normalizedManualChargeTargetSoc,
+            manualDischargeTargetSoc: normalizedManualDischargeTargetSoc,
             strategyMode,
-            manualPowerW,
-            manualState,
-            manualTargetSoc,
+            manualPowerW: normalizedManualPowerW,
+            manualState: normalizedManualState,
+            manualTargetSoc: normalizedManualTargetSoc,
           });
         } catch {
           // Continue with other batteries even if plugin fails
@@ -799,11 +840,11 @@ export async function runApiAction(
 
       const updated = setHouseStrategy(
         {
-          manualChargeTargetSoc,
-          manualDischargeTargetSoc,
-          manualPowerW,
-          manualState,
-          manualTargetSoc,
+          manualChargeTargetSoc: normalizedManualChargeTargetSoc,
+          manualDischargeTargetSoc: normalizedManualDischargeTargetSoc,
+          manualPowerW: normalizedManualPowerW,
+          manualState: normalizedManualState,
+          manualTargetSoc: normalizedManualTargetSoc,
           manualTargetMethod,
           manualTargetDurationMinutes,
           manualTargetEndTime,
@@ -828,9 +869,32 @@ export async function runApiAction(
       const strategyPlan = Array.isArray(input.strategyPlan)
         ? (input.strategyPlan as BatteryStrategyPlanRecord)
         : [];
+      const now = new Date();
+      const normalizedPlan = normalizeBatteryStrategyPlan({
+        minimumDischargePercent: batteries[0]?.minimumDischargePercent ?? 10,
+        strategy: {
+          strategyMode: batteries[0]?.strategyMode ?? "self-consumption",
+          manualState: batteries[0]?.manualState ?? null,
+          manualPowerW: batteries[0]?.manualPowerW ?? null,
+          manualChargeTargetSoc: batteries[0]?.manualChargeTargetSoc ?? 100,
+          manualDischargeTargetSoc:
+            batteries[0]?.manualDischargeTargetSoc ??
+            batteries[0]?.minimumDischargePercent ??
+            10,
+          manualTargetSoc: batteries[0]?.manualTargetSoc ?? 100,
+        },
+        value: strategyPlan,
+      });
+      const db = openDaemonDatabase();
+      const strategyRuntime = createBatteryStrategyRuntimeForPlanSave({
+        now,
+        plan: normalizedPlan,
+        dynamicPriceSamples: readDynamicPriceSamples(db, siteId),
+      });
+      db.close();
 
       for (const battery of batteries) {
-        const normalizedPlan = normalizeBatteryStrategyPlan({
+        const normalizedBatteryPlan = normalizeBatteryStrategyPlan({
           minimumDischargePercent: battery.minimumDischargePercent,
           strategy: {
             strategyMode: battery.strategyMode,
@@ -844,7 +908,7 @@ export async function runApiAction(
         });
 
         const strategy = resolveBatteryStrategyFromPlanItem({
-          item: normalizedPlan[0],
+          item: normalizedBatteryPlan[0],
           minimumDischargePercent: battery.minimumDischargePercent,
         });
 
@@ -857,16 +921,12 @@ export async function runApiAction(
 
       const updated = setHouseStrategyPlan(
         {
-          strategyPlan,
-          strategyRuntime: createBatteryStrategyRuntimeForPlanApply(
-            strategyPlan,
-            new Date(),
-          ),
+          strategyPlan: normalizedPlan,
+          strategyRuntime,
         },
         siteId,
       );
 
-      const now = new Date();
       return updated.map((record) => toManagedDeviceRecord(record, now));
     }
 

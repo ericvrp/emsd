@@ -37,11 +37,11 @@ export type BatteryStrategyTargetMethod = "soc" | "duration" | "end-time";
 
 export type BatteryStrategyTriggerKind =
   | "daily-time"
-  | "dynamic-price"
-  | "weather"
-  | "expected-solar";
+  | "low-price"
+  | "high-price";
 
 export interface BatteryStrategyPlanItem extends BatteryStrategyRecord {
+  enabled: boolean;
   id: string;
   kind: BatteryStrategyPlanItemKind;
   startTime: string | null;
@@ -429,9 +429,10 @@ export function createDefaultBatteryStrategyPlan(
   minimumDischargePercent: number,
 ): BatteryStrategyPlanRecord {
   return [
-    {
-      id: createBatteryStrategyPlanId(),
-      kind: "default",
+      {
+        enabled: true,
+        id: createBatteryStrategyPlanId(),
+        kind: "default",
       startTime: null,
       targetDurationMinutes: null,
       targetEndTime: null,
@@ -483,6 +484,7 @@ export function normalizeBatteryStrategyPlan(input: {
   const restItems = items.slice(1);
   const normalizedFirstItem: BatteryStrategyPlanItem = {
     ...firstItem,
+    enabled: true,
     kind: "default",
     startTime: null,
     targetDurationMinutes: null,
@@ -597,6 +599,7 @@ function normalizeBatteryStrategyPlanItem(
       typeof candidate.id === "string" && candidate.id.trim().length > 0
         ? candidate.id.trim()
         : createBatteryStrategyPlanId(),
+    enabled: candidate.enabled !== false,
     kind: candidate.kind === "daily" ? "daily" : "default",
     startTime:
       typeof candidate.startTime === "string" &&
@@ -772,9 +775,8 @@ function normalizeTriggerKind(
   value: BatteryStrategyPlanItem["triggerKind"] | undefined,
 ): BatteryStrategyTriggerKind | null {
   return value === "daily-time" ||
-    value === "dynamic-price" ||
-    value === "weather" ||
-    value === "expected-solar"
+    value === "low-price" ||
+    value === "high-price"
     ? value
     : null;
 }

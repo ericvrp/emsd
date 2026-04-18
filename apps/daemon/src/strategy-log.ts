@@ -2,11 +2,13 @@ import type {
   BatteryRecord,
   BatteryStrategyPlanItem,
   BatteryStrategyRecord,
+  DynamicPriceSampleRecord,
 } from "@emsd/core";
 import type { ScheduledItemCompletion } from "./strategy-scheduler";
 import {
   formatDaemonLogTimestamp,
-  getTodayTriggerAt,
+  getNextStrategyTriggerAt,
+  getStrategyTriggerAt,
   isItemAlreadyTriggeredToday,
 } from "./strategy-scheduler";
 
@@ -52,9 +54,7 @@ export function describeCurrentBatteryStrategyHuman(
   >,
 ): string {
   if (battery.strategyMode === "self-consumption") {
-    return battery.manualDischargeTargetSoc !== null
-      ? `self-consumption with a ${battery.manualDischargeTargetSoc}% discharge floor`
-      : "self-consumption";
+    return "self-consumption";
   }
 
   if (battery.strategyMode === "auto") {
@@ -69,9 +69,10 @@ export function describeCurrentBatteryStrategyHuman(
 export function formatStrategyPlanAppliedSummary(
   battery: Pick<BatteryRecord, "id" | "strategyPlan" | "strategyRuntime">,
   now: Date,
+  dynamicPriceSamples: DynamicPriceSampleRecord[] = [],
 ): string {
   const fallback = describeStrategyPlanItemHuman(battery.strategyPlan[0]);
-  const nextItem = getNextStrategyItemForToday(battery, now);
+  const nextItem = getNextStrategyItemForToday(battery, now, dynamicPriceSamples);
   const nextSummary = nextItem
     ? `${describeStrategyScheduleHuman(nextItem)}: ${describeStrategyPlanItemHuman(nextItem)}`
     : "none today";
@@ -84,8 +85,8 @@ export function formatScheduledStrategyStartedSummary(
   item: BatteryStrategyPlanItem,
   observedDelay: string,
 ): string {
-  const delay = observedDelay ? ` (${observedDelay.trim()})` : "";
-  return `${describeStrategyScheduleHuman(item)} is now active for ${batteryId}: ${describeStrategyPlanItemHuman(item)}${delay}`;
+  void observedDelay;
+  return `${describeStrategyScheduleHuman(item)} is now active for ${batteryId}: ${describeStrategyPlanItemHuman(item)}`;
 }
 
 export function formatScheduledStrategyCompletionSummary(input: {
@@ -463,8 +464,16 @@ function describeStrategyScheduleHuman(item: BatteryStrategyPlanItem): string {
     return "the default strategy";
   }
 
-  if (item.kind === "daily" && item.startTime) {
-    return `the ${item.startTime} daily schedule`;
+  if (item.kind === "daily" && item.triggerKind === "daily-time" && item.startTime) {
+    return `the ${item.startTime} schedule`;
+  }
+
+  if (item.triggerKind === "low-price") {
+    return "the low-price schedule";
+  }
+
+  if (item.triggerKind === "high-price") {
+    return "the high-price schedule";
   }
 
   return `${item.kind} schedule`;
@@ -507,12 +516,17 @@ function formatLocalCutoffTimestamp(value: string): string {
 function getNextStrategyItemForToday(
   battery: Pick<BatteryRecord, "strategyPlan" | "strategyRuntime">,
   now: Date,
+  dynamicPriceSamples: DynamicPriceSampleRecord[] = [],
 ): BatteryStrategyPlanItem | null {
   let nextItem: BatteryStrategyPlanItem | null = null;
   let nextTriggerAt: Date | null = null;
 
   for (const item of battery.strategyPlan.slice(1)) {
-    const triggerAt = getTodayTriggerAt(item, now);
+    if (!item.enabled) {
+      continue;
+    }
+
+    const triggerAt = getNextStrategyTriggerAt({ item, now, dynamicPriceSamples });
 
     if (
       triggerAt === null ||

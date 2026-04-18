@@ -2,16 +2,19 @@ import { expect, test } from "bun:test";
 import type {
   BatteryRecord,
   BatteryStrategyPlanItem,
+  DynamicPriceSampleRecord,
   NormalizedBatteryInfo,
 } from "@emsd/core";
 import {
   formatDaemonLogTimestamp,
   formatScheduledItemCompletion,
   getScheduledItemCompletion,
+  getStrategyTriggerAt,
   getTodayTriggerAt,
   needsCompletionTracking,
   shouldCompleteScheduledItem,
   shouldMarkScheduledItemObserved,
+  shouldSkipScheduledItem,
   shouldSkipDelayedSocItemBecauseLaterItemIsDue,
   shouldWaitForObservedStart,
 } from "./strategy-scheduler";
@@ -32,6 +35,45 @@ test("getTodayTriggerAt keeps the configured local clock time", () => {
   expect(triggerAt).not.toBeNull();
   expect(triggerAt?.getHours()).toBe(20);
   expect(triggerAt?.getMinutes()).toBe(0);
+});
+
+test("getStrategyTriggerAt uses the latest due low and high price markers for today", () => {
+  const now = new Date("2026-04-09T14:30:00.000Z");
+  const dynamicPriceSamples = createDynamicPriceSamples([
+    ["2026-04-09T00:00:00.000Z", 20],
+    ["2026-04-09T04:00:00.000Z", 10],
+    ["2026-04-09T08:00:00.000Z", 30],
+    ["2026-04-09T12:00:00.000Z", 10],
+    ["2026-04-09T16:00:00.000Z", 20],
+  ]);
+
+  const lowPriceTriggerAt = getStrategyTriggerAt({
+    item: createDailyItem({ triggerKind: "low-price" }),
+    now,
+    dynamicPriceSamples,
+  });
+  const highPriceTriggerAt = getStrategyTriggerAt({
+    item: createDailyItem({ triggerKind: "high-price" }),
+    now,
+    dynamicPriceSamples,
+  });
+
+  expect(lowPriceTriggerAt?.toISOString()).toBe("2026-04-09T12:00:00.000Z");
+  expect(highPriceTriggerAt?.toISOString()).toBe("2026-04-09T08:00:00.000Z");
+});
+
+test("getStrategyTriggerAt returns the next upcoming price marker when none are due yet", () => {
+  const triggerAt = getStrategyTriggerAt({
+    item: createDailyItem({ triggerKind: "low-price" }),
+    now: new Date("2026-04-09T01:00:00.000Z"),
+    dynamicPriceSamples: createDynamicPriceSamples([
+      ["2026-04-09T00:00:00.000Z", 20],
+      ["2026-04-09T04:00:00.000Z", 10],
+      ["2026-04-09T08:00:00.000Z", 30],
+    ]),
+  });
+
+  expect(triggerAt?.toISOString()).toBe("2026-04-09T04:00:00.000Z");
 });
 
 test("shouldCompleteScheduledItem uses the active plan item rather than the persisted battery strategy", () => {
@@ -393,6 +435,26 @@ test("shouldSkipDelayedSocItemBecauseLaterItemIsDue keeps same-time items in arr
   ).toBe(false);
 });
 
+test("shouldSkipScheduledItem expires price-triggered items after 30 minutes", () => {
+  const item = createDailyItem({ triggerKind: "high-price" });
+  const triggerAt = new Date("2026-04-09T10:00:00.000Z");
+
+  expect(
+    shouldSkipScheduledItem(
+      item,
+      triggerAt,
+      new Date("2026-04-09T10:29:59.000Z"),
+    ),
+  ).toBe(false);
+  expect(
+    shouldSkipScheduledItem(
+      item,
+      triggerAt,
+      new Date("2026-04-09T10:30:00.000Z"),
+    ),
+  ).toBe(true);
+});
+
 function createBattery(overrides: Partial<BatteryRecord> = {}): BatteryRecord {
   return {
     id: "battery-1",
@@ -430,6 +492,7 @@ function createDailyItem(
   overrides: Partial<BatteryStrategyPlanItem> = {},
 ): BatteryStrategyPlanItem {
   return {
+    enabled: true,
     id: "daily-1",
     kind: "daily",
     startTime: "07:00",
@@ -465,4 +528,16 @@ function createSample(
     manualTargetSoc: 100,
     ...overrides,
   };
+}
+
+function createDynamicPriceSamples(
+  values: Array<[periodStart: string, importPrice: number]>,
+): DynamicPriceSampleRecord[] {
+  return values.map(([periodStart, importPrice]) => ({
+    siteId: "home",
+    periodStart,
+    generatedAt: "2026-04-09T00:00:00.000Z",
+    currency: "EUR",
+    importPrice,
+  }));
 }

@@ -1,9 +1,16 @@
+import {
+  PRICE_SELECTION_WINDOW_MS,
+  findPriceSelections,
+} from "@emsd/core";
 import type {
   BatteryRecord,
   BatteryStrategyPlanItem,
   BatteryStrategyRuntimeRecord,
+  DynamicPriceSampleRecord,
   NormalizedBatteryInfo,
 } from "@emsd/core";
+
+const PRICE_TRIGGER_ELIGIBILITY_WINDOW_MS = 30 * 60 * 1000;
 
 export function formatDaemonLogTimestamp(date: Date = new Date()): string {
   return `${formatLocalDate(date)} ${formatLocalTime(date)}`;
@@ -271,6 +278,13 @@ export function shouldSkipScheduledItem(
   triggerAt: Date,
   now: Date,
 ): boolean {
+  if (
+    (item.triggerKind === "low-price" || item.triggerKind === "high-price") &&
+    now.getTime() >= triggerAt.getTime() + PRICE_TRIGGER_ELIGIBILITY_WINDOW_MS
+  ) {
+    return true;
+  }
+
   if (item.targetMethod === "duration") {
     return (
       item.targetDurationMinutes !== null &&
@@ -287,6 +301,7 @@ export function shouldSkipScheduledItem(
 }
 
 export function shouldSkipDelayedSocItemBecauseLaterItemIsDue(input: {
+  dynamicPriceSamples?: DynamicPriceSampleRecord[];
   items: BatteryStrategyPlanItem[];
   currentIndex: number;
   currentTriggerAt: Date;
@@ -300,7 +315,13 @@ export function shouldSkipDelayedSocItemBecauseLaterItemIsDue(input: {
   }
 
   for (const laterItem of input.items.slice(input.currentIndex + 1)) {
-    const laterTriggerAt = getTodayTriggerAt(laterItem, input.now);
+    const laterTriggerAt = getStrategyTriggerAt({
+      item: laterItem,
+      now: input.now,
+      ...(input.dynamicPriceSamples
+        ? { dynamicPriceSamples: input.dynamicPriceSamples }
+        : {}),
+    });
 
     if (
       laterTriggerAt === null ||
@@ -347,6 +368,50 @@ export function getTodayTriggerAt(
     0,
   );
   return triggerAt;
+}
+
+export function getStrategyTriggerAt(input: {
+  item: BatteryStrategyPlanItem;
+  now: Date;
+  dynamicPriceSamples?: DynamicPriceSampleRecord[];
+}): Date | null {
+  const { item, now, dynamicPriceSamples = [] } = input;
+
+  if (item.triggerKind === "daily-time") {
+    return getTodayTriggerAt(item, now);
+  }
+
+  if (item.triggerKind !== "low-price" && item.triggerKind !== "high-price") {
+    return null;
+  }
+
+  return getPriceMarkerTriggerAt({
+    triggerKind: item.triggerKind,
+    now,
+    dynamicPriceSamples,
+  });
+}
+
+export function getNextStrategyTriggerAt(input: {
+  item: BatteryStrategyPlanItem;
+  now: Date;
+  dynamicPriceSamples?: DynamicPriceSampleRecord[];
+}): Date | null {
+  const { item, now, dynamicPriceSamples = [] } = input;
+
+  if (item.triggerKind === "daily-time") {
+    return getTodayTriggerAt(item, now);
+  }
+
+  if (item.triggerKind !== "low-price" && item.triggerKind !== "high-price") {
+    return null;
+  }
+
+  return getNextPriceMarkerTriggerAt({
+    triggerKind: item.triggerKind,
+    now,
+    dynamicPriceSamples,
+  });
 }
 
 export function getScheduledEndAt(
@@ -476,6 +541,75 @@ function isSocTargetItem(item: BatteryStrategyPlanItem): boolean {
     (item.manualState === "charging" || item.manualState === "discharging") &&
     (item.targetMethod === null || item.targetMethod === "soc")
   );
+}
+
+function getPriceMarkerTriggerAt(input: {
+  triggerKind: "low-price" | "high-price";
+  now: Date;
+  dynamicPriceSamples: DynamicPriceSampleRecord[];
+}): Date | null {
+  const todayMarkers = getPriceMarkersForToday(input);
+
+  if (todayMarkers.length === 0) {
+    return null;
+  }
+
+  let latestDueMarker: Date | null = null;
+
+  for (const markerAt of todayMarkers) {
+    if (markerAt.getTime() <= input.now.getTime()) {
+      latestDueMarker = markerAt;
+    }
+  }
+
+  if (latestDueMarker !== null) {
+    return latestDueMarker;
+  }
+
+  return todayMarkers[0] ?? null;
+}
+
+function getNextPriceMarkerTriggerAt(input: {
+  triggerKind: "low-price" | "high-price";
+  now: Date;
+  dynamicPriceSamples: DynamicPriceSampleRecord[];
+}): Date | null {
+  const todayMarkers = getPriceMarkersForToday(input);
+
+  for (const markerAt of todayMarkers) {
+    if (markerAt.getTime() >= input.now.getTime()) {
+      return markerAt;
+    }
+  }
+
+  return null;
+}
+
+function getPriceMarkersForToday(input: {
+  triggerKind: "low-price" | "high-price";
+  now: Date;
+  dynamicPriceSamples: DynamicPriceSampleRecord[];
+}): Date[] {
+  const selections = findPriceSelections(
+    input.dynamicPriceSamples.map((sample) => ({
+      periodStart: sample.periodStart,
+      value: sample.importPrice,
+    })),
+    PRICE_SELECTION_WINDOW_MS,
+  );
+  const markerPeriodStarts =
+    input.triggerKind === "low-price"
+      ? selections.lowest.map((point) => point.periodStart)
+      : selections.highest.map((point) => point.periodStart);
+
+  return markerPeriodStarts
+    .map((periodStart) => new Date(periodStart))
+    .filter(
+      (markerAt) =>
+        !Number.isNaN(markerAt.getTime()) &&
+        formatLocalDate(markerAt) === formatLocalDate(input.now),
+    )
+    .sort((left, right) => left.getTime() - right.getTime());
 }
 
 function formatLocalDate(date: Date): string {
