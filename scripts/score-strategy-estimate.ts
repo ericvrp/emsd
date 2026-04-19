@@ -26,7 +26,27 @@ interface ScriptOptions {
   siteId: string | null;
   targets: number[] | null;
   time: string;
+  verboseBlocks: Set<VerboseBlock>;
 }
+
+type VerboseBlock =
+  | "meta"
+  | "current"
+  | "energy"
+  | "why"
+  | "break-even"
+  | "history"
+  | "replay";
+
+const ALL_VERBOSE_BLOCKS: VerboseBlock[] = [
+  "meta",
+  "current",
+  "energy",
+  "why",
+  "break-even",
+  "history",
+  "replay",
+];
 
 interface ReserveTargetScoreRow {
   averageReplayStopPercentNow: number;
@@ -39,8 +59,13 @@ interface ReserveTargetScoreRow {
 interface EstimateContext {
   action: ScriptOptions["action"];
   battery: ReturnType<typeof readBatteries>[number];
+  batteryId: string;
+  candidateDays: string[];
   estimate: ReturnType<typeof estimateStrategyTarget>;
   referenceTime: Date;
+  siteId: string;
+  siteName: string;
+  verboseBlocks: Set<VerboseBlock>;
 }
 
 function parseArgs(args: string[]): ScriptOptions {
@@ -51,6 +76,7 @@ function parseArgs(args: string[]): ScriptOptions {
   let siteId: string | null = null;
   let targets: number[] | null = null;
   let time = getCurrentLocalClockTime();
+  const verboseBlocks = new Set<VerboseBlock>();
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
@@ -152,10 +178,27 @@ function parseArgs(args: string[]): ScriptOptions {
       process.exit(0);
     }
 
+    if (arg === "--verbose") {
+      for (const block of ALL_VERBOSE_BLOCKS) {
+        verboseBlocks.add(block);
+      }
+      continue;
+    }
+
+    if (arg.startsWith("--verbose=")) {
+      const value = arg.slice("--verbose=".length);
+
+      for (const block of parseVerboseBlocks(value)) {
+        verboseBlocks.add(block);
+      }
+
+      continue;
+    }
+
     throw new Error(`Unknown argument: ${arg}`);
   }
 
-  return { action, date, days, powerW, siteId, targets, time };
+  return { action, date, days, powerW, siteId, targets, time, verboseBlocks };
 }
 
 function printHelp(): void {
@@ -178,6 +221,9 @@ function printHelp(): void {
       "  bun run estimate:score -- --time 17:30",
       "  bun run estimate:score -- --site <site-id>",
       "  bun run estimate:score -- --targets 10,11,12,13,14,15",
+      "  bun run estimate:score -- --verbose",
+      "  bun run estimate:score -- --verbose=meta,why,replay",
+      `  verbose blocks: ${ALL_VERBOSE_BLOCKS.join(", ")}`,
     ].join("\n"),
   );
 }
@@ -200,10 +246,12 @@ function main() {
       return;
     }
 
-    console.log(
-      `Estimating synthetic ${formatActionLabel(options.action)} target at ${options.powerW}W for ${options.date} ${options.time}.`,
-    );
-    console.log(`Database: ${getDatabasePath()}`);
+    if (options.verboseBlocks.has("meta")) {
+      console.log(
+        `Estimating synthetic ${formatActionLabel(options.action)} target at ${options.powerW}W for ${options.date} ${options.time}.`,
+      );
+      console.log(`Database: ${getDatabasePath()}`);
+    }
 
     for (const site of sites) {
       scoreSite(site.id, options, db);
@@ -250,21 +298,11 @@ function scoreSite(
       batteryTelemetry?.capacityWh === null ||
       batteryTelemetry?.capacityWh === undefined
     ) {
-      console.log(`\nSite ${site?.name ?? siteId} (${siteId}), battery ${battery.id}`);
-      console.log("Current estimate:");
-      console.table([
-        {
-          battery: battery.name,
-          batteryId: battery.id,
-          minimumDischargePercent: `${battery.minimumDischargePercent}%`,
-          note: "Skipped because current capacity is unavailable",
-        },
-      ]);
+      console.log(
+        `${site?.name ?? siteId} (${siteId}) | ${battery.name} (${battery.id}) | capacity unavailable`,
+      );
       continue;
     }
-
-    console.log(`\nSite: ${site?.name ?? siteId} (${siteId})`);
-    console.log(`Battery: ${battery.name} (${battery.id})`);
 
     const estimateAt = createReplayTime(options.date, options.time);
 
@@ -303,8 +341,13 @@ function scoreSite(
     printCurrentEstimateSummary({
       action: options.action,
       battery,
+      batteryId: battery.id,
+      candidateDays,
       estimate: currentEstimate,
       referenceTime: estimateAt,
+      siteId,
+      siteName: site?.name ?? siteId,
+      verboseBlocks: options.verboseBlocks,
     });
 
     const reserveTargets =
@@ -331,10 +374,12 @@ function scoreSite(
       );
     }
 
-    console.log(
-      `Reserve examples across the ${candidateDays.length} replay day(s) before ${options.date}:`,
-    );
-    printScoreRows(rows);
+    if (options.verboseBlocks.has("replay")) {
+      console.log(
+        `Reserve examples across ${candidateDays.length} replay day(s): ${candidateDays.join(", ")}`,
+      );
+      printScoreRows(rows);
+    }
   }
 }
 
@@ -599,66 +644,81 @@ function printScoreRows(rows: ReserveTargetScoreRow[]): void {
 }
 
 function printCurrentEstimateSummary(input: EstimateContext): void {
-  console.log("Current estimate:");
-  console.table(
-    formatKeyValueRows({
-      Action: formatActionLabel(input.action),
-      "Battery minimum discharge": `${input.battery.minimumDischargePercent}%`,
-      "Reserve at target": `${input.estimate.estimatedReservePercentAtTargetTime}%`,
-      "Stop now today": `${input.estimate.estimatedTargetPercent}%`,
-      "Target time": formatTargetTime(input.estimate.targetTime),
-      "Time until target": formatDurationUntilTarget(
-        input.referenceTime,
-        input.estimate.targetTime,
-      ),
-    }),
+  console.log(
+    `${input.siteName} (${input.siteId}) | ${input.battery.name} (${input.batteryId}) | target time ${formatTargetTime(input.estimate.targetTime)} | ${formatActionLabel(input.action)} target ${input.estimate.estimatedTargetPercent}% for ${formatReferenceMoment(input.referenceTime)}`,
   );
 
-  console.log("Energy estimate:");
-  console.table(
-    formatKeyValueRows({
-      "Expected house load until target": formatWh(input.estimate.expectedHouseLoadWh),
-      "Predicted solar until target": formatWh(input.estimate.predictedSolarGenerationWh),
-      "Net battery energy needed": formatWh(input.estimate.estimatedRemainingEnergyWh),
-    }),
-  );
+  if (input.verboseBlocks.has("current")) {
+    console.log("Current estimate:");
+    console.table(
+      formatKeyValueRows({
+        Action: formatActionLabel(input.action),
+        "Battery minimum discharge": `${input.battery.minimumDischargePercent}%`,
+        "Reserve at target": `${input.estimate.estimatedReservePercentAtTargetTime}%`,
+        "Target percentage": `${input.estimate.estimatedTargetPercent}%`,
+        "Target time": formatTargetTime(input.estimate.targetTime),
+        "Time until target": formatDurationUntilTarget(
+          input.referenceTime,
+          input.estimate.targetTime,
+        ),
+      }),
+    );
+  }
 
-  console.log("Why this target time:");
-  console.table(
-    formatKeyValueRows({
-      "Expected load at target": formatW(
-        input.estimate.targetTimeSignal?.expectedHouseLoadW ?? null,
-      ),
-      "Predicted solar at target": formatW(
-        input.estimate.targetTimeSignal?.predictedSolarW ?? null,
-      ),
-      "Recovery threshold": formatW(
-        input.estimate.targetTimeSignal?.recoveryThresholdW ?? null,
-      ),
-      "Break-even rule": formatBreakEvenRule(input.estimate),
-      Reasoning: input.estimate.reasoning || "n/a",
-    }),
-  );
+  if (input.verboseBlocks.has("energy")) {
+    console.log("Energy estimate:");
+    console.table(
+      formatKeyValueRows({
+        "Expected house load until target": formatWh(input.estimate.expectedHouseLoadWh),
+        "Predicted solar until target": formatWh(input.estimate.predictedSolarGenerationWh),
+        "Net battery energy needed": formatWh(input.estimate.estimatedRemainingEnergyWh),
+      }),
+    );
+  }
 
-  console.log("Break-even buckets:");
-  console.table(
-    input.estimate.breakEvenTrace.map((row) => ({
-      breakEven: row.meetsBreakEven ? "yes" : "no",
-      expectedHouseLoadW: formatW(row.expectedHouseLoadW),
-      predictedSolarW: formatW(row.predictedSolarW),
-      recoveryThresholdW: formatW(row.recoveryThresholdW),
-      time: formatClockTime(row.time),
-    })),
-  );
+  if (input.verboseBlocks.has("why")) {
+    console.log("Why this target time:");
+    console.table(
+      formatKeyValueRows({
+        "Expected load at target": formatW(
+          input.estimate.targetTimeSignal?.expectedHouseLoadW ?? null,
+        ),
+        "Predicted solar at target": formatW(
+          input.estimate.targetTimeSignal?.predictedSolarW ?? null,
+        ),
+        "Recovery threshold": formatW(
+          input.estimate.targetTimeSignal?.recoveryThresholdW ?? null,
+        ),
+        "Break-even rule": formatBreakEvenRule(input.estimate),
+        Reasoning: input.estimate.reasoning || "n/a",
+      }),
+    );
+  }
 
-  console.log("History used:");
-  console.table(
-    formatKeyValueRows({
-      "Historical periods used": String(input.estimate.historyStats.historicalPeriodsUsed),
-      "Same-weekday periods used": String(input.estimate.historyStats.sameWeekdayPeriodsUsed),
-      "Time slots modelled": String(input.estimate.historyStats.slotCount),
-    }),
-  );
+  if (input.verboseBlocks.has("break-even")) {
+    console.log("Break-even buckets:");
+    console.table(
+      input.estimate.breakEvenTrace.map((row) => ({
+        breakEven: row.meetsBreakEven ? "yes" : "no",
+        expectedHouseLoadW: formatW(row.expectedHouseLoadW),
+        predictedSolarW: formatW(row.predictedSolarW),
+        recoveryThresholdW: formatW(row.recoveryThresholdW),
+        time: formatClockTime(row.time),
+      })),
+    );
+  }
+
+  if (input.verboseBlocks.has("history")) {
+    console.log("History used:");
+    console.table(
+      formatKeyValueRows({
+        "Historical periods used": String(input.estimate.historyStats.historicalPeriodsUsed),
+        "Same-weekday periods used": String(input.estimate.historyStats.sameWeekdayPeriodsUsed),
+        "Time slots modelled": String(input.estimate.historyStats.slotCount),
+        "Replay reference days": input.candidateDays.join(", "),
+      }),
+    );
+  }
 }
 
 function formatKeyValueRows(values: Record<string, string>): Array<{ key: string; value: string }> {
@@ -756,6 +816,10 @@ function formatDurationUntilTarget(referenceTime: Date, value: string | null): s
   return `${hoursPart}h ${minutesPart}m`;
 }
 
+function formatReferenceMoment(value: Date): string {
+  return `${value.toISOString().slice(0, 10)} ${value.toTimeString().slice(0, 5)}`;
+}
+
 function formatBreakEvenRule(
   estimate: ReturnType<typeof estimateStrategyTarget>,
 ): string {
@@ -768,6 +832,23 @@ function formatBreakEvenRule(
   }
 
   return `${formatW(predictedSolarAtTargetW)} > max(${formatW(expectedLoadAtTargetW)}, ${formatW(recoveryThresholdW)})`;
+}
+
+function parseVerboseBlocks(value: string): VerboseBlock[] {
+  const blocks = value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry): entry is VerboseBlock =>
+      ALL_VERBOSE_BLOCKS.includes(entry as VerboseBlock),
+    );
+
+  if (blocks.length === 0) {
+    throw new Error(
+      `--verbose must contain one or more of: ${ALL_VERBOSE_BLOCKS.join(", ")}`,
+    );
+  }
+
+  return blocks;
 }
 
 function formatClockTime(value: string | null): string {
