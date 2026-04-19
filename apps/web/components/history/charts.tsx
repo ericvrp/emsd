@@ -50,6 +50,12 @@ import {
   formatTooltipTimestamp,
 } from "./utils";
 
+const BATTERY_STRATEGY_BAND_HEIGHT_RATIO = 0.0603;
+const BATTERY_STRATEGY_BAND_BOTTOM =
+  BATTERY_POWER_AXIS_DOMAIN[1] -
+  (BATTERY_POWER_AXIS_DOMAIN[1] - BATTERY_POWER_AXIS_DOMAIN[0]) *
+    BATTERY_STRATEGY_BAND_HEIGHT_RATIO;
+
 export function LegendChip({
   color,
   label,
@@ -258,7 +264,7 @@ export function BatteryHistoryChart({
                     strokeWidth={1.2}
                     x1={segment.startMs}
                     x2={segment.endMs}
-                    y1={BATTERY_POWER_AXIS_DOMAIN[0]}
+                    y1={BATTERY_STRATEGY_BAND_BOTTOM}
                     y2={BATTERY_POWER_AXIS_DOMAIN[1]}
                     yAxisId="power"
                   />

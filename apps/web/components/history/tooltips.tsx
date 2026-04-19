@@ -1,3 +1,5 @@
+import { CalendarClock, Hand } from "lucide-react";
+import type { ReactNode } from "react";
 import {
   formatAbsolutePowerValue,
 } from "../../lib/power-format";
@@ -143,20 +145,28 @@ export function BatteryHistoryTooltip({
             color={getStrategyTooltipColor(point?.strategyDisplayState ?? null)}
             label="Strategy"
             strokeDasharray={undefined}
-            value={strategyLabel}
-          />
-        ) : null}
-        {strategySource ? (
-          <TooltipRow
-            color={UI_COLORS.textPrimary}
-            label="Source"
-            strokeDasharray={strategySource === "manual" ? undefined : "2 3"}
-            value={strategySource === "manual" ? "Manual" : "Automatic"}
+            value={
+              <span className="inline-flex items-center gap-1.5">
+                {strategySource ? (
+                  <StrategySourceIcon source={strategySource} />
+                ) : null}
+                <span>{strategyLabel}</span>
+              </span>
+            }
           />
         ) : null}
       </div>
     </div>
   );
+}
+
+function StrategySourceIcon({
+  source,
+}: {
+  source: NonNullable<BatteryHistoryPoint["strategySource"]>;
+}) {
+  const Icon = source === "manual" ? Hand : CalendarClock;
+  return <Icon aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />;
 }
 
 function formatStrategyTooltipLabel(
@@ -275,7 +285,7 @@ function TooltipRow({
   color: string;
   label: string;
   strokeDasharray: string | undefined;
-  value: string;
+  value: ReactNode;
 }) {
   return (
     <div className="flex items-center justify-between gap-4">
