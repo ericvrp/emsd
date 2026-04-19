@@ -84,9 +84,23 @@ export function formatScheduledStrategyStartedSummary(
   batteryId: string,
   item: BatteryStrategyPlanItem,
   observedDelay: string,
+  estimate?: {
+    targetSocPercent: number;
+    targetTime: string | null;
+    reasoning: string;
+  } | null,
 ): string {
   void observedDelay;
-  return `${describeStrategyScheduleHuman(item)} is now active for ${batteryId}: ${describeStrategyPlanItemHuman(item)}`;
+  const base = `${describeStrategyScheduleHuman(item)} is now active for ${batteryId}: ${describeStrategyPlanItemHuman(item)}`;
+
+  if (!estimate) {
+    return base;
+  }
+
+  const targetTimeLabel =
+    estimate.targetTime === null ? "" : ` by ${formatHumanClockTime(estimate.targetTime)}`;
+
+  return `${base}; dynamic target ${estimate.targetSocPercent}%${targetTimeLabel} based on ${estimate.reasoning}`;
 }
 
 export function formatScheduledStrategyCompletionSummary(input: {
@@ -150,9 +164,14 @@ export function formatBatteryStrategyStatusSummary(
       manualDischargeTargetSoc: battery.manualDischargeTargetSoc,
       manualTargetSoc: battery.manualTargetSoc,
       minimumDischargePercent: battery.minimumDischargePercent,
+      resolvedTargetSoc:
+        battery.strategyRuntime.manualTargetMethod === "auto"
+          ? (battery.strategyRuntime.activeTargetSocPercent ?? null)
+          : null,
       targetDurationMinutes:
         battery.strategyRuntime.manualTargetDurationMinutes ?? null,
       targetEndTime: battery.strategyRuntime.manualTargetEndTime ?? null,
+      targetTime: battery.strategyRuntime.activeTargetTime ?? null,
       activeStartedAt: battery.strategyRuntime.manualTargetStartedAt ?? null,
       targetMethod: battery.strategyRuntime.manualTargetMethod ?? null,
       preferPowerWhenAvailable: true,
@@ -172,9 +191,14 @@ export function formatBatteryStrategyStatusSummary(
         manualDischargeTargetSoc: fallbackItem.manualDischargeTargetSoc,
         manualTargetSoc: fallbackItem.manualTargetSoc,
         minimumDischargePercent: battery.minimumDischargePercent,
+        resolvedTargetSoc:
+          fallbackItem.targetMethod === "auto"
+            ? (battery.strategyRuntime.activeTargetSocPercent ?? null)
+            : null,
         targetMethod: fallbackItem.targetMethod,
         targetDurationMinutes: fallbackItem.targetDurationMinutes,
         targetEndTime: fallbackItem.targetEndTime,
+        targetTime: battery.strategyRuntime.activeTargetTime ?? null,
         activeStartedAt: null,
         preferPowerWhenAvailable: false,
         now,
@@ -187,9 +211,11 @@ export function formatBatteryStrategyStatusSummary(
         manualDischargeTargetSoc: battery.manualDischargeTargetSoc,
         manualTargetSoc: battery.manualTargetSoc,
         minimumDischargePercent: battery.minimumDischargePercent,
+        resolvedTargetSoc: null,
         targetMethod: null,
         targetDurationMinutes: null,
         targetEndTime: null,
+        targetTime: null,
         activeStartedAt: null,
         preferPowerWhenAvailable: false,
         now,
@@ -214,9 +240,14 @@ export function formatBatteryStrategyStatusSummary(
     manualDischargeTargetSoc: activeItem.manualDischargeTargetSoc,
     manualTargetSoc: activeItem.manualTargetSoc,
     minimumDischargePercent: battery.minimumDischargePercent,
+    resolvedTargetSoc:
+      activeItem.targetMethod === "auto"
+        ? (battery.strategyRuntime.activeTargetSocPercent ?? null)
+        : null,
     targetMethod: activeItem.targetMethod,
     targetDurationMinutes: activeItem.targetDurationMinutes,
     targetEndTime: activeItem.targetEndTime,
+    targetTime: battery.strategyRuntime.activeTargetTime ?? null,
     activeStartedAt: battery.strategyRuntime.activeStartedAt,
     preferPowerWhenAvailable: false,
     now,
@@ -286,9 +317,11 @@ function summarizeActiveStrategy(input: {
   manualDischargeTargetSoc: BatteryStrategyRecord["manualDischargeTargetSoc"];
   manualTargetSoc: BatteryStrategyRecord["manualTargetSoc"];
   minimumDischargePercent: number;
+  resolvedTargetSoc: number | null;
   targetMethod: BatteryStrategyPlanItem["targetMethod"];
   targetDurationMinutes: BatteryStrategyPlanItem["targetDurationMinutes"];
   targetEndTime: BatteryStrategyPlanItem["targetEndTime"];
+  targetTime: string | null;
   activeStartedAt: string | null;
   preferPowerWhenAvailable: boolean;
   now: Date;
@@ -305,10 +338,14 @@ function summarizeActiveStrategy(input: {
     return describeActionWithTarget("Charging", {
       powerW: input.manualPowerW,
       preferPowerWhenAvailable: input.preferPowerWhenAvailable,
-      defaultTargetSoc: input.manualChargeTargetSoc ?? input.manualTargetSoc,
+      defaultTargetSoc:
+        input.resolvedTargetSoc ??
+        input.manualChargeTargetSoc ??
+        input.manualTargetSoc,
       targetMethod: input.targetMethod,
       targetDurationMinutes: input.targetDurationMinutes,
       targetEndTime: input.targetEndTime,
+      targetTime: input.targetTime,
       activeStartedAt: input.activeStartedAt,
       now: input.now,
     });
@@ -319,12 +356,14 @@ function summarizeActiveStrategy(input: {
       powerW: input.manualPowerW,
       preferPowerWhenAvailable: input.preferPowerWhenAvailable,
       defaultTargetSoc:
+        input.resolvedTargetSoc ??
         input.manualDischargeTargetSoc ??
         input.manualTargetSoc ??
         input.minimumDischargePercent,
       targetMethod: input.targetMethod,
       targetDurationMinutes: input.targetDurationMinutes,
       targetEndTime: input.targetEndTime,
+      targetTime: input.targetTime,
       activeStartedAt: input.activeStartedAt,
       now: input.now,
     });
@@ -334,10 +373,11 @@ function summarizeActiveStrategy(input: {
     return describeActionWithTarget("Idle", {
       powerW: input.manualPowerW,
       preferPowerWhenAvailable: input.preferPowerWhenAvailable,
-      defaultTargetSoc: input.manualTargetSoc,
+      defaultTargetSoc: input.resolvedTargetSoc ?? input.manualTargetSoc,
       targetMethod: input.targetMethod,
       targetDurationMinutes: input.targetDurationMinutes,
       targetEndTime: input.targetEndTime,
+      targetTime: input.targetTime,
       activeStartedAt: input.activeStartedAt,
       now: input.now,
     });
@@ -355,11 +395,23 @@ function describeActionWithTarget(
     targetMethod: BatteryStrategyPlanItem["targetMethod"];
     targetDurationMinutes: BatteryStrategyPlanItem["targetDurationMinutes"];
     targetEndTime: BatteryStrategyPlanItem["targetEndTime"];
+    targetTime: string | null;
     activeStartedAt: string | null;
     now: Date;
   },
 ): string {
   let targetLabel: string | null = null;
+
+  if (input.targetMethod === "auto") {
+    targetLabel =
+      input.defaultTargetSoc === null
+        ? "with a dynamic target"
+        : `to ${input.defaultTargetSoc}%`;
+
+    if (input.targetTime) {
+      targetLabel = `${targetLabel} by ${formatHumanClockTime(input.targetTime)}`;
+    }
+  }
 
   if (input.targetMethod === "duration") {
     const durationLabel = formatDurationTargetLabel({
@@ -440,6 +492,10 @@ function formatMinuteCount(value: number): string {
 function describeScheduledTargetHuman(
   item: BatteryStrategyPlanItem,
 ): string | null {
+  if (item.targetMethod === "auto") {
+    return "with a dynamic target";
+  }
+
   if (item.targetMethod === "duration") {
     return item.targetDurationMinutes === null
       ? null
@@ -457,6 +513,20 @@ function describeScheduledTargetHuman(
   }
 
   return null;
+}
+
+function formatHumanClockTime(value: string): string {
+  if (/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) {
+    return value;
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 }
 
 function describeStrategyScheduleHuman(item: BatteryStrategyPlanItem): string {

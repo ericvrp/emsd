@@ -2,7 +2,7 @@
 
 ## Goal
 
-Add a daemon-only informational estimate for scheduled strategy items across all current trigger kinds (`daily-time`, `low-price`, `high-price`) while keeping the configured strategy item target percentage fully unchanged for activation and completion behavior.
+Add a daemon-owned dynamic target estimate for scheduled strategy items across all current trigger kinds (`daily-time`, `low-price`, `high-price`). This should support a new scheduled-item target method that lets the daemon compute and apply the target percentage at activation time, while fixed target methods continue to behave exactly as configured.
 
 The daemon should log:
 - the next important time horizon it is working toward
@@ -12,6 +12,8 @@ The daemon should log:
 
 This must appear in normal daemon logs when a scheduled item becomes active, without requiring the verbose flag.
 
+This dynamic target computation should only run for the new schedule target method, exposed in the UI as `Dynamic` and persisted as target method `auto`.
+
 In support of that runtime estimate, add a benchmark script similar to `solar:score` so we can replay recent history, score candidate heuristics, and tune the discharge reserve percentage separately for evening and morning high-price windows.
 
 ## Recommended Approach
@@ -20,10 +22,11 @@ In support of that runtime estimate, add a benchmark script similar to `solar:sc
 2. Keep the estimator fully read-only and side-effect free.
 3. Reuse the existing solar prediction pipeline instead of treating weather forecast values as direct energy.
 4. Infer expected house usage from the existing site energy-balance signals instead of using battery power alone as a demand proxy.
-5. Call the estimator only from the scheduled activation path in `apps/daemon/src/index.ts`.
-6. Extend the scheduled-start log formatter in `apps/daemon/src/strategy-log.ts` so the normal activation log includes the configured action plus the daemon estimate and reasoning.
-7. Add a scoring script, for example `scripts/score-strategy-estimate.ts`, with a root alias such as `bun run estimate:score`.
-8. Do not persist the estimate, do not expose it through EMS or web code, and do not feed it back into `resolveBatteryStrategyFromPlanItem`, runtime state, completion logic, or history.
+5. Call the estimator only from the scheduled activation path in `apps/daemon/src/index.ts` when `targetMethod === "auto"`.
+6. Apply the computed target SoC to the activated battery strategy for that scheduled item and persist the active computed target in runtime state so completion logic uses the same resolved target.
+7. Extend the scheduled-start log formatter in `apps/daemon/src/strategy-log.ts` so the normal activation log includes the configured action plus the daemon estimate and reasoning.
+8. Add a scoring script, for example `scripts/score-strategy-estimate.ts`, with a root alias such as `bun run estimate:score`.
+9. Keep fixed target methods (`soc`, `duration`, `end-time`) unchanged and do not run this estimator for them.
 
 ## Data Sources
 
@@ -53,16 +56,18 @@ Keep the first version heuristic and explainable around target-time selection an
 Inputs:
 - active scheduled item
 - current time
-- current SoC
 - battery capacity and minimum discharge percent
 - predicted solar generation series built from the existing forecast and production history
 - recent historical inferred house usage from the retained 30-day sample window
 - nearby later schedule boundaries when available
 
+The current battery SoC is not part of the target calculation itself. The daemon-computed target answers: "until what percentage may we discharge now so we still expect to hold the desired reserve at the solar break-even point?" If the real battery SoC is already below that computed target, the discharging action simply has nothing to do.
+
 Outputs:
 - `targetTime`: the next important moment the daemon is optimizing toward
-- `estimatedRemainingEnergyWh`: estimated energy still needed to cover the period until `targetTime`
-- `estimatedTargetPercent`: informational target SoC implied by that energy need
+- `estimatedRemainingEnergyWh`: estimated net energy the battery will still need to supply between now and `targetTime`
+- `estimatedReservePercentAtTargetTime`: the SoC we want to still hold at `targetTime`
+- `estimatedTargetPercent`: the stop target to use now so the battery can drift down toward the target-time reserve by `targetTime`
 - `reasoning`: compact human-readable explanation
 
 ### Derived Signals
@@ -86,6 +91,8 @@ Use the existing raw sign conventions:
 
 This gives us a site-level estimate of what the house was actually consuming at each period even though we do not store house usage directly.
 
+Because some battery plugins currently persist battery power as magnitude without a reliable historical sign, the estimator should infer historical battery charge/discharge direction from adjacent SoC movement before folding battery power back into the site energy balance.
+
 If one or more input series is missing for a period, treat that period as partial or unavailable instead of silently inventing load values.
 
 ### Target Time Rules
@@ -105,16 +112,14 @@ Recommended first-pass rules:
    - This keeps the estimate focused on how much charge to keep for the next more constrained period.
 
 3. `high-price`
-   - Split the heuristic into evening and morning cases because they have different risk profiles.
-   - Evening high-price window:
-     use the next solar recovery point on the following day when the active window starts after meaningful solar production is effectively gone for today. This is the "get through the night until the sun can take over again" case.
-   - Morning high-price window:
-     use the end of the active high-price window or the next stronger schedule boundary when solar recovery is already near. This intentionally allows a less conservative discharge target because daylight is close.
+   - Use the next solar recovery point, defined as the first sustained future period where predicted solar production is strong enough to carry expected demand.
+   - If the active item starts in the evening, that recovery point will usually land the next morning.
+   - If the active item starts early in the morning, that same rule should usually land later that same morning rather than forcing the horizon into the next day.
 
 4. Solar recovery point
-   - Define a simple, explainable first version.
-   - Use the first future forecast period where predicted solar generation is strong enough to carry normal daytime house load again for multiple consecutive periods.
-   - A practical first rule is the first of 3 consecutive forecast periods where `predictedSolarGenerationW >= expectedHouseLoadW` for that time of day.
+   - Define it as the first future break-even bucket where predicted solar generation becomes larger than expected house demand for that time bucket.
+   - Step forward bucket by bucket from the activation time until `predictedSolarGenerationW > max(expectedHouseLoadW, minimumMeaningfulSolarW)`.
+   - The `minimumMeaningfulSolarW` floor prevents tiny near-zero forecast noise from counting as recovery.
    - If that point cannot be found confidently, fall back to the next later scheduled boundary, then local noon, then the next day boundary.
 
 ### Net Energy Estimate
@@ -129,13 +134,20 @@ Recommended logic shape:
    - Prefer a robust average or median by time slot so one unusual day does not dominate the estimate.
 4. Integrate expected house load from now until `targetTime`.
 5. Integrate predicted solar generation over the same window.
-6. Compute net remaining energy:
+6. Compute net remaining energy between now and `targetTime`:
    - `estimatedRemainingEnergyWh = max(0, expectedHouseLoadWh - predictedSolarGenerationWh)`
-7. Convert required remaining energy to an informational target percentage based on battery capacity and current SoC.
-8. Clamp the estimate to a safe range: at least `minimumDischargePercent`, at most `100`.
-9. Keep the configured target untouched and log both clearly when a configured target exists.
+7. Choose a target-time reserve percentage.
+   - For discharge strategies that protect until solar recovery, keep a small margin above `minimumDischargePercent` so self-consumption can still remain active at the recovery point.
+   - The first implementation may use a small default margin such as `minimumDischargePercent + 1` and tune it later with the benchmark script.
+8. Convert the required remaining energy plus the target-time reserve into the stop target to use now:
+   - `estimatedTargetPercent = estimatedReservePercentAtTargetTime + ceil(estimatedRemainingEnergyWh / capacityWh * 100)`
+   - This answers the operational question: "until what percentage may we discharge now so we still expect to hold the desired reserve at `targetTime`?"
+   - This calculation is intentionally independent of the battery's current SoC.
+9. Clamp the stop target to a safe range: at least `minimumDischargePercent`, at most `100`.
+10. When `targetMethod === "auto"`, use that computed stop target for the activated scheduled strategy and for completion tracking.
+11. Keep fixed target methods untouched and log clearly that the daemon-computed target only applies to `Dynamic` items.
 
-The first implementation may also include a small configurable reserve margin. That margin should be benchmarked separately for evening and morning high-price windows instead of being hard-coded blindly.
+The first implementation may also include a small configurable reserve margin. That margin should be benchmarked against historical replay data instead of being hard-coded blindly.
 
 ## Logging Behavior
 
@@ -150,9 +162,13 @@ Example shape:
 
 `the high-price schedule is now active for battery-1: discharge manually to 80% at 2400W; daemon estimate 34% by 08:15 based on overnight house load, recent Monday site usage, and predicted solar recovery after sunrise`
 
+Interpretation:
+- `34% by 08:15` means the daemon will stop forced discharge at `34%` now so the battery is expected to drift down to the desired reserve by `08:15`
+- it does not mean the daemon wants the battery to still be at `34%` at `08:15`
+
 Important wording rules:
-- always make it clear this is a `daemon estimate` or `informational estimate`
-- never imply the configured target was changed
+- always make it clear this is a daemon-computed dynamic target
+- never imply that fixed target methods were changed
 - if solar prediction or load history is insufficient, log that the estimate is unavailable or partial and say why
 
 ## Benchmark Script
@@ -171,7 +187,8 @@ Recommended evaluation flow:
 1. Select historical candidate windows from recent scheduled activations or replayable time slices.
 2. For each window, run the estimator using only data that would have been available at that time.
 3. Compare the estimated target against what actually happened between activation and `targetTime`.
-4. Score candidate settings separately for evening and morning high-price windows.
+4. Score candidate reserve-at-target percentages for the chosen date/time and compare them against historical replay at the same local clock time.
+5. For debugging and tuning, show the per-bucket break-even trace from the chosen start time until the selected target time so the operator can see exactly where predicted solar first beats expected demand.
 
 Recommended metrics:
 
@@ -192,18 +209,20 @@ The main purpose of this script is to tune the reserve or discharge percentage, 
 - `apps/daemon/src/strategy-estimate.test.ts` (new)
 - `scripts/score-strategy-estimate.ts` (new)
 - `package.json`
+- `apps/ems/src/battery.ts`
 
 `packages/core/src/index.ts` should not need domain-model changes for this daemon-only logging feature and benchmark script.
 
 ## Implementation Notes
 
 In `apps/daemon/src/index.ts`:
-- compute the estimate immediately before logging a scheduled item start
+- compute the estimate immediately before activating and logging a scheduled item start when `targetMethod === "auto"`
 - do this in both start-log paths:
   - immediate start when `!shouldWaitForObservedStart(item)`
   - delayed observed-start path when `shouldMarkScheduledItemObserved(...)` fires
 - reuse the already available `sample` and `battery`
 - read solar forecast, solar production, grid, and battery history on demand for the battery's site
+- store the active computed target SoC and target time in runtime state so completion logic uses the resolved value
 
 In `apps/daemon/src/strategy-estimate.ts`:
 - add helpers to build the predicted solar generation series from existing forecast and production samples
@@ -222,6 +241,10 @@ In `apps/daemon/src/strategy-log.ts`:
 - extend `formatScheduledStrategyStartedSummary(...)` to accept optional estimate context
 - keep existing wording intact when estimate data is absent
 
+In `apps/ems/src/battery.ts`:
+- support `battery strategy-plan get --site-id <site-id>` for exporting the current house-wide schedule
+- support `battery strategy-plan set --site-id <site-id> --file <path>` for round-tripping edited schedule JSON during CLI testing
+
 ## Verification
 
 Focused tests:
@@ -232,11 +255,12 @@ Focused tests:
    - computes a target time for each trigger kind
    - treats evening high-price windows as "protect until solar recovery" cases
    - treats morning high-price windows as shorter, less conservative cases
-   - includes remaining energy needed and estimated target percent
+   - includes remaining energy needed, target-time reserve, and the stop target percent to use now
    - uses last-week and same-day-of-week history weighting
    - reduces estimated need when predicted solar recovery is strong
    - carries tomorrow predicted solar into the estimate when the target time crosses into tomorrow
    - clamps to `minimumDischargePercent...100`
+   - does not allow evening `high-price` discharge to collapse to a same-evening target time when the intent is to protect overnight until solar recovery
    - returns a partial or unavailable estimate cleanly when solar or load history is missing
 
 2. `apps/daemon/src/strategy-log.test.ts`

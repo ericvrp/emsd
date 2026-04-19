@@ -155,6 +155,27 @@ test("summarizes scheduled strategy lifecycle in plain English", () => {
   );
 });
 
+test("includes the dynamic target estimate in the scheduled start summary", () => {
+  expect(
+    formatScheduledStrategyStartedSummary(
+      "battery-1",
+      buildDailyItem({
+        manualDischargeTargetSoc: null,
+        manualTargetSoc: null,
+        targetMethod: "auto",
+      }),
+      "",
+      {
+        reasoning: "overnight house load and predicted solar recovery",
+        targetSocPercent: 34,
+        targetTime: "2026-04-13T08:15:00.000Z",
+      },
+    ),
+  ).toBe(
+    "the 19:30 schedule is now active for battery-1: discharge manually at 2400W; dynamic target 34% by 08:15 based on overnight house load and predicted solar recovery",
+  );
+});
+
 test("summarizes price-triggered strategy lifecycle with the trigger kind", () => {
   expect(
     formatScheduledStrategyStartedSummary(

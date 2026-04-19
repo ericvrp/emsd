@@ -33,7 +33,11 @@ export interface BatteryStrategyRecord {
 
 export type BatteryStrategyPlanItemKind = "default" | "daily";
 
-export type BatteryStrategyTargetMethod = "soc" | "duration" | "end-time";
+export type BatteryStrategyTargetMethod =
+  | "soc"
+  | "duration"
+  | "end-time"
+  | "auto";
 
 export type BatteryStrategyTriggerKind =
   | "daily-time"
@@ -55,6 +59,8 @@ export type BatteryStrategyPlanRecord = BatteryStrategyPlanItem[];
 
 export interface BatteryStrategyRuntimeRecord {
   activeItemId: string | null;
+  activeTargetSocPercent?: number | null;
+  activeTargetTime?: string | null;
   activeStartedAt: string | null;
   activeObservedAt: string | null;
   activeStartSocPercent: number | null;
@@ -332,6 +338,8 @@ export interface NormalizedSolarEnergyProviderInfo {
 export function createBatteryStrategyRuntime(): BatteryStrategyRuntimeRecord {
   return {
     activeItemId: null,
+    activeTargetSocPercent: null,
+    activeTargetTime: null,
     activeStartedAt: null,
     activeObservedAt: null,
     activeStartSocPercent: null,
@@ -349,6 +357,8 @@ export function clearActiveBatteryStrategyRuntime(
   return {
     ...normalizeBatteryStrategyRuntime(value),
     activeItemId: null,
+    activeTargetSocPercent: null,
+    activeTargetTime: null,
     activeStartedAt: null,
     activeObservedAt: null,
     activeStartSocPercent: null,
@@ -377,6 +387,8 @@ export function createBatteryStrategyRuntimeForPlanApply(
 
   return {
     activeItemId: null,
+    activeTargetSocPercent: null,
+    activeTargetTime: null,
     activeStartedAt: null,
     activeObservedAt: null,
     activeStartSocPercent: null,
@@ -729,6 +741,16 @@ function normalizeBatteryStrategyRuntime(
       candidate.activeItemId.length > 0
         ? candidate.activeItemId
         : null,
+    activeTargetSocPercent:
+      typeof candidate.activeTargetSocPercent === "number" &&
+      Number.isFinite(candidate.activeTargetSocPercent)
+        ? candidate.activeTargetSocPercent
+        : null,
+    activeTargetTime:
+      typeof candidate.activeTargetTime === "string" &&
+      candidate.activeTargetTime.length > 0
+        ? candidate.activeTargetTime
+        : null,
     activeStartedAt:
       typeof candidate.activeStartedAt === "string" &&
       candidate.activeStartedAt.length > 0
@@ -766,7 +788,10 @@ function normalizeBatteryStrategyRuntime(
 function normalizeTargetMethod(
   value: BatteryStrategyPlanItem["targetMethod"] | undefined,
 ): BatteryStrategyTargetMethod | null {
-  return value === "soc" || value === "duration" || value === "end-time"
+  return value === "soc" ||
+    value === "duration" ||
+    value === "end-time" ||
+    value === "auto"
     ? value
     : null;
 }

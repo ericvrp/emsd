@@ -41,6 +41,7 @@
 - Format the repo: `bun run format`
 - Run all tests: `bun run test`
 - Score solar prediction quality over local history: `bun run solar:score`
+- Score dynamic target reserve heuristics over local history: `bun run estimate:score`
 
 ### Daemon Commands
 
@@ -98,6 +99,7 @@
 - The daemon creates the SQLite schema but does not seed mock battery data.
 - `ems discover` reports devices that are reachable during the current scan without persisting a discovery history.
 - The EMS command app currently supports managed battery and meter commands for the default site.
+- The EMS command app now also supports `battery strategy-plan get` and `battery strategy-plan set --file <path>` for house-wide schedule testing.
 - The EMS command app supports solar energy provider plugins (Enphase and SolarEdge) for reading solar production data.
 - The web app currently exposes live battery status, managed device settings, battery strategy schedule editing, and a temporary battery `Now Mode` manual override.
 - Battery strategy schedules are persisted as a full array on each battery record.

@@ -3,6 +3,7 @@
 import type {
   BatteryStrategyPlanRecord,
   BatteryStrategyRecord,
+  BatteryStrategyTargetMethod,
 } from "@emsd/core/client";
 import { CalendarClock, Hand, X } from "lucide-react";
 import { usePathname, useSearchParams } from "next/navigation";
@@ -29,7 +30,7 @@ interface HouseStrategyDialogProps {
     batteryStrategy: BatteryStrategyRecord | null;
     batteryStrategyPlan: BatteryStrategyPlanRecord;
     batteryStrategySummary: string | null;
-    batteryManualTargetMethod: "soc" | "duration" | "end-time" | null;
+    batteryManualTargetMethod: BatteryStrategyTargetMethod | null;
     batteryManualTargetDurationMinutes: number | null;
     batteryManualTargetEndTime: string | null;
     batteryManualModeActive: boolean;
@@ -259,7 +260,9 @@ export function HouseStrategyDialog({
                             firstBattery?.batteryManualTargetEndTime ?? null
                           }
                           manualTargetMethod={
-                            firstBattery?.batteryManualTargetMethod ?? null
+                            firstBattery?.batteryManualTargetMethod === "auto"
+                              ? null
+                              : (firstBattery?.batteryManualTargetMethod ?? null)
                           }
                           showContextSummary={false}
                           minimumDischargePercent={minimumDischargePercent}

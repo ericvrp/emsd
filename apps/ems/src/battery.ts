@@ -1,3 +1,8 @@
+import { readFileSync } from "node:fs";
+import {
+  normalizeBatteryStrategyPlan,
+  type BatteryStrategyPlanRecord,
+} from "@emsd/core";
 import type {
   BatteryManualState,
   BatteryRecord,
@@ -16,6 +21,7 @@ import {
   getBattery,
   listBatteries,
   setBatteryEnabled,
+  setHouseStrategyPlan,
 } from "./managed-site-store";
 
 interface BatteryAddOptions {
@@ -25,6 +31,10 @@ interface BatteryAddOptions {
 
 interface BatteryCommandOptions {
   siteId: string;
+}
+
+interface BatteryStrategyPlanSetOptions extends BatteryCommandOptions {
+  filePath: string;
 }
 
 interface ResolvedDiscoveredDevice {
@@ -45,6 +55,8 @@ export function formatBatteryHelpText(): string {
     "  battery rm <battery-id> --site-id <site-id>",
     "  battery enable <battery-id> --site-id <site-id>",
     "  battery disable <battery-id> --site-id <site-id>",
+    "  battery strategy-plan get --site-id <site-id>",
+    "  battery strategy-plan set --site-id <site-id> --file <path>",
   ].join("\n");
 }
 
@@ -230,6 +242,53 @@ export async function runBatteryCommand(args: string[] = []): Promise<number> {
       return 0;
     }
 
+    if (args[0] === "strategy-plan") {
+      if (
+        args.length === 1 ||
+        args[1] === "help" ||
+        args[1] === "--help" ||
+        args[1] === "-h"
+      ) {
+        console.log(formatBatteryHelpText());
+        return 0;
+      }
+
+      if (args[1] === "get") {
+        if (args[2] === "--help" || args[2] === "-h" || args[2] === "help") {
+          console.log(formatBatteryHelpText());
+          return 0;
+        }
+
+        const options = parseBatteryCommandOptions(args.slice(2));
+        console.log(
+          JSON.stringify(getHouseStrategyPlan(options.siteId), null, 2),
+        );
+        return 0;
+      }
+
+      if (args[1] === "set") {
+        if (args[2] === "--help" || args[2] === "-h" || args[2] === "help") {
+          console.log(formatBatteryHelpText());
+          return 0;
+        }
+
+        const options = parseBatteryStrategyPlanSetOptions(args.slice(2));
+        console.log(
+          JSON.stringify(
+            setHouseStrategyPlan(
+              { strategyPlan: readStrategyPlanFromFile(options) },
+              options.siteId,
+            ),
+            null,
+            2,
+          ),
+        );
+        return 0;
+      }
+
+      throw new Error(`Unknown battery strategy-plan command: ${args[1] ?? "<missing>"}`);
+    }
+
     throw new Error(`Unknown battery command: ${args[0]}`);
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
@@ -278,6 +337,77 @@ function parseBatteryCommandOptions(args: string[]): BatteryCommandOptions {
   return {
     siteId: parseRequiredSiteId(args),
   };
+}
+
+function parseBatteryStrategyPlanSetOptions(
+  args: string[],
+): BatteryStrategyPlanSetOptions {
+  const options: BatteryStrategyPlanSetOptions = {
+    filePath: "",
+    siteId: parseRequiredSiteId(args),
+  };
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+
+    if (arg === "--site-id") {
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--file") {
+      const filePath = args[index + 1];
+
+      if (!filePath) {
+        throw new Error("Missing value for --file");
+      }
+
+      options.filePath = filePath;
+      index += 1;
+      continue;
+    }
+
+    throw new Error(`Unknown battery strategy-plan option: ${arg}`);
+  }
+
+  if (!options.filePath) {
+    throw new Error("Missing required option: --file <path>");
+  }
+
+  return options;
+}
+
+function getHouseStrategyPlan(siteId: string): BatteryStrategyPlanRecord {
+  const battery = listBatteries(siteId)[0] ?? null;
+
+  if (!battery) {
+    throw new Error(`No batteries found for site ${siteId}`);
+  }
+
+  return battery.strategyPlan;
+}
+
+function readStrategyPlanFromFile(
+  options: BatteryStrategyPlanSetOptions,
+): BatteryStrategyPlanRecord {
+  const battery = listBatteries(options.siteId)[0] ?? null;
+
+  if (!battery) {
+    throw new Error(`No batteries found for site ${options.siteId}`);
+  }
+
+  return normalizeBatteryStrategyPlan({
+    minimumDischargePercent: battery.minimumDischargePercent,
+    strategy: {
+      strategyMode: battery.strategyMode,
+      manualState: battery.manualState,
+      manualPowerW: battery.manualPowerW,
+      manualChargeTargetSoc: battery.manualChargeTargetSoc,
+      manualDischargeTargetSoc: battery.manualDischargeTargetSoc,
+      manualTargetSoc: battery.manualTargetSoc,
+    },
+    value: JSON.parse(readFileSync(options.filePath, "utf8")),
+  });
 }
 
 function parseRequiredSiteId(args: string[]): string {

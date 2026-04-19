@@ -73,6 +73,8 @@ export function getScheduledItemCompletion(input: {
 }): ScheduledItemCompletion | null {
   const { battery, item, now, runtime, sample } = input;
   const startedAt = runtime.activeStartedAt;
+  const activeTargetSoc =
+    item.targetMethod === "auto" ? runtime.activeTargetSocPercent : null;
 
   if (!startedAt) {
     return {
@@ -145,7 +147,7 @@ export function getScheduledItemCompletion(input: {
   }
 
   if (item.strategyMode === "manual" && item.manualState === "charging") {
-    const targetSoc = item.manualChargeTargetSoc ?? 100;
+    const targetSoc = activeTargetSoc ?? item.manualChargeTargetSoc ?? 100;
 
     if (sample.socPercent !== null && sample.socPercent >= targetSoc) {
       return {
@@ -165,7 +167,9 @@ export function getScheduledItemCompletion(input: {
 
   if (item.strategyMode === "manual" && item.manualState === "discharging") {
     const targetSoc =
-      item.manualDischargeTargetSoc ?? battery.minimumDischargePercent;
+      activeTargetSoc ??
+      item.manualDischargeTargetSoc ??
+      battery.minimumDischargePercent;
 
     if (sample.socPercent !== null && sample.socPercent <= targetSoc) {
       return {
@@ -184,7 +188,8 @@ export function getScheduledItemCompletion(input: {
   }
 
   if (item.strategyMode === "manual" && item.manualState === "idle") {
-    const targetSoc = item.manualTargetSoc ?? battery.minimumDischargePercent;
+    const targetSoc =
+      activeTargetSoc ?? item.manualTargetSoc ?? battery.minimumDischargePercent;
 
     if (sample.socPercent !== null && sample.socPercent <= targetSoc) {
       return {
@@ -203,7 +208,7 @@ export function getScheduledItemCompletion(input: {
   }
 
   if (item.strategyMode === "self-consumption") {
-    const targetSoc = item.manualTargetSoc;
+    const targetSoc = activeTargetSoc ?? item.manualTargetSoc;
 
     if (targetSoc === null || sample.socPercent === null) {
       return null;
@@ -539,7 +544,9 @@ function isSocTargetItem(item: BatteryStrategyPlanItem): boolean {
   return (
     item.strategyMode === "manual" &&
     (item.manualState === "charging" || item.manualState === "discharging") &&
-    (item.targetMethod === null || item.targetMethod === "soc")
+    (item.targetMethod === null ||
+      item.targetMethod === "soc" ||
+      item.targetMethod === "auto")
   );
 }
 

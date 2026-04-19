@@ -112,6 +112,38 @@ test("shouldCompleteScheduledItem uses the active plan item rather than the pers
   ).toBe(true);
 });
 
+test("shouldCompleteScheduledItem uses the computed dynamic target while an auto item is active", () => {
+  const battery = createBattery({
+    strategyRuntime: {
+      activeItemId: "daily-1",
+      activeStartedAt: "2026-04-09T07:00:00.000Z",
+      activeObservedAt: "2026-04-09T07:00:05.000Z",
+      activeStartSocPercent: 50,
+      activeTargetSocPercent: 34,
+      activeTargetTime: "2026-04-10T08:15:00.000Z",
+      lastTriggeredAtByItemId: { "daily-1": "2026-04-09T07:00:00.000Z" },
+    },
+  });
+  const item = createDailyItem({
+    id: "daily-1",
+    manualDischargeTargetSoc: null,
+    manualState: "discharging",
+    manualTargetSoc: null,
+    targetMethod: "auto",
+  });
+  const sample = createSample({ socPercent: 33, status: "discharging" });
+
+  expect(
+    shouldCompleteScheduledItem({
+      battery,
+      item,
+      now: new Date("2026-04-09T12:00:00.000Z"),
+      runtime: battery.strategyRuntime,
+      sample,
+    }),
+  ).toBe(true);
+});
+
 test("shouldCompleteScheduledItem waits until a scheduled discharge is observed", () => {
   const battery = createBattery({
     strategyRuntime: {

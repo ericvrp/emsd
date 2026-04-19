@@ -24,14 +24,18 @@ import { getWeatherForecast } from "../../ems/src/plugins/solar-forecast";
 import { formatDaemonHelpText, parseDaemonOptions } from "./daemon-options";
 import {
   openDaemonDatabase,
-    readBatteryById,
-    readBatteries,
-    readDynamicPriceSamples,
-    readDynamicPriceSnapshot,
-    readDynamicPriceSources,
+  readBatteryById,
+  readBatteries,
+  readBatteryPowerSamples,
+  readDynamicPriceSamples,
+  readDynamicPriceSnapshot,
+  readDynamicPriceSources,
   readMeters,
+  readP1MeterSamples,
   readSites,
+  readSolarEnergyProviderSamples,
   readSolarEnergyProviders,
+  readSolarForecastSamples,
   readWeatherForecast,
   readWeatherForecastSources,
   updateBatteryManualModeStarted,
@@ -49,6 +53,7 @@ import {
   formatScheduledStrategyStartedSummary,
   formatStrategyPlanAppliedSummary,
 } from "./strategy-log";
+import { estimateStrategyTarget } from "./strategy-estimate";
 import {
   describeStrategyPlanItem,
   formatDaemonLogTimestamp,
@@ -742,6 +747,14 @@ async function runScheduledStrategy(
           battery.id,
           activeItem,
           observedDelay,
+          activeItem.targetMethod === "auto" &&
+            typeof runtime.activeTargetSocPercent === "number"
+            ? {
+                reasoning: describeEstimatedRuntimeReasoning(runtime),
+                targetSocPercent: runtime.activeTargetSocPercent,
+                targetTime: runtime.activeTargetTime ?? null,
+              }
+            : null,
         ),
         `strategy item started for ${battery.id}: ${describeStrategyPlanItemWithIndex(battery, activeItem)}${observedDelay}`,
       );
@@ -879,10 +892,33 @@ async function runScheduledStrategy(
       continue;
     }
 
-    const strategy = resolveBatteryStrategyFromPlanItem({
+    const estimate =
+      item.targetMethod === "auto"
+        ? estimateStrategyTarget({
+            battery,
+            batteryPowerSamples: readBatteryPowerSamples(db, battery.siteId),
+            dynamicPriceSamples,
+            item,
+            items: battery.strategyPlan,
+            now,
+            p1MeterSamples: readP1MeterSamples(db, battery.siteId),
+            sample,
+            solarEnergyProviderSamples: readSolarEnergyProviderSamples(
+              db,
+              battery.siteId,
+            ),
+            solarForecastSamples: readSolarForecastSamples(db, battery.siteId),
+          })
+        : null;
+    const strategy = applyEstimatedTargetToStrategy(
+      resolveBatteryStrategyFromPlanItem({
+        item,
+        minimumDischargePercent: battery.minimumDischargePercent,
+      }),
       item,
-      minimumDischargePercent: battery.minimumDischargePercent,
-    });
+      estimate?.estimatedTargetPercent ?? null,
+      battery.minimumDischargePercent,
+    );
 
     logVerbose(
       verbose,
@@ -893,6 +929,14 @@ async function runScheduledStrategy(
 
     const nextRuntime = {
       activeItemId: needsCompletionTracking(item) ? item.id : null,
+      activeTargetSocPercent:
+        needsCompletionTracking(item) && item.targetMethod === "auto"
+          ? (estimate?.estimatedTargetPercent ?? null)
+          : null,
+      activeTargetTime:
+        needsCompletionTracking(item) && item.targetMethod === "auto"
+          ? (estimate?.targetTime ?? null)
+          : null,
       activeStartedAt: needsCompletionTracking(item) ? now.toISOString() : null,
       activeObservedAt: null,
       activeStartSocPercent: needsCompletionTracking(item)
@@ -920,7 +964,18 @@ async function runScheduledStrategy(
     if (!shouldWaitForObservedStart(item)) {
       logInfoWithVerboseDetails(
         verbose,
-        formatScheduledStrategyStartedSummary(battery.id, item, ""),
+        formatScheduledStrategyStartedSummary(
+          battery.id,
+          item,
+          "",
+          estimate
+            ? {
+                reasoning: estimate.reasoning,
+                targetSocPercent: estimate.estimatedTargetPercent,
+                targetTime: estimate.targetTime,
+              }
+            : null,
+        ),
         `strategy item started for ${battery.id}: ${describeStrategyPlanItemWithIndex(battery, item)}`,
       );
     }
@@ -939,6 +994,49 @@ function getActiveStrategyPlanItem(
   }
 
   return battery.strategyPlan.find((item) => item.id === activeItemId) ?? null;
+}
+
+function applyEstimatedTargetToStrategy(
+  strategy: ReturnType<typeof resolveBatteryStrategyFromPlanItem>,
+  item: BatteryStrategyPlanItem,
+  estimatedTargetPercent: number | null,
+  minimumDischargePercent: number,
+): ReturnType<typeof resolveBatteryStrategyFromPlanItem> {
+  if (item.targetMethod !== "auto" || estimatedTargetPercent === null) {
+    return strategy;
+  }
+
+  if (item.strategyMode === "self-consumption") {
+    return strategy;
+  }
+
+  if (item.manualState === "charging") {
+    return {
+      ...strategy,
+      manualChargeTargetSoc: estimatedTargetPercent,
+      manualTargetSoc: estimatedTargetPercent,
+    };
+  }
+
+  if (item.manualState === "discharging" || item.manualState === "idle") {
+    const targetSoc = Math.max(minimumDischargePercent, estimatedTargetPercent);
+
+    return {
+      ...strategy,
+      manualDischargeTargetSoc: targetSoc,
+      manualTargetSoc: targetSoc,
+    };
+  }
+
+  return strategy;
+}
+
+function describeEstimatedRuntimeReasoning(
+  runtime: BatteryRecord["strategyRuntime"],
+): string {
+  return runtime.activeTargetTime
+    ? "recent site usage and predicted solar recovery"
+    : "recent site usage";
 }
 
 function getFallbackStrategyPlanItem(

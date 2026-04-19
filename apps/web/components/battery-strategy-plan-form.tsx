@@ -12,14 +12,14 @@ import {
   Battery,
   BatteryCharging,
   BatteryIcon,
-  Eye,
-  EyeOff,
   Plus,
   Save,
+  ToggleLeft,
+  ToggleRight,
   Trash2,
   Zap,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { setHouseStrategyPlanAction } from "../app/actions";
 import { UI_STYLES } from "../lib/ui-colors";
 import {
@@ -27,6 +27,7 @@ import {
   type StrategyAction,
 } from "./battery-strategy-plan-logic";
 import { SubmitButton } from "./submit-button";
+import { DialogPortal } from "./ui/dialog-portal";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -60,6 +61,31 @@ export function BatteryStrategyPlanForm({
   submitLabel = "Apply",
 }: BatteryStrategyPlanFormProps) {
   const [items, setItems] = useState(strategyPlan);
+  const [pendingDeleteItemId, setPendingDeleteItemId] = useState<string | null>(
+    null,
+  );
+
+  useEffect(() => {
+    if (pendingDeleteItemId === null) {
+      return;
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key !== "Escape") {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      setPendingDeleteItemId(null);
+    }
+
+    document.addEventListener("keydown", handleEscape, true);
+
+    return () => {
+      document.removeEventListener("keydown", handleEscape, true);
+    };
+  }, [pendingDeleteItemId]);
 
   function updateItem(
     itemId: string,
@@ -144,15 +170,14 @@ export function BatteryStrategyPlanForm({
               const isDefault = index === 0;
               const triggerKind = getPersistedTriggerKind(item);
               const targetMethod = getPersistedTargetMethod(item);
+              const contentCellClass = `px-4 py-4${item.enabled ? "" : " opacity-55"}`;
 
               return (
                 <tr
                   key={item.id}
-                  className={`border-b border-white/8 align-top last:border-b-0 ${
-                    !item.enabled ? "opacity-55" : ""
-                  }`}
+                  className="border-b border-white/8 align-top last:border-b-0"
                 >
-                  <td className="px-4 py-4">
+                  <td className={contentCellClass}>
                     {isDefault ? null : (
                       <div className="space-y-3">
                         <div className="space-y-2">
@@ -214,7 +239,7 @@ export function BatteryStrategyPlanForm({
                       </div>
                     )}
                   </td>
-                  <td className="px-4 py-4">
+                  <td className={contentCellClass}>
                     <div className="space-y-2">
                       <Label className="sr-only" htmlFor={`${item.id}-action`}>
                         {isDefault ? "Fallback action" : "Action"}
@@ -252,42 +277,40 @@ export function BatteryStrategyPlanForm({
                       </Select>
                     </div>
                   </td>
-                  <td className="px-4 py-4">
+                  <td className={contentCellClass}>
                     {action === "charging" || action === "discharging" ? (
-                      <div className="min-w-[180px] space-y-2">
-                        <div className="space-y-2">
-                          <Label htmlFor={`${item.id}-power`}>Power (W)</Label>
-                          <Input
-                            disabled={!item.enabled}
-                            id={`${item.id}-power`}
-                            max={2400}
-                            min={0}
-                            onChange={(event) =>
-                              updateItem(item.id, (currentItem) => ({
-                                ...currentItem,
-                                manualPowerW: parseNumber(event.target.value),
-                              }))
-                            }
-                            step={10}
-                            type="number"
-                            value={String(item.manualPowerW ?? 2400)}
-                          />
-                        </div>
+                      <div className="flex min-w-[180px] flex-col gap-2 justify-end">
+                        <Input
+                          disabled={!item.enabled}
+                          id={`${item.id}-power`}
+                          max={2400}
+                          min={0}
+                          onChange={(event) =>
+                            updateItem(item.id, (currentItem) => ({
+                              ...currentItem,
+                              manualPowerW: parseNumber(event.target.value),
+                            }))
+                          }
+                          step={10}
+                          type="number"
+                          value={String(item.manualPowerW ?? 2400)}
+                        />
+                        <Label className="text-xs text-slate-400" htmlFor={`${item.id}-power`}>
+                          Power (W)
+                        </Label>
                       </div>
                     ) : (
                       <div />
                     )}
                   </td>
-                  <td className="px-4 py-4">
-                    {action === "charging" ||
+                  <td className={contentCellClass}>
+                    {!isDefault &&
+                    (action === "charging" ||
                     action === "discharging" ||
                     action === "idle" ||
-                    action === "self-consumption" ? (
-                      <div className="grid min-w-[320px] gap-3 md:grid-cols-2">
-                        <div className="space-y-2">
-                          <Label htmlFor={`${item.id}-target-method`}>
-                            Target method
-                          </Label>
+                    action === "self-consumption") ? (
+                      <div className="grid min-w-[320px] items-end gap-3 md:grid-cols-2">
+                        <div className="flex flex-col gap-2 justify-end">
                           <Select
                             disabled={!item.enabled}
                             onValueChange={(value: string) =>
@@ -309,14 +332,18 @@ export function BatteryStrategyPlanForm({
                               <SelectItem value="soc">Percentage</SelectItem>
                               <SelectItem value="duration">Duration</SelectItem>
                               <SelectItem value="end-time">End time</SelectItem>
+                              <SelectItem value="auto">Dynamic</SelectItem>
                             </SelectContent>
                           </Select>
+                          <Label
+                            className="text-xs text-slate-400"
+                            htmlFor={`${item.id}-target-method`}
+                          >
+                            Target method
+                          </Label>
                         </div>
                         {targetMethod === "soc" ? (
-                          <div className="space-y-2">
-                            <Label htmlFor={`${item.id}-target-soc`}>
-                              Target percentage
-                            </Label>
+                          <div className="flex flex-col gap-2 justify-end">
                             <Input
                               disabled={!item.enabled}
                               id={`${item.id}-target-soc`}
@@ -346,13 +373,16 @@ export function BatteryStrategyPlanForm({
                                 ),
                               )}
                             />
+                            <Label
+                              className="text-xs text-slate-400"
+                              htmlFor={`${item.id}-target-soc`}
+                            >
+                              Target percentage
+                            </Label>
                           </div>
                         ) : null}
                         {targetMethod === "duration" ? (
-                          <div className="space-y-2 xl:col-span-1">
-                            <Label htmlFor={`${item.id}-duration`}>
-                              Duration (minutes)
-                            </Label>
+                          <div className="flex flex-col gap-2 justify-end xl:col-span-1">
                             <Input
                               disabled={!item.enabled}
                               id={`${item.id}-duration`}
@@ -368,13 +398,16 @@ export function BatteryStrategyPlanForm({
                               type="number"
                               value={String(item.targetDurationMinutes ?? "")}
                             />
+                            <Label
+                              className="text-xs text-slate-400"
+                              htmlFor={`${item.id}-duration`}
+                            >
+                              Duration (minutes)
+                            </Label>
                           </div>
                         ) : null}
                         {targetMethod === "end-time" ? (
-                          <div className="space-y-2 xl:col-span-1">
-                            <Label htmlFor={`${item.id}-end-time`}>
-                              End time
-                            </Label>
+                          <div className="flex flex-col gap-2 justify-end xl:col-span-1">
                             <Input
                               disabled={!item.enabled}
                               id={`${item.id}-end-time`}
@@ -387,6 +420,12 @@ export function BatteryStrategyPlanForm({
                               type="time"
                               value={item.targetEndTime ?? ""}
                             />
+                            <Label
+                              className="text-xs text-slate-400"
+                              htmlFor={`${item.id}-end-time`}
+                            >
+                              End time
+                            </Label>
                           </div>
                         ) : null}
                       </div>
@@ -410,7 +449,11 @@ export function BatteryStrategyPlanForm({
                           type="button"
                           variant="ghost"
                         >
-                          {item.enabled ? <EyeOff size={14} /> : <Eye size={14} />}
+                          {item.enabled ? (
+                            <ToggleRight size={16} />
+                          ) : (
+                            <ToggleLeft size={16} />
+                          )}
                         </Button>
                         <Button
                           aria-label={`Move daily item ${index} up`}
@@ -437,7 +480,7 @@ export function BatteryStrategyPlanForm({
                         <Button
                           aria-label={`Delete daily item ${index}`}
                           className="h-9 w-9 px-0"
-                          onClick={() => removeItem(item.id)}
+                          onClick={() => setPendingDeleteItemId(item.id)}
                           title="Delete item"
                           type="button"
                           variant="danger"
@@ -464,8 +507,67 @@ export function BatteryStrategyPlanForm({
           {submitLabel}
         </SubmitButton>
       </div>
+
+      {pendingDeleteItemId ? (
+        <DialogPortal>
+          <div className="fixed inset-0 z-[110] bg-slate-950/80 p-4 backdrop-blur-sm">
+            <div className="flex min-h-full items-center justify-center">
+              <div className="w-full max-w-md rounded-3xl border border-white/10 bg-slate-950 p-5 shadow-[0_30px_120px_rgba(0,0,0,0.45)]">
+                <p className="text-sm font-semibold uppercase tracking-[0.22em] text-rose-300">
+                  Confirm delete
+                </p>
+                <h3 className="mt-3 text-xl font-semibold text-white">
+                  Delete this schedule item?
+                </h3>
+                <p className="mt-3 text-sm leading-6 text-slate-300">
+                  {describePendingDeleteItem(items, pendingDeleteItemId)} will be
+                  removed from the strategy plan.
+                </p>
+                <div className="mt-5 flex flex-wrap justify-end gap-3">
+                  <Button
+                    onClick={() => setPendingDeleteItemId(null)}
+                    type="button"
+                    variant="ghost"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      removeItem(pendingDeleteItemId);
+                      setPendingDeleteItemId(null);
+                    }}
+                    type="button"
+                    variant="danger"
+                  >
+                    Delete item
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </DialogPortal>
+      ) : null}
     </form>
   );
+}
+
+function describePendingDeleteItem(
+  items: BatteryStrategyPlanItem[],
+  itemId: string,
+): string {
+  const item = items.find((candidate) => candidate.id === itemId);
+
+  if (!item) {
+    return "This schedule item";
+  }
+
+  const triggerKind = getPersistedTriggerKind(item);
+
+  if (triggerKind === "daily-time") {
+    return `The ${item.startTime ?? "08:00"} schedule`;
+  }
+
+  return `The ${triggerKind} schedule`;
 }
 
 function createDailyPlanItem(
@@ -539,6 +641,18 @@ function updateTargetMethod(
             : action === "idle"
               ? (item.manualTargetSoc ?? minimumDischargePercent)
               : (item.manualTargetSoc ?? 100),
+    };
+  }
+
+  if (targetMethod === "auto") {
+    return {
+      ...item,
+      targetMethod,
+      targetDurationMinutes: null,
+      targetEndTime: null,
+      manualChargeTargetSoc: null,
+      manualDischargeTargetSoc: null,
+      manualTargetSoc: null,
     };
   }
 

@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { discoverHostDevices } from "./discover";
@@ -244,6 +244,87 @@ test("battery list reports no batteries for an older battery table schema", asyn
     expect(output).toEqual(["No batteries configured for the selected site."]);
   } finally {
     process.env.EMSD_DB_PATH = originalDatabasePath;
+    console.log = originalLog;
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("battery strategy-plan get and set support dynamic targets", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "emsd-ems-battery-plan-test-"));
+  const originalDatabasePath = process.env.EMSD_DB_PATH;
+  const originalFetch = globalThis.fetch;
+  const originalLog = console.log;
+  const output: string[] = [];
+  const planFilePath = join(tempDir, "strategy-plan.json");
+
+  process.env.EMSD_DB_PATH = join(tempDir, "emsd.sqlite");
+  globalThis.fetch = mockBatteryFetch();
+  console.log = (...args: unknown[]) => {
+    output.push(args.map(String).join(" "));
+  };
+
+  try {
+    await expect(runEms(["site", "create", "home", "Home"])).resolves.toBe(0);
+
+    const discoveries = await discoverHostDevices("192.168.1.15", {
+      verbose: false,
+      host: "192.168.1.15",
+    });
+    const discoveryId = discoveries[0]?.discoveryId;
+
+    expect(discoveryId).toBeTruthy();
+    await expect(
+      runEms([
+        "battery",
+        "create",
+        discoveryId ?? "",
+        "--site-id",
+        "home",
+        "--host",
+        "192.168.1.15",
+      ]),
+    ).resolves.toBe(0);
+    await expect(
+      runEms(["battery", "strategy-plan", "get", "--site-id", "home"]),
+    ).resolves.toBe(0);
+
+    const currentPlan = JSON.parse(output[2] ?? "[]");
+    currentPlan.push({
+      enabled: true,
+      id: "night-discharge",
+      kind: "daily",
+      manualChargeTargetSoc: null,
+      manualDischargeTargetSoc: null,
+      manualPowerW: 2400,
+      manualState: "discharging",
+      manualTargetSoc: null,
+      startTime: null,
+      strategyMode: "manual",
+      targetDurationMinutes: null,
+      targetEndTime: null,
+      targetMethod: "auto",
+      triggerKind: "high-price",
+    });
+    writeFileSync(planFilePath, JSON.stringify(currentPlan), "utf8");
+
+    await expect(
+      runEms([
+        "battery",
+        "strategy-plan",
+        "set",
+        "--site-id",
+        "home",
+        "--file",
+        planFilePath,
+      ]),
+    ).resolves.toBe(0);
+
+    const updatedBatteries = JSON.parse(output[3] ?? "[]");
+    expect(updatedBatteries[0]?.strategyPlan?.[1]?.targetMethod).toBe("auto");
+    expect(updatedBatteries[0]?.strategyPlan?.[1]?.triggerKind).toBe("high-price");
+  } finally {
+    process.env.EMSD_DB_PATH = originalDatabasePath;
+    globalThis.fetch = originalFetch;
     console.log = originalLog;
     rmSync(tempDir, { recursive: true, force: true });
   }
