@@ -39,7 +39,7 @@ interface BatteryStrategyFormProps {
   submitLabel?: string;
 }
 
-type TargetMethod = "soc" | "duration" | "end-time";
+type TargetMethod = "soc" | "duration" | "end-time" | "auto";
 type ManualModeAction = "self-consumption" | BatteryManualState;
 
 export function BatteryStrategyForm({
@@ -161,6 +161,10 @@ export function BatteryStrategyForm({
       );
     }
 
+    if (targetMethod === "auto") {
+      return null;
+    }
+
     const estimatedTargetSoc = estimateTargetSoc({
       capacityWh,
       currentSocPercent,
@@ -200,6 +204,10 @@ export function BatteryStrategyForm({
 
     if (targetMethod === "end-time") {
       return endTimeDurationMinutes;
+    }
+
+    if (targetMethod === "auto") {
+      return null;
     }
 
     return estimateDurationMinutes({
@@ -249,7 +257,7 @@ export function BatteryStrategyForm({
       <input
         type="hidden"
         name="manualTargetSoc"
-        value={effectiveManualTargetSoc}
+        value={targetMethod === "auto" ? "" : (effectiveManualTargetSoc ?? "")}
       />
       <input
         type="hidden"
@@ -273,20 +281,28 @@ export function BatteryStrategyForm({
       <input
         type="hidden"
         name="manualChargeTargetSoc"
-        value={clampTargetSoc(
-          parsedManualChargeTargetSoc ?? 100,
-          "charging",
-          minimumDischargePercent,
-        )}
+        value={
+          targetMethod === "auto"
+            ? ""
+            : clampTargetSoc(
+                parsedManualChargeTargetSoc ?? 100,
+                "charging",
+                minimumDischargePercent,
+              )
+        }
       />
       <input
         type="hidden"
         name="manualDischargeTargetSoc"
-        value={clampTargetSoc(
-          parsedManualDischargeTargetSoc ?? minimumDischargePercent,
-          "discharging",
-          minimumDischargePercent,
-        )}
+        value={
+          targetMethod === "auto"
+            ? ""
+            : clampTargetSoc(
+                parsedManualDischargeTargetSoc ?? minimumDischargePercent,
+                "discharging",
+                minimumDischargePercent,
+              )
+        }
       />
 
       <div
@@ -407,6 +423,7 @@ export function BatteryStrategyForm({
                       <SelectItem value="soc">Percentage</SelectItem>
                       <SelectItem value="duration">Duration</SelectItem>
                       <SelectItem value="end-time">End time</SelectItem>
+                      <SelectItem value="auto">Dynamic</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -479,15 +496,32 @@ export function BatteryStrategyForm({
               <div className="grid gap-2 sm:grid-cols-3">
                 <StrategyStatCard
                   label="Target"
-                  value={formatSoc(effectiveManualTargetSoc)}
+                  value={
+                    targetMethod === "auto"
+                      ? "Dynamic"
+                      : formatSoc(effectiveManualTargetSoc)
+                  }
                 />
                 <StrategyStatCard
                   label="Duration"
-                  value={formatDuration(estimatedDurationMinutes)}
+                  value={
+                    targetMethod === "auto"
+                      ? "Dynamic"
+                      : formatDuration(estimatedDurationMinutes)
+                  }
                 />
-                <StrategyStatCard label="Ends" value={estimatedEndTime} />
+                <StrategyStatCard
+                  label="Ends"
+                  value={targetMethod === "auto" ? "Dynamic" : estimatedEndTime}
+                />
               </div>
               <div className="space-y-1 text-xs text-slate-500">
+                {targetMethod === "auto" ? (
+                  <p>
+                    Dynamic targeting is computed when the manual strategy is
+                    applied, based on recent usage and predicted solar recovery.
+                  </p>
+                ) : null}
                 {!canEstimateTarget ? (
                   <p>
                     Time-based targeting becomes available when the battery has

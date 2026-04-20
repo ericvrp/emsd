@@ -318,6 +318,73 @@ test("house-strategy-set persists manual target method metadata", async () => {
   expect(device?.batteryManualTargetEndTime).toBeNull();
 });
 
+test("house-strategy-set supports auto manual discharge targets", async () => {
+  const databasePath = createTempDatabase();
+
+  globalThis.fetch = Object.assign(
+    async () =>
+      new Response(JSON.stringify({ result: true }), {
+        headers: { "content-type": "application/json" },
+        status: 200,
+      }),
+    {
+      preconnect: originalFetch.preconnect.bind(originalFetch),
+    },
+  ) as typeof fetch;
+
+  createSite(
+    {
+      id: "home",
+      location: "52.367600, 4.904100",
+      name: "Home",
+    },
+    databasePath,
+  );
+  createBattery(
+    {
+      connected: true,
+      enabled: true,
+      id: "battery-1",
+      ipAddress: "192.168.1.10",
+      minimumDischargePercent: 10,
+      model: "indevolt-battery",
+      name: "Battery",
+      plugin: "indevolt-battery",
+      status: "idle",
+    },
+    "home",
+    databasePath,
+  );
+
+  await runApiAction("house-strategy-set", {
+    manualChargeTargetSoc: null,
+    manualDischargeTargetSoc: null,
+    manualModeActive: true,
+    manualPowerW: 2400,
+    manualState: "discharging",
+    manualTargetSoc: null,
+    siteId: "home",
+    strategyMode: "manual",
+    targetDurationMinutes: null,
+    targetEndTime: null,
+    targetMethod: "auto",
+  });
+
+  const updated = getBattery("battery-1", "home", databasePath);
+
+  expect(updated?.strategyRuntime.manualTargetMethod).toBe("auto");
+  expect(updated?.strategyRuntime.manualTargetDurationMinutes).toBeNull();
+  expect(updated?.strategyRuntime.manualTargetEndTime).toBeNull();
+  expect(updated?.strategyRuntime.activeTargetSocPercent).toBe(10);
+  expect(updated?.manualDischargeTargetSoc).toBe(10);
+  expect(updated?.manualTargetSoc).toBe(10);
+
+  const snapshot = (await runApiAction("snapshot")) as DashboardSnapshot;
+  const device = snapshot.sites[0]?.devices[0];
+
+  expect(device?.batteryManualTargetMethod).toBe("auto");
+});
+
 test("house-strategy-set clears stale manual fields for self-consumption", async () => {
   const databasePath = createTempDatabase();
 

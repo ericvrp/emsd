@@ -24,7 +24,7 @@ test("describes self-consumption in human terms", () => {
 
 test("describes manual discharge in human terms", () => {
   expect(describeStrategyPlanItemHuman(buildDailyItem())).toBe(
-    "discharge manually to 80% at 2400W",
+    "scheduled discharge to 80% at 2400W",
   );
 });
 
@@ -48,7 +48,7 @@ test("summarizes a strategy plan update with the next item", () => {
       new Date("2026-04-12T17:35:00.000Z"),
     ),
   ).toBe(
-    "strategy plan updated for battery-1: default self-consumption with a 10% discharge floor; next the 19:30 schedule: discharge manually to 80% at 2400W",
+    "strategy plan updated for battery-1: default self-consumption with a 10% discharge floor; next the 19:30 schedule: scheduled discharge to 80% at 2400W",
   );
 });
 
@@ -74,7 +74,7 @@ test("summarizes the nearest upcoming item even when plan order is unsorted", ()
       new Date("2026-04-12T17:35:00.000Z"),
     ),
   ).toBe(
-    "strategy plan updated for battery-1: default self-consumption with a 10% discharge floor; next the 17:37 schedule: discharge manually to 20% at 2400W",
+    "strategy plan updated for battery-1: default self-consumption with a 10% discharge floor; next the 17:37 schedule: scheduled discharge to 20% at 2400W",
   );
 });
 
@@ -100,7 +100,7 @@ test("summarizes the next enabled item when an earlier one is disabled", () => {
       new Date("2026-04-12T07:35:00.000Z"),
     ),
   ).toBe(
-    "strategy plan updated for battery-1: default self-consumption with a 10% discharge floor; next the 19:30 schedule: discharge manually to 80% at 2400W",
+    "strategy plan updated for battery-1: default self-consumption with a 10% discharge floor; next the 19:30 schedule: scheduled discharge to 80% at 2400W",
   );
 });
 
@@ -139,7 +139,7 @@ test("summarizes a future high-price item later today", () => {
       ],
     ),
   ).toBe(
-    "strategy plan updated for battery-1: default self-consumption with a 10% discharge floor; next the high-price schedule: discharge manually to 80% at 2400W",
+    "strategy plan updated for battery-1: default self-consumption with a 10% discharge floor; next the high-price schedule: scheduled discharge to 80% at 2400W",
   );
 });
 
@@ -151,7 +151,7 @@ test("summarizes scheduled strategy lifecycle in plain English", () => {
       " after 11s",
     ),
   ).toBe(
-    "the 19:30 schedule is now active for battery-1: discharge manually to 80% at 2400W",
+    "the 19:30 schedule is now active for battery-1: scheduled discharge to 80% at 2400W",
   );
 });
 
@@ -172,7 +172,7 @@ test("includes the dynamic target estimate in the scheduled start summary", () =
       },
     ),
   ).toBe(
-    "the 19:30 schedule is now active for battery-1: discharge manually at 2400W; dynamic target 34% by 08:15 based on overnight house load and predicted solar recovery",
+    "the 19:30 schedule is now active for battery-1: scheduled discharge at 2400W; dynamic target 34% by 08:15 based on overnight house load and predicted solar recovery",
   );
 });
 
@@ -184,7 +184,7 @@ test("summarizes price-triggered strategy lifecycle with the trigger kind", () =
       "",
     ),
   ).toBe(
-    "the high-price schedule is now active for battery-1: discharge manually to 80% at 2400W",
+    "the high-price schedule is now active for battery-1: scheduled discharge to 80% at 2400W",
   );
 });
 

@@ -190,6 +190,13 @@ interface UpdateBatteryStrategyInput {
   manualTargetMethod?: BatteryStrategyTargetMethod | null;
   manualTargetDurationMinutes?: number | null;
   manualTargetEndTime?: string | null;
+  manualAutoTargetByBatteryId?: Record<
+    string,
+    {
+      targetSocPercent: number | null;
+      targetTime: string | null;
+    }
+  > | null;
   manualModeActive?: boolean;
 }
 
@@ -788,6 +795,29 @@ export function setHouseStrategy(
     }
 
     for (const battery of batteries) {
+      const manualAutoTarget =
+        input.manualTargetMethod === "auto"
+          ? (input.manualAutoTargetByBatteryId?.[battery.id] ?? null)
+          : null;
+      const manualChargeTargetSoc =
+        manualAutoTarget !== null &&
+        input.strategyMode === "manual" &&
+        input.manualState === "charging"
+          ? manualAutoTarget.targetSocPercent
+          : (input.manualChargeTargetSoc ?? null);
+      const manualDischargeTargetSoc =
+        manualAutoTarget !== null &&
+        input.strategyMode === "manual" &&
+        input.manualState === "discharging"
+          ? manualAutoTarget.targetSocPercent
+          : (input.manualDischargeTargetSoc ?? null);
+      const manualTargetSoc =
+        manualAutoTarget !== null &&
+        input.strategyMode === "manual" &&
+        (input.manualState === "charging" ||
+          input.manualState === "discharging")
+          ? manualAutoTarget.targetSocPercent
+          : (input.manualTargetSoc ?? null);
       const baseRuntime = clearActiveBatteryStrategyRuntime(
         battery.strategyRuntime,
       );
@@ -815,6 +845,22 @@ export function setHouseStrategy(
             input.manualState === "discharging") &&
           input.manualTargetMethod === "end-time"
             ? (input.manualTargetEndTime ?? null)
+            : null,
+        activeTargetSocPercent:
+          input.manualModeActive === true &&
+          input.strategyMode === "manual" &&
+          (input.manualState === "charging" ||
+            input.manualState === "discharging") &&
+          input.manualTargetMethod === "auto"
+            ? (manualAutoTarget?.targetSocPercent ?? null)
+            : null,
+        activeTargetTime:
+          input.manualModeActive === true &&
+          input.strategyMode === "manual" &&
+          (input.manualState === "charging" ||
+            input.manualState === "discharging") &&
+          input.manualTargetMethod === "auto"
+            ? (manualAutoTarget?.targetTime ?? null)
             : null,
         manualTargetStartedAt:
           input.manualModeActive === true &&
@@ -846,9 +892,9 @@ export function setHouseStrategy(
         input.strategyMode,
         input.manualState ?? null,
         input.manualPowerW ?? null,
-        input.manualChargeTargetSoc ?? null,
-        input.manualDischargeTargetSoc ?? null,
-        input.manualTargetSoc ?? null,
+        manualChargeTargetSoc,
+        manualDischargeTargetSoc,
+        manualTargetSoc,
         input.manualModeActive === true ? 1 : 0,
         0,
         nextRuntime,

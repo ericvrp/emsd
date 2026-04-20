@@ -260,9 +260,7 @@ export function HouseStrategyDialog({
                             firstBattery?.batteryManualTargetEndTime ?? null
                           }
                           manualTargetMethod={
-                            firstBattery?.batteryManualTargetMethod === "auto"
-                              ? null
-                              : (firstBattery?.batteryManualTargetMethod ?? null)
+                            firstBattery?.batteryManualTargetMethod ?? null
                           }
                           showContextSummary={false}
                           minimumDischargePercent={minimumDischargePercent}

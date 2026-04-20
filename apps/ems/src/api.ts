@@ -2,8 +2,10 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import {
   DEFAULT_SOLAR_PREDICTION_SMOOTHING_MODE,
   applySolarSeriesSmoothing,
+  createBatteryStrategyPlanId,
   type BatteryManualState,
   type BatteryRecord,
+  type BatteryStrategyPlanItem,
   type BatteryStrategyMode,
   type BatteryStrategyPlanRecord,
   type BulkDiscoveryAddResult,
@@ -43,6 +45,7 @@ import {
   readWeatherForecast,
   readWeatherForecastSources,
 } from "../../daemon/src/database";
+import { estimateStrategyTarget } from "../../daemon/src/strategy-estimate";
 import { formatBatteryStrategyStatusSummary } from "../../daemon/src/strategy-log";
 import { getStrategyTriggerAt } from "../../daemon/src/strategy-scheduler";
 import { createBatteryPlugin } from "./battery-plugins";
@@ -801,7 +804,8 @@ export async function runApiAction(
       const manualTargetMethod =
         input.targetMethod === "soc" ||
         input.targetMethod === "duration" ||
-        input.targetMethod === "end-time"
+        input.targetMethod === "end-time" ||
+        input.targetMethod === "auto"
           ? input.targetMethod
           : null;
       const manualTargetDurationMinutes =
@@ -822,17 +826,37 @@ export async function runApiAction(
           : firstBattery.minimumDischargePercent;
       const normalizedManualTargetSoc =
         strategyMode === "manual" ? manualTargetSoc : 100;
+      const manualAutoTargetByBatteryId =
+        input.manualModeActive === true &&
+        strategyMode === "manual" &&
+        (normalizedManualState === "charging" ||
+          normalizedManualState === "discharging") &&
+        manualTargetMethod === "auto"
+          ? await buildManualAutoTargets({
+              batteries,
+              manualPowerW: normalizedManualPowerW,
+              manualState: normalizedManualState,
+              now: new Date(),
+              siteId,
+            })
+          : null;
 
       for (const battery of batteries) {
-        try {
-          await createBatteryPlugin(battery).setStrategy({
+        const strategy = applyManualAutoTargetToStrategy(
+          {
             manualChargeTargetSoc: normalizedManualChargeTargetSoc,
             manualDischargeTargetSoc: normalizedManualDischargeTargetSoc,
             strategyMode,
             manualPowerW: normalizedManualPowerW,
             manualState: normalizedManualState,
             manualTargetSoc: normalizedManualTargetSoc,
-          });
+          },
+          normalizedManualState,
+          manualAutoTargetByBatteryId?.[battery.id]?.targetSocPercent ?? null,
+        );
+
+        try {
+          await createBatteryPlugin(battery).setStrategy(strategy);
         } catch {
           // Continue with other batteries even if plugin fails
         }
@@ -848,6 +872,7 @@ export async function runApiAction(
           manualTargetMethod,
           manualTargetDurationMinutes,
           manualTargetEndTime,
+          manualAutoTargetByBatteryId,
           manualModeActive: input.manualModeActive === true,
           strategyMode,
         },
@@ -1289,6 +1314,157 @@ export async function runApiAction(
     default:
       throw new Error(`Unknown API action: ${action}`);
   }
+}
+
+async function buildManualAutoTargets(input: {
+  batteries: BatteryRecord[];
+  manualPowerW: number | null;
+  manualState: Extract<BatteryManualState, "charging" | "discharging">;
+  now: Date;
+  siteId: string;
+}): Promise<
+  Record<
+    string,
+    {
+      targetSocPercent: number | null;
+      targetTime: string | null;
+    }
+  >
+> {
+  const db = openDaemonDatabase();
+
+  try {
+    const batteryPowerSamples = readBatteryPowerSamples(db, input.siteId);
+    const dynamicPriceSamples = readDynamicPriceSamples(db, input.siteId);
+    const p1MeterSamples = readP1MeterSamples(db, input.siteId);
+    const solarEnergyProviderSamples = readSolarEnergyProviderSamples(db, input.siteId);
+    const solarForecastSamples = readSolarForecastSamples(db, input.siteId);
+    const targets = {} as Record<
+      string,
+      {
+        targetSocPercent: number | null;
+        targetTime: string | null;
+      }
+    >;
+
+    for (const battery of input.batteries) {
+      const sample = await readManualAutoTargetSample(battery);
+      const item = createManualAutoTargetItem({
+        manualPowerW: input.manualPowerW,
+        manualState: input.manualState,
+      });
+      const estimate = estimateStrategyTarget({
+        battery,
+        batteryPowerSamples,
+        dynamicPriceSamples,
+        item,
+        items: [item, ...battery.strategyPlan.slice(1)],
+        now: input.now,
+        p1MeterSamples,
+        sample,
+        solarEnergyProviderSamples,
+        solarForecastSamples,
+      });
+
+      targets[battery.id] = {
+        targetSocPercent: estimate.estimatedTargetPercent,
+        targetTime: estimate.targetTime,
+      };
+    }
+
+    return targets;
+  } finally {
+    db.close();
+  }
+}
+
+function createManualAutoTargetItem(input: {
+  manualPowerW: number | null;
+  manualState: Extract<BatteryManualState, "charging" | "discharging">;
+}): BatteryStrategyPlanItem {
+  return {
+    enabled: true,
+    id: createBatteryStrategyPlanId(),
+    kind: "daily",
+    startTime: null,
+    targetDurationMinutes: null,
+    targetEndTime: null,
+    targetMethod: "auto",
+    triggerKind: null,
+    strategyMode: "manual",
+    manualState: input.manualState,
+    manualPowerW: input.manualPowerW,
+    manualChargeTargetSoc: null,
+    manualDischargeTargetSoc: null,
+    manualTargetSoc: null,
+  };
+}
+
+async function readManualAutoTargetSample(
+  battery: BatteryRecord,
+): Promise<NormalizedBatteryInfo> {
+  try {
+    return await createBatteryPlugin(battery).getNormalizedInfo();
+  } catch {
+    return {
+      capacityWh: null,
+      currentW: battery.manualPowerW,
+      manualChargeTargetSoc: battery.manualChargeTargetSoc,
+      manualDischargeTargetSoc: battery.manualDischargeTargetSoc,
+      manualPowerW: battery.manualPowerW,
+      manualState: battery.manualState,
+      manualTargetSoc: battery.manualTargetSoc,
+      model: battery.model,
+      name: battery.name,
+      socPercent: null,
+      status: battery.status,
+      strategyMode: battery.strategyMode,
+    };
+  }
+}
+
+function applyManualAutoTargetToStrategy(
+  strategy: Pick<
+    BatteryRecord,
+    | "manualChargeTargetSoc"
+    | "manualDischargeTargetSoc"
+    | "manualPowerW"
+    | "manualState"
+    | "manualTargetSoc"
+    | "strategyMode"
+  >,
+  manualState: BatteryManualState | null,
+  targetSocPercent: number | null,
+): Pick<
+  BatteryRecord,
+  | "manualChargeTargetSoc"
+  | "manualDischargeTargetSoc"
+  | "manualPowerW"
+  | "manualState"
+  | "manualTargetSoc"
+  | "strategyMode"
+> {
+  if (targetSocPercent === null) {
+    return strategy;
+  }
+
+  if (manualState === "charging") {
+    return {
+      ...strategy,
+      manualChargeTargetSoc: targetSocPercent,
+      manualTargetSoc: targetSocPercent,
+    };
+  }
+
+  if (manualState === "discharging") {
+    return {
+      ...strategy,
+      manualDischargeTargetSoc: targetSocPercent,
+      manualTargetSoc: targetSocPercent,
+    };
+  }
+
+  return strategy;
 }
 
 export async function runApiCommand(args: string[] = []): Promise<number> {

@@ -32,7 +32,7 @@ export function describeStrategyPlanItemHuman(
     return "automatic control";
   }
 
-  const summary = describeManualStrategyHuman(item);
+  const summary = describeScheduledStrategyHuman(item);
 
   if (item.manualState === "idle") {
     return joinHumanParts([summary, describeScheduledTargetHuman(item)]);
@@ -281,6 +281,36 @@ function describeManualStrategyHuman(
       return "hold the battery idle";
     default:
       return "manual control";
+  }
+}
+
+function describeScheduledStrategyHuman(
+  strategy: Pick<
+    BatteryStrategyRecord,
+    | "manualState"
+    | "manualPowerW"
+    | "manualChargeTargetSoc"
+    | "manualDischargeTargetSoc"
+    | "manualTargetSoc"
+  >,
+): string {
+  switch (strategy.manualState) {
+    case "charging":
+      return joinHumanParts([
+        "scheduled charge",
+        describeChargeTarget(strategy),
+        describePower(strategy.manualPowerW),
+      ]);
+    case "discharging":
+      return joinHumanParts([
+        "scheduled discharge",
+        describeDischargeTarget(strategy),
+        describePower(strategy.manualPowerW),
+      ]);
+    case "idle":
+      return "hold the battery idle";
+    default:
+      return "scheduled control";
   }
 }
 

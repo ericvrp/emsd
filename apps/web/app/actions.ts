@@ -588,7 +588,8 @@ export async function setHouseStrategyAction(
         targetMethod:
           targetMethodRaw === "soc" ||
           targetMethodRaw === "duration" ||
-          targetMethodRaw === "end-time"
+          targetMethodRaw === "end-time" ||
+          targetMethodRaw === "auto"
             ? targetMethodRaw
             : null,
         targetDurationMinutes:

@@ -201,7 +201,7 @@ export function setHouseStrategy(input: {
   manualPowerW: number | null;
   manualState: "idle" | "charging" | "discharging" | null;
   manualTargetSoc: number | null;
-  targetMethod?: "soc" | "duration" | "end-time" | null;
+  targetMethod?: "soc" | "duration" | "end-time" | "auto" | null;
   targetDurationMinutes?: number | null;
   targetEndTime?: string | null;
   manualModeActive?: boolean;
