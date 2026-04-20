@@ -57,6 +57,7 @@ import {
   getPreferredDiscoveryTarget,
 } from "./discover";
 import {
+  SINGLE_BATTERY_LIMIT_ERROR,
   createBattery,
   createDynamicPriceSource,
   createMeter,
@@ -244,6 +245,25 @@ function getExistingManagedDeviceIds(siteId: string): Set<string> {
     ...listMeters(siteId).map((meter) => meter.id),
     ...listSolarEnergyProviders(siteId).map((provider) => provider.id),
   ]);
+}
+
+function assertSingleBatteryLimit(
+  siteId: string,
+  discoveredDevices: DiscoveredDevice[],
+  existingIds: Set<string>,
+): void {
+  const newBatteryIds = new Set(
+    discoveredDevices
+      .filter(
+        (device) =>
+          device.category === "battery" && !existingIds.has(device.discoveryId),
+      )
+      .map((device) => device.discoveryId),
+  );
+
+  if (listBatteries(siteId).length + newBatteryIds.size > 1) {
+    throw new Error(SINGLE_BATTERY_LIMIT_ERROR);
+  }
 }
 
 function createManagedBatteryFromDiscovered(
@@ -715,6 +735,8 @@ export async function runApiAction(
         );
       }
 
+      assertSingleBatteryLimit(siteId, [discovered], getExistingManagedDeviceIds(siteId));
+
       return toManagedDeviceRecord(
         createManagedBatteryFromDiscovered(discovered, siteId),
         new Date(),
@@ -1007,6 +1029,7 @@ export async function runApiAction(
       }
 
       const existingIds = getExistingManagedDeviceIds(siteId);
+      assertSingleBatteryLimit(siteId, discoveredDevices, existingIds);
       let addedBatteries = 0;
       let addedMeters = 0;
       let addedSolarEnergyProviders = 0;

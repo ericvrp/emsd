@@ -94,6 +94,13 @@ export default async function LoginPage({
               </code>{" "}
               in the web app environment.
             </p>
+            <p className="mt-4 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-amber-100">
+              Use of this app is entirely at your own responsibility. Battery
+              charge and discharge power limits must match what is permitted by
+              your installation and local rules. For example, in the Netherlands
+              that can differ between a normal circuit and a dedicated breaker
+              group. Verify your setup yourself before enabling control.
+            </p>
           </section>
         </div>
       </section>

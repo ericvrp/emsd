@@ -17,7 +17,12 @@ import {
   upsertWeatherForecast,
 } from "../../daemon/src/database";
 import { runApiAction } from "./api";
-import { createBattery, createSite, getBattery } from "./managed-site-store";
+import {
+  SINGLE_BATTERY_LIMIT_ERROR,
+  createBattery,
+  createSite,
+  getBattery,
+} from "./managed-site-store";
 
 const originalDatabasePath = process.env.EMSD_DB_PATH;
 const originalFetch = globalThis.fetch;
@@ -124,6 +129,92 @@ test("api snapshot returns managed devices with telemetry", async () => {
       state: null,
     },
   });
+});
+
+test("only one battery can be created for a site", () => {
+  const databasePath = createTempDatabase();
+
+  createSite(
+    {
+      id: "home",
+      location: "52.367600, 4.904100",
+      name: "Home",
+    },
+    databasePath,
+  );
+  createBattery(
+    {
+      connected: true,
+      enabled: true,
+      id: "battery-1",
+      ipAddress: "192.168.1.10",
+      minimumDischargePercent: 10,
+      model: "indevolt-battery",
+      name: "Battery 1",
+      plugin: "indevolt-battery",
+      status: "idle",
+    },
+    "home",
+    databasePath,
+  );
+
+  expect(() =>
+    createBattery(
+      {
+        connected: true,
+        enabled: true,
+        id: "battery-2",
+        ipAddress: "192.168.1.11",
+        minimumDischargePercent: 10,
+        model: "indevolt-battery",
+        name: "Battery 2",
+        plugin: "indevolt-battery",
+        status: "idle",
+      },
+      "home",
+      databasePath,
+    ),
+  ).toThrow(SINGLE_BATTERY_LIMIT_ERROR);
+});
+
+test("discovery add all rejects selecting multiple new batteries", async () => {
+  createTempDatabase();
+
+  createSite({
+    id: "home",
+    location: "52.367600, 4.904100",
+    name: "Home",
+  });
+
+  await expect(
+    runApiAction("discovery-add-all", {
+      devices: [
+        {
+          category: "battery",
+          details: "status charging power 800W",
+          discoveryId: "battery-1",
+          ipAddress: "192.168.1.10",
+          model: "indevolt-battery",
+          name: "Battery 1",
+          powerW: 800,
+          socPercent: 60,
+          state: "charging",
+        },
+        {
+          category: "battery",
+          details: "status idle power 0W",
+          discoveryId: "battery-2",
+          ipAddress: "192.168.1.11",
+          model: "indevolt-battery",
+          name: "Battery 2",
+          powerW: 0,
+          socPercent: 65,
+          state: "idle",
+        },
+      ],
+      siteId: "home",
+    }),
+  ).rejects.toThrow(SINGLE_BATTERY_LIMIT_ERROR);
 });
 
 test("api history archive returns stored battery, price, and forecast data", async () => {

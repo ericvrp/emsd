@@ -470,12 +470,25 @@ export function listSolarEnergyProviders(
   }
 }
 
+export const SINGLE_BATTERY_LIMIT_ERROR =
+  "Only one battery is supported right now. Remove the existing battery before adding another.";
+
+function assertBatteryCreationAllowed(
+  siteId: string,
+  databasePath = getDatabasePath(),
+): void {
+  if (listBatteries(siteId, databasePath).length > 0) {
+    throw new Error(SINGLE_BATTERY_LIMIT_ERROR);
+  }
+}
+
 export function createBattery(
   input: CreateBatteryInput,
   siteId: string,
   databasePath = getDatabasePath(),
 ): BatteryRecord {
   assertKnownSiteId(siteId, databasePath);
+  assertBatteryCreationAllowed(siteId, databasePath);
   const db = openWritableDatabase(databasePath);
 
   try {
