@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import {
   type BatteryManualState,
   type BatteryRecord,
+  type BatteryStrategyHistoryDisplayState,
   type BatteryStatus,
   type BatteryStrategyMode,
   type BatteryStrategyPlanRecord,
@@ -26,6 +27,7 @@ import {
   stringifyBatteryStrategyPlan,
   stringifyBatteryStrategyRuntime,
 } from "@emsd/core";
+import { upsertBatteryStrategyHistoryState } from "../../daemon/src/database";
 
 const SITE_REQUIRED_COLUMNS = [
   "id",
@@ -794,6 +796,8 @@ export function setHouseStrategy(
       return [];
     }
 
+    const observedAt = new Date().toISOString();
+
     for (const battery of batteries) {
       const manualAutoTarget =
         input.manualTargetMethod === "auto"
@@ -867,7 +871,7 @@ export function setHouseStrategy(
           input.strategyMode === "manual" &&
           (input.manualState === "charging" ||
             input.manualState === "discharging")
-            ? new Date().toISOString()
+            ? observedAt
             : null,
       });
 
@@ -898,8 +902,14 @@ export function setHouseStrategy(
         input.manualModeActive === true ? 1 : 0,
         0,
         nextRuntime,
-        new Date().toISOString(),
+        observedAt,
         siteId,
+      );
+
+      const updatedBattery = getBatteryByIdOrThrow(db, battery.id, siteId);
+      upsertBatteryStrategyHistoryState(
+        db,
+        buildBatteryStrategyHistoryRecord(updatedBattery, observedAt),
       );
     }
 
@@ -930,6 +940,8 @@ export function setHouseStrategyPlan(
     if (batteries.length === 0) {
       return [];
     }
+
+    const observedAt = new Date().toISOString();
 
     for (const battery of batteries) {
       const strategy = input.strategy ?? {
@@ -974,8 +986,14 @@ export function setHouseStrategyPlan(
         strategy.manualDischargeTargetSoc ?? null,
         strategy.manualTargetSoc ?? null,
         stringifyBatteryStrategyRuntime(strategyRuntime),
-        new Date().toISOString(),
+        observedAt,
         siteId,
+      );
+
+      const updatedBattery = getBatteryByIdOrThrow(db, battery.id, siteId);
+      upsertBatteryStrategyHistoryState(
+        db,
+        buildBatteryStrategyHistoryRecord(updatedBattery, observedAt),
       );
     }
 
@@ -1919,6 +1937,60 @@ function getTableColumns(db: Database, tableName: string): string[] {
 
 function formatColumnList(columns: string[]): string {
   return columns.map((column) => `'${column}'`).join(", ");
+}
+
+function buildBatteryStrategyHistoryRecord(
+  battery: BatteryRecord,
+  observedAt: string,
+): import("@emsd/core").BatteryStrategyHistoryRecord {
+  return {
+    activeItemId: battery.strategyRuntime.activeItemId,
+    batteryId: battery.id,
+    displayLabel: getBatteryStrategyDisplayLabel(battery),
+    displayState: getBatteryStrategyDisplayState(battery),
+    endedAt: null,
+    manualState: battery.manualState,
+    observedAt,
+    siteId: battery.siteId,
+    source: battery.manualModeActive ? "manual" : "automatic",
+    startedAt: observedAt,
+    strategyMode: battery.strategyMode,
+  };
+}
+
+function getBatteryStrategyDisplayState(
+  battery: Pick<BatteryRecord, "strategyMode" | "manualState">,
+): BatteryStrategyHistoryDisplayState {
+  if (battery.strategyMode === "self-consumption") {
+    return "self-consumption";
+  }
+
+  if (battery.manualState === "charging") {
+    return "charge";
+  }
+
+  if (battery.manualState === "discharging") {
+    return "discharge";
+  }
+
+  return "idle";
+}
+
+function getBatteryStrategyDisplayLabel(
+  battery: Pick<BatteryRecord, "strategyMode" | "manualState">,
+): string {
+  const displayState = getBatteryStrategyDisplayState(battery);
+
+  switch (displayState) {
+    case "self-consumption":
+      return "Self-consumption";
+    case "charge":
+      return "Charge";
+    case "discharge":
+      return "Discharge";
+    case "idle":
+      return "Idle";
+  }
 }
 
 function readBatteries(db: Database, siteId: string): BatteryRecord[] {

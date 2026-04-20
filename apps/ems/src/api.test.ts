@@ -10,6 +10,7 @@ import {
 } from "@emsd/core";
 import {
   openDaemonDatabase,
+  readBatteryStrategyHistory,
   upsertBatteryStrategyHistoryState,
   upsertDynamicPriceSnapshot,
   upsertManagedDeviceTelemetry,
@@ -316,6 +317,23 @@ test("house-strategy-set persists manual target method metadata", async () => {
   expect(device?.batteryManualTargetMethod).toBe("duration");
   expect(device?.batteryManualTargetDurationMinutes).toBe(6);
   expect(device?.batteryManualTargetEndTime).toBeNull();
+
+  const db = openDaemonDatabase(databasePath);
+
+  try {
+    expect(readBatteryStrategyHistory(db, "home")).toEqual([
+      expect.objectContaining({
+        activeItemId: null,
+        batteryId: "battery-1",
+        displayLabel: "Discharge",
+        displayState: "discharge",
+        source: "manual",
+        strategyMode: "manual",
+      }),
+    ]);
+  } finally {
+    db.close();
+  }
 });
 
 test("house-strategy-set supports auto manual discharge targets", async () => {
@@ -693,6 +711,23 @@ test("house-strategy-plan-set applies the fallback and skips earlier same-day it
   expect(
     Object.keys(updated?.strategyRuntime.lastTriggeredAtByItemId ?? {}),
   ).toEqual(["morning"]);
+
+  const db = openDaemonDatabase(databasePath);
+
+  try {
+    expect(readBatteryStrategyHistory(db, "home")).toEqual([
+      expect.objectContaining({
+        activeItemId: null,
+        batteryId: "battery-1",
+        displayLabel: "Self-consumption",
+        displayState: "self-consumption",
+        source: "automatic",
+        strategyMode: "self-consumption",
+      }),
+    ]);
+  } finally {
+    db.close();
+  }
 });
 
 test("house-strategy-plan-set accepts low and high price triggers", async () => {

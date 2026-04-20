@@ -127,13 +127,13 @@ Available verbose blocks:
 The script supports:
 - `--date YYYY-MM-DD`
 - `--time HH:MM`
-- `--action charge|discharge`
+- `--price high,low`
+- `--backup-reserve-margin <percent>`
 - `--power <watts>`
 - `--site <site-id>`
 - `--days <n>`
-- `--targets 10,11,12,...`
 
-By default, reserve examples start at the battery's own `minimumDischargePercent` and extend 10 percentage points upward.
+By default, the replay reserve target is the battery's own `minimumDischargePercent` plus a `2%` backup reserve margin.
 
 ## Main Files
 
