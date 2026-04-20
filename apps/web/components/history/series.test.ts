@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test";
 import type { BatteryStrategyHistoryRecord } from "@emsd/core/client";
-import { buildExactBatteryStrategySegments } from "./series";
+import {
+  buildBatteryHistoryPoints,
+  buildExactBatteryStrategySegments,
+} from "./series";
 
 test("buildExactBatteryStrategySegments preserves exact mid-bucket strategy boundaries", () => {
   const strategyHistory: BatteryStrategyHistoryRecord[] = [
@@ -97,4 +100,50 @@ test("buildExactBatteryStrategySegments clips active strategy segments at now", 
       state: "discharge",
     },
   ]);
+});
+
+test("buildBatteryHistoryPoints keeps signed battery power direction", () => {
+  const points = buildBatteryHistoryPoints(
+    [
+      {
+        periodStart: "2026-04-17T19:30:00.000Z",
+        powerW: 850,
+        socPercent: 62,
+      },
+      {
+        periodStart: "2026-04-17T19:45:00.000Z",
+        powerW: -950,
+        socPercent: 60,
+      },
+      {
+        periodStart: "2026-04-17T20:00:00.000Z",
+        powerW: 0,
+        socPercent: 60,
+      },
+    ],
+    [],
+    "2026-04-17",
+  );
+
+  expect(
+    points.find((point) => point.periodStart === "2026-04-17T19:30:00.000Z"),
+  ).toMatchObject({
+    currentChargingPower: null,
+    currentDischargingPower: 850,
+    currentPower: 850,
+  });
+  expect(
+    points.find((point) => point.periodStart === "2026-04-17T19:45:00.000Z"),
+  ).toMatchObject({
+    currentChargingPower: -950,
+    currentDischargingPower: null,
+    currentPower: -950,
+  });
+  expect(
+    points.find((point) => point.periodStart === "2026-04-17T20:00:00.000Z"),
+  ).toMatchObject({
+    currentChargingPower: null,
+    currentDischargingPower: 0,
+    currentPower: 0,
+  });
 });

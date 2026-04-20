@@ -59,7 +59,7 @@ export function createSignedSeries(
   return points.map((point) => ({
     ...point,
     negativeValue:
-      typeof point.value === "number" && point.value <= 0 ? point.value : null,
+      typeof point.value === "number" && point.value < 0 ? point.value : null,
     positiveValue:
       typeof point.value === "number" && point.value >= 0 ? point.value : null,
   }));
@@ -158,9 +158,7 @@ export function buildBatteryHistoryPoints(
   strategyHistory: BatteryStrategyHistoryRecord[],
   dayKey: string,
 ): BatteryHistoryPoint[] {
-  const batterySeries = createSignedSeries(
-    invertSingleValueSeries(aggregatePowerSamples(samples)),
-  );
+  const batterySeries = createSignedSeries(aggregatePowerSamples(samples));
   const batteryChargeSeries = createSingleValueSeries(
     aggregateBatteryChargeSamples(samples),
   );
@@ -290,13 +288,13 @@ function combineBatteryHistorySeries(input: {
 
     return {
       currentChargePercent: chargePoint?.currentValue ?? null,
-      currentChargingPower: powerPoint.currentPositiveValue,
-      currentDischargingPower: powerPoint.currentNegativeValue,
+      currentChargingPower: powerPoint.currentNegativeValue,
+      currentDischargingPower: powerPoint.currentPositiveValue,
       currentPower:
         powerPoint.currentPositiveValue ?? powerPoint.currentNegativeValue,
       futureChargePercent: chargePoint?.futureValue ?? null,
-      futureChargingPower: powerPoint.futurePositiveValue,
-      futureDischargingPower: powerPoint.futureNegativeValue,
+      futureChargingPower: powerPoint.futureNegativeValue,
+      futureDischargingPower: powerPoint.futurePositiveValue,
       futurePower:
         powerPoint.futurePositiveValue ?? powerPoint.futureNegativeValue,
       overlayCharge: strategyEntry?.displayState === "charge" ? 1 : null,

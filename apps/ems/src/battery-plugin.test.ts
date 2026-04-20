@@ -26,6 +26,29 @@ test("Indevolt battery connection errors include the telemetry endpoint", async 
   );
 });
 
+test("Indevolt battery normalization signs discharge power from state code", async () => {
+  globalThis.fetch = (async () =>
+    new Response(
+      JSON.stringify({
+        142: 4.8,
+        6000: 900,
+        6001: 1002,
+        6002: 48,
+        7101: 4,
+      }),
+      { status: 200 },
+    )) as unknown as typeof fetch;
+
+  await expect(createBatteryPlugin(buildBattery()).getNormalizedInfo()).resolves
+    .toMatchObject({
+      capacityWh: 4800,
+      currentW: 900,
+      socPercent: 48,
+      status: "discharging",
+      strategyMode: "manual",
+    });
+});
+
 function buildBattery(): BatteryRecord {
   return {
     id: "battery-1",

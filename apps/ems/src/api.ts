@@ -3,6 +3,7 @@ import {
   DEFAULT_SOLAR_PREDICTION_SMOOTHING_MODE,
   applySolarSeriesSmoothing,
   createBatteryStrategyPlanId,
+  deriveBatteryStatusFromPower,
   type BatteryManualState,
   type BatteryRecord,
   type BatteryStrategyPlanItem,
@@ -437,12 +438,22 @@ function buildSnapshot(): DashboardSnapshot {
         ...listSolarEnergyProviders(site.id).map((record) =>
           toManagedDeviceRecord(record, now),
         ),
-      ].map(
-        (device): ManagedDeviceStatusRecord => ({
+      ].map((device): ManagedDeviceStatusRecord => {
+        const telemetry = telemetryByDeviceId.get(device.id) ?? null;
+
+        if (device.kind === "battery" && telemetry?.kind === "battery") {
+          return {
+            ...device,
+            state: deriveBatteryStatusFromPower(telemetry.powerW),
+            telemetry,
+          };
+        }
+
+        return {
           ...device,
-          telemetry: telemetryByDeviceId.get(device.id) ?? null,
-        }),
-      ),
+          telemetry,
+        };
+      }),
       dynamicPriceSources: listDynamicPriceSources(site.id),
       weatherSources: listWeatherForecastSources(site.id),
     })),

@@ -1574,6 +1574,24 @@ function ensureSchema(db: Database): void {
     );
   `);
   ensureDynamicPriceSourceColumns(db);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS battery_strategy_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      site_id TEXT NOT NULL,
+      battery_id TEXT NOT NULL,
+      started_at TEXT NOT NULL,
+      ended_at TEXT,
+      observed_at TEXT NOT NULL,
+      source TEXT NOT NULL,
+      strategy_mode TEXT NOT NULL,
+      manual_state TEXT,
+      active_item_id TEXT,
+      display_label TEXT NOT NULL,
+      display_state TEXT NOT NULL,
+      FOREIGN KEY(site_id) REFERENCES sites(id)
+    );
+  `);
+  ensureBatteryStrategyHistoryColumns(db);
 }
 
 function assertSiteSchema(db: Database, databasePath: string): void {
@@ -1803,6 +1821,66 @@ function ensureDynamicPriceSourceColumns(db: Database): void {
   `);
 }
 
+function ensureBatteryStrategyHistoryColumns(db: Database): void {
+  if (!hasTable(db, "battery_strategy_history")) {
+    return;
+  }
+
+  const columns = getTableColumns(db, "battery_strategy_history");
+
+  if (!columns.includes("manual_state")) {
+    db.exec("ALTER TABLE battery_strategy_history ADD COLUMN manual_state TEXT;");
+  }
+
+  if (!columns.includes("active_item_id")) {
+    db.exec(
+      "ALTER TABLE battery_strategy_history ADD COLUMN active_item_id TEXT;",
+    );
+  }
+
+  if (!columns.includes("display_state")) {
+    db.exec(
+      "ALTER TABLE battery_strategy_history ADD COLUMN display_state TEXT NOT NULL DEFAULT 'idle';",
+    );
+  }
+
+  db.exec(`
+    UPDATE battery_strategy_history
+    SET display_state = CASE display_label
+      WHEN 'Self-consumption' THEN 'self-consumption'
+      WHEN 'Charge' THEN 'charge'
+      WHEN 'Discharge' THEN 'discharge'
+      ELSE 'idle'
+    END
+    WHERE display_state IS NULL OR display_state = ''
+  `);
+
+  db.exec(`
+    UPDATE battery_strategy_history
+    SET source = CASE source
+      WHEN 'manual' THEN 'manual'
+      ELSE 'automatic'
+    END,
+    strategy_mode = CASE strategy_mode
+      WHEN 'manual' THEN 'manual'
+      WHEN 'self-consumption' THEN 'self-consumption'
+      ELSE 'auto'
+    END,
+    manual_state = CASE manual_state
+      WHEN 'charging' THEN 'charging'
+      WHEN 'discharging' THEN 'discharging'
+      WHEN 'idle' THEN 'idle'
+      ELSE NULL
+    END,
+    display_state = CASE display_state
+      WHEN 'self-consumption' THEN 'self-consumption'
+      WHEN 'charge' THEN 'charge'
+      WHEN 'discharge' THEN 'discharge'
+      ELSE 'idle'
+    END
+  `);
+}
+
 function resolveManualTargetSoc(input: {
   manualState: BatteryManualState | null;
   manualChargeTargetSoc: number | null;
@@ -1870,6 +1948,7 @@ function normalizeSiteLocation(location: string | undefined): string {
 function deleteLinkedSiteResources(db: Database, siteId: string): void {
   const linkedTables = [
     "device_telemetry",
+    "battery_strategy_history",
     "weather_forecasts",
     "dynamic_price_snapshots",
     "dynamic_price_samples",

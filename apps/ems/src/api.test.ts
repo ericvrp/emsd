@@ -115,12 +115,13 @@ test("api snapshot returns managed devices with telemetry", async () => {
     batteryStrategySummary: "Self-consumption",
     id: "battery-1",
     kind: "battery",
+    state: "charging",
     telemetry: {
       capacityWh: 9600,
       kind: "battery",
       powerW: -950,
       socPercent: 62,
-      state: "discharging",
+      state: null,
     },
   });
 });

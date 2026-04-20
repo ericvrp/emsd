@@ -1,4 +1,5 @@
 import { CalendarClock, Hand } from "lucide-react";
+import { deriveBatteryStatusFromPower } from "@emsd/core/client";
 import type { ReactNode } from "react";
 import {
   formatAbsolutePowerValue,
@@ -125,9 +126,7 @@ export function BatteryHistoryTooltip({
         {powerEntry && typeof powerEntry.value === "number" ? (
           <TooltipRow
             color={UI_COLORS.batteryPowerDischarging}
-            label={
-              powerEntry.value >= 0 ? "Charging Power" : "Discharging Power"
-            }
+            label={formatBatteryPowerLabel(powerEntry.value)}
             strokeDasharray={undefined}
             value={formatAbsolutePowerValue(powerEntry.value)}
           />
@@ -158,6 +157,19 @@ export function BatteryHistoryTooltip({
       </div>
     </div>
   );
+}
+
+function formatBatteryPowerLabel(value: number): string {
+  switch (deriveBatteryStatusFromPower(value)) {
+    case "charging":
+      return "Charging Power";
+    case "discharging":
+      return "Discharging Power";
+    case "idle":
+      return "Idle Power";
+    default:
+      return "Power";
+  }
 }
 
 function StrategySourceIcon({

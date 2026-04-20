@@ -4,6 +4,7 @@ import type {
   BatteryStrategyMode,
   NormalizedBatteryInfo,
 } from "@emsd/core";
+import { deriveBatteryStatusFromPower } from "@emsd/core";
 import { fetchWithAction } from "./plugins/shared";
 
 const INDEVOLT_PORT = 8080;
@@ -54,10 +55,11 @@ class IndevoltBatteryPlugin extends BatteryPlugin {
       this.battery.ipAddress,
       [142, 6000, 6001, 6002, 7101],
     );
+    const currentW = parseIndevoltSignedPower(payload);
 
     return {
       capacityWh: parseNullableKiloWattHours(payload?.["142"]),
-      currentW: parseNullableNumber(payload?.["6000"]),
+      currentW,
       manualChargeTargetSoc: this.battery.manualChargeTargetSoc,
       manualDischargeTargetSoc: this.battery.manualDischargeTargetSoc,
       manualPowerW: this.battery.manualPowerW,
@@ -66,7 +68,7 @@ class IndevoltBatteryPlugin extends BatteryPlugin {
       model: this.battery.model,
       name: this.battery.name,
       socPercent: parseNullableNumber(payload?.["6002"]),
-      status: parseIndevoltBatteryStatus(payload?.["6001"]),
+      status: deriveBatteryStatusFromPower(currentW),
       strategyMode: parseIndevoltStrategyMode(payload?.["7101"]),
     };
   }
@@ -113,15 +115,15 @@ class SonnenBatteryPlugin extends BatteryPlugin {
       "/api/v2/status",
       { authenticated: false },
     );
-    const status = parseSonnenBatteryStatus(payload);
     const socPercent = parseNullableNumber(payload?.RSOC);
     const remainingCapacityWh = parseNullableNumber(
       payload?.RemainingCapacity_W,
     );
+    const currentW = parseSonnenSignedPower(payload);
 
     return {
       capacityWh: inferSonnenCapacityWh(remainingCapacityWh, socPercent),
-      currentW: parseNullableAbsoluteNumber(payload?.Pac_total_W),
+      currentW,
       manualChargeTargetSoc: this.battery.manualChargeTargetSoc,
       manualDischargeTargetSoc: this.battery.manualDischargeTargetSoc,
       manualPowerW: this.battery.manualPowerW,
@@ -130,7 +132,7 @@ class SonnenBatteryPlugin extends BatteryPlugin {
       model: this.battery.model,
       name: this.battery.name,
       socPercent,
-      status,
+      status: deriveBatteryStatusFromPower(currentW),
       strategyMode: parseSonnenStrategyMode(payload?.OperatingMode),
     };
   }
@@ -166,9 +168,11 @@ class HomeWizardBatteryPlugin extends BatteryPlugin {
       "/api/batteries",
     );
 
+    const currentW = parseInvertedRoundedNumber(payload?.power_w);
+
     return {
       capacityWh: null,
-      currentW: parseNullableAbsoluteNumber(payload?.power_w),
+      currentW,
       manualChargeTargetSoc: this.battery.manualChargeTargetSoc,
       manualDischargeTargetSoc: this.battery.manualDischargeTargetSoc,
       manualPowerW: this.battery.manualPowerW,
@@ -177,7 +181,7 @@ class HomeWizardBatteryPlugin extends BatteryPlugin {
       model: this.battery.model,
       name: this.battery.name,
       socPercent: null,
-      status: parseHomeWizardBatteryStatus(payload),
+      status: deriveBatteryStatusFromPower(currentW),
       strategyMode: parseHomeWizardStrategyMode(payload),
     };
   }
@@ -479,47 +483,50 @@ function parseNullableKiloWattHours(value: unknown): number | null {
   return Math.round(parsed * 1000);
 }
 
-function parseNullableAbsoluteNumber(value: unknown): number | null {
-  const parsed = parseNullableNumber(value);
+function parseSonnenSignedPower(
+  payload: Record<string, unknown> | null,
+): number | null {
+  const parsedPower = parseNullableNumber(payload?.Pac_total_W);
 
-  if (parsed === null) {
+  if (parsedPower === null) {
     return null;
   }
 
-  return Math.abs(Math.round(parsed));
-}
+  const normalizedPower = Math.abs(Math.round(parsedPower));
 
-function parseIndevoltBatteryStatus(
-  value: unknown,
-): NormalizedBatteryInfo["status"] {
-  switch (String(value)) {
-    case "1000":
-      return "idle";
-    case "1001":
-      return "charging";
-    case "1002":
-      return "discharging";
-    default:
-      return "offline";
+  if (payload?.BatteryCharging === true) {
+    return -normalizedPower;
   }
+
+  if (payload?.BatteryDischarging === true) {
+    return normalizedPower;
+  }
+
+  return 0;
 }
 
-function parseSonnenBatteryStatus(
+function parseIndevoltSignedPower(
   payload: Record<string, unknown> | null,
-): NormalizedBatteryInfo["status"] {
-  if (!payload) {
-    return "offline";
+): number | null {
+  const parsedPower = parseNullableNumber(payload?.["6000"]);
+  const stateCode = String(payload?.["6001"] ?? "");
+
+  if (parsedPower === null) {
+    return null;
   }
 
-  if (payload.BatteryCharging === true) {
-    return "charging";
-  }
+  const normalizedPower = Math.abs(Math.round(parsedPower));
 
-  if (payload.BatteryDischarging === true) {
-    return "discharging";
+  switch (stateCode) {
+    case "1001":
+      return -normalizedPower;
+    case "1002":
+      return normalizedPower;
+    case "1000":
+      return 0;
+    default:
+      return Math.round(parsedPower);
   }
-
-  return getStringNumber(payload?.IsSystemInstalled) === 1 ? "idle" : "offline";
 }
 
 function parseIndevoltStrategyMode(value: unknown): BatteryStrategyMode {
@@ -542,26 +549,6 @@ function parseSonnenStrategyMode(value: unknown): BatteryStrategyMode {
     default:
       return "auto";
   }
-}
-
-function parseHomeWizardBatteryStatus(
-  payload: Record<string, unknown> | null,
-): NormalizedBatteryInfo["status"] {
-  const power = getStringNumber(payload?.power_w);
-
-  if (power === null) {
-    return "offline";
-  }
-
-  if (power > 0) {
-    return "charging";
-  }
-
-  if (power < 0) {
-    return "discharging";
-  }
-
-  return "idle";
 }
 
 function parseHomeWizardStrategyMode(
@@ -617,6 +604,16 @@ function clampSonnenManualPower(value: number | null): number {
 function getStringNumber(value: unknown): number | null {
   const parsed = parseNullableNumber(value);
   return parsed === null ? null : Math.round(parsed);
+}
+
+function parseInvertedRoundedNumber(value: unknown): number | null {
+  const parsed = parseNullableNumber(value);
+
+  if (parsed === null) {
+    return null;
+  }
+
+  return -Math.round(parsed);
 }
 
 function encodeManualState(state: BatteryManualState): number {

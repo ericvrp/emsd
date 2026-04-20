@@ -1426,6 +1426,8 @@ export function upsertManagedDeviceTelemetry(
   db: Database,
   telemetry: ManagedDeviceTelemetryRecord,
 ): void {
+  const normalizedState = telemetry.kind === "battery" ? null : telemetry.state;
+
   db.query(
     `
       INSERT INTO device_telemetry (
@@ -1454,7 +1456,7 @@ export function upsertManagedDeviceTelemetry(
     telemetry.capacityWh,
     telemetry.powerW,
     telemetry.socPercent,
-    telemetry.state,
+    normalizedState,
     telemetry.observedAt,
   );
 

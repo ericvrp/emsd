@@ -1,4 +1,4 @@
-import type { ManagedDeviceState } from "@emsd/core";
+import { deriveBatteryStatusFromPower, type ManagedDeviceState } from "@emsd/core";
 import type { BatteryTelemetrySample } from "../../discovery-types";
 import {
   getStringOrNumber,
@@ -36,7 +36,7 @@ export const sonnenBatteryPlugin: DiscoveryPlugin = {
   buildDiscoveredDevice({ ipAddress, responseText }) {
     const payload = parseJsonObject(responseText);
     const batteryPower = parseSonnenBatteryPower(payload);
-    const batteryState = formatSonnenBatteryState(payload);
+    const batteryState = formatSonnenBatteryState(batteryPower);
     const batterySoc = parseNullableNumber(payload?.RSOC);
     const operatingMode = formatSonnenOperatingMode(payload?.OperatingMode);
     const backupBuffer = getStringOrNumber(payload?.BackupBuffer);
@@ -75,16 +75,17 @@ export const sonnenBatteryPlugin: DiscoveryPlugin = {
       details: detailsParts.join(", "),
       powerW: batteryPower,
       socPercent: batterySoc,
-      state: parseSonnenManagedState(payload),
+      state: parseSonnenManagedState(batteryPower),
     };
   },
   parseTelemetry(responseText) {
     const payload = parseJsonObject(responseText);
+    const powerW = parseSonnenBatteryPower(payload);
 
     return {
-      powerW: parseSonnenBatteryPower(payload),
+      powerW,
       socPercent: parseNullableNumber(payload?.RSOC),
-      state: parseSonnenManagedState(payload),
+      state: parseSonnenManagedState(powerW),
     } satisfies BatteryTelemetrySample;
   },
 };
@@ -97,38 +98,33 @@ function parseSonnenBatteryPower(
   payload: Record<string, unknown> | null,
 ): number | null {
   const power = parseNullableNumber(payload?.Pac_total_W);
-  return power === null ? null : Math.abs(Math.round(power));
-}
+  const normalizedPower = power === null ? null : Math.abs(Math.round(power));
 
-function parseSonnenManagedState(
-  payload: Record<string, unknown> | null,
-): ManagedDeviceState {
-  const state = formatSonnenBatteryState(payload);
-
-  if (state === "charging" || state === "discharging" || state === "idle") {
-    return state;
-  }
-
-  return "offline";
-}
-
-function formatSonnenBatteryState(
-  payload: Record<string, unknown> | null,
-): string | null {
-  if (!payload) {
+  if (normalizedPower === null) {
     return null;
   }
 
-  if (payload.BatteryCharging === true) {
-    return "charging";
+  if (payload?.BatteryCharging === true) {
+    return -normalizedPower;
   }
 
-  if (payload.BatteryDischarging === true) {
-    return "discharging";
+  if (payload?.BatteryDischarging === true) {
+    return normalizedPower;
   }
 
-  const installed = getStringOrNumber(payload.IsSystemInstalled);
-  return installed === "1" ? "idle" : null;
+  return 0;
+}
+
+function parseSonnenManagedState(powerW: number | null): ManagedDeviceState {
+  return deriveBatteryStatusFromPower(powerW);
+}
+
+function formatSonnenBatteryState(powerW: number | null): string | null {
+  if (powerW === null) {
+    return null;
+  }
+
+  return deriveBatteryStatusFromPower(powerW);
 }
 
 function formatSonnenOperatingMode(value: unknown): string | null {

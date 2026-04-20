@@ -1,4 +1,4 @@
-import type { ManagedDeviceState } from "@emsd/core";
+import { deriveBatteryStatusFromPower, type ManagedDeviceState } from "@emsd/core";
 import type { BatteryTelemetrySample } from "../../discovery-types";
 import {
   getStringValue,
@@ -39,7 +39,7 @@ export const homeWizardBatteryPlugin: DiscoveryPlugin = {
     const payload = parseJsonObject(responseText);
     const supplemental = parseJsonObject(supplementalResponseText ?? "");
     const batteryCount = parseNullableNumber(payload?.battery_count);
-    const powerW = parseRoundedNumber(payload?.power_w);
+    const powerW = parseInvertedRoundedNumber(payload?.power_w);
     const mode = formatHomeWizardStrategyMode(payload);
     const controllerName = getStringValue(supplemental?.product_name);
     const serial = getStringValue(supplemental?.serial);
@@ -72,18 +72,19 @@ export const homeWizardBatteryPlugin: DiscoveryPlugin = {
       name: "HomeWizard Battery",
       ipAddress,
       details: detailsParts.join(", "),
-      powerW: powerW === null ? null : Math.abs(powerW),
+      powerW,
       socPercent: null,
-      state: parseHomeWizardManagedState(payload),
+      state: parseHomeWizardManagedState(powerW),
     };
   },
   parseTelemetry(responseText) {
     const payload = parseJsonObject(responseText);
+    const powerW = parseInvertedRoundedNumber(payload?.power_w);
 
     return {
-      powerW: parseNullableAbsoluteNumber(payload?.power_w),
+      powerW,
       socPercent: null,
-      state: parseHomeWizardManagedState(payload),
+      state: parseHomeWizardManagedState(powerW),
     } satisfies BatteryTelemetrySample;
   },
 };
@@ -123,36 +124,12 @@ function getHomeWizardAuthToken(ipAddress: string): string | null {
   return token.trim();
 }
 
-function parseHomeWizardManagedState(
-  payload: Record<string, unknown> | null,
-): ManagedDeviceState {
-  const state = formatHomeWizardState(payload);
-
-  if (state === "charging" || state === "discharging" || state === "idle") {
-    return state;
-  }
-
-  return "offline";
+function parseHomeWizardManagedState(powerW: number | null): ManagedDeviceState {
+  return deriveBatteryStatusFromPower(powerW);
 }
 
-function formatHomeWizardState(
-  payload: Record<string, unknown> | null,
-): string {
-  const powerW = parseRoundedNumber(payload?.power_w);
-
-  if (powerW === null) {
-    return "offline";
-  }
-
-  if (powerW > 0) {
-    return "charging";
-  }
-
-  if (powerW < 0) {
-    return "discharging";
-  }
-
-  return "idle";
+function formatHomeWizardState(payload: Record<string, unknown> | null): string {
+  return deriveBatteryStatusFromPower(parseInvertedRoundedNumber(payload?.power_w));
 }
 
 function formatHomeWizardStrategyMode(
@@ -198,7 +175,7 @@ function parseRoundedNumber(value: unknown): number | null {
   return parsed === null ? null : Math.round(parsed);
 }
 
-function parseNullableAbsoluteNumber(value: unknown): number | null {
+function parseInvertedRoundedNumber(value: unknown): number | null {
   const parsed = parseRoundedNumber(value);
-  return parsed === null ? null : Math.abs(parsed);
+  return parsed === null ? null : -parsed;
 }

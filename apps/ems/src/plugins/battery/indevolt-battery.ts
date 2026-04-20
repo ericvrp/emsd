@@ -1,4 +1,4 @@
-import type { ManagedDeviceState } from "@emsd/core";
+import { deriveBatteryStatusFromPower } from "@emsd/core";
 import type { BatteryTelemetrySample } from "../../discovery-types";
 import {
   getStringOrNumber,
@@ -37,7 +37,8 @@ export const indevoltBatteryPlugin: DiscoveryPlugin = {
     const payload = parseJsonObject(responseText);
     const serial = getStringValue(payload?.["0"]);
     const firmwareVersion = getStringValue(payload?.["1118"]);
-    const batteryPower = getStringOrNumber(payload?.["6000"]);
+    const telemetryPowerW = parseIndevoltSignedPower(payload);
+    const batteryPower = telemetryPowerW === null ? null : Math.round(telemetryPowerW);
     const batteryState = formatDefaultBatteryState(payload?.["6001"]);
     const batterySoc = getStringOrNumber(payload?.["6002"]);
     const workMode = formatDefaultBatteryWorkMode(payload?.["7101"]);
@@ -71,18 +72,19 @@ export const indevoltBatteryPlugin: DiscoveryPlugin = {
       name: "Indevolt Battery",
       ipAddress,
       details: detailsParts.join(", "),
-      powerW: parseNullableNumber(payload?.["6000"]),
+      powerW: telemetryPowerW,
       socPercent: parseNullableNumber(payload?.["6002"]),
-      state: parseDefaultBatteryState(payload?.["6001"]),
+      state: deriveBatteryStatusFromPower(telemetryPowerW),
     };
   },
   parseTelemetry(responseText) {
     const payload = parseJsonObject(responseText);
+    const powerW = parseIndevoltSignedPower(payload);
 
     return {
-      powerW: parseNullableNumber(payload?.["6000"]),
+      powerW,
       socPercent: parseNullableNumber(payload?.["6002"]),
-      state: parseDefaultBatteryState(payload?.["6001"]),
+      state: deriveBatteryStatusFromPower(powerW),
     } satisfies BatteryTelemetrySample;
   },
 };
@@ -91,14 +93,28 @@ export function matchesIndevoltBatteryResponse(responseText: string): boolean {
   return matchesPatterns(responseMatch, responseText);
 }
 
-function parseDefaultBatteryState(value: unknown): ManagedDeviceState {
-  const state = formatDefaultBatteryState(value);
+function parseIndevoltSignedPower(
+  payload: Record<string, unknown> | null,
+): number | null {
+  const powerW = parseNullableNumber(payload?.["6000"]);
+  const stateCode = getStringOrNumber(payload?.["6001"]);
 
-  if (state === "idle" || state === "charging" || state === "discharging") {
-    return state;
+  if (powerW === null) {
+    return null;
   }
 
-  return "offline";
+  const normalizedPowerW = Math.abs(Math.round(powerW));
+
+  switch (stateCode) {
+    case "1001":
+      return -normalizedPowerW;
+    case "1002":
+      return normalizedPowerW;
+    case "1000":
+      return 0;
+    default:
+      return Math.round(powerW);
+  }
 }
 
 function formatDefaultBatteryState(value: unknown): string | null {

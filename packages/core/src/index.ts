@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+export { deriveBatteryStatusFromPower } from "./battery-power";
 export * from "./price-selection";
 export * from "./solar-prediction";
 export * from "./solar-prediction-smoothing";

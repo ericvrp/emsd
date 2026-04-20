@@ -1,5 +1,6 @@
 "use client";
 
+import { deriveBatteryStatusFromPower } from "@emsd/core/client";
 import type { HistoryArchive } from "@emsd/core/client";
 import { type ReactNode, useEffect, useState } from "react";
 import { logBrowserIntervalHeartbeat } from "../lib/browser-heartbeat";
@@ -20,7 +21,6 @@ type HomeBatteryHistorySectionProps = {
   children?: ReactNode;
   currentChargePercent: number | null;
   currentPowerW: number | null;
-  currentState: string | null;
   requestedDay: string | null;
   siteId: string;
   siteName: string;
@@ -31,7 +31,6 @@ export function HomeBatteryHistorySection({
   children,
   currentChargePercent,
   currentPowerW,
-  currentState,
   requestedDay,
   siteId,
   siteName,
@@ -46,7 +45,6 @@ export function HomeBatteryHistorySection({
   const [liveCurrentChargePercent, setLiveCurrentChargePercent] =
     useState(currentChargePercent);
   const [liveCurrentPowerW, setLiveCurrentPowerW] = useState(currentPowerW);
-  const [liveCurrentState, setLiveCurrentState] = useState(currentState);
   const [graphRefreshError, setGraphRefreshError] = useState<string | null>(
     null,
   );
@@ -57,8 +55,7 @@ export function HomeBatteryHistorySection({
   useEffect(() => {
     setLiveCurrentChargePercent(currentChargePercent);
     setLiveCurrentPowerW(currentPowerW);
-    setLiveCurrentState(currentState);
-  }, [currentChargePercent, currentPowerW, currentState]);
+  }, [currentChargePercent, currentPowerW]);
 
   useEffect(() => {
     setArchive(initialArchive);
@@ -150,7 +147,6 @@ export function HomeBatteryHistorySection({
         const payload = (await response.json()) as {
           currentBatteryChargePercent?: number | null;
           currentBatteryPowerW?: number | null;
-          currentBatteryState?: string | null;
         };
 
         if (cancelled) {
@@ -162,7 +158,6 @@ export function HomeBatteryHistorySection({
           payload.currentBatteryChargePercent ?? null,
         );
         setLiveCurrentPowerW(payload.currentBatteryPowerW ?? null);
-        setLiveCurrentState(payload.currentBatteryState ?? null);
       } catch {
         if (!cancelled) {
           setCurrentRefreshError(
@@ -170,7 +165,6 @@ export function HomeBatteryHistorySection({
           );
           setLiveCurrentChargePercent(currentChargePercent);
           setLiveCurrentPowerW(currentPowerW);
-          setLiveCurrentState(currentState);
         }
       }
     }
@@ -195,7 +189,7 @@ export function HomeBatteryHistorySection({
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [currentChargePercent, currentPowerW, currentState, siteId]);
+  }, [currentChargePercent, currentPowerW, siteId]);
 
   return (
     <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
@@ -215,7 +209,7 @@ export function HomeBatteryHistorySection({
         <SectionSummaryCard title="Current battery">
           <p className="text-2xl font-semibold text-white sm:text-3xl">
             {formatCharge(liveCurrentChargePercent)} •{" "}
-            {formatPower(liveCurrentPowerW, liveCurrentState)}
+            {formatPower(liveCurrentPowerW)}
           </p>
         </SectionSummaryCard>
       </div>
@@ -244,15 +238,16 @@ function formatCharge(value: number | null): string {
   return value === null ? "Unavailable" : `${Math.round(value)}%`;
 }
 
-function formatPower(value: number | null, state: string | null): string {
+function formatPower(value: number | null): string {
   if (value === null) return "Unavailable";
+
+  const state = deriveBatteryStatusFromPower(value);
 
   if (state === "idle") {
     return "Idle";
   }
 
-  const isCharging = value > 0;
-  const direction = isCharging ? "Discharging" : "Charging";
+  const direction = state === "charging" ? "Charging" : "Discharging";
   const absoluteValue = Math.abs(value);
 
   return `${direction} ${formatAbsolutePowerValue(absoluteValue)}`;

@@ -287,7 +287,7 @@ test("formatDiscoveredDevices renders concise one-line summaries", () => {
       name: "Indevolt Battery",
       ipAddress: "192.168.1.15",
       details: "SOC 48%",
-      powerW: 900,
+      powerW: -900,
       socPercent: 48,
       state: "charging",
     },

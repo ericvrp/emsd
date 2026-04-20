@@ -1,6 +1,7 @@
 import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { deriveBatteryStatusFromPower } from "@emsd/core/client";
 import { authOptions } from "../../../../auth";
 import { getLiveStatus } from "../../../../lib/ems-bridge";
 
@@ -41,13 +42,6 @@ export async function GET(request: NextRequest) {
     },
     null,
   );
-  const currentBatteryState =
-    batteries.length > 0
-      ? (batteries.find((battery) => battery.telemetry?.state)?.telemetry
-          ?.state ??
-        batteries[0]?.state ??
-        null)
-      : null;
   const currentStrategySummary =
     batteries.find(
       (battery) => typeof battery.batteryStrategySummary === "string",
@@ -80,7 +74,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     currentBatteryChargePercent,
     currentBatteryPowerW,
-    currentBatteryState,
+    currentBatteryState: deriveBatteryStatusFromPower(currentBatteryPowerW),
     currentStrategySummary,
     currentGridPowerW,
     currentSolarPowerW,

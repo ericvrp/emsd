@@ -1,6 +1,7 @@
 export * from "./price-selection";
 export * from "./solar-prediction";
 export * from "./solar-prediction-smoothing";
+export { deriveBatteryStatusFromPower } from "./battery-power";
 
 export type {
   BatteryStatus,

@@ -67,7 +67,7 @@ test("managed device telemetry can be upserted and read back", () => {
       capacityWh: 9600,
       powerW: -950,
       socPercent: 62,
-      state: "discharging",
+      state: null,
       observedAt: "2026-04-05T16:45:00.000Z",
     },
   ]);

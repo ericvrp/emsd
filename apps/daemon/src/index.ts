@@ -311,7 +311,7 @@ function main(): void {
             capacityWh: sample.capacityWh,
             powerW: sample.currentW,
             socPercent: sample.socPercent,
-            state: sample.status,
+            state: null,
             observedAt,
           } satisfies ManagedDeviceTelemetryRecord);
         }),
