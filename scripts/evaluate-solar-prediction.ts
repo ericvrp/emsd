@@ -29,7 +29,7 @@ interface ScriptOptions {
   top: number;
 }
 
-interface DayScoreRow {
+interface DayEvaluationRow {
   date: string;
   energyAccuracyPercentage: number | null;
   energyDeltaWh: number;
@@ -46,7 +46,7 @@ interface EvaluationCombination {
   predictedSmoothingMode: SolarPredictionSmoothingMode;
 }
 
-interface CombinationScoreSummary extends EvaluationCombination {
+interface CombinationEvaluationSummary extends EvaluationCombination {
   averageEnergyAccuracy: number | null;
   averageOverallAccuracy: number | null;
   averageTimingAccuracy: number | null;
@@ -113,13 +113,13 @@ function parseArgs(args: string[]): ScriptOptions {
 function printHelp(): void {
   console.log(
     [
-      "Score solar prediction quality for smoothing combinations around the current algorithm.",
+      "Evaluate the daemon and UI solar prediction algorithm against local history.",
       "",
       "Usage:",
-      "  bun run solar:score",
-      "  bun run solar:score -- --days=7",
-      "  bun run solar:score -- --site=<site-id>",
-      "  bun run solar:score -- --top=15",
+      "  bun run solar-prediction:evaluate",
+      "  bun run solar-prediction:evaluate -- --days=7",
+      "  bun run solar-prediction:evaluate -- --site=<site-id>",
+      "  bun run solar-prediction:evaluate -- --top=15",
     ].join("\n"),
   );
 }
@@ -181,13 +181,13 @@ function collectCandidateDays(input: {
     .sort((left, right) => left.localeCompare(right));
 }
 
-function scoreCombinationByDay(input: {
+function evaluateCombinationByDay(input: {
   candidateDays: string[];
   combination: EvaluationCombination;
   forecastSamples: SolarForecastSampleRecord[];
   generatedSeries: Array<{ periodStart: string; value: number | null }>;
   solarEnergyProviderSamples: SolarEnergyProviderSampleRecord[];
-}): DayScoreRow[] {
+}): DayEvaluationRow[] {
   const actualByPeriodStart = new Map(
     input.generatedSeries.map((sample) => [sample.periodStart, sample.value]),
   );
@@ -230,9 +230,9 @@ function scoreCombinationByDay(input: {
   });
 }
 
-function averageScore(
-  rows: DayScoreRow[],
-  selector: (row: DayScoreRow) => number | null,
+function averageValue(
+  rows: DayEvaluationRow[],
+  selector: (row: DayEvaluationRow) => number | null,
 ) {
   const values = rows
     .map(selector)
@@ -250,8 +250,8 @@ function averageScore(
 }
 
 function sumBy(
-  rows: DayScoreRow[],
-  selector: (row: DayScoreRow) => number,
+  rows: DayEvaluationRow[],
+  selector: (row: DayEvaluationRow) => number,
 ): number {
   return Number(
     rows.reduce((total, row) => total + selector(row), 0).toFixed(2),
@@ -298,19 +298,19 @@ function isSameCombination(
 
 function buildCombinationSummary(
   combination: EvaluationCombination,
-  rows: DayScoreRow[],
-): CombinationScoreSummary {
+  rows: DayEvaluationRow[],
+): CombinationEvaluationSummary {
   return {
     ...combination,
-    averageEnergyAccuracy: averageScore(
+    averageEnergyAccuracy: averageValue(
       rows,
       (row) => row.energyAccuracyPercentage,
     ),
-    averageOverallAccuracy: averageScore(
+    averageOverallAccuracy: averageValue(
       rows,
       (row) => row.overallAccuracyPercentage,
     ),
-    averageTimingAccuracy: averageScore(
+    averageTimingAccuracy: averageValue(
       rows,
       (row) => row.timingAccuracyPercentage,
     ),
@@ -326,7 +326,7 @@ function buildCombinationSummary(
   };
 }
 
-function formatSummaryRow(summary: CombinationScoreSummary) {
+function formatSummaryRow(summary: CombinationEvaluationSummary) {
   return {
     generated: formatSolarPredictionSmoothingMode(
       summary.generatedSmoothingMode,
@@ -378,7 +378,7 @@ async function main(): Promise<void> {
       solarEnergyProviderSamples.length === 0
     ) {
       throw new Error(
-        `Site ${site.id} does not have enough forecast and solar history to score predictions.`,
+        `Site ${site.id} does not have enough forecast and solar history to evaluate the solar prediction algorithm.`,
       );
     }
 
@@ -399,14 +399,14 @@ async function main(): Promise<void> {
 
     console.log(`Database: ${getDatabasePath()}`);
     console.log(`Site: ${site.name} (${site.id})`);
-    console.log(`Days scored: ${candidateDays.join(", ")}`);
+    console.log(`Days evaluated: ${candidateDays.join(", ")}`);
     console.log(
       `Current server default: ${formatCombinationLabel(CURRENT_SERVER_DEFAULT)}`,
     );
 
-    const scoredCombinations = buildEvaluationCombinations().map(
+    const evaluatedCombinations = buildEvaluationCombinations().map(
       (combination) => {
-        const rows = scoreCombinationByDay({
+        const rows = evaluateCombinationByDay({
           candidateDays,
           combination,
           forecastSamples,
@@ -422,7 +422,7 @@ async function main(): Promise<void> {
       },
     );
 
-    const rankedSummaries = scoredCombinations
+    const rankedSummaries = evaluatedCombinations
       .map((entry) => entry.summary)
       .sort((left, right) => {
         const overallOrder = compareNullableDescending(
@@ -471,11 +471,11 @@ async function main(): Promise<void> {
     );
 
     if (bestSummary !== null) {
-      const bestRows = scoredCombinations.find((entry) =>
+      const bestRows = evaluatedCombinations.find((entry) =>
         isSameCombination(entry.combination, bestSummary),
       )?.rows;
       const currentRows = currentServerDefaultSummary
-        ? scoredCombinations.find((entry) =>
+        ? evaluatedCombinations.find((entry) =>
             isSameCombination(entry.combination, currentServerDefaultSummary),
           )?.rows
         : undefined;

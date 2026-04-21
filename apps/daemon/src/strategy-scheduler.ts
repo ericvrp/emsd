@@ -1,6 +1,8 @@
 import {
   PRICE_SELECTION_WINDOW_MS,
   findPriceSelections,
+  isLowPriceAutoDischargeItem,
+  resolveActiveManualState,
 } from "@emsd/core";
 import type {
   BatteryRecord,
@@ -73,32 +75,37 @@ export function getScheduledItemCompletion(input: {
 }): ScheduledItemCompletion | null {
   const { battery, item, now, runtime, sample } = input;
   const startedAt = runtime.activeStartedAt;
+  const activeManualState = resolveActiveManualState({
+    fallbackManualState: item.manualState,
+    resolvedManualState: runtime.activeResolvedManualState,
+    targetMethod: item.targetMethod,
+  });
   const activeTargetSoc =
     item.targetMethod === "auto" ? runtime.activeTargetSocPercent : null;
 
   if (!startedAt) {
     return {
-      reason: "missing-start-time",
-      nowAt: now.toISOString(),
-      observedAt: runtime.activeObservedAt,
-      startedAt: null,
-      state: item.manualState,
-      status: sample.status,
-      socPercent: sample.socPercent,
-    };
+        reason: "missing-start-time",
+        nowAt: now.toISOString(),
+        observedAt: runtime.activeObservedAt,
+        startedAt: null,
+        state: activeManualState,
+        status: sample.status,
+        socPercent: sample.socPercent,
+      };
   }
 
   if (item.targetMethod === "duration") {
     if (item.targetDurationMinutes === null) {
       return {
-        reason: "duration-elapsed",
-        nowAt: now.toISOString(),
-        observedAt: runtime.activeObservedAt,
-        startedAt,
-        state: item.manualState,
-        status: sample.status,
-        socPercent: sample.socPercent,
-        targetDurationMinutes: null,
+          reason: "duration-elapsed",
+          nowAt: now.toISOString(),
+          observedAt: runtime.activeObservedAt,
+          startedAt,
+          state: activeManualState,
+          status: sample.status,
+          socPercent: sample.socPercent,
+          targetDurationMinutes: null,
       };
     }
 
@@ -109,7 +116,7 @@ export function getScheduledItemCompletion(input: {
           nowAt: now.toISOString(),
           observedAt: runtime.activeObservedAt,
           startedAt,
-          state: item.manualState,
+          state: activeManualState,
           status: sample.status,
           socPercent: sample.socPercent,
           targetDurationMinutes: item.targetDurationMinutes,
@@ -126,7 +133,7 @@ export function getScheduledItemCompletion(input: {
         nowAt: now.toISOString(),
         observedAt: runtime.activeObservedAt,
         startedAt,
-        state: item.manualState,
+        state: activeManualState,
         status: sample.status,
         socPercent: sample.socPercent,
       };
@@ -138,7 +145,7 @@ export function getScheduledItemCompletion(input: {
           nowAt: now.toISOString(),
           observedAt: runtime.activeObservedAt,
           startedAt,
-          state: item.manualState,
+          state: activeManualState,
           status: sample.status,
           socPercent: sample.socPercent,
           endAt: endAt.toISOString(),
@@ -146,7 +153,7 @@ export function getScheduledItemCompletion(input: {
       : null;
   }
 
-  if (item.strategyMode === "manual" && item.manualState === "charging") {
+  if (item.strategyMode === "manual" && activeManualState === "charging") {
     const targetSoc = activeTargetSoc ?? item.manualChargeTargetSoc ?? 100;
 
     if (sample.socPercent !== null && sample.socPercent >= targetSoc) {
@@ -155,7 +162,7 @@ export function getScheduledItemCompletion(input: {
         nowAt: now.toISOString(),
         observedAt: runtime.activeObservedAt,
         startedAt,
-        state: item.manualState,
+        state: activeManualState,
         status: sample.status,
         socPercent: sample.socPercent,
         targetSoc,
@@ -165,7 +172,7 @@ export function getScheduledItemCompletion(input: {
     return null;
   }
 
-  if (item.strategyMode === "manual" && item.manualState === "discharging") {
+  if (item.strategyMode === "manual" && activeManualState === "discharging") {
     const targetSoc =
       activeTargetSoc ??
       item.manualDischargeTargetSoc ??
@@ -177,7 +184,7 @@ export function getScheduledItemCompletion(input: {
         nowAt: now.toISOString(),
         observedAt: runtime.activeObservedAt,
         startedAt,
-        state: item.manualState,
+        state: activeManualState,
         status: sample.status,
         socPercent: sample.socPercent,
         targetSoc,
@@ -187,7 +194,7 @@ export function getScheduledItemCompletion(input: {
     return null;
   }
 
-  if (item.strategyMode === "manual" && item.manualState === "idle") {
+  if (item.strategyMode === "manual" && activeManualState === "idle") {
     const targetSoc =
       activeTargetSoc ?? item.manualTargetSoc ?? battery.minimumDischargePercent;
 
@@ -197,7 +204,7 @@ export function getScheduledItemCompletion(input: {
         nowAt: now.toISOString(),
         observedAt: runtime.activeObservedAt,
         startedAt,
-        state: item.manualState,
+        state: activeManualState,
         status: sample.status,
         socPercent: sample.socPercent,
         targetSoc,
@@ -231,7 +238,7 @@ export function getScheduledItemCompletion(input: {
       nowAt: now.toISOString(),
       observedAt: runtime.activeObservedAt,
       startedAt,
-      state: item.manualState,
+      state: activeManualState,
       status: sample.status,
       socPercent: sample.socPercent,
       targetSoc,
@@ -390,6 +397,10 @@ export function getStrategyTriggerAt(input: {
     return null;
   }
 
+  if (isLowPriceAutoDischargeItem(item)) {
+    return getLowPriceAutoTriggerAt({ now, dynamicPriceSamples });
+  }
+
   return getPriceMarkerTriggerAt({
     triggerKind: item.triggerKind,
     now,
@@ -410,6 +421,10 @@ export function getNextStrategyTriggerAt(input: {
 
   if (item.triggerKind !== "low-price" && item.triggerKind !== "high-price") {
     return null;
+  }
+
+  if (isLowPriceAutoDischargeItem(item)) {
+    return getNextLowPriceAutoTriggerAt({ now, dynamicPriceSamples });
   }
 
   return getNextPriceMarkerTriggerAt({
@@ -516,6 +531,12 @@ export function shouldMarkScheduledItemObserved(input: {
   runtime: BatteryStrategyRuntimeRecord;
   sample: NormalizedBatteryInfo;
 }): boolean {
+  const activeManualState = resolveActiveManualState({
+    fallbackManualState: input.item.manualState,
+    resolvedManualState: input.runtime.activeResolvedManualState,
+    targetMethod: input.item.targetMethod,
+  });
+
   if (
     input.runtime.activeObservedAt !== null ||
     !shouldWaitForObservedStart(input.item)
@@ -524,9 +545,9 @@ export function shouldMarkScheduledItemObserved(input: {
   }
 
   return (
-    (input.item.manualState === "charging" &&
+    (activeManualState === "charging" &&
       input.sample.status === "charging") ||
-    (input.item.manualState === "discharging" &&
+    (activeManualState === "discharging" &&
       input.sample.status === "discharging")
   );
 }
@@ -547,6 +568,72 @@ function isSocTargetItem(item: BatteryStrategyPlanItem): boolean {
     (item.targetMethod === null ||
       item.targetMethod === "soc" ||
       item.targetMethod === "auto")
+  );
+}
+
+function getLowPriceAutoTriggerAt(input: {
+  now: Date;
+  dynamicPriceSamples: DynamicPriceSampleRecord[];
+}): Date | null {
+  const triggerMarkers = getLowPriceAutoTriggerMarkers(input);
+  let latestDueMarker: Date | null = null;
+
+  for (const markerAt of triggerMarkers) {
+    if (markerAt.getTime() <= input.now.getTime()) {
+      latestDueMarker = markerAt;
+    }
+  }
+
+  if (latestDueMarker !== null) {
+    return latestDueMarker;
+  }
+
+  return triggerMarkers[0] ?? null;
+}
+
+function getNextLowPriceAutoTriggerAt(input: {
+  now: Date;
+  dynamicPriceSamples: DynamicPriceSampleRecord[];
+}): Date | null {
+  for (const markerAt of getLowPriceAutoTriggerMarkers(input)) {
+    if (markerAt.getTime() >= input.now.getTime()) {
+      return markerAt;
+    }
+  }
+
+  return null;
+}
+
+function getLowPriceAutoTriggerMarkers(input: {
+  now: Date;
+  dynamicPriceSamples: DynamicPriceSampleRecord[];
+}): Date[] {
+  const lowMarkers = getPriceMarkersForToday({
+    triggerKind: "low-price",
+    now: input.now,
+    dynamicPriceSamples: input.dynamicPriceSamples,
+  });
+  const highMarkers = getPriceMarkersForToday({
+    triggerKind: "high-price",
+    now: input.now,
+    dynamicPriceSamples: input.dynamicPriceSamples,
+  });
+  const triggerMarkers = new Map<number, Date>();
+
+  for (const lowMarkerAt of lowMarkers) {
+    const previousHighMarker = [...highMarkers]
+      .reverse()
+      .find((candidate) => candidate.getTime() < lowMarkerAt.getTime());
+
+    if (!previousHighMarker) {
+      continue;
+    }
+
+    triggerMarkers.set(previousHighMarker.getTime(), previousHighMarker);
+  }
+
+  return [...triggerMarkers.values()].sort(
+    (left, right) => left.getTime() - right.getTime(),
   );
 }
 
@@ -576,7 +663,7 @@ function getPriceMarkerTriggerAt(input: {
   return todayMarkers[0] ?? null;
 }
 
-function getNextPriceMarkerTriggerAt(input: {
+export function getNextPriceMarkerTriggerAt(input: {
   triggerKind: "low-price" | "high-price";
   now: Date;
   dynamicPriceSamples: DynamicPriceSampleRecord[];
@@ -592,7 +679,7 @@ function getNextPriceMarkerTriggerAt(input: {
   return null;
 }
 
-function getPriceMarkersForToday(input: {
+export function getPriceMarkersForToday(input: {
   triggerKind: "low-price" | "high-price";
   now: Date;
   dynamicPriceSamples: DynamicPriceSampleRecord[];

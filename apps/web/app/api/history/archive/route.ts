@@ -14,9 +14,10 @@ export async function GET(request: NextRequest) {
   }
 
   const siteId = request.nextUrl.searchParams.get("siteId");
+  const day = request.nextUrl.searchParams.get("day");
   if (!siteId) {
     return NextResponse.json({ error: "siteId is required" }, { status: 400 });
   }
 
-  return NextResponse.json(await getHistoryArchive({ siteId }));
+  return NextResponse.json(await getHistoryArchive({ day, siteId }));
 }

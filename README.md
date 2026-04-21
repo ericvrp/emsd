@@ -87,7 +87,12 @@ bun run typecheck
 bun run lint
 bun run format
 bun run test
+bun run solar-prediction:evaluate
+bun run dynamic-price-target:evaluate
 ```
+
+- `bun run solar-prediction:evaluate` evaluates the solar prediction algorithm used by the daemon and UI against local forecast and production history.
+- `bun run dynamic-price-target:evaluate` evaluates the dynamic price target method used by the daemon for high/low price battery strategy items.
 
 ### Daemon
 

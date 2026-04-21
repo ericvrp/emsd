@@ -40,8 +40,8 @@
 - Lint the repo: `bun run lint`
 - Format the repo: `bun run format`
 - Run all tests: `bun run test`
-- Score solar prediction quality over local history: `bun run solar:score`
-- Score dynamic target reserve heuristics over local history: `bun run estimate:score`
+- Evaluate the daemon and UI solar prediction algorithm over local history: `bun run solar-prediction:evaluate`
+- Evaluate the dynamic price target method over local history: `bun run dynamic-price-target:evaluate`
 
 ### Daemon Commands
 

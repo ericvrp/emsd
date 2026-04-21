@@ -14,6 +14,7 @@ import {
   ensureParentDirectory,
   getDaemonLockPath,
   getDatabasePath,
+  resolveActiveManualState,
   resolveBatteryStrategyFromPlanItem,
 } from "@emsd/core";
 import { createBatteryPlugin } from "../../ems/src/battery-plugins";
@@ -28,6 +29,7 @@ import {
   readBatteries,
   readBatteryPowerSamples,
   readDynamicPriceSamples,
+  readManagedDeviceTelemetry,
   readDynamicPriceSnapshot,
   readDynamicPriceSources,
   readMeters,
@@ -53,7 +55,11 @@ import {
   formatScheduledStrategyStartedSummary,
   formatStrategyPlanAppliedSummary,
 } from "./strategy-log";
-import { estimateStrategyTarget } from "./strategy-estimate";
+import { estimateDynamicPriceTarget } from "./dynamic-price-target";
+import {
+  getCurrentSiteSolarPowerW,
+  getScheduledStartSkipReason,
+} from "./strategy-start-guard";
 import {
   describeStrategyPlanItem,
   formatDaemonLogTimestamp,
@@ -751,6 +757,7 @@ async function runScheduledStrategy(
             typeof runtime.activeTargetSocPercent === "number"
             ? {
                 reasoning: describeEstimatedRuntimeReasoning(runtime),
+                resolvedManualState: runtime.activeResolvedManualState ?? null,
                 targetSocPercent: runtime.activeTargetSocPercent,
                 reserveSocPercent: runtime.activeReserveSocPercent ?? 0,
                 targetTime: runtime.activeTargetTime ?? null,
@@ -806,6 +813,7 @@ async function runScheduledStrategy(
   )
     ? readDynamicPriceSamples(db, battery.siteId)
     : [];
+  const managedDeviceTelemetry = readManagedDeviceTelemetry(db);
   let runtime = battery.strategyRuntime;
 
   for (const [index, item] of dueItems.entries()) {
@@ -894,9 +902,39 @@ async function runScheduledStrategy(
       continue;
     }
 
-    const estimate =
+    const scheduledStartSkipReason = getScheduledStartSkipReason({
+      batteryId: battery.id,
+      item,
+      siteCurrentSolarPowerW: getCurrentSiteSolarPowerW({
+        siteId: battery.siteId,
+        telemetry: managedDeviceTelemetry,
+      }),
+    });
+
+    if (scheduledStartSkipReason !== null) {
+      logInfoWithVerboseDetails(
+        verbose,
+        scheduledStartSkipReason,
+        `skipping strategy item for ${battery.id}: ${describeStrategyPlanItemWithIndex(battery, item)} triggerAt=${formatDaemonLogTimestamp(triggerAt)} now=${formatDaemonLogTimestamp(now)}`,
+      );
+      runtime = {
+        ...runtime,
+        lastTriggeredAtByItemId: {
+          ...runtime.lastTriggeredAtByItemId,
+          [item.id]: triggerAt.toISOString(),
+        },
+      };
+      updateBatteryStrategyRuntime(db, {
+        batteryId: battery.id,
+        siteId: battery.siteId,
+        strategyRuntime: runtime,
+      });
+      continue;
+    }
+
+    const dynamicPriceTargetEstimate =
       item.targetMethod === "auto"
-        ? estimateStrategyTarget({
+        ? estimateDynamicPriceTarget({
             battery,
             batteryPowerSamples: readBatteryPowerSamples(db, battery.siteId),
             dynamicPriceSamples,
@@ -912,13 +950,46 @@ async function runScheduledStrategy(
             solarForecastSamples: readSolarForecastSamples(db, battery.siteId),
           })
         : null;
+
+    if (dynamicPriceTargetEstimate?.warning) {
+      logWarn(dynamicPriceTargetEstimate.warning);
+    }
+
+    if (dynamicPriceTargetEstimate?.skipReason) {
+      logInfoWithVerboseDetails(
+        verbose,
+        dynamicPriceTargetEstimate.skipReason,
+        `skipping strategy item for ${battery.id}: ${describeStrategyPlanItemWithIndex(battery, item)} triggerAt=${formatDaemonLogTimestamp(triggerAt)} now=${formatDaemonLogTimestamp(now)}`,
+      );
+      runtime = {
+        ...runtime,
+        lastTriggeredAtByItemId: {
+          ...runtime.lastTriggeredAtByItemId,
+          [item.id]: triggerAt.toISOString(),
+        },
+      };
+      updateBatteryStrategyRuntime(db, {
+        batteryId: battery.id,
+        siteId: battery.siteId,
+        strategyRuntime: runtime,
+      });
+      continue;
+    }
+
+    const resolvedManualState = resolveActiveManualState({
+      fallbackManualState: item.manualState,
+      resolvedManualState: dynamicPriceTargetEstimate?.resolvedManualState,
+      targetMethod: item.targetMethod,
+    });
+
     const strategy = applyEstimatedTargetToStrategy(
       resolveBatteryStrategyFromPlanItem({
         item,
         minimumDischargePercent: battery.minimumDischargePercent,
       }),
       item,
-      estimate?.estimatedTargetPercent ?? null,
+      resolvedManualState,
+      dynamicPriceTargetEstimate?.estimatedTargetPercent ?? null,
       battery.minimumDischargePercent,
     );
 
@@ -931,17 +1002,22 @@ async function runScheduledStrategy(
 
     const nextRuntime = {
       activeItemId: needsCompletionTracking(item) ? item.id : null,
+      activeResolvedManualState:
+        needsCompletionTracking(item) && item.targetMethod === "auto"
+          ? resolvedManualState
+          : null,
       activeTargetSocPercent:
         needsCompletionTracking(item) && item.targetMethod === "auto"
-          ? (estimate?.estimatedTargetPercent ?? null)
+          ? (dynamicPriceTargetEstimate?.estimatedTargetPercent ?? null)
           : null,
       activeReserveSocPercent:
         needsCompletionTracking(item) && item.targetMethod === "auto"
-          ? (estimate?.estimatedReservePercentAtTargetTime ?? null)
+          ? (dynamicPriceTargetEstimate?.estimatedReservePercentAtTargetTime ??
+            null)
           : null,
       activeTargetTime:
         needsCompletionTracking(item) && item.targetMethod === "auto"
-          ? (estimate?.targetTime ?? null)
+          ? (dynamicPriceTargetEstimate?.targetTime ?? null)
           : null,
       activeStartedAt: needsCompletionTracking(item) ? now.toISOString() : null,
       activeObservedAt: null,
@@ -974,12 +1050,16 @@ async function runScheduledStrategy(
           battery.id,
           item,
           "",
-          estimate
+          dynamicPriceTargetEstimate
             ? {
-                reasoning: estimate.reasoning,
-                targetSocPercent: estimate.estimatedTargetPercent,
-                reserveSocPercent: estimate.estimatedReservePercentAtTargetTime,
-                targetTime: estimate.targetTime,
+                reasoning: dynamicPriceTargetEstimate.reasoning,
+                resolvedManualState:
+                  dynamicPriceTargetEstimate.resolvedManualState ?? null,
+                targetSocPercent:
+                  dynamicPriceTargetEstimate.estimatedTargetPercent,
+                reserveSocPercent:
+                  dynamicPriceTargetEstimate.estimatedReservePercentAtTargetTime,
+                targetTime: dynamicPriceTargetEstimate.targetTime,
               }
             : null,
         ),
@@ -1006,6 +1086,7 @@ function getActiveStrategyPlanItem(
 function applyEstimatedTargetToStrategy(
   strategy: ReturnType<typeof resolveBatteryStrategyFromPlanItem>,
   item: BatteryStrategyPlanItem,
+  resolvedManualState: BatteryStrategyPlanItem["manualState"],
   estimatedTargetPercent: number | null,
   minimumDischargePercent: number,
 ): ReturnType<typeof resolveBatteryStrategyFromPlanItem> {
@@ -1017,20 +1098,24 @@ function applyEstimatedTargetToStrategy(
     return strategy;
   }
 
-  if (item.manualState === "charging") {
+  if (resolvedManualState === "charging") {
     return {
       ...strategy,
       manualChargeTargetSoc: estimatedTargetPercent,
+      manualDischargeTargetSoc: null,
+      manualState: "charging",
       manualTargetSoc: estimatedTargetPercent,
     };
   }
 
-  if (item.manualState === "discharging" || item.manualState === "idle") {
+  if (resolvedManualState === "discharging" || resolvedManualState === "idle") {
     const targetSoc = Math.max(minimumDischargePercent, estimatedTargetPercent);
 
     return {
       ...strategy,
+      manualChargeTargetSoc: null,
       manualDischargeTargetSoc: targetSoc,
+      manualState: resolvedManualState,
       manualTargetSoc: targetSoc,
     };
   }
@@ -1317,6 +1402,10 @@ function logInfoWithVerboseDetails(
 
 function logInfo(message: string): void {
   console.log(`[${formatDaemonLogTimestamp()}] ${message}`);
+}
+
+function logWarn(message: string): void {
+  console.warn(`[${formatDaemonLogTimestamp()}] WARNING: ${message}`);
 }
 
 function logError(message: string): void {

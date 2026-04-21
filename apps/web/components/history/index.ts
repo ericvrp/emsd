@@ -23,7 +23,9 @@ export type {
 } from "./types";
 export {
   buildMirroredYAxis,
+  buildNowLabel,
   buildResponsiveDayTicks,
+  buildYAxisLabel,
   formatDayTick,
   getAvailableLocalDays,
   getCurrentPeriodStart,

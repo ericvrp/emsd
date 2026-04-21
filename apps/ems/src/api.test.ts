@@ -322,6 +322,7 @@ test("api history archive returns stored battery, price, and forecast data", asy
   }
 
   const archive = (await runApiAction("history-get-archive", {
+    day: "2026-04-09",
     siteId: "home",
   })) as HistoryArchive;
 
@@ -337,6 +338,9 @@ test("api history archive returns stored battery, price, and forecast data", asy
     source: "automatic",
   });
   expect(archive.p1MeterSamples).toHaveLength(1);
+  expect(archive.selectedDayKey).toBe("2026-04-09");
+  expect(archive.selectedDaySiteLoadSamples).toHaveLength(96);
+  expect(archive.selectedDayExpectedSiteLoadSamples).toHaveLength(96);
   expect(archive.solarEnergyProviderSamples).toHaveLength(1);
   expect(archive.solarForecastSamples).toHaveLength(1);
   expect(archive.dynamicPriceSamples).toHaveLength(1);
@@ -677,6 +681,7 @@ test("history-get-archive applies default prediction smoothing server-side", asy
   }
 
   const archive = (await runApiAction("history-get-archive", {
+    day: "2026-04-09",
     siteId: "home",
   })) as HistoryArchive;
 

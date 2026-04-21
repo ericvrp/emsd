@@ -29,8 +29,8 @@
     "ems": "bun run --cwd apps/ems ems --",
     "battery:list": "bun run --cwd apps/ems ems -- battery list",
     "discover": "bun run --cwd apps/ems ems -- discover",
-    "solar:score": "bun run scripts/score-solar-prediction.ts",
-    "estimate:score": "bun run scripts/score-strategy-estimate.ts",
+    "solar-prediction:evaluate": "bun run scripts/evaluate-solar-prediction.ts",
+    "dynamic-price-target:evaluate": "bun run scripts/evaluate-dynamic-price-target.ts",
     "web:dev": "bun run --cwd apps/web dev",
     "web:build": "bun run --cwd apps/web build",
     "web:start": "bun run --cwd apps/web start"

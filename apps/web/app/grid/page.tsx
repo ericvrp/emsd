@@ -5,6 +5,7 @@ import { DaemonOfflineState } from "../../components/daemon-offline-state";
 import { DashboardPageFrame } from "../../components/dashboard-page-frame";
 import { GridPage } from "../../components/grid-page";
 import { SiteSetupPanel } from "../../components/settings-panel";
+import { resolveRelativeDayParam } from "../../lib/day-utils";
 import { getHistoryArchive, getLiveStatus } from "../../lib/ems-bridge";
 import { getSearchParamValue } from "../../lib/search-params";
 
@@ -31,9 +32,9 @@ export default async function GridRoute({
 
   const currentSite = snapshot.sites[0] ?? null;
   const params = (await searchParams) ?? {};
-  const requestedDay = getSearchParamValue(params.day);
+  const requestedDay = resolveRelativeDayParam(getSearchParamValue(params.day));
   const historyArchive = currentSite
-    ? await getHistoryArchive({ siteId: currentSite.id })
+    ? await getHistoryArchive({ day: requestedDay, siteId: currentSite.id })
     : null;
 
   return (

@@ -3,6 +3,11 @@ import { dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export * from "./cli-args";
+export * from "./score-script-defaults";
+export * from "./dynamic-price-target-defaults";
+export * from "./dynamic-price-target-reserve";
+export * from "./battery-strategy";
+export * from "./site-load";
 export { deriveBatteryStatusFromPower } from "./battery-power";
 export * from "./price-selection";
 export * from "./solar-prediction";
@@ -61,6 +66,7 @@ export type BatteryStrategyPlanRecord = BatteryStrategyPlanItem[];
 
 export interface BatteryStrategyRuntimeRecord {
   activeItemId: string | null;
+  activeResolvedManualState?: BatteryManualState | null;
   activeTargetSocPercent?: number | null;
   activeReserveSocPercent?: number | null;
   activeTargetTime?: string | null;
@@ -341,6 +347,7 @@ export interface NormalizedSolarEnergyProviderInfo {
 export function createBatteryStrategyRuntime(): BatteryStrategyRuntimeRecord {
   return {
     activeItemId: null,
+    activeResolvedManualState: null,
     activeTargetSocPercent: null,
     activeReserveSocPercent: null,
     activeTargetTime: null,
@@ -361,6 +368,7 @@ export function clearActiveBatteryStrategyRuntime(
   return {
     ...normalizeBatteryStrategyRuntime(value),
     activeItemId: null,
+    activeResolvedManualState: null,
     activeTargetSocPercent: null,
     activeReserveSocPercent: null,
     activeTargetTime: null,
@@ -392,6 +400,7 @@ export function createBatteryStrategyRuntimeForPlanApply(
 
   return {
     activeItemId: null,
+    activeResolvedManualState: null,
     activeTargetSocPercent: null,
     activeReserveSocPercent: null,
     activeTargetTime: null,
@@ -747,6 +756,12 @@ function normalizeBatteryStrategyRuntime(
       candidate.activeItemId.length > 0
         ? candidate.activeItemId
         : null,
+    activeResolvedManualState:
+      candidate.activeResolvedManualState === "charging" ||
+      candidate.activeResolvedManualState === "discharging" ||
+      candidate.activeResolvedManualState === "idle"
+        ? candidate.activeResolvedManualState
+        : null,
     activeTargetSocPercent:
       typeof candidate.activeTargetSocPercent === "number" &&
       Number.isFinite(candidate.activeTargetSocPercent)
@@ -954,6 +969,15 @@ export interface HistoryArchive {
   batteryStrategyHistory: BatteryStrategyHistoryRecord[];
   dynamicPriceSamples: DynamicPriceSampleRecord[];
   p1MeterSamples: P1MeterSampleRecord[];
+  selectedDayExpectedSiteLoadSamples: Array<{
+    periodStart: string;
+    value: number | null;
+  }>;
+  selectedDayKey: string;
+  selectedDaySiteLoadSamples: Array<{
+    periodStart: string;
+    value: number | null;
+  }>;
   siteId: string;
   solarEnergyProviderSamples: SolarEnergyProviderSampleRecord[];
   solarForecastSamples: SolarForecastSampleRecord[];

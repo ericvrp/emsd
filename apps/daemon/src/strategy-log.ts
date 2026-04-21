@@ -1,9 +1,11 @@
 import type {
+  BatteryManualState,
   BatteryRecord,
   BatteryStrategyPlanItem,
   BatteryStrategyRecord,
   DynamicPriceSampleRecord,
 } from "@emsd/core";
+import { resolveActiveManualState } from "@emsd/core";
 import type { ScheduledItemCompletion } from "./strategy-scheduler";
 import {
   formatDaemonLogTimestamp,
@@ -89,6 +91,7 @@ export function formatScheduledStrategyStartedSummary(
   item: BatteryStrategyPlanItem,
   observedDelay: string,
   estimate?: {
+    resolvedManualState: BatteryManualState | null;
     targetSocPercent: number;
     reserveSocPercent: number;
     targetTime: string | null;
@@ -96,7 +99,11 @@ export function formatScheduledStrategyStartedSummary(
   } | null,
 ): string {
   void observedDelay;
-  const base = `${describeStrategyScheduleHuman(item)} is now active for ${batteryId}: ${describeStrategyPlanItemHuman(item)}`;
+  const base = `${describeStrategyScheduleHuman(item)} is now active for ${batteryId}: ${describeStrategyPlanItemHuman(
+    estimate?.resolvedManualState && estimate.resolvedManualState !== item.manualState
+      ? buildResolvedEstimateItem(item, estimate)
+      : item,
+  )}`;
 
   if (!estimate) {
     return base;
@@ -106,6 +113,14 @@ export function formatScheduledStrategyStartedSummary(
     estimate.targetTime === null
       ? ""
       : ` by ${formatHumanClockTime(estimate.targetTime)}`;
+
+  if (estimate.resolvedManualState === "charging") {
+    return `${base}; charging to ${estimate.targetSocPercent}%${targetTimeLabel} based on ${estimate.reasoning}`;
+  }
+
+  if (estimate.resolvedManualState === "idle") {
+    return `${base}; holding until ${estimate.targetSocPercent}%${targetTimeLabel} based on ${estimate.reasoning}`;
+  }
 
   return `${base}; discharging to ${estimate.targetSocPercent}% to reserve ${estimate.reserveSocPercent}%${targetTimeLabel} based on ${estimate.reasoning}`;
 }
@@ -241,7 +256,11 @@ export function formatBatteryStrategyStatusSummary(
 
   return summarizeActiveStrategy({
     strategyMode: activeItem.strategyMode,
-    manualState: activeItem.manualState,
+    manualState: resolveActiveManualState({
+      fallbackManualState: activeItem.manualState,
+      resolvedManualState: battery.strategyRuntime.activeResolvedManualState,
+      targetMethod: activeItem.targetMethod,
+    }),
     manualPowerW: activeItem.manualPowerW,
     manualChargeTargetSoc: activeItem.manualChargeTargetSoc,
     manualDischargeTargetSoc: activeItem.manualDischargeTargetSoc,
@@ -421,6 +440,27 @@ function summarizeActiveStrategy(input: {
   }
 
   return "Manual strategy";
+}
+
+function buildResolvedEstimateItem(
+  item: BatteryStrategyPlanItem,
+  estimate: NonNullable<
+    Parameters<typeof formatScheduledStrategyStartedSummary>[3]
+  >,
+): BatteryStrategyPlanItem {
+  return {
+    ...item,
+    manualState: estimate.resolvedManualState,
+    manualChargeTargetSoc:
+      estimate.resolvedManualState === "charging"
+        ? estimate.targetSocPercent
+        : null,
+    manualDischargeTargetSoc:
+      estimate.resolvedManualState === "discharging"
+        ? estimate.targetSocPercent
+        : null,
+    manualTargetSoc: estimate.targetSocPercent,
+  };
 }
 
 function describeActionWithTarget(

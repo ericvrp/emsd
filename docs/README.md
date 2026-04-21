@@ -1,5 +1,9 @@
 # Documentation
 
+## Algorithms
+
+- `dynamic-price-target.md`: daemon-owned dynamic price target method and evaluation flow
+
 ## Plugins
 
 - `plugins/README.md`: plugin overview and authoring entrypoint

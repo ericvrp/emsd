@@ -1,19 +1,25 @@
-# Dynamic Target Estimation
+# Dynamic Price Target Estimation
 
 ## Purpose
 
-`Dynamic` is the daemon-owned target method for scheduled battery strategy items. It is persisted as target method `auto`.
+`Dynamic` is the daemon-owned dynamic price target method for scheduled battery strategy items. It is persisted as target method `auto`.
 
-When a scheduled item with `targetMethod === "auto"` becomes active, the daemon computes a stop target percentage and applies it to the live battery strategy. Fixed target methods (`soc`, `duration`, `end-time`) are unchanged.
+When a scheduled item with `targetMethod === "auto"` becomes active, the daemon computes a dynamic price target percentage and applies it to the live battery strategy. Fixed target methods (`soc`, `duration`, `end-time`) are unchanged.
 
 The goal is:
 - choose a `targetTime` where solar production is expected to take over from the battery again
 - choose a reserve percentage that should still be held at that `targetTime`
 - convert that into the stop target percentage to use for the active scheduled item
 
+For low-price schedules with `targetMethod === "auto"`, the daemon now resolves a pre-discharge flow instead of charging at the low marker itself:
+- resolve the upcoming low-price marker as the target horizon
+- require solar to be expected at that low-price marker
+- trigger earlier at the best preceding local high-price marker
+- discharge only down to a reserve floor that should still hold enough charge at the low-price marker
+
 This same estimator is used by:
-- the daemon activation path for dynamic schedule items
-- `bun run estimate:score`
+- the daemon activation path for dynamic price target schedule items
+- `bun run dynamic-price-target:evaluate`
 
 ## Core Model
 
@@ -65,10 +71,10 @@ Expected house load per time bucket is then built from recent history using:
 
 The estimator steps forward bucket by bucket from the selected start time until:
 
-`predictedSolarGenerationW > max(expectedHouseLoadW, minimumMeaningfulSolarW)`
+`predictedSolarGenerationW > expectedHouseLoadW + minimumSolarSurplusW`
 
 Notes:
-- `minimumMeaningfulSolarW` prevents tiny forecast noise from counting as recovery
+- `minimumSolarSurplusW` prevents tiny forecast noise from counting as recovery
 - this can land later the same morning or the next morning depending on the selected time
 - if no break-even bucket can be found confidently, the estimator falls back to the next relevant schedule boundary and then broader time fallbacks
 
@@ -91,22 +97,36 @@ Once `targetTime` is known:
 - at least `minimumDischargePercent`
 - at most `100`
 
-For discharge strategies that protect until solar recovery, the current implementation keeps a small reserve margin above minimum discharge so self-consumption can still remain active at the recovery point.
+For dynamic discharge strategies, the daemon and CLI evaluation now share one reserve-floor helper:
+
+`reserveFloorPercent = minimumDischargePercent + backupReserveMargin + round(hoursUntilTarget * backupReserveMarginPerHour)`
+
+Default values:
+- `backupReserveMargin = 2%`
+- `backupReserveMarginPerHour = 0.5%`
+
+This reserve-floor helper is used by:
+- high-price auto discharge until solar recovery
+- low-price auto pre-discharge until the selected low-price marker
 
 ## Daemon Behavior
 
 When a dynamic schedule item activates:
-- the daemon computes the estimate in `apps/daemon/src/strategy-estimate.ts`
+- the daemon computes the estimate in `apps/daemon/src/dynamic-price-target.ts`
 - applies the computed stop target to the activated strategy
+- low-price auto items may resolve from configured `charging` to runtime `discharging`
 - stores the resolved target SoC and target time in runtime state
+- stores the resolved runtime manual state for completion checks and status text
 - uses that same resolved target for completion checks
 - logs the dynamic estimate in the normal scheduled-start log line
 
 This logic is wired from `apps/daemon/src/index.ts` and the completion logic lives in `apps/daemon/src/strategy-scheduler.ts`.
 
-## CLI Scoring Script
+## CLI Evaluation Script
 
-`bun run estimate:score` uses the same estimator to evaluate a synthetic action for a chosen date and time.
+`bun run dynamic-price-target:evaluate` uses the same estimator to evaluate a synthetic action for a chosen date and time.
+
+If neither `--date` nor `--time` is supplied, the script now evaluates from the next relevant price trigger instead of the current wall-clock time.
 
 Default behavior:
 - prints one concise summary line per battery
@@ -129,28 +149,29 @@ The script supports:
 - `--time HH:MM`
 - `--price high,low`
 - `--backup-reserve-margin <percent>`
+- `--backup-reserve-margin-per-hour <percent>`
 - `--power <watts>`
 - `--site <site-id>`
 - `--days <n>`
 
-By default, the replay reserve target is the battery's own `minimumDischargePercent` plus a `2%` backup reserve margin.
+For low-price auto evaluation, the script now follows the daemon's pre-discharge behavior instead of building a synthetic charge window around the low-price moment.
 
 ## Main Files
 
-- `apps/daemon/src/strategy-estimate.ts`
-- `apps/daemon/src/strategy-estimate.test.ts`
+- `apps/daemon/src/dynamic-price-target.ts`
+- `apps/daemon/src/dynamic-price-target.test.ts`
 - `apps/daemon/src/index.ts`
 - `apps/daemon/src/strategy-scheduler.ts`
 - `apps/daemon/src/strategy-log.ts`
-- `scripts/score-strategy-estimate.ts`
+- `scripts/evaluate-dynamic-price-target.ts`
 - `apps/ems/src/battery.ts`
 
 ## Validation
 
 Useful checks:
-- `bun test apps/daemon/src/strategy-estimate.test.ts`
+- `bun test apps/daemon/src/dynamic-price-target.test.ts`
 - `bun test apps/daemon/src/strategy-scheduler.test.ts`
 - `bun test apps/daemon/src/strategy-log.test.ts`
 - `bun run --cwd apps/daemon typecheck`
-- `bun run estimate:score`
-- `bun run estimate:score -- --verbose=why,break-even,history,replay`
+- `bun run dynamic-price-target:evaluate`
+- `bun run dynamic-price-target:evaluate -- --verbose=why,break-even,history,replay`

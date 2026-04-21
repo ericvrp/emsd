@@ -332,6 +332,6 @@ export function refreshDynamicPriceSnapshot(input: { siteId: string }) {
   return runBridge<DynamicPriceSnapshotRecord>("price-refresh-snapshot", input);
 }
 
-export function getHistoryArchive(input: { siteId: string }) {
+export function getHistoryArchive(input: { day?: string | null; siteId: string }) {
   return runBridge<HistoryArchive>("history-get-archive", input);
 }

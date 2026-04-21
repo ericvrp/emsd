@@ -3,12 +3,13 @@ import type {
   BatteryPowerSampleRecord,
   BatteryRecord,
   BatteryStrategyPlanItem,
+  DynamicPriceSampleRecord,
   NormalizedBatteryInfo,
   P1MeterSampleRecord,
   SolarEnergyProviderSampleRecord,
   SolarForecastSampleRecord,
 } from "@emsd/core";
-import { estimateStrategyTarget } from "./strategy-estimate";
+import { estimateDynamicPriceTarget } from "./dynamic-price-target";
 
 test("evening auto discharge targets tomorrow morning and keeps a reserve above backup", () => {
   const now = new Date("2026-04-19T20:25:00");
@@ -20,7 +21,7 @@ test("evening auto discharge targets tomorrow morning and keeps a reserve above 
   );
   const history = createOvernightUsageHistory();
 
-  const estimate = estimateStrategyTarget({
+  const estimate = estimateDynamicPriceTarget({
     battery,
     batteryPowerSamples: history.batteryPowerSamples,
     dynamicPriceSamples: [],
@@ -39,11 +40,172 @@ test("evening auto discharge targets tomorrow morning and keeps a reserve above 
   expect(targetTime.getDate()).toBe(new Date("2026-04-20T08:30:00").getDate());
   expect(targetTime.getHours()).toBe(8);
   expect(targetTime.getMinutes()).toBe(30);
-  expect(estimate.estimatedReservePercentAtTargetTime).toBe(11);
-  expect(estimate.estimatedTargetPercent).toBeGreaterThan(11);
+  // 10% minimum + 2% backup margin + round(12.08 hours * 0.5%/hour) = 18%
+  expect(estimate.estimatedReservePercentAtTargetTime).toBe(18);
+  expect(estimate.estimatedTargetPercent).toBeGreaterThan(18);
   expect(estimate.estimatedRemainingEnergyWh).toBeGreaterThan(0);
+  expect(estimate.resolvedManualState).toBe("discharging");
+  expect(estimate.skipReason).toBeNull();
   expect(estimate.windowKind).toBe("evening-high-price");
 });
+
+test("low-price auto resolves to a pre-discharge target when solar is expected at the low marker", () => {
+  const now = new Date("2026-04-19T06:00:00.000Z");
+  const battery = createBattery();
+  const item = createAutoLowPriceItem();
+  const solarForecastSamples = createMorningSolarForecastSamples();
+  const history = createMorningUsageHistory();
+  const estimate = estimateDynamicPriceTarget({
+    battery,
+    batteryPowerSamples: history.batteryPowerSamples,
+    backupReserveMarginOverride: 2,
+    dynamicPriceSamples: createDynamicPriceSamples([
+      ["2026-04-19T02:00:00.000Z", 20],
+      ["2026-04-19T06:00:00.000Z", 30],
+      ["2026-04-19T10:00:00.000Z", 10],
+      ["2026-04-19T14:00:00.000Z", 18],
+    ]),
+    item,
+    items: [createDefaultItem(), item],
+    now,
+    p1MeterSamples: history.p1MeterSamples,
+    sample: createSample(),
+    solarEnergyProviderSamples: history.solarEnergyProviderSamples,
+    solarForecastSamples,
+  });
+
+  expect(estimate.targetTime).toBe("2026-04-19T10:00:00.000Z");
+  expect(estimate.resolvedManualState).toBe("discharging");
+  expect(estimate.skipReason).toBeNull();
+  expect(estimate.targetTimeSignal?.predictedSolarW).toBe(900);
+  expect(estimate.targetTimeSignal?.recoveryThresholdW).toBeGreaterThan(0);
+  expect(estimate.estimatedReservePercentAtTargetTime).toBeGreaterThan(12);
+});
+
+test("low-price auto is skipped when solar is not expected at the low marker", () => {
+  const now = new Date("2026-04-19T06:00:00.000Z");
+  const battery = createBattery();
+  const item = createAutoLowPriceItem();
+  const history = createMorningUsageHistory();
+  const estimate = estimateDynamicPriceTarget({
+    battery,
+    batteryPowerSamples: history.batteryPowerSamples,
+    backupReserveMarginOverride: 2,
+    dynamicPriceSamples: createDynamicPriceSamples([
+      ["2026-04-19T02:00:00.000Z", 20],
+      ["2026-04-19T06:00:00.000Z", 30],
+      ["2026-04-19T10:00:00.000Z", 10],
+      ["2026-04-19T14:00:00.000Z", 18],
+    ]),
+    item,
+    items: [createDefaultItem(), item],
+    now,
+    p1MeterSamples: history.p1MeterSamples,
+    sample: createSample(),
+    solarEnergyProviderSamples: history.solarEnergyProviderSamples,
+    solarForecastSamples: createZeroSolarForecastSamples(
+      "2026-04-19T06:00:00.000Z",
+      "2026-04-19T11:00:00.000Z",
+    ),
+  });
+
+  expect(estimate.resolvedManualState).toBe("discharging");
+  expect(estimate.skipReason).toContain("not above the expected recharge threshold");
+});
+
+function createAutoLowPriceItem(): BatteryStrategyPlanItem {
+  return {
+    enabled: true,
+    id: "auto-low-price",
+    kind: "daily",
+    manualChargeTargetSoc: 100,
+    manualDischargeTargetSoc: null,
+    manualPowerW: 2400,
+    manualState: "charging",
+    manualTargetSoc: 100,
+    startTime: null,
+    strategyMode: "manual",
+    targetDurationMinutes: null,
+    targetEndTime: null,
+    targetMethod: "auto",
+    triggerKind: "low-price",
+  };
+}
+
+function createMorningSolarForecastSamples(): SolarForecastSampleRecord[] {
+  return createPeriodRange(
+    "2026-04-19T06:00:00.000Z",
+    "2026-04-19T11:00:00.000Z",
+  ).map((periodStart) => ({
+    airTempC: null,
+    cloudOpacityPercent: null,
+    generatedAt: "2026-04-19T05:50:00.000Z",
+    ghiWm2: periodStart === "2026-04-19T10:00:00.000Z" ? 700 : 200,
+    periodStart,
+    siteId: "site-1",
+    value: periodStart === "2026-04-19T10:00:00.000Z" ? 900 : 200,
+  }));
+}
+
+function createMorningUsageHistory(): {
+  batteryPowerSamples: BatteryPowerSampleRecord[];
+  p1MeterSamples: P1MeterSampleRecord[];
+  solarEnergyProviderSamples: SolarEnergyProviderSampleRecord[];
+} {
+  const batteryPowerSamples: BatteryPowerSampleRecord[] = [];
+  const p1MeterSamples: P1MeterSampleRecord[] = [];
+  const solarEnergyProviderSamples: SolarEnergyProviderSampleRecord[] = [];
+
+  for (let dayOffset = 1; dayOffset <= 7; dayOffset += 1) {
+    const start = shiftDateTime("2026-04-19T06:00:00.000Z", -dayOffset);
+    const end = shiftDateTime("2026-04-19T10:15:00.000Z", -dayOffset);
+
+    for (const periodStart of createPeriodRange(start, end)) {
+      const periodDate = new Date(periodStart);
+      const hour = periodDate.getUTCHours();
+      const minute = periodDate.getUTCMinutes();
+      const solarPowerW =
+        hour < 9 ? 0 : hour === 9 ? 300 : minute === 0 ? 750 : 500;
+
+      batteryPowerSamples.push({
+        batteryId: "battery-1",
+        observedAt: periodStart,
+        periodStart,
+        powerW: 120,
+        siteId: "site-1",
+        socPercent: 65 - (hour - 6) * 1.5 - minute / 60,
+      });
+      p1MeterSamples.push({
+        meterId: "meter-1",
+        observedAt: periodStart,
+        periodStart,
+        powerW: 250,
+        siteId: "site-1",
+      });
+      solarEnergyProviderSamples.push({
+        observedAt: periodStart,
+        periodStart,
+        powerW: solarPowerW,
+        providerId: "solar-1",
+        siteId: "site-1",
+      });
+    }
+  }
+
+  return { batteryPowerSamples, p1MeterSamples, solarEnergyProviderSamples };
+}
+
+function createDynamicPriceSamples(
+  entries: Array<[string, number]>,
+): DynamicPriceSampleRecord[] {
+  return entries.map(([periodStart, importPrice]) => ({
+    currency: "EUR",
+    generatedAt: "2026-04-19T05:50:00.000Z",
+    importPrice,
+    periodStart,
+    siteId: "site-1",
+  }));
+}
 
 function createBattery(): BatteryRecord {
   return {

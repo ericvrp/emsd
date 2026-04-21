@@ -2,8 +2,12 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import {
   DEFAULT_SOLAR_PREDICTION_SMOOTHING_MODE,
   applySolarSeriesSmoothing,
+  buildExpectedSiteLoadSeriesForLocalDay,
+  buildHouseLoadHistorySeries,
   createBatteryStrategyPlanId,
   deriveBatteryStatusFromPower,
+  fillSiteLoadSeriesForLocalDay,
+  getCurrentLocalDayKey,
   type BatteryManualState,
   type BatteryRecord,
   type BatteryStrategyPlanItem,
@@ -46,7 +50,7 @@ import {
   readWeatherForecast,
   readWeatherForecastSources,
 } from "../../daemon/src/database";
-import { estimateStrategyTarget } from "../../daemon/src/strategy-estimate";
+import { estimateDynamicPriceTarget } from "../../daemon/src/dynamic-price-target";
 import { formatBatteryStrategyStatusSummary } from "../../daemon/src/strategy-log";
 import { getStrategyTriggerAt } from "../../daemon/src/strategy-scheduler";
 import { createBatteryPlugin } from "./battery-plugins";
@@ -624,7 +628,10 @@ function createBatteryStrategyRuntimeForPlanSave(input: {
   plan: BatteryStrategyPlanRecord;
   dynamicPriceSamples: ReturnType<typeof readDynamicPriceSamples>;
 }) {
-  const runtime = createBatteryStrategyRuntimeForPlanApply(input.plan, input.now);
+  const runtime = createBatteryStrategyRuntimeForPlanApply(
+    input.plan,
+    input.now,
+  );
 
   for (const item of input.plan.slice(1)) {
     if (!item.enabled || item.triggerKind === "daily-time") {
@@ -660,17 +667,38 @@ export async function runApiAction(
 
     case "history-get-archive": {
       const siteId = requireString(input.siteId, "siteId");
+      const selectedDayKey = normalizeDayKey(optionalString(input.day)) ?? getCurrentLocalDayKey();
       const db = openDaemonDatabase();
 
       try {
-        const solarEnergyProviderSamples = readSolarEnergyProviderSamples(db, siteId);
+        const batteryPowerSamples = readBatteryPowerSamples(db, siteId);
+        const p1MeterSamples = readP1MeterSamples(db, siteId);
+        const solarEnergyProviderSamples = readSolarEnergyProviderSamples(
+          db,
+          siteId,
+        );
         const solarForecastSamples = readSolarForecastSamples(db, siteId);
+        const siteLoadHistorySeries = buildHouseLoadHistorySeries({
+          batteryPowerSamples,
+          p1MeterSamples,
+          solarEnergyProviderSamples,
+        });
 
         return {
-          batteryPowerSamples: readBatteryPowerSamples(db, siteId),
+          batteryPowerSamples,
           batteryStrategyHistory: readBatteryStrategyHistory(db, siteId),
           dynamicPriceSamples: readDynamicPriceSamples(db, siteId),
-          p1MeterSamples: readP1MeterSamples(db, siteId),
+          p1MeterSamples,
+          selectedDayExpectedSiteLoadSamples:
+            buildExpectedSiteLoadSeriesForLocalDay({
+              dayKey: selectedDayKey,
+              historySeries: siteLoadHistorySeries,
+            }),
+          selectedDayKey,
+          selectedDaySiteLoadSamples: fillSiteLoadSeriesForLocalDay({
+            dayKey: selectedDayKey,
+            points: siteLoadHistorySeries,
+          }),
           siteId,
           solarEnergyProviderSamples,
           solarForecastSamples,
@@ -735,7 +763,11 @@ export async function runApiAction(
         );
       }
 
-      assertSingleBatteryLimit(siteId, [discovered], getExistingManagedDeviceIds(siteId));
+      assertSingleBatteryLimit(
+        siteId,
+        [discovered],
+        getExistingManagedDeviceIds(siteId),
+      );
 
       return toManagedDeviceRecord(
         createManagedBatteryFromDiscovered(discovered, siteId),
@@ -893,7 +925,7 @@ export async function runApiAction(
         } catch (error) {
           // Log the error but continue with other batteries
           console.error(
-            `Failed to apply strategy to battery ${battery.id}: ${error instanceof Error ? error.message : String(error)}`
+            `Failed to apply strategy to battery ${battery.id}: ${error instanceof Error ? error.message : String(error)}`,
           );
         }
       }
@@ -1374,7 +1406,10 @@ async function buildManualAutoTargets(input: {
     const batteryPowerSamples = readBatteryPowerSamples(db, input.siteId);
     const dynamicPriceSamples = readDynamicPriceSamples(db, input.siteId);
     const p1MeterSamples = readP1MeterSamples(db, input.siteId);
-    const solarEnergyProviderSamples = readSolarEnergyProviderSamples(db, input.siteId);
+    const solarEnergyProviderSamples = readSolarEnergyProviderSamples(
+      db,
+      input.siteId,
+    );
     const solarForecastSamples = readSolarForecastSamples(db, input.siteId);
     const targets = {} as Record<
       string,
@@ -1390,7 +1425,7 @@ async function buildManualAutoTargets(input: {
         manualPowerW: input.manualPowerW,
         manualState: input.manualState,
       });
-      const estimate = estimateStrategyTarget({
+      const dynamicPriceTargetEstimate = estimateDynamicPriceTarget({
         battery,
         batteryPowerSamples,
         dynamicPriceSamples,
@@ -1404,8 +1439,8 @@ async function buildManualAutoTargets(input: {
       });
 
       targets[battery.id] = {
-        targetSocPercent: estimate.estimatedTargetPercent,
-        targetTime: estimate.targetTime,
+        targetSocPercent: dynamicPriceTargetEstimate.estimatedTargetPercent,
+        targetTime: dynamicPriceTargetEstimate.targetTime,
       };
     }
 
@@ -1435,6 +1470,10 @@ function createManualAutoTargetItem(input: {
     manualDischargeTargetSoc: null,
     manualTargetSoc: null,
   };
+}
+
+function normalizeDayKey(value: string | null): string | null {
+  return value !== null && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
 }
 
 async function readManualAutoTargetSample(

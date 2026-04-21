@@ -76,6 +76,33 @@ test("getStrategyTriggerAt returns the next upcoming price marker when none are 
   expect(triggerAt?.toISOString()).toBe("2026-04-09T04:00:00.000Z");
 });
 
+test("getStrategyTriggerAt uses the preceding high-price marker for low-price auto items", () => {
+  const item = createDailyItem({
+    manualState: "charging",
+    targetMethod: "auto",
+    triggerKind: "low-price",
+  });
+  const dynamicPriceSamples = createDynamicPriceSamples([
+    ["2026-04-09T00:00:00.000Z", 20],
+    ["2026-04-09T04:00:00.000Z", 30],
+    ["2026-04-09T08:00:00.000Z", 10],
+    ["2026-04-09T12:00:00.000Z", 25],
+    ["2026-04-09T16:00:00.000Z", 5],
+  ]);
+
+  expect(
+    getStrategyTriggerAt({
+      item,
+      now: new Date("2026-04-09T07:00:00.000Z"),
+      dynamicPriceSamples,
+    })?.toISOString(),
+  ).toBe("2026-04-09T04:00:00.000Z");
+
+  expect(
+    getTodayTriggerAt(item, new Date("2026-04-09T07:00:00.000Z")),
+  ).toBeNull();
+});
+
 test("shouldCompleteScheduledItem uses the active plan item rather than the persisted battery strategy", () => {
   const battery = createBattery({
     strategyMode: "self-consumption",
@@ -116,6 +143,7 @@ test("shouldCompleteScheduledItem uses the computed dynamic target while an auto
   const battery = createBattery({
     strategyRuntime: {
       activeItemId: "daily-1",
+      activeResolvedManualState: "discharging",
       activeStartedAt: "2026-04-09T07:00:00.000Z",
       activeObservedAt: "2026-04-09T07:00:05.000Z",
       activeStartSocPercent: 50,
@@ -140,6 +168,30 @@ test("shouldCompleteScheduledItem uses the computed dynamic target while an auto
       now: new Date("2026-04-09T12:00:00.000Z"),
       runtime: battery.strategyRuntime,
       sample,
+    }),
+  ).toBe(true);
+});
+
+test("shouldMarkScheduledItemObserved uses the resolved runtime state for low-price auto items", () => {
+  const item = createDailyItem({
+    id: "daily-1",
+    manualState: "charging",
+    targetMethod: "auto",
+    triggerKind: "low-price",
+  });
+
+  expect(
+    shouldMarkScheduledItemObserved({
+      item,
+      runtime: {
+        activeItemId: "daily-1",
+        activeObservedAt: null,
+        activeResolvedManualState: "discharging",
+        activeStartSocPercent: 60,
+        activeStartedAt: "2026-04-09T07:00:00.000Z",
+        lastTriggeredAtByItemId: { "daily-1": "2026-04-09T07:00:00.000Z" },
+      },
+      sample: createSample({ status: "discharging" }),
     }),
   ).toBe(true);
 });
