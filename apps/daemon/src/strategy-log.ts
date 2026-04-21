@@ -72,7 +72,11 @@ export function formatStrategyPlanAppliedSummary(
   dynamicPriceSamples: DynamicPriceSampleRecord[] = [],
 ): string {
   const fallback = describeStrategyPlanItemHuman(battery.strategyPlan[0]);
-  const nextItem = getNextStrategyItemForToday(battery, now, dynamicPriceSamples);
+  const nextItem = getNextStrategyItemForToday(
+    battery,
+    now,
+    dynamicPriceSamples,
+  );
   const nextSummary = nextItem
     ? `${describeStrategyScheduleHuman(nextItem)}: ${describeStrategyPlanItemHuman(nextItem)}`
     : "none today";
@@ -86,6 +90,7 @@ export function formatScheduledStrategyStartedSummary(
   observedDelay: string,
   estimate?: {
     targetSocPercent: number;
+    reserveSocPercent: number;
     targetTime: string | null;
     reasoning: string;
   } | null,
@@ -98,9 +103,11 @@ export function formatScheduledStrategyStartedSummary(
   }
 
   const targetTimeLabel =
-    estimate.targetTime === null ? "" : ` by ${formatHumanClockTime(estimate.targetTime)}`;
+    estimate.targetTime === null
+      ? ""
+      : ` by ${formatHumanClockTime(estimate.targetTime)}`;
 
-  return `${base}; dynamic target ${estimate.targetSocPercent}%${targetTimeLabel} based on ${estimate.reasoning}`;
+  return `${base}; discharging to ${estimate.targetSocPercent}% to reserve ${estimate.reserveSocPercent}%${targetTimeLabel} based on ${estimate.reasoning}`;
 }
 
 export function formatScheduledStrategyCompletionSummary(input: {
@@ -564,7 +571,11 @@ function describeStrategyScheduleHuman(item: BatteryStrategyPlanItem): string {
     return "the default strategy";
   }
 
-  if (item.kind === "daily" && item.triggerKind === "daily-time" && item.startTime) {
+  if (
+    item.kind === "daily" &&
+    item.triggerKind === "daily-time" &&
+    item.startTime
+  ) {
     return `the ${item.startTime} schedule`;
   }
 
@@ -626,7 +637,11 @@ function getNextStrategyItemForToday(
       continue;
     }
 
-    const triggerAt = getNextStrategyTriggerAt({ item, now, dynamicPriceSamples });
+    const triggerAt = getNextStrategyTriggerAt({
+      item,
+      now,
+      dynamicPriceSamples,
+    });
 
     if (
       triggerAt === null ||

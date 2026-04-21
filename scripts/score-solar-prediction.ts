@@ -5,6 +5,9 @@ import {
   DEFAULT_SOLAR_PREDICTION_SMOOTHING_MODE,
   formatSolarPredictionSmoothingMode,
   getDatabasePath,
+  isFlagArg,
+  parseIntegerArg,
+  parseStringArg,
   SOLAR_PREDICTION_SMOOTHING_MODES,
   type SolarEnergyProviderSampleRecord,
   type SolarForecastSampleRecord,
@@ -68,37 +71,35 @@ function parseArgs(args: string[]): ScriptOptions {
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
 
-    if (arg === "--days") {
-      const value = Number(args[index + 1]);
-      if (!Number.isInteger(value) || value <= 0) {
-        throw new Error("--days must be a positive integer.");
-      }
-      days = value;
-      index += 1;
+    const daysArg = parseIntegerArg(args, index, "--days", (v) =>
+      v <= 0 ? "--days must be a positive integer." : null,
+    );
+
+    if (daysArg) {
+      days = daysArg.value;
+      index = daysArg.newIndex;
       continue;
     }
 
-    if (arg === "--site") {
-      const value = args[index + 1];
-      if (!value) {
-        throw new Error("--site requires a site id.");
-      }
-      siteId = value;
-      index += 1;
+    const siteArg = parseStringArg(args, index, "--site");
+
+    if (siteArg) {
+      siteId = siteArg.value;
+      index = siteArg.newIndex;
       continue;
     }
 
-    if (arg === "--top") {
-      const value = Number(args[index + 1]);
-      if (!Number.isInteger(value) || value <= 0) {
-        throw new Error("--top must be a positive integer.");
-      }
-      top = value;
-      index += 1;
+    const topArg = parseIntegerArg(args, index, "--top", (v) =>
+      v <= 0 ? "--top must be a positive integer." : null,
+    );
+
+    if (topArg) {
+      top = topArg.value;
+      index = topArg.newIndex;
       continue;
     }
 
-    if (arg === "--help" || arg === "-h") {
+    if (isFlagArg(arg, "--help", "-h")) {
       printHelp();
       process.exit(0);
     }
@@ -116,9 +117,9 @@ function printHelp(): void {
       "",
       "Usage:",
       "  bun run solar:score",
-      "  bun run solar:score -- --days 7",
-      "  bun run solar:score -- --site <site-id>",
-      "  bun run solar:score -- --top 15",
+      "  bun run solar:score -- --days=7",
+      "  bun run solar:score -- --site=<site-id>",
+      "  bun run solar:score -- --top=15",
     ].join("\n"),
   );
 }
@@ -229,7 +230,10 @@ function scoreCombinationByDay(input: {
   });
 }
 
-function averageScore(rows: DayScoreRow[], selector: (row: DayScoreRow) => number | null) {
+function averageScore(
+  rows: DayScoreRow[],
+  selector: (row: DayScoreRow) => number | null,
+) {
   const values = rows
     .map(selector)
     .filter((value): value is number => typeof value === "number");
@@ -245,8 +249,13 @@ function averageScore(rows: DayScoreRow[], selector: (row: DayScoreRow) => numbe
   );
 }
 
-function sumBy(rows: DayScoreRow[], selector: (row: DayScoreRow) => number): number {
-  return Number(rows.reduce((total, row) => total + selector(row), 0).toFixed(2));
+function sumBy(
+  rows: DayScoreRow[],
+  selector: (row: DayScoreRow) => number,
+): number {
+  return Number(
+    rows.reduce((total, row) => total + selector(row), 0).toFixed(2),
+  );
 }
 
 function buildEvaluationCombinations(): EvaluationCombination[] {
@@ -258,7 +267,10 @@ function buildEvaluationCombinations(): EvaluationCombination[] {
   );
 }
 
-function compareNullableDescending(left: number | null, right: number | null): number {
+function compareNullableDescending(
+  left: number | null,
+  right: number | null,
+): number {
   if (left === null && right === null) {
     return 0;
   }
@@ -290,10 +302,22 @@ function buildCombinationSummary(
 ): CombinationScoreSummary {
   return {
     ...combination,
-    averageEnergyAccuracy: averageScore(rows, (row) => row.energyAccuracyPercentage),
-    averageOverallAccuracy: averageScore(rows, (row) => row.overallAccuracyPercentage),
-    averageTimingAccuracy: averageScore(rows, (row) => row.timingAccuracyPercentage),
-    isCurrentServerDefault: isSameCombination(combination, CURRENT_SERVER_DEFAULT),
+    averageEnergyAccuracy: averageScore(
+      rows,
+      (row) => row.energyAccuracyPercentage,
+    ),
+    averageOverallAccuracy: averageScore(
+      rows,
+      (row) => row.overallAccuracyPercentage,
+    ),
+    averageTimingAccuracy: averageScore(
+      rows,
+      (row) => row.timingAccuracyPercentage,
+    ),
+    isCurrentServerDefault: isSameCombination(
+      combination,
+      CURRENT_SERVER_DEFAULT,
+    ),
     totalAbsoluteErrorWh: sumBy(rows, (row) => row.totalAbsoluteErrorWh),
     totalEnergyDeltaWh: sumBy(rows, (row) => row.energyDeltaWh),
     totalGeneratedWh: sumBy(rows, (row) => row.totalGeneratedWh),
@@ -304,8 +328,12 @@ function buildCombinationSummary(
 
 function formatSummaryRow(summary: CombinationScoreSummary) {
   return {
-    generated: formatSolarPredictionSmoothingMode(summary.generatedSmoothingMode),
-    predicted: formatSolarPredictionSmoothingMode(summary.predictedSmoothingMode),
+    generated: formatSolarPredictionSmoothingMode(
+      summary.generatedSmoothingMode,
+    ),
+    predicted: formatSolarPredictionSmoothingMode(
+      summary.predictedSmoothingMode,
+    ),
     averageOverallAccuracy: summary.averageOverallAccuracy,
     averageEnergyAccuracy: summary.averageEnergyAccuracy,
     averageTimingAccuracy: summary.averageTimingAccuracy,
@@ -332,7 +360,7 @@ async function main(): Promise<void> {
   try {
     const sites = readSites(db);
     const site = options.siteId
-      ? sites.find((candidate) => candidate.id === options.siteId) ?? null
+      ? (sites.find((candidate) => candidate.id === options.siteId) ?? null)
       : (sites[0] ?? null);
 
     if (site === null) {
@@ -340,15 +368,23 @@ async function main(): Promise<void> {
     }
 
     const forecastSamples = readSolarForecastSamples(db, site.id);
-    const solarEnergyProviderSamples = readSolarEnergyProviderSamples(db, site.id);
+    const solarEnergyProviderSamples = readSolarEnergyProviderSamples(
+      db,
+      site.id,
+    );
 
-    if (forecastSamples.length === 0 || solarEnergyProviderSamples.length === 0) {
+    if (
+      forecastSamples.length === 0 ||
+      solarEnergyProviderSamples.length === 0
+    ) {
       throw new Error(
         `Site ${site.id} does not have enough forecast and solar history to score predictions.`,
       );
     }
 
-    const generatedSeries = aggregateGenerationByPeriodStart(solarEnergyProviderSamples);
+    const generatedSeries = aggregateGenerationByPeriodStart(
+      solarEnergyProviderSamples,
+    );
     const candidateDays = collectCandidateDays({
       days: options.days,
       forecastSamples,
@@ -364,23 +400,27 @@ async function main(): Promise<void> {
     console.log(`Database: ${getDatabasePath()}`);
     console.log(`Site: ${site.name} (${site.id})`);
     console.log(`Days scored: ${candidateDays.join(", ")}`);
-    console.log(`Current server default: ${formatCombinationLabel(CURRENT_SERVER_DEFAULT)}`);
+    console.log(
+      `Current server default: ${formatCombinationLabel(CURRENT_SERVER_DEFAULT)}`,
+    );
 
-    const scoredCombinations = buildEvaluationCombinations().map((combination) => {
-      const rows = scoreCombinationByDay({
-        candidateDays,
-        combination,
-        forecastSamples,
-        generatedSeries,
-        solarEnergyProviderSamples,
-      });
+    const scoredCombinations = buildEvaluationCombinations().map(
+      (combination) => {
+        const rows = scoreCombinationByDay({
+          candidateDays,
+          combination,
+          forecastSamples,
+          generatedSeries,
+          solarEnergyProviderSamples,
+        });
 
-      return {
-        combination,
-        rows,
-        summary: buildCombinationSummary(combination, rows),
-      };
-    });
+        return {
+          combination,
+          rows,
+          summary: buildCombinationSummary(combination, rows),
+        };
+      },
+    );
 
     const rankedSummaries = scoredCombinations
       .map((entry) => entry.summary)
@@ -406,8 +446,8 @@ async function main(): Promise<void> {
         return left.totalAbsoluteErrorWh - right.totalAbsoluteErrorWh;
       });
 
-    const currentServerDefaultSummary = rankedSummaries.find((summary) =>
-      summary.isCurrentServerDefault,
+    const currentServerDefaultSummary = rankedSummaries.find(
+      (summary) => summary.isCurrentServerDefault,
     );
     const bestSummary = rankedSummaries[0] ?? null;
 
@@ -421,9 +461,13 @@ async function main(): Promise<void> {
     console.log("\nBest combination:");
     console.table(bestSummary ? [formatSummaryRow(bestSummary)] : []);
 
-    console.log(`\nTop ${Math.min(options.top, rankedSummaries.length)} combinations:`);
+    console.log(
+      `\nTop ${Math.min(options.top, rankedSummaries.length)} combinations:`,
+    );
     console.table(
-      rankedSummaries.slice(0, options.top).map((summary) => formatSummaryRow(summary)),
+      rankedSummaries
+        .slice(0, options.top)
+        .map((summary) => formatSummaryRow(summary)),
     );
 
     if (bestSummary !== null) {
@@ -442,23 +486,28 @@ async function main(): Promise<void> {
           candidateDays.map((day) => ({
             date: day,
             currentDefaultOverall:
-              currentRows?.find((row) => row.date === day)?.overallAccuracyPercentage ??
-              null,
+              currentRows?.find((row) => row.date === day)
+                ?.overallAccuracyPercentage ?? null,
             bestOverall:
-              bestRows.find((row) => row.date === day)?.overallAccuracyPercentage ?? null,
+              bestRows.find((row) => row.date === day)
+                ?.overallAccuracyPercentage ?? null,
             currentDefaultEnergy:
-              currentRows?.find((row) => row.date === day)?.energyAccuracyPercentage ??
-              null,
+              currentRows?.find((row) => row.date === day)
+                ?.energyAccuracyPercentage ?? null,
             bestEnergy:
-              bestRows.find((row) => row.date === day)?.energyAccuracyPercentage ?? null,
+              bestRows.find((row) => row.date === day)
+                ?.energyAccuracyPercentage ?? null,
             currentDefaultTiming:
-              currentRows?.find((row) => row.date === day)?.timingAccuracyPercentage ??
-              null,
+              currentRows?.find((row) => row.date === day)
+                ?.timingAccuracyPercentage ?? null,
             bestTiming:
-              bestRows.find((row) => row.date === day)?.timingAccuracyPercentage ?? null,
+              bestRows.find((row) => row.date === day)
+                ?.timingAccuracyPercentage ?? null,
           })),
         );
-        console.log(`Best combination label: ${formatCombinationLabel(bestSummary)}`);
+        console.log(
+          `Best combination label: ${formatCombinationLabel(bestSummary)}`,
+        );
       }
     }
   } finally {

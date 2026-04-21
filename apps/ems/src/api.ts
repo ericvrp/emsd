@@ -890,8 +890,11 @@ export async function runApiAction(
 
         try {
           await createBatteryPlugin(battery).setStrategy(strategy);
-        } catch {
-          // Continue with other batteries even if plugin fails
+        } catch (error) {
+          // Log the error but continue with other batteries
+          console.error(
+            `Failed to apply strategy to battery ${battery.id}: ${error instanceof Error ? error.message : String(error)}`
+          );
         }
       }
 

@@ -168,11 +168,12 @@ test("includes the dynamic target estimate in the scheduled start summary", () =
       {
         reasoning: "overnight house load and predicted solar recovery",
         targetSocPercent: 34,
+        reserveSocPercent: 10,
         targetTime: "2026-04-13T08:15:00.000Z",
       },
     ),
   ).toBe(
-    "the 19:30 schedule is now active for battery-1: scheduled discharge at 2400W; dynamic target 34% by 08:15 based on overnight house load and predicted solar recovery",
+    "the 19:30 schedule is now active for battery-1: scheduled discharge at 2400W; discharging to 34% to reserve 10% by 08:15 based on overnight house load and predicted solar recovery",
   );
 });
 

@@ -2,7 +2,12 @@ import type {
   BatteryManualState,
   BatteryStrategyPlanItem,
 } from "../packages/core/src/index";
-import { getDatabasePath } from "../packages/core/src/index";
+import {
+  getDatabasePath,
+  isFlagArg,
+  parseIntegerArg,
+  parseStringArg,
+} from "../packages/core/src/index";
 import {
   openDaemonDatabase,
   readBatteries,
@@ -101,91 +106,75 @@ function parseArgs(args: string[]): ScriptOptions {
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
 
-    if (arg === "--days") {
-      const value = Number(args[index + 1]);
+    const daysArg = parseIntegerArg(args, index, "--days", (v) =>
+      v <= 0 ? "--days must be a positive integer." : null,
+    );
 
-      if (!Number.isInteger(value) || value <= 0) {
-        throw new Error("--days must be a positive integer.");
-      }
-
-      days = value;
-      index += 1;
+    if (daysArg) {
+      days = daysArg.value;
+      index = daysArg.newIndex;
       continue;
     }
 
-    if (arg === "--date") {
-      const value = args[index + 1];
+    const dateArg = parseStringArg(args, index, "--date");
 
-      if (!isIsoDate(value)) {
+    if (dateArg) {
+      if (!isIsoDate(dateArg.value)) {
         throw new Error("--date must use YYYY-MM-DD format.");
       }
 
-      date = value;
-      index += 1;
+      date = dateArg.value;
+      index = dateArg.newIndex;
       continue;
     }
 
-    if (arg === "--site") {
-      const value = args[index + 1];
+    const siteArg = parseStringArg(args, index, "--site");
 
-      if (!value) {
-        throw new Error("--site requires a site id.");
-      }
-
-      siteId = value;
-      index += 1;
+    if (siteArg) {
+      siteId = siteArg.value;
+      index = siteArg.newIndex;
       continue;
     }
 
-    if (arg === "--backup-reserve-margin") {
-      backupReserveMargin = parseBackupReserveMargin(args[index + 1]);
-      index += 1;
+    const marginArg = parseStringArg(args, index, "--backup-reserve-margin");
+
+    if (marginArg) {
+      backupReserveMargin = parseBackupReserveMargin(marginArg.value);
+      index = marginArg.newIndex;
       continue;
     }
 
-    if (arg.startsWith("--backup-reserve-margin=")) {
-      backupReserveMargin = parseBackupReserveMargin(
-        arg.slice("--backup-reserve-margin=".length),
-      );
+    const powerArg = parseIntegerArg(args, index, "--power", (v) =>
+      v <= 0 ? "--power must be a positive integer." : null,
+    );
+
+    if (powerArg) {
+      powerW = powerArg.value;
+      index = powerArg.newIndex;
       continue;
     }
 
-    if (arg === "--power") {
-      const value = Number(args[index + 1]);
+    const timeArg = parseStringArg(args, index, "--time");
 
-      if (!Number.isFinite(value) || value <= 0) {
-        throw new Error("--power must be a positive number.");
-      }
-
-      powerW = Math.round(value);
-      index += 1;
-      continue;
-    }
-
-    if (arg === "--time") {
-      const value = args[index + 1];
-
-      if (!isClockTime(value)) {
+    if (timeArg) {
+      if (!isClockTime(timeArg.value)) {
         throw new Error("--time must use HH:MM format.");
       }
 
-      time = value;
-      index += 1;
+      time = timeArg.value;
+      index = timeArg.newIndex;
       continue;
     }
 
-    if (arg === "--price") {
-      priceSignals = parsePriceSignals(args[index + 1]);
-      index += 1;
+    const priceArg = parseStringArg(args, index, "--price");
+
+    if (priceArg) {
+      priceSignals = parsePriceSignals(priceArg.value);
+      index = priceArg.newIndex;
       continue;
     }
 
-    if (arg.startsWith("--price=")) {
-      priceSignals = parsePriceSignals(arg.slice("--price=".length));
-      continue;
-    }
-
-    if (arg === "--help" || arg === "-h") {
+    if (isFlagArg(arg, "--help", "-h")) {
       printHelp();
       process.exit(0);
     }
@@ -237,13 +226,13 @@ function printHelp(): void {
       "",
       "Usage:",
       "  bun run estimate:score",
-      "  bun run estimate:score -- --price low",
+      "  bun run estimate:score -- --price=low",
       "  bun run estimate:score -- --price=high,low",
-      "  bun run estimate:score -- --date 2026-04-19",
-      "  bun run estimate:score -- --backup-reserve-margin 2",
-      "  bun run estimate:score -- --power 1800",
-      "  bun run estimate:score -- --time 17:30",
-      "  bun run estimate:score -- --site <site-id>",
+      "  bun run estimate:score -- --date=2026-04-19",
+      "  bun run estimate:score -- --backup-reserve-margin=2",
+      "  bun run estimate:score -- --power=1800",
+      "  bun run estimate:score -- --time=17:30",
+      "  bun run estimate:score -- --site=<site-id>",
       "  bun run estimate:score -- --verbose",
       "  bun run estimate:score -- --verbose=meta,why,replay",
       `  verbose blocks: ${ALL_VERBOSE_BLOCKS.join(", ")}`,
@@ -347,7 +336,8 @@ function scoreSite(
 
     const estimateAt = createReplayTime(options.date, options.time);
 
-    let currentEstimate: ReturnType<typeof estimateStrategyTarget> | null = null;
+    let currentEstimate: ReturnType<typeof estimateStrategyTarget> | null =
+      null;
     const syntheticItem = createSyntheticPlanItem({
       action: options.action,
       battery,
@@ -484,7 +474,9 @@ function scoreReserveTarget(input: {
       solarEnergyProviderSamples: input.solarEnergyProviderSamples,
       solarForecastSamples: input.solarForecastSamples,
     });
-    const targetTime = estimate.targetTime ? new Date(estimate.targetTime) : null;
+    const targetTime = estimate.targetTime
+      ? new Date(estimate.targetTime)
+      : null;
 
     if (targetTime === null || Number.isNaN(targetTime.getTime())) {
       continue;
@@ -509,7 +501,9 @@ function scoreReserveTarget(input: {
     const candidateTargetPercent = clampPercent(
       input.reserveTargetPercent +
         Math.ceil(
-          estimate.estimatedRemainingEnergyWh / Math.max(1, input.capacityWh) * 100,
+          (estimate.estimatedRemainingEnergyWh /
+            Math.max(1, input.capacityWh)) *
+            100,
         ),
       input.battery.minimumDischargePercent,
     );
@@ -523,7 +517,9 @@ function scoreReserveTarget(input: {
 
   return {
     averageReplayStopPercentNow:
-      samples === 0 ? 0 : Number((averageReplayStopPercentNow / samples).toFixed(2)),
+      samples === 0
+        ? 0
+        : Number((averageReplayStopPercentNow / samples).toFixed(2)),
     chargeDurationMinutes,
     currentStopPercentNow:
       input.action === "charging"
@@ -533,8 +529,8 @@ function scoreReserveTarget(input: {
           : clampPercent(
               input.reserveTargetPercent +
                 Math.ceil(
-                  input.currentEstimatedRemainingEnergyWh /
-                    Math.max(1, input.capacityWh) *
+                  (input.currentEstimatedRemainingEnergyWh /
+                    Math.max(1, input.capacityWh)) *
                     100,
                 ),
               input.battery.minimumDischargePercent,
@@ -563,9 +559,7 @@ function createSyntheticPlanItem(input: {
     manualPowerW: input.powerW,
     manualState: input.action,
     manualTargetSoc:
-      input.action === "charging"
-        ? 100
-        : input.battery.minimumDischargePercent,
+      input.action === "charging" ? 100 : input.battery.minimumDischargePercent,
     startTime: null,
     strategyMode: "manual",
     targetDurationMinutes: null,
@@ -580,7 +574,11 @@ function createReplayTime(day: string, time: string): Date {
   const [hoursPart, minutesPart] = time.split(":");
   const replayTime = new Date();
 
-  replayTime.setFullYear(Number(yearPart), Number(monthPart) - 1, Number(dayPart));
+  replayTime.setFullYear(
+    Number(yearPart),
+    Number(monthPart) - 1,
+    Number(dayPart),
+  );
   replayTime.setHours(Number(hoursPart), Number(minutesPart), 0, 0);
 
   return replayTime;
@@ -595,11 +593,12 @@ function getCandidateDaysFromBatterySamples(
   cutoffDay.setDate(cutoffDay.getDate() - days);
 
   return [
-    ...new Set(batteryPowerSamples.map((sample) => getDayKey(sample.periodStart))),
+    ...new Set(
+      batteryPowerSamples.map((sample) => getDayKey(sample.periodStart)),
+    ),
   ]
     .filter(
-      (day) =>
-        day >= cutoffDay.toISOString().slice(0, 10) && day < anchorDate,
+      (day) => day >= cutoffDay.toISOString().slice(0, 10) && day < anchorDate,
     )
     .sort();
 }
@@ -667,7 +666,10 @@ function getActualNetLoadWh(input: {
         const batteryPowerW = batteryByPeriod.get(key) ?? 0;
         const gridPowerW = gridByPeriod.get(key) ?? 0;
         const solarPowerW = solarByPeriod.get(key) ?? 0;
-        const houseLoadW = Math.max(0, solarPowerW + gridPowerW - batteryPowerW);
+        const houseLoadW = Math.max(
+          0,
+          solarPowerW + gridPowerW - batteryPowerW,
+        );
         return total + houseLoadW * 0.25;
       }, 0)
       .toFixed(2),
@@ -788,9 +790,15 @@ function printCurrentEstimateSummary(input: EstimateContext): void {
     console.log("Energy estimate:");
     console.table(
       formatKeyValueRows({
-        "Expected house load until target": formatWh(input.estimate.expectedHouseLoadWh),
-        "Predicted solar until target": formatWh(input.estimate.predictedSolarGenerationWh),
-        "Net battery energy needed": formatWh(input.estimate.estimatedRemainingEnergyWh),
+        "Expected house load until target": formatWh(
+          input.estimate.expectedHouseLoadWh,
+        ),
+        "Predicted solar until target": formatWh(
+          input.estimate.predictedSolarGenerationWh,
+        ),
+        "Net battery energy needed": formatWh(
+          input.estimate.estimatedRemainingEnergyWh,
+        ),
       }),
     );
   }
@@ -831,8 +839,12 @@ function printCurrentEstimateSummary(input: EstimateContext): void {
     console.log("History used:");
     console.table(
       formatKeyValueRows({
-        "Historical periods used": String(input.estimate.historyStats.historicalPeriodsUsed),
-        "Same-weekday periods used": String(input.estimate.historyStats.sameWeekdayPeriodsUsed),
+        "Historical periods used": String(
+          input.estimate.historyStats.historicalPeriodsUsed,
+        ),
+        "Same-weekday periods used": String(
+          input.estimate.historyStats.sameWeekdayPeriodsUsed,
+        ),
         "Time slots modelled": String(input.estimate.historyStats.slotCount),
         "Replay reference days": input.candidateDays.join(", "),
       }),
@@ -840,7 +852,9 @@ function printCurrentEstimateSummary(input: EstimateContext): void {
   }
 }
 
-function formatKeyValueRows(values: Record<string, string>): Array<{ key: string; value: string }> {
+function formatKeyValueRows(
+  values: Record<string, string>,
+): Array<{ key: string; value: string }> {
   return Object.entries(values).map(([key, value]) => ({ key, value }));
 }
 
@@ -935,7 +949,9 @@ function formatDurationMinutes(value: number): string {
 
 function parsePriceSignals(value: string | undefined): PriceSignal[] {
   if (!value) {
-    throw new Error("--price requires a comma-separated list of 'high' and/or 'low'.");
+    throw new Error(
+      "--price requires a comma-separated list of 'high' and/or 'low'.",
+    );
   }
 
   const entries = value
@@ -1004,7 +1020,10 @@ function formatTargetTime(value: string | null): string {
   return `${date.toISOString().slice(0, 10)} ${date.toTimeString().slice(0, 5)}`;
 }
 
-function formatDurationUntilTarget(referenceTime: Date, value: string | null): string {
+function formatDurationUntilTarget(
+  referenceTime: Date,
+  value: string | null,
+): string {
   if (value === null) {
     return "unknown";
   }
@@ -1031,9 +1050,12 @@ function formatReferenceMoment(value: Date): string {
 function formatBreakEvenRule(
   estimate: ReturnType<typeof estimateStrategyTarget>,
 ): string {
-  const expectedLoadAtTargetW = estimate.targetTimeSignal?.expectedHouseLoadW ?? null;
-  const predictedSolarAtTargetW = estimate.targetTimeSignal?.predictedSolarW ?? null;
-  const recoveryThresholdW = estimate.targetTimeSignal?.recoveryThresholdW ?? null;
+  const expectedLoadAtTargetW =
+    estimate.targetTimeSignal?.expectedHouseLoadW ?? null;
+  const predictedSolarAtTargetW =
+    estimate.targetTimeSignal?.predictedSolarW ?? null;
+  const recoveryThresholdW =
+    estimate.targetTimeSignal?.recoveryThresholdW ?? null;
 
   if (predictedSolarAtTargetW === null || recoveryThresholdW === null) {
     return "n/a";

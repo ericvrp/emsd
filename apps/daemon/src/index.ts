@@ -752,6 +752,7 @@ async function runScheduledStrategy(
             ? {
                 reasoning: describeEstimatedRuntimeReasoning(runtime),
                 targetSocPercent: runtime.activeTargetSocPercent,
+                reserveSocPercent: runtime.activeReserveSocPercent ?? 0,
                 targetTime: runtime.activeTargetTime ?? null,
               }
             : null,
@@ -800,7 +801,8 @@ async function runScheduledStrategy(
 
   const dueItems = battery.strategyPlan.slice(1).filter((item) => item.enabled);
   const dynamicPriceSamples = dueItems.some(
-    (item) => item.triggerKind === "low-price" || item.triggerKind === "high-price",
+    (item) =>
+      item.triggerKind === "low-price" || item.triggerKind === "high-price",
   )
     ? readDynamicPriceSamples(db, battery.siteId)
     : [];
@@ -933,6 +935,10 @@ async function runScheduledStrategy(
         needsCompletionTracking(item) && item.targetMethod === "auto"
           ? (estimate?.estimatedTargetPercent ?? null)
           : null,
+      activeReserveSocPercent:
+        needsCompletionTracking(item) && item.targetMethod === "auto"
+          ? (estimate?.estimatedReservePercentAtTargetTime ?? null)
+          : null,
       activeTargetTime:
         needsCompletionTracking(item) && item.targetMethod === "auto"
           ? (estimate?.targetTime ?? null)
@@ -972,6 +978,7 @@ async function runScheduledStrategy(
             ? {
                 reasoning: estimate.reasoning,
                 targetSocPercent: estimate.estimatedTargetPercent,
+                reserveSocPercent: estimate.estimatedReservePercentAtTargetTime,
                 targetTime: estimate.targetTime,
               }
             : null,
@@ -1166,7 +1173,8 @@ function logAppliedBatteryControlChanges(
 
   if (
     battery.strategyPlan.some(
-      (item) => item.triggerKind === "low-price" || item.triggerKind === "high-price",
+      (item) =>
+        item.triggerKind === "low-price" || item.triggerKind === "high-price",
     )
   ) {
     const db = openDaemonDatabase();
@@ -1234,7 +1242,11 @@ function describeTriggeredStrategyItemsBeforeNow(
       return [];
     }
 
-    const triggerAt = getNextStrategyTriggerAt({ item, now, dynamicPriceSamples });
+    const triggerAt = getNextStrategyTriggerAt({
+      item,
+      now,
+      dynamicPriceSamples,
+    });
 
     if (
       triggerAt === null ||

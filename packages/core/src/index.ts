@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+export * from "./cli-args";
 export { deriveBatteryStatusFromPower } from "./battery-power";
 export * from "./price-selection";
 export * from "./solar-prediction";
@@ -61,6 +62,7 @@ export type BatteryStrategyPlanRecord = BatteryStrategyPlanItem[];
 export interface BatteryStrategyRuntimeRecord {
   activeItemId: string | null;
   activeTargetSocPercent?: number | null;
+  activeReserveSocPercent?: number | null;
   activeTargetTime?: string | null;
   activeStartedAt: string | null;
   activeObservedAt: string | null;
@@ -340,6 +342,7 @@ export function createBatteryStrategyRuntime(): BatteryStrategyRuntimeRecord {
   return {
     activeItemId: null,
     activeTargetSocPercent: null,
+    activeReserveSocPercent: null,
     activeTargetTime: null,
     activeStartedAt: null,
     activeObservedAt: null,
@@ -359,6 +362,7 @@ export function clearActiveBatteryStrategyRuntime(
     ...normalizeBatteryStrategyRuntime(value),
     activeItemId: null,
     activeTargetSocPercent: null,
+    activeReserveSocPercent: null,
     activeTargetTime: null,
     activeStartedAt: null,
     activeObservedAt: null,
@@ -389,6 +393,7 @@ export function createBatteryStrategyRuntimeForPlanApply(
   return {
     activeItemId: null,
     activeTargetSocPercent: null,
+    activeReserveSocPercent: null,
     activeTargetTime: null,
     activeStartedAt: null,
     activeObservedAt: null,
@@ -442,10 +447,10 @@ export function createDefaultBatteryStrategyPlan(
   minimumDischargePercent: number,
 ): BatteryStrategyPlanRecord {
   return [
-      {
-        enabled: true,
-        id: createBatteryStrategyPlanId(),
-        kind: "default",
+    {
+      enabled: true,
+      id: createBatteryStrategyPlanId(),
+      kind: "default",
       startTime: null,
       targetDurationMinutes: null,
       targetEndTime: null,
@@ -747,6 +752,11 @@ function normalizeBatteryStrategyRuntime(
       Number.isFinite(candidate.activeTargetSocPercent)
         ? candidate.activeTargetSocPercent
         : null,
+    activeReserveSocPercent:
+      typeof candidate.activeReserveSocPercent === "number" &&
+      Number.isFinite(candidate.activeReserveSocPercent)
+        ? candidate.activeReserveSocPercent
+        : null,
     activeTargetTime:
       typeof candidate.activeTargetTime === "string" &&
       candidate.activeTargetTime.length > 0
@@ -947,7 +957,10 @@ export interface HistoryArchive {
   siteId: string;
   solarEnergyProviderSamples: SolarEnergyProviderSampleRecord[];
   solarForecastSamples: SolarForecastSampleRecord[];
-  solarPredictedGeneration: Array<{ periodStart: string; value: number | null }>;
+  solarPredictedGeneration: Array<{
+    periodStart: string;
+    value: number | null;
+  }>;
   solarPredictionAlgorithmVersion: "v2";
 }
 
