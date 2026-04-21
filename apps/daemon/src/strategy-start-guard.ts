@@ -40,11 +40,11 @@ export function getScheduledStartSkipReason(input: {
   }
 
   if (input.siteCurrentSolarPowerW === null) {
-    return `skipping the low-price schedule for ${input.batteryId}: site solar production at start time is unavailable, below required ${LOW_PRICE_CHARGE_MIN_SITE_SOLAR_POWER_W}W`;
+    return `skipped: site solar unavailable (need >${LOW_PRICE_CHARGE_MIN_SITE_SOLAR_POWER_W}W)`;
   }
 
   if (input.siteCurrentSolarPowerW <= LOW_PRICE_CHARGE_MIN_SITE_SOLAR_POWER_W) {
-    return `skipping the low-price schedule for ${input.batteryId}: site solar production at start time is ${Math.round(input.siteCurrentSolarPowerW)}W, which is not above required ${LOW_PRICE_CHARGE_MIN_SITE_SOLAR_POWER_W}W`;
+    return `skipped: site solar ${Math.round(input.siteCurrentSolarPowerW)}W below ${LOW_PRICE_CHARGE_MIN_SITE_SOLAR_POWER_W}W`;
   }
 
   return null;

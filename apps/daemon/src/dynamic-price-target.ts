@@ -546,31 +546,31 @@ function getLowPriceAutoDischargeSkipReason(input: {
   targetTimeSignal: DynamicPriceTargetEstimate["targetTimeSignal"];
 }): string | null {
   if (input.targetTime === null) {
-    return `skipping the low-price schedule for ${input.batteryId}: no low-price marker could be resolved for item ${input.itemId}`;
+    return `skipped: no low-price marker resolved for item ${input.itemId}`;
   }
 
   if (input.targetTimeSignal?.predictedSolarW === null) {
-    return `skipping the low-price schedule for ${input.batteryId}: predicted solar at ${input.targetTime.toISOString()} is unavailable`;
+    return `skipped: predicted solar unavailable at ${input.targetTime.toISOString()}`;
   }
 
   if (input.targetTimeSignal?.expectedHouseLoadW === null) {
-    return `skipping the low-price schedule for ${input.batteryId}: expected house load at ${input.targetTime.toISOString()} is unavailable`;
+    return `skipped: expected house load unavailable at ${input.targetTime.toISOString()}`;
   }
 
   const recoveryThresholdW = input.targetTimeSignal?.recoveryThresholdW;
 
   if (recoveryThresholdW === null || recoveryThresholdW === undefined) {
-    return `skipping the low-price schedule for ${input.batteryId}: the recharge threshold at ${input.targetTime.toISOString()} is unavailable`;
+    return `skipped: recharge threshold unavailable at ${input.targetTime.toISOString()}`;
   }
 
   const predictedSolarW = input.targetTimeSignal?.predictedSolarW;
 
   if (predictedSolarW === null || predictedSolarW === undefined) {
-    return `skipping the low-price schedule for ${input.batteryId}: predicted solar at ${input.targetTime.toISOString()} is unavailable`;
+    return `skipped: predicted solar unavailable at ${input.targetTime.toISOString()}`;
   }
 
   if (predictedSolarW <= recoveryThresholdW) {
-    return `skipping the low-price schedule for ${input.batteryId}: predicted solar at ${input.targetTime.toISOString()} is ${Math.round(predictedSolarW)}W, which is not above the expected recharge threshold ${Math.round(recoveryThresholdW)}W`;
+    return `skipped: predicted solar ${Math.round(predictedSolarW)}W below threshold ${Math.round(recoveryThresholdW)}W at ${input.targetTime.toISOString()}`;
   }
 
   return null;

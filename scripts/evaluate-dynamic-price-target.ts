@@ -648,7 +648,6 @@ function printCurrentEstimateSummary(input: EvaluationContext): void {
     console.table(
       formatKeyValueRows(
         buildCurrentEstimateRows({
-          batteryMinimumDischargePercent: input.battery.minimumDischargePercent,
           dynamicPriceTargetEstimate: input.dynamicPriceTargetEstimate,
           minimumSolarSurplusWOverride: input.minimumSolarSurplusWOverride,
           priceSignal: input.priceSignal,
@@ -694,7 +693,11 @@ function printCurrentEstimateSummary(input: EvaluationContext): void {
     );
   }
 
-  if (input.verboseBlocks.has("break-even") && !isCharging) {
+  if (
+    input.verboseBlocks.has("break-even") &&
+    !isCharging &&
+    input.dynamicPriceTargetEstimate.breakEvenTrace.length > 0
+  ) {
     console.log("Break-even buckets:");
     console.table(
       input.dynamicPriceTargetEstimate.breakEvenTrace.slice(-3).map((row) => ({
@@ -731,22 +734,22 @@ function printCurrentEstimateSummary(input: EvaluationContext): void {
 }
 
 export function buildCurrentEstimateRows(input: {
-  batteryMinimumDischargePercent: number;
   dynamicPriceTargetEstimate: DynamicPriceTargetEstimate;
   minimumSolarSurplusWOverride: number;
   priceSignal: PriceSignal;
   referenceTime: Date;
   reserveTargetPercent: number;
 }): Record<string, string> {
+  const isCharging =
+    input.dynamicPriceTargetEstimate.resolvedManualState === "charging";
   return {
     Action: formatResolvedActionLabel(input.dynamicPriceTargetEstimate),
     Price: formatPriceSignalLabel(input.priceSignal),
     "Start time": formatReferenceMoment(input.referenceTime),
-    "Backup reserve floor": `${input.reserveTargetPercent}%`,
-    "Battery minimum discharge": `${input.batteryMinimumDischargePercent}%`,
     "Minimum solar surplus": formatW(input.minimumSolarSurplusWOverride),
     "Reserve at target": `${getDisplayedReserveAtTargetPercent(input)}%`,
-    "Target percentage": `${getDisplayedTargetPercentForEstimate(input)}%`,
+    [isCharging ? "Charge target" : "Discharge target"]:
+      `${getDisplayedTargetPercentForEstimate(input)}%`,
     "Target time": formatTargetTime(input.dynamicPriceTargetEstimate.targetTime),
     "Start to target duration": formatDurationUntilTarget(
       input.referenceTime,
