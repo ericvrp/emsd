@@ -110,7 +110,7 @@ test("low-price auto is skipped when solar is not expected at the low marker", (
   });
 
   expect(estimate.resolvedManualState).toBe("discharging");
-  expect(estimate.skipReason).toContain("not above the expected recharge threshold");
+  expect(estimate.skipReason).toContain("below threshold");
 });
 
 function createAutoLowPriceItem(): BatteryStrategyPlanItem {

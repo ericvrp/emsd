@@ -36,7 +36,7 @@ test("getScheduledStartSkipReason skips low-price charging when solar is not abo
       item: createPlanItem(),
       siteCurrentSolarPowerW: 500,
     }),
-  ).toContain("not above required 500W");
+  ).toContain("below 500W");
 
   expect(
     getScheduledStartSkipReason({

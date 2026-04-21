@@ -453,6 +453,56 @@ test("strategy status summary reports idle without zero target", () => {
   ).toBe("Idle");
 });
 
+test("strategy status summary prefixes high-price trigger kind", () => {
+  expect(
+    formatBatteryStrategyStatusSummary(
+      buildBattery({
+        strategyRuntime: buildRuntime({
+          activeItemId: "daily-2",
+          activeStartedAt: "2026-04-21T19:45:00.000Z",
+        }),
+        strategyPlan: [
+          buildDefaultItem(),
+          buildDailyItem({
+            id: "daily-2",
+            triggerKind: "high-price",
+            manualState: "discharging",
+            manualDischargeTargetSoc: 58,
+            manualTargetSoc: 58,
+            targetMethod: "auto",
+          }),
+        ],
+      }),
+      new Date("2026-04-21T19:45:08.000Z"),
+    ),
+  ).toBe("High price: Discharging to 58%");
+});
+
+test("strategy status summary prefixes low-price trigger kind", () => {
+  expect(
+    formatBatteryStrategyStatusSummary(
+      buildBattery({
+        strategyRuntime: buildRuntime({
+          activeItemId: "daily-2",
+          activeStartedAt: "2026-04-21T02:00:00.000Z",
+        }),
+        strategyPlan: [
+          buildDefaultItem(),
+          buildDailyItem({
+            id: "daily-2",
+            triggerKind: "low-price",
+            manualState: "charging",
+            manualChargeTargetSoc: 100,
+            manualTargetSoc: 100,
+            targetMethod: "auto",
+          }),
+        ],
+      }),
+      new Date("2026-04-21T02:15:00.000Z"),
+    ),
+  ).toBe("Low price: Charging to 100%");
+});
+
 function buildBattery(overrides: Partial<BatteryRecord> = {}): BatteryRecord {
   return {
     id: "battery-1",

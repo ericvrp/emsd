@@ -254,7 +254,7 @@ export function formatBatteryStrategyStatusSummary(
     return defaultSummary;
   }
 
-  return summarizeActiveStrategy({
+  const baseSummary = summarizeActiveStrategy({
     strategyMode: activeItem.strategyMode,
     manualState: resolveActiveManualState({
       fallbackManualState: activeItem.manualState,
@@ -277,7 +277,10 @@ export function formatBatteryStrategyStatusSummary(
     activeStartedAt: battery.strategyRuntime.activeStartedAt,
     preferPowerWhenAvailable: false,
     now,
+    triggerKind: activeItem.triggerKind,
   });
+
+  return baseSummary;
 }
 
 function describeManualStrategyHuman(
@@ -381,6 +384,7 @@ function summarizeActiveStrategy(input: {
   activeStartedAt: string | null;
   preferPowerWhenAvailable: boolean;
   now: Date;
+  triggerKind?: BatteryStrategyPlanItem["triggerKind"];
 }): string {
   if (input.strategyMode === "self-consumption") {
     return "Self-consumption";
@@ -404,6 +408,7 @@ function summarizeActiveStrategy(input: {
       targetTime: input.targetTime,
       activeStartedAt: input.activeStartedAt,
       now: input.now,
+      triggerKind: input.triggerKind,
     });
   }
 
@@ -422,6 +427,7 @@ function summarizeActiveStrategy(input: {
       targetTime: input.targetTime,
       activeStartedAt: input.activeStartedAt,
       now: input.now,
+      triggerKind: input.triggerKind,
     });
   }
 
@@ -436,6 +442,7 @@ function summarizeActiveStrategy(input: {
       targetTime: input.targetTime,
       activeStartedAt: input.activeStartedAt,
       now: input.now,
+      triggerKind: input.triggerKind,
     });
   }
 
@@ -475,6 +482,7 @@ function describeActionWithTarget(
     targetTime: string | null;
     activeStartedAt: string | null;
     now: Date;
+    triggerKind: BatteryStrategyPlanItem["triggerKind"] | undefined;
   },
 ): string {
   let targetLabel: string | null = null;
@@ -485,7 +493,9 @@ function describeActionWithTarget(
         ? "with a dynamic target"
         : `to ${input.defaultTargetSoc}%`;
 
-    if (input.targetTime) {
+    // Only include the time for non-price triggers; for price triggers the
+    // target time is misleading (it looks like a daily schedule time)
+    if (input.targetTime && !isPriceTrigger(input.triggerKind)) {
       targetLabel = `${targetLabel} by ${formatHumanClockTime(input.targetTime)}`;
     }
   }
@@ -516,17 +526,24 @@ function describeActionWithTarget(
       input.defaultTargetSoc === null ? null : `to ${input.defaultTargetSoc}%`;
   }
 
+  const prefix =
+    input.triggerKind === "high-price"
+      ? "High price: "
+      : input.triggerKind === "low-price"
+        ? "Low price: "
+        : "";
+
   if (
     input.preferPowerWhenAvailable &&
     input.powerW !== null &&
     input.powerW > 0
   ) {
     return targetLabel
-      ? `${action} at ${input.powerW}W ${targetLabel}`
-      : `${action} at ${input.powerW}W`;
+      ? `${prefix}${action} at ${input.powerW}W ${targetLabel}`
+      : `${prefix}${action} at ${input.powerW}W`;
   }
 
-  return targetLabel ? `${action} ${targetLabel}` : action;
+  return targetLabel ? `${prefix}${action} ${targetLabel}` : `${prefix}${action}`;
 }
 
 function formatDurationTargetLabel(input: {
@@ -709,4 +726,10 @@ function getNextStrategyItemForToday(
 
 function joinHumanParts(parts: Array<string | null>): string {
   return parts.filter((part): part is string => part !== null).join(" ");
+}
+
+function isPriceTrigger(
+  triggerKind: BatteryStrategyPlanItem["triggerKind"] | undefined,
+): boolean {
+  return triggerKind === "high-price" || triggerKind === "low-price";
 }
