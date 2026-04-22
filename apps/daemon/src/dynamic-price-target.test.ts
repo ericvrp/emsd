@@ -46,6 +46,14 @@ test("evening auto discharge targets tomorrow morning and keeps a reserve above 
   expect(estimate.estimatedRemainingEnergyWh).toBeGreaterThan(0);
   expect(estimate.resolvedManualState).toBe("discharging");
   expect(estimate.skipReason).toBeNull();
+  expect(estimate.energyBuckets.length).toBeGreaterThan(0);
+  const lastBucket = estimate.energyBuckets[estimate.energyBuckets.length - 1];
+  if (!lastBucket) {
+    throw new Error("lastBucket should exist");
+  }
+  expect(lastBucket.cumulativeNetBatteryEnergyNeededWh).toBe(
+    estimate.estimatedRemainingEnergyWh,
+  );
   expect(estimate.windowKind).toBe("evening-high-price");
 });
 

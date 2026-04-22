@@ -6,6 +6,7 @@ import type {
 } from "../packages/core/src/index";
 import {
   buildCurrentEstimateRows,
+  buildEnergyBucketRows,
   buildEnergyEstimateRows,
   createReplayTime,
   resolveEvaluationReferenceTime,
@@ -119,6 +120,71 @@ test("buildEnergyEstimateRows explains the interval and target formula", () => {
   });
 });
 
+test("buildEnergyBucketRows formats cumulative energy buckets", () => {
+  const buckets = [
+    {
+      time: "2026-04-21T19:45:00.000Z",
+      durationMinutes: 15,
+      expectedHouseLoadWh: 55,
+      predictedSolarWh: 0,
+      netBatteryEnergyNeededWh: 55,
+      cumulativeExpectedHouseLoadWh: 55,
+      cumulativePredictedSolarWh: 0,
+      cumulativeNetBatteryEnergyNeededWh: 55,
+    },
+    {
+      time: "2026-04-21T20:00:00.000Z",
+      durationMinutes: 15,
+      expectedHouseLoadWh: 57.5,
+      predictedSolarWh: 0,
+      netBatteryEnergyNeededWh: 57.5,
+      cumulativeExpectedHouseLoadWh: 112.5,
+      cumulativePredictedSolarWh: 0,
+      cumulativeNetBatteryEnergyNeededWh: 112.5,
+    },
+    {
+      time: "2026-04-22T07:15:00.000Z",
+      durationMinutes: 15,
+      expectedHouseLoadWh: 58.69,
+      predictedSolarWh: 63.37,
+      netBatteryEnergyNeededWh: 0,
+      cumulativeExpectedHouseLoadWh: 2356.19,
+      cumulativePredictedSolarWh: 281.58,
+      cumulativeNetBatteryEnergyNeededWh: 2356.19,
+    },
+  ];
+
+  expect(buildEnergyBucketRows(buckets)).toEqual([
+    {
+      time: "19:45",
+      duration: "15m",
+      expectedHouseLoadWh: "55 Wh",
+      cumulativeExpectedHouseLoadWh: "55 Wh",
+      predictedSolarWh: "0 Wh",
+      cumulativePredictedSolarWh: "0 Wh",
+      cumulativeNetBatteryEnergyNeededWh: "55 Wh",
+    },
+    {
+      time: "20:00",
+      duration: "15m",
+      expectedHouseLoadWh: "57.50 Wh",
+      cumulativeExpectedHouseLoadWh: "112.50 Wh",
+      predictedSolarWh: "0 Wh",
+      cumulativePredictedSolarWh: "0 Wh",
+      cumulativeNetBatteryEnergyNeededWh: "112.50 Wh",
+    },
+    {
+      time: "07:15",
+      duration: "15m",
+      expectedHouseLoadWh: "58.69 Wh",
+      cumulativeExpectedHouseLoadWh: "2356.19 Wh",
+      predictedSolarWh: "63.37 Wh",
+      cumulativePredictedSolarWh: "281.58 Wh",
+      cumulativeNetBatteryEnergyNeededWh: "2356.19 Wh",
+    },
+  ]);
+});
+
 function createHighPriceItem(): BatteryStrategyPlanItem {
   return {
     ...createLowPriceAutoItem(),
@@ -166,6 +232,7 @@ function createEstimate(): DynamicPriceTargetEstimate {
   return {
     availability: "full",
     breakEvenTrace: [],
+    energyBuckets: [],
     estimatedRemainingEnergyWh: 2349.04,
     estimatedReservePercentAtTargetTime: 18,
     estimatedTargetPercent: 57,

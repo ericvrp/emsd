@@ -67,6 +67,7 @@ type VerboseBlock =
   | "meta"
   | "current"
   | "energy"
+  | "energy-buckets"
   | "why"
   | "break-even"
   | "history";
@@ -82,6 +83,7 @@ const ALL_VERBOSE_BLOCKS: VerboseBlock[] = [
   "meta",
   "current",
   "energy",
+  "energy-buckets",
   "why",
   "break-even",
   "history",
@@ -298,6 +300,7 @@ function printHelp(): void {
       "  bun run dynamic-price-target:evaluate -- --site=<site-id>",
       "  bun run dynamic-price-target:evaluate -- --verbose",
       "  bun run dynamic-price-target:evaluate -- --verbose=meta,why,history",
+      "  bun run dynamic-price-target:evaluate -- --verbose=energy-buckets",
       `  verbose blocks: ${ALL_VERBOSE_BLOCKS.join(", ")}`,
     ].join("\n"),
   );
@@ -681,6 +684,16 @@ function printCurrentEstimateSummary(input: EvaluationContext): void {
   if (input.verboseBlocks.has("energy")) {
     console.log("Energy estimate:");
     console.table(formatKeyValueRows(buildEnergyEstimateRows(input)));
+    if (!input.verboseBlocks.has("energy-buckets")) {
+      console.log("  (add energy-buckets to --verbose for per-bucket details)");
+    }
+  }
+
+  if (input.verboseBlocks.has("energy-buckets")) {
+    console.log("Energy buckets:");
+    console.table(
+      buildEnergyBucketRows(input.dynamicPriceTargetEstimate.energyBuckets),
+    );
   }
 
   if (input.verboseBlocks.has("why")) {
@@ -808,6 +821,22 @@ export function buildEnergyEstimateRows(input: {
     "Energy converted to target": `${energyTargetPercent}% = ceil(${formatWh(input.dynamicPriceTargetEstimate.estimatedRemainingEnergyWh)} / ${formatWh(input.capacityWh)} * 100)`,
     "Final target formula": `${getDisplayedTargetPercentForEstimate(input)}% = ${reserveAtTargetPercent}% reserve at target + ${energyTargetPercent}% interval energy`,
   };
+}
+
+export function buildEnergyBucketRows(
+  energyBuckets: DynamicPriceTargetEstimate["energyBuckets"],
+): Array<Record<string, string>> {
+  return energyBuckets.map((row) => ({
+    time: formatClockTime(row.time),
+    duration: formatDurationMinutes(row.durationMinutes),
+    expectedHouseLoadWh: formatWh(row.expectedHouseLoadWh),
+    cumulativeExpectedHouseLoadWh: formatWh(row.cumulativeExpectedHouseLoadWh),
+    predictedSolarWh: formatWh(row.predictedSolarWh),
+    cumulativePredictedSolarWh: formatWh(row.cumulativePredictedSolarWh),
+    cumulativeNetBatteryEnergyNeededWh: formatWh(
+      row.cumulativeNetBatteryEnergyNeededWh,
+    ),
+  }));
 }
 
 function formatKeyValueRows(
@@ -978,6 +1007,15 @@ function formatTargetTime(value: string | null): string {
 
 function formatInterval(start: Date, end: string | null): string {
   return `${formatReferenceMoment(start)} -> ${formatTargetTime(end)} (${formatDurationUntilTarget(start, end)})`;
+}
+
+function formatDurationMinutes(minutes: number): string {
+  if (minutes >= 60) {
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return m === 0 ? `${h}h` : `${h}h ${m}m`;
+  }
+  return `${minutes}m`;
 }
 
 function formatDurationUntilTarget(

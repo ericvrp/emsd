@@ -36,6 +36,7 @@ export interface DynamicPriceTargetEstimate {
     recoveryThresholdW: number | null;
     time: string;
   }>;
+  energyBuckets: Array<EnergyBucket>;
   estimatedRemainingEnergyWh: number;
   estimatedReservePercentAtTargetTime: number;
   estimatedTargetPercent: number;
@@ -82,6 +83,17 @@ interface BreakEvenTraceRow {
   time: string;
 }
 
+export interface EnergyBucket {
+  time: string;
+  durationMinutes: number;
+  expectedHouseLoadWh: number;
+  predictedSolarWh: number;
+  netBatteryEnergyNeededWh: number;
+  cumulativeExpectedHouseLoadWh: number;
+  cumulativePredictedSolarWh: number;
+  cumulativeNetBatteryEnergyNeededWh: number;
+}
+
 export function estimateDynamicPriceTarget(input: {
   battery: BatteryRecord;
   batteryPowerSamples: BatteryPowerSampleRecord[];
@@ -104,6 +116,7 @@ export function estimateDynamicPriceTarget(input: {
     return {
       availability: "unavailable",
       breakEvenTrace: [],
+      energyBuckets: [],
       estimatedRemainingEnergyWh: 0,
       estimatedReservePercentAtTargetTime: fallbackTargetPercent,
       estimatedTargetPercent: fallbackTargetPercent,
@@ -186,6 +199,7 @@ export function estimateDynamicPriceTarget(input: {
     return {
       availability: "unavailable",
       breakEvenTrace: [],
+      energyBuckets: [],
       estimatedRemainingEnergyWh: 0,
       estimatedReservePercentAtTargetTime: fallbackTargetPercent,
       estimatedTargetPercent: fallbackTargetPercent,
@@ -212,6 +226,7 @@ export function estimateDynamicPriceTarget(input: {
     return {
       availability: "unavailable",
       breakEvenTrace: [],
+      energyBuckets: [],
       estimatedRemainingEnergyWh: 0,
       estimatedReservePercentAtTargetTime: fallbackTargetPercent,
       estimatedTargetPercent: fallbackTargetPercent,
@@ -284,6 +299,42 @@ export function estimateDynamicPriceTarget(input: {
   const estimatedRemainingEnergyWh = round2(
     Math.max(0, expectedHouseLoadWh - predictedSolarGenerationWh),
   );
+  let cumulativeExpectedHouseLoadWh = 0;
+  let cumulativePredictedSolarWh = 0;
+  const energyBuckets = forecastPeriods.map((point) => {
+    const durationMinutes = Math.round(point.overlapHours * 60);
+    const bucketExpectedHouseLoadWh = round2(
+      resolveExpectedHouseLoadWh(
+        point.periodStart,
+        loadProfile,
+        point.overlapHours,
+      ),
+    );
+    const bucketPredictedSolarWh = round2(
+      point.predictedPowerW * point.overlapHours,
+    );
+    cumulativeExpectedHouseLoadWh = round2(
+      cumulativeExpectedHouseLoadWh + bucketExpectedHouseLoadWh,
+    );
+    cumulativePredictedSolarWh = round2(
+      cumulativePredictedSolarWh + bucketPredictedSolarWh,
+    );
+    const cumulativeNetBatteryEnergyNeededWh = round2(
+      Math.max(0, cumulativeExpectedHouseLoadWh - cumulativePredictedSolarWh),
+    );
+    return {
+      time: point.periodStart,
+      durationMinutes,
+      expectedHouseLoadWh: bucketExpectedHouseLoadWh,
+      predictedSolarWh: bucketPredictedSolarWh,
+      netBatteryEnergyNeededWh: round2(
+        Math.max(0, bucketExpectedHouseLoadWh - bucketPredictedSolarWh),
+      ),
+      cumulativeExpectedHouseLoadWh,
+      cumulativePredictedSolarWh,
+      cumulativeNetBatteryEnergyNeededWh,
+    };
+  });
   const reserveFloorResult = shouldUseDynamicReserveFloor(input.item)
     ? calculateDynamicReserveFloorPercent({
         backupReserveMarginPercent: input.backupReserveMarginOverride,
@@ -326,6 +377,7 @@ export function estimateDynamicPriceTarget(input: {
   return {
     availability,
     breakEvenTrace,
+    energyBuckets,
     estimatedRemainingEnergyWh,
     estimatedReservePercentAtTargetTime,
     estimatedTargetPercent,
