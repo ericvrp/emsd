@@ -102,8 +102,8 @@ For dynamic discharge strategies, the daemon and CLI evaluation now share one re
 `reserveFloorPercent = minimumDischargePercent + backupReserveMargin + round(hoursUntilTarget * backupReserveMarginPerHour)`
 
 Default values:
-- `backupReserveMargin = 2%`
-- `backupReserveMarginPerHour = 0.25%`
+- `backupReserveMargin = 1%`
+- `backupReserveMarginPerHour = 0.2%`
 
 This reserve-floor helper is used by:
 - high-price auto discharge until solar recovery
