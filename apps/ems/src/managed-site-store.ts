@@ -43,6 +43,8 @@ const BATTERY_REQUIRED_COLUMNS = [
   "plugin",
   "model",
   "ip_address",
+  "maximum_charge_power_w",
+  "maximum_discharge_power_w",
   "enabled",
   "status",
   "connected",
@@ -114,6 +116,8 @@ interface BatteryRow {
   plugin: string;
   model: string;
   ip_address: string;
+  maximum_charge_power_w: number;
+  maximum_discharge_power_w: number;
   enabled: number;
   status: BatteryStatus;
   connected: number;
@@ -172,6 +176,8 @@ interface CreateBatteryInput {
   plugin: string;
   model: string;
   ipAddress: string;
+  maximumChargePowerW?: number;
+  maximumDischargePowerW?: number;
   enabled?: boolean;
   connected?: boolean;
   minimumDischargePercent?: number;
@@ -212,6 +218,11 @@ interface UpdateBatteryStrategyPlanInput {
 
 interface UpdateBatteryMinimumDischargeInput {
   minimumDischargePercent: number;
+}
+
+interface UpdateBatteryPowerLimitsInput {
+  maximumChargePowerW: number;
+  maximumDischargePowerW: number;
 }
 
 interface CreateMeterInput {
@@ -513,6 +524,8 @@ export function createBattery(
           plugin,
           model,
           ip_address,
+          maximum_charge_power_w,
+          maximum_discharge_power_w,
           enabled,
           status,
           connected,
@@ -528,7 +541,7 @@ export function createBattery(
           strategy_plan_json,
           strategy_runtime_json,
           updated_at
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)
       `,
     ).run(
       input.id,
@@ -537,6 +550,8 @@ export function createBattery(
       input.plugin,
       input.model,
       input.ipAddress,
+      normalizeBatteryPowerLimit(input.maximumChargePowerW),
+      normalizeBatteryPowerLimit(input.maximumDischargePowerW),
       input.enabled === false ? 0 : 1,
       input.status ?? "idle",
       input.connected === false ? 0 : 1,
@@ -1060,6 +1075,50 @@ export function setBatteryMinimumDischargePercent(
   }
 }
 
+export function setBatteryPowerLimits(
+  id: string,
+  input: UpdateBatteryPowerLimitsInput,
+  siteId: string,
+  databasePath = getDatabasePath(),
+): BatteryRecord | null {
+  assertKnownSiteId(siteId, databasePath);
+  const db = openWritableDatabase(databasePath);
+
+  try {
+    assertWritableSchema(
+      db,
+      databasePath,
+      "batteries",
+      BATTERY_REQUIRED_COLUMNS,
+    );
+
+    if (!getBatteryById(db, id, siteId)) {
+      return null;
+    }
+
+    db.query(
+      `
+        UPDATE batteries
+        SET
+          maximum_charge_power_w = ?2,
+          maximum_discharge_power_w = ?3,
+          updated_at = ?4
+        WHERE id = ?1 AND site_id = ?5
+      `,
+    ).run(
+      id,
+      normalizeBatteryPowerLimit(input.maximumChargePowerW),
+      normalizeBatteryPowerLimit(input.maximumDischargePowerW),
+      new Date().toISOString(),
+      siteId,
+    );
+
+    return getBatteryByIdOrThrow(db, id, siteId);
+  } finally {
+    db.close();
+  }
+}
+
 export function setMeterEnabled(
   id: string,
   enabled: boolean,
@@ -1518,6 +1577,8 @@ function ensureSchema(db: Database): void {
       plugin TEXT NOT NULL,
       model TEXT NOT NULL,
       ip_address TEXT NOT NULL,
+      maximum_charge_power_w REAL NOT NULL DEFAULT 800,
+      maximum_discharge_power_w REAL NOT NULL DEFAULT 800,
       enabled INTEGER NOT NULL,
       status TEXT NOT NULL,
       connected INTEGER NOT NULL,
@@ -1652,6 +1713,18 @@ function ensureBatteryColumns(db: Database): void {
 
   if (!columns.includes("manual_power_w")) {
     db.exec("ALTER TABLE batteries ADD COLUMN manual_power_w REAL;");
+  }
+
+  if (!columns.includes("maximum_charge_power_w")) {
+    db.exec(
+      "ALTER TABLE batteries ADD COLUMN maximum_charge_power_w REAL NOT NULL DEFAULT 800;",
+    );
+  }
+
+  if (!columns.includes("maximum_discharge_power_w")) {
+    db.exec(
+      "ALTER TABLE batteries ADD COLUMN maximum_discharge_power_w REAL NOT NULL DEFAULT 800;",
+    );
   }
 
   if (!columns.includes("minimum_discharge_percent")) {
@@ -1944,6 +2017,22 @@ function normalizeMinimumDischargePercent(value: number | undefined): number {
   return Math.max(10, Math.min(100, Math.round(nextValue)));
 }
 
+function normalizeBatteryPowerLimit(value: number | undefined): number {
+  const nextValue = value ?? 800;
+
+  if (!Number.isFinite(nextValue)) {
+    throw new Error("Battery power limit must be a number.");
+  }
+
+  const roundedValue = Math.round(nextValue);
+
+  if (roundedValue < 800 || roundedValue > 2400) {
+    throw new Error("Battery power limit must be between 800 W and 2400 W.");
+  }
+
+  return roundedValue;
+}
+
 function ensureSiteColumns(db: Database): void {
   if (!hasTable(db, "sites")) {
     return;
@@ -2110,6 +2199,8 @@ function readBatteries(db: Database, siteId: string): BatteryRecord[] {
           plugin,
           model,
           ip_address,
+          maximum_charge_power_w,
+          maximum_discharge_power_w,
           enabled,
           status,
           connected,
@@ -2221,6 +2312,8 @@ function getBatteryById(
           plugin,
           model,
           ip_address,
+          maximum_charge_power_w,
+          maximum_discharge_power_w,
           enabled,
           status,
           connected,
@@ -2393,6 +2486,8 @@ function mapBatteryRow(row: BatteryRow): BatteryRecord {
     plugin: row.plugin,
     model: row.model,
     ipAddress: row.ip_address,
+    maximumChargePowerW: row.maximum_charge_power_w,
+    maximumDischargePowerW: row.maximum_discharge_power_w,
     enabled: row.enabled === 1,
     status: row.status,
     connected: row.connected === 1,

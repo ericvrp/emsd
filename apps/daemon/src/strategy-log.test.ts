@@ -405,7 +405,7 @@ test("strategy status summary prefers power for manual discharging override", ()
         manualModeActive: true,
       }),
     ),
-  ).toBe("Discharging at 2400W to 10%");
+  ).toBe("Discharging at 800W to 10%");
 });
 
 test("strategy status summary reports manual override duration", () => {
@@ -426,7 +426,7 @@ test("strategy status summary reports manual override duration", () => {
       }),
       new Date("2026-04-12T17:31:10.000Z"),
     ),
-  ).toBe("Discharging at 2400W for 5 minutes");
+  ).toBe("Discharging at 800W for 5 minutes");
 });
 
 test("strategy status summary reports idle without zero target", () => {
@@ -512,6 +512,8 @@ function buildBattery(overrides: Partial<BatteryRecord> = {}): BatteryRecord {
     plugin: "indevolt-battery",
     model: "Indevolt Battery",
     ipAddress: "192.168.1.232",
+    maximumChargePowerW: 800,
+    maximumDischargePowerW: 800,
     enabled: true,
     status: "idle",
     connected: true,

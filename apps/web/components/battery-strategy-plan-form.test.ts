@@ -20,6 +20,15 @@ test("applyStrategyAction keeps a low-price trigger when switching to self-consu
   expect(updated.triggerKind).toBe("low-price");
 });
 
+test("applyStrategyAction clears strategy power when switching to manual discharge", () => {
+  const item = createDailyItem({ manualPowerW: 2400 });
+
+  const updated = applyStrategyAction(item, "discharging", 10);
+
+  expect(updated.strategyMode).toBe("manual");
+  expect(updated.manualPowerW).toBeNull();
+});
+
 function createDailyItem(
   overrides: Partial<BatteryStrategyPlanItem> = {},
 ): BatteryStrategyPlanItem {

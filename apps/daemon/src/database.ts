@@ -40,6 +40,8 @@ interface BatteryRow {
   plugin: string;
   model: string;
   ip_address: string;
+  maximum_charge_power_w: number;
+  maximum_discharge_power_w: number;
   enabled: number;
   status: BatteryRecord["status"];
   connected: number;
@@ -212,6 +214,8 @@ export function openDaemonDatabase(databasePath = getDatabasePath()): Database {
       plugin TEXT NOT NULL,
       model TEXT NOT NULL,
       ip_address TEXT NOT NULL,
+      maximum_charge_power_w REAL NOT NULL DEFAULT 800,
+      maximum_discharge_power_w REAL NOT NULL DEFAULT 800,
       enabled INTEGER NOT NULL,
       status TEXT NOT NULL,
       connected INTEGER NOT NULL,
@@ -901,6 +905,8 @@ export function readBatteries(db: Database): BatteryRecord[] {
           plugin,
           model,
           ip_address,
+          maximum_charge_power_w,
+          maximum_discharge_power_w,
           enabled,
           status,
           connected,
@@ -929,6 +935,8 @@ export function readBatteries(db: Database): BatteryRecord[] {
     plugin: row.plugin,
     model: row.model,
     ipAddress: row.ip_address,
+    maximumChargePowerW: row.maximum_charge_power_w,
+    maximumDischargePowerW: row.maximum_discharge_power_w,
     enabled: row.enabled === 1,
     status: row.status,
     connected: row.connected === 1,
@@ -988,6 +996,18 @@ function ensureBatteryColumns(db: Database): void {
 
   if (!columns.includes("manual_power_w")) {
     db.exec("ALTER TABLE batteries ADD COLUMN manual_power_w REAL;");
+  }
+
+  if (!columns.includes("maximum_charge_power_w")) {
+    db.exec(
+      "ALTER TABLE batteries ADD COLUMN maximum_charge_power_w REAL NOT NULL DEFAULT 800;",
+    );
+  }
+
+  if (!columns.includes("maximum_discharge_power_w")) {
+    db.exec(
+      "ALTER TABLE batteries ADD COLUMN maximum_discharge_power_w REAL NOT NULL DEFAULT 800;",
+    );
   }
 
   if (!columns.includes("manual_target_soc")) {

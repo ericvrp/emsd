@@ -275,6 +275,8 @@ export interface BatteryRecord extends BatteryStrategyRecord {
   plugin: string;
   model: string;
   ipAddress: string;
+  maximumChargePowerW: number;
+  maximumDischargePowerW: number;
   enabled: boolean;
   status: BatteryStatus;
   connected: boolean;
@@ -336,6 +338,8 @@ export interface ManagedDeviceRecord {
   batteryManualTargetDurationMinutes: number | null;
   batteryManualTargetEndTime: string | null;
   batteryManualModeActive: boolean;
+  maximumChargePowerW: number | null;
+  maximumDischargePowerW: number | null;
   minimumDischargePercent: number | null;
   updatedAt: string;
 }
@@ -419,6 +423,8 @@ export function createBatteryStrategyRuntimeForPlanApply(
 export function resolveBatteryStrategyFromPlanItem(input: {
   item: BatteryStrategyPlanItem | null | undefined;
   minimumDischargePercent: number;
+  maximumChargePowerW: number;
+  maximumDischargePowerW: number;
 }): BatteryStrategyRecord {
   const item = input.item;
 
@@ -437,7 +443,11 @@ export function resolveBatteryStrategyFromPlanItem(input: {
     strategyMode: "manual",
     manualState: item.manualState ?? "idle",
     manualPowerW:
-      item.manualState === "idle" ? null : (item.manualPowerW ?? 2400),
+      item.manualState === "charging"
+        ? input.maximumChargePowerW
+        : item.manualState === "discharging"
+          ? input.maximumDischargePowerW
+          : null,
     manualTargetSoc:
       item.manualState === "discharging"
         ? (item.manualDischargeTargetSoc ?? input.minimumDischargePercent)

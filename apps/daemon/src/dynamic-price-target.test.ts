@@ -221,6 +221,8 @@ function createBattery(): BatteryRecord {
     enabled: true,
     id: "battery-1",
     ipAddress: "192.168.1.10",
+    maximumChargePowerW: 800,
+    maximumDischargePowerW: 800,
     manualChargeTargetSoc: 100,
     manualDischargeTargetSoc: 10,
     manualModeActive: false,

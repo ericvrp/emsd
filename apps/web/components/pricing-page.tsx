@@ -215,7 +215,7 @@ export function PricingSection({
             accentColor={UI_COLORS.price}
             emptyMessage={emptyMessage}
             headerAccessory={<TopLevelDaySelect daySelection={daySelection} />}
-            label="Price"
+            label="Import price"
             lowestMarkerPeriodStarts={lowestMarkerPeriodStarts}
             highestMarkerPeriodStarts={highestMarkerPeriodStarts}
             nowMarkerPeriodStart={daySelection.nowMarkerPeriodStart}

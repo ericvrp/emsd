@@ -26,6 +26,8 @@ interface HouseStrategyDialogProps {
   batteries: Array<{
     id: string;
     name: string;
+    maximumChargePowerW: number;
+    maximumDischargePowerW: number;
     minimumDischargePercent: number;
     batteryStrategy: BatteryStrategyRecord | null;
     batteryStrategyPlan: BatteryStrategyPlanRecord;
@@ -181,6 +183,8 @@ export function HouseStrategyDialog({
 
   const strategyPlan = firstBattery?.batteryStrategyPlan ?? [];
   const minimumDischargePercent = firstBattery?.minimumDischargePercent ?? 10;
+  const maximumChargePowerW = firstBattery?.maximumChargePowerW ?? 800;
+  const maximumDischargePowerW = firstBattery?.maximumDischargePowerW ?? 800;
   const currentSocPercent = firstBattery?.telemetry?.socPercent ?? null;
   const capacityWh = firstBattery?.telemetry?.capacityWh ?? null;
   const buttonLabel = liveStrategySummary ?? "Default strategy";
@@ -262,6 +266,8 @@ export function HouseStrategyDialog({
                           manualTargetMethod={
                             firstBattery?.batteryManualTargetMethod ?? null
                           }
+                          maximumChargePowerW={maximumChargePowerW}
+                          maximumDischargePowerW={maximumDischargePowerW}
                           showContextSummary={false}
                           minimumDischargePercent={minimumDischargePercent}
                           returnPath={returnPath}

@@ -253,6 +253,8 @@ function main(): void {
             const fallbackStrategy = resolveBatteryStrategyFromPlanItem({
               item: fallbackItem,
               minimumDischargePercent: battery.minimumDischargePercent,
+              maximumChargePowerW: battery.maximumChargePowerW,
+              maximumDischargePowerW: battery.maximumDischargePowerW,
             });
 
             logInfoWithVerboseDetails(
@@ -986,6 +988,8 @@ async function runScheduledStrategy(
       resolveBatteryStrategyFromPlanItem({
         item,
         minimumDischargePercent: battery.minimumDischargePercent,
+        maximumChargePowerW: battery.maximumChargePowerW,
+        maximumDischargePowerW: battery.maximumDischargePowerW,
       }),
       item,
       resolvedManualState,
@@ -1191,6 +1195,8 @@ async function restoreFallbackStrategy(
   const fallbackStrategy = resolveBatteryStrategyFromPlanItem({
     item: battery.strategyPlan[0],
     minimumDischargePercent: battery.minimumDischargePercent,
+    maximumChargePowerW: battery.maximumChargePowerW,
+    maximumDischargePowerW: battery.maximumDischargePowerW,
   });
 
   logVerbose(

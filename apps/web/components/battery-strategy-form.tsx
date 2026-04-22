@@ -31,6 +31,8 @@ interface BatteryStrategyFormProps {
   manualTargetDurationMinutes?: number | null;
   manualTargetEndTime?: string | null;
   manualTargetMethod?: TargetMethod | null;
+  maximumChargePowerW: number;
+  maximumDischargePowerW: number;
   showContextSummary?: boolean;
   minimumDischargePercent: number;
   returnPath?: string;
@@ -54,6 +56,8 @@ export function BatteryStrategyForm({
   manualTargetDurationMinutes,
   manualTargetEndTime,
   manualTargetMethod,
+  maximumChargePowerW,
+  maximumDischargePowerW,
   showContextSummary = true,
   minimumDischargePercent,
   returnPath,
@@ -74,9 +78,6 @@ export function BatteryStrategyForm({
       : strategy.manualState === "discharging"
         ? "discharging"
         : "charging",
-  );
-  const [manualPowerW, setManualPowerW] = useState(
-    String(strategy.manualPowerW ?? 2400),
   );
   const [manualChargeTargetSocInput, setManualChargeTargetSocInput] = useState(
     String(strategy.manualChargeTargetSoc ?? 100),
@@ -123,7 +124,6 @@ export function BatteryStrategyForm({
     setEndTime(manualTargetEndTime ?? getDefaultEndTimeValue());
   }, [manualTargetDurationMinutes, manualTargetEndTime, manualTargetMethod]);
 
-  const parsedManualPowerW = parseOptionalNumber(manualPowerW);
   const parsedManualChargeTargetSoc = parseOptionalNumber(
     manualChargeTargetSocInput,
   );
@@ -132,11 +132,17 @@ export function BatteryStrategyForm({
   );
   const parsedDurationMinutes = parseOptionalNumber(durationMinutes);
   const endTimeDurationMinutes = getDurationMinutesUntilEndTime(endTime, now);
+  const resolvedManualPowerW =
+    manualState === "charging"
+      ? maximumChargePowerW
+      : manualState === "discharging"
+        ? maximumDischargePowerW
+        : null;
   const canEstimateTarget =
     capacityWh !== null &&
     currentSocPercent !== null &&
-    parsedManualPowerW !== null &&
-    parsedManualPowerW > 0 &&
+    resolvedManualPowerW !== null &&
+    resolvedManualPowerW > 0 &&
     manualState !== "idle";
 
   const effectiveManualTargetSoc = useMemo(() => {
@@ -169,12 +175,12 @@ export function BatteryStrategyForm({
       capacityWh,
       currentSocPercent,
       direction: manualState,
-      durationMinutes:
-        targetMethod === "duration"
-          ? parsedDurationMinutes
-          : endTimeDurationMinutes,
+        durationMinutes:
+          targetMethod === "duration"
+            ? parsedDurationMinutes
+            : endTimeDurationMinutes,
       minimumDischargePercent,
-      powerW: parsedManualPowerW,
+      powerW: resolvedManualPowerW,
     });
 
     return estimatedTargetSoc;
@@ -187,7 +193,7 @@ export function BatteryStrategyForm({
     parsedDurationMinutes,
     parsedManualChargeTargetSoc,
     parsedManualDischargeTargetSoc,
-    parsedManualPowerW,
+    resolvedManualPowerW,
     strategy.manualTargetSoc,
     strategyMode,
     targetMethod,
@@ -214,7 +220,7 @@ export function BatteryStrategyForm({
       capacityWh,
       currentSocPercent,
       direction: manualState,
-      powerW: parsedManualPowerW,
+      powerW: resolvedManualPowerW,
       targetSoc: effectiveManualTargetSoc,
     });
   }, [
@@ -224,7 +230,7 @@ export function BatteryStrategyForm({
     endTimeDurationMinutes,
     manualState,
     parsedDurationMinutes,
-    parsedManualPowerW,
+    resolvedManualPowerW,
     strategyMode,
     targetMethod,
   ]);
@@ -390,25 +396,24 @@ export function BatteryStrategyForm({
 
           {manualState !== "idle" ? (
             <>
-              <div className="grid gap-3 xl:grid-cols-3">
-                <div className="space-y-2">
-                  <Label htmlFor={`${batteryId}-power`}>Manual power (W)</Label>
-                  <Input
-                    id={`${batteryId}-power`}
-                    max={2400}
-                    min={0}
-                    name="manualPowerW"
-                    onChange={(event) => setManualPowerW(event.target.value)}
-                    step={10}
-                    type="number"
-                    value={manualPowerW}
-                  />
-                  <p className="text-xs text-slate-500">Maximum 2400 W.</p>
-                </div>
+                <div className="grid gap-3 xl:grid-cols-3">
+                  <div className="space-y-2 rounded-2xl border border-white/8 bg-white/4 px-3 py-2.5">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                      Power limit
+                    </p>
+                    <p className="text-sm font-medium text-slate-100">
+                      {resolvedManualPowerW === null
+                        ? "No power limit"
+                        : `${resolvedManualPowerW} W`}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      Set on the device page.
+                    </p>
+                  </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor={`${batteryId}-target-method`}>
-                    Target method
+                  <div className="space-y-2">
+                    <Label htmlFor={`${batteryId}-target-method`}>
+                      Target method
                   </Label>
                   <Select
                     onValueChange={(value: string) =>
@@ -532,11 +537,11 @@ export function BatteryStrategyForm({
               </div>
             </>
           ) : (
-            <input type="hidden" name="manualPowerW" value="0" />
+            <input type="hidden" name="manualPowerW" value="" />
           )}
         </>
       ) : (
-        <input type="hidden" name="manualPowerW" value={manualPowerW} />
+        <input type="hidden" name="manualPowerW" value="" />
       )}
 
       <div className="flex flex-wrap items-center justify-end gap-3 pt-2">

@@ -120,6 +120,8 @@ test("api snapshot returns managed devices with telemetry", async () => {
     batteryStrategySummary: "Self-consumption",
     id: "battery-1",
     kind: "battery",
+    maximumChargePowerW: 800,
+    maximumDischargePowerW: 800,
     state: "charging",
     telemetry: {
       capacityWh: 9600,
@@ -128,6 +130,52 @@ test("api snapshot returns managed devices with telemetry", async () => {
       socPercent: 62,
       state: null,
     },
+  });
+});
+
+test("battery-set-power-limits persists battery-level charge and discharge caps", async () => {
+  const databasePath = createTempDatabase();
+
+  createSite(
+    {
+      id: "home",
+      location: "52.367600, 4.904100",
+      name: "Home",
+    },
+    databasePath,
+  );
+  createBattery(
+    {
+      connected: true,
+      enabled: true,
+      id: "battery-1",
+      ipAddress: "192.168.1.10",
+      minimumDischargePercent: 10,
+      model: "indevolt-battery",
+      name: "Battery",
+      plugin: "indevolt-battery",
+      status: "idle",
+    },
+    "home",
+    databasePath,
+  );
+
+  const updated = (await runApiAction("battery-set-power-limits", {
+    id: "battery-1",
+    maximumChargePowerW: 1200,
+    maximumDischargePowerW: 1800,
+    siteId: "home",
+  })) as DashboardSnapshot["sites"][number]["devices"][number];
+
+  expect(updated).toMatchObject({
+    id: "battery-1",
+    kind: "battery",
+    maximumChargePowerW: 1200,
+    maximumDischargePowerW: 1800,
+  });
+  expect(getBattery("battery-1", "home", databasePath)).toMatchObject({
+    maximumChargePowerW: 1200,
+    maximumDischargePowerW: 1800,
   });
 });
 

@@ -1,5 +1,5 @@
 import type { BatteryStrategyHistoryRecord } from "@emsd/core/client";
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import {
   Area,
   AreaChart,

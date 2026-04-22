@@ -30,7 +30,7 @@ import {
   deleteSiteAction,
   deleteSolarEnergyProviderAction,
   deleteWeatherForecastSourceAction,
-  setBatteryMinimumDischargePercentAction,
+  updateBatterySettingsAction,
   updateDynamicPriceSourceAction,
   updateDynamicPriceSourceExportDeductionAction,
   updateSiteAction,
@@ -703,30 +703,66 @@ function DeviceList({
               />
               {kind === "battery" ? (
                 <form
-                  action={setBatteryMinimumDischargePercentAction}
+                  action={updateBatterySettingsAction}
                   className="rounded-2xl border border-white/8 bg-slate-950/55 px-3 py-2"
-                  id={`battery-backup-reserve-${device.id}`}
+                  id={`battery-settings-${device.id}`}
                 >
                   <input type="hidden" name="siteId" value={site.id} />
                   <input type="hidden" name="batteryId" value={device.id} />
                   <input type="hidden" name="batteryName" value={device.name} />
-                  <label className="block space-y-2">
-                    <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                      Backup reserve
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <input
-                        className="w-full rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-cyan-400/50"
-                        defaultValue={device.minimumDischargePercent ?? 10}
-                        max={100}
-                        min={10}
-                        name="minimumDischargePercent"
-                        step={1}
-                        type="number"
-                      />
-                      <span className="text-sm text-slate-400">%</span>
-                    </div>
-                  </label>
+                  <div className="space-y-3">
+                    <label className="block space-y-2">
+                      <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        Maximum charge power
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <input
+                          className="w-full rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-cyan-400/50"
+                          defaultValue={device.maximumChargePowerW ?? 800}
+                          max={2400}
+                          min={800}
+                          name="maximumChargePowerW"
+                          step={10}
+                          type="number"
+                        />
+                        <span className="text-sm text-slate-400">W</span>
+                      </div>
+                    </label>
+                    <label className="block space-y-2">
+                      <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        Maximum discharge power
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <input
+                          className="w-full rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-cyan-400/50"
+                          defaultValue={device.maximumDischargePowerW ?? 800}
+                          max={2400}
+                          min={800}
+                          name="maximumDischargePowerW"
+                          step={10}
+                          type="number"
+                        />
+                        <span className="text-sm text-slate-400">W</span>
+                      </div>
+                    </label>
+                    <label className="block space-y-2">
+                      <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        Backup reserve
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <input
+                          className="w-full rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-cyan-400/50"
+                          defaultValue={device.minimumDischargePercent ?? 10}
+                          max={100}
+                          min={10}
+                          name="minimumDischargePercent"
+                          step={1}
+                          type="number"
+                        />
+                        <span className="text-sm text-slate-400">%</span>
+                      </div>
+                    </label>
+                  </div>
                 </form>
               ) : null}
             </dl>
@@ -734,7 +770,7 @@ function DeviceList({
               {kind === "battery" ? (
                 <Button
                   className={secondaryButtonClass}
-                  form={`battery-backup-reserve-${device.id}`}
+                  form={`battery-settings-${device.id}`}
                   type="submit"
                 >
                   <Save size={14} />

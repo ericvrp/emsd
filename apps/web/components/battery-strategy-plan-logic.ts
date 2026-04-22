@@ -37,7 +37,7 @@ export function applyStrategyAction(
     ...item,
     strategyMode: "manual",
     manualState: action,
-    manualPowerW: action === "idle" ? null : (item.manualPowerW ?? 2400),
+    manualPowerW: null,
     manualChargeTargetSoc:
       action === "charging" ? (item.manualChargeTargetSoc ?? 100) : null,
     manualDischargeTargetSoc:

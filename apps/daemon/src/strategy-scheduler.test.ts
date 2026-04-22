@@ -563,6 +563,8 @@ function createBattery(overrides: Partial<BatteryRecord> = {}): BatteryRecord {
     plugin: "indevolt-battery",
     model: "indevolt-battery",
     ipAddress: "192.168.1.10",
+    maximumChargePowerW: 800,
+    maximumDischargePowerW: 800,
     enabled: true,
     status: "idle",
     connected: true,

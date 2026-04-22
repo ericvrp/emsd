@@ -19,6 +19,8 @@ export function BatteryStrategyDialog({
   className,
   capacityWh,
   currentSocPercent,
+  maximumChargePowerW,
+  maximumDischargePowerW,
   minimumDischargePercent,
   manualModeActive,
   siteId,
@@ -30,6 +32,8 @@ export function BatteryStrategyDialog({
   className?: string;
   capacityWh: number | null;
   currentSocPercent: number | null;
+  maximumChargePowerW: number;
+  maximumDischargePowerW: number;
   minimumDischargePercent: number;
   manualModeActive: boolean;
   siteId: string;
@@ -141,6 +145,8 @@ export function BatteryStrategyDialog({
                             hideStrategySelector
                             manualOnly
                             manualModeActive={true}
+                            maximumChargePowerW={maximumChargePowerW}
+                            maximumDischargePowerW={maximumDischargePowerW}
                             showContextSummary={false}
                             minimumDischargePercent={minimumDischargePercent}
                             returnPath={returnPath}

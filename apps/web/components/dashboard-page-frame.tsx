@@ -22,6 +22,8 @@ export function DashboardPageFrame({
       .map((device) => ({
         id: device.id,
         name: device.name,
+        maximumChargePowerW: device.maximumChargePowerW ?? 800,
+        maximumDischargePowerW: device.maximumDischargePowerW ?? 800,
         minimumDischargePercent: device.minimumDischargePercent ?? 10,
         batteryStrategy: device.batteryStrategy,
         batteryStrategyPlan: device.batteryStrategyPlan ?? [],

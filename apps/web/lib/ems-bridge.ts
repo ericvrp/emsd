@@ -191,6 +191,15 @@ export function setBatteryMinimumDischargePercent(input: {
   );
 }
 
+export function setBatteryPowerLimits(input: {
+  id: string;
+  maximumChargePowerW: number;
+  maximumDischargePowerW: number;
+  siteId: string;
+}) {
+  return runBridge<ManagedDeviceRecord>("battery-set-power-limits", input);
+}
+
 export function deleteBattery(input: { id: string; siteId: string }) {
   return runBridge<ManagedDeviceRecord>("battery-delete", input);
 }

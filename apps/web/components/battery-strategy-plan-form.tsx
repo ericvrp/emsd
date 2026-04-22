@@ -279,29 +279,7 @@ export function BatteryStrategyPlanForm({
                   </td>
                   <td className={contentCellClass}>
                     {action === "charging" || action === "discharging" ? (
-                      <div className="flex min-w-[180px] flex-col gap-2 justify-end">
-                        <Input
-                          disabled={!item.enabled}
-                          id={`${item.id}-power`}
-                          max={2400}
-                          min={0}
-                          onChange={(event) =>
-                            updateItem(item.id, (currentItem) => ({
-                              ...currentItem,
-                              manualPowerW: parseNumber(event.target.value),
-                            }))
-                          }
-                          step={10}
-                          type="number"
-                          value={String(item.manualPowerW ?? 2400)}
-                        />
-                        <Label
-                          className="text-xs text-slate-400"
-                          htmlFor={`${item.id}-power`}
-                        >
-                          Power (W)
-                        </Label>
-                      </div>
+                      <div />
                     ) : (
                       <div />
                     )}
@@ -338,12 +316,6 @@ export function BatteryStrategyPlanForm({
                               <SelectItem value="auto">Dynamic</SelectItem>
                             </SelectContent>
                           </Select>
-                          <Label
-                            className="text-xs text-slate-400"
-                            htmlFor={`${item.id}-target-method`}
-                          >
-                            Target method
-                          </Label>
                         </div>
                         {targetMethod === "soc" ? (
                           <div className="flex flex-col gap-2 justify-end">
@@ -376,12 +348,6 @@ export function BatteryStrategyPlanForm({
                                 ),
                               )}
                             />
-                            <Label
-                              className="text-xs text-slate-400"
-                              htmlFor={`${item.id}-target-soc`}
-                            >
-                              Target percentage
-                            </Label>
                           </div>
                         ) : null}
                         {targetMethod === "duration" ? (
@@ -401,12 +367,6 @@ export function BatteryStrategyPlanForm({
                               type="number"
                               value={String(item.targetDurationMinutes ?? "")}
                             />
-                            <Label
-                              className="text-xs text-slate-400"
-                              htmlFor={`${item.id}-duration`}
-                            >
-                              Duration (minutes)
-                            </Label>
                           </div>
                         ) : null}
                         {targetMethod === "end-time" ? (
@@ -423,12 +383,6 @@ export function BatteryStrategyPlanForm({
                               type="time"
                               value={item.targetEndTime ?? ""}
                             />
-                            <Label
-                              className="text-xs text-slate-400"
-                              htmlFor={`${item.id}-end-time`}
-                            >
-                              End time
-                            </Label>
                           </div>
                         ) : null}
                       </div>

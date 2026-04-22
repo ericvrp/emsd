@@ -49,6 +49,8 @@ export function describeCurrentBatteryStrategyHuman(
     | "strategyMode"
     | "manualState"
     | "manualPowerW"
+    | "maximumChargePowerW"
+    | "maximumDischargePowerW"
     | "manualChargeTargetSoc"
     | "manualDischargeTargetSoc"
     | "manualTargetSoc"
@@ -149,6 +151,8 @@ export function formatManualStrategyAppliedSummary(
     | "strategyMode"
     | "manualState"
     | "manualPowerW"
+    | "maximumChargePowerW"
+    | "maximumDischargePowerW"
     | "manualChargeTargetSoc"
     | "manualDischargeTargetSoc"
     | "manualTargetSoc"
@@ -168,6 +172,8 @@ export function formatBatteryStrategyStatusSummary(
     | "strategyMode"
     | "manualState"
     | "manualPowerW"
+    | "maximumChargePowerW"
+    | "maximumDischargePowerW"
     | "manualChargeTargetSoc"
     | "manualDischargeTargetSoc"
     | "manualTargetSoc"
@@ -182,7 +188,12 @@ export function formatBatteryStrategyStatusSummary(
     return summarizeActiveStrategy({
       strategyMode: battery.strategyMode,
       manualState: battery.manualState,
-      manualPowerW: battery.manualPowerW,
+      manualPowerW: resolveDisplayedPowerW({
+        manualState: battery.manualState,
+        manualPowerW: battery.manualPowerW,
+        maximumChargePowerW: battery.maximumChargePowerW,
+        maximumDischargePowerW: battery.maximumDischargePowerW,
+      }),
       manualChargeTargetSoc: battery.manualChargeTargetSoc,
       manualDischargeTargetSoc: battery.manualDischargeTargetSoc,
       manualTargetSoc: battery.manualTargetSoc,
@@ -209,7 +220,12 @@ export function formatBatteryStrategyStatusSummary(
     ? summarizeActiveStrategy({
         strategyMode: fallbackItem.strategyMode,
         manualState: fallbackItem.manualState,
-        manualPowerW: fallbackItem.manualPowerW,
+        manualPowerW: resolveDisplayedPowerW({
+          manualState: fallbackItem.manualState,
+          manualPowerW: fallbackItem.manualPowerW,
+          maximumChargePowerW: battery.maximumChargePowerW,
+          maximumDischargePowerW: battery.maximumDischargePowerW,
+        }),
         manualChargeTargetSoc: fallbackItem.manualChargeTargetSoc,
         manualDischargeTargetSoc: fallbackItem.manualDischargeTargetSoc,
         manualTargetSoc: fallbackItem.manualTargetSoc,
@@ -229,7 +245,12 @@ export function formatBatteryStrategyStatusSummary(
     : summarizeActiveStrategy({
         strategyMode: battery.strategyMode,
         manualState: battery.manualState,
-        manualPowerW: battery.manualPowerW,
+        manualPowerW: resolveDisplayedPowerW({
+          manualState: battery.manualState,
+          manualPowerW: battery.manualPowerW,
+          maximumChargePowerW: battery.maximumChargePowerW,
+          maximumDischargePowerW: battery.maximumDischargePowerW,
+        }),
         manualChargeTargetSoc: battery.manualChargeTargetSoc,
         manualDischargeTargetSoc: battery.manualDischargeTargetSoc,
         manualTargetSoc: battery.manualTargetSoc,
@@ -262,7 +283,16 @@ export function formatBatteryStrategyStatusSummary(
       resolvedManualState: battery.strategyRuntime.activeResolvedManualState,
       targetMethod: activeItem.targetMethod,
     }),
-    manualPowerW: activeItem.manualPowerW,
+    manualPowerW: resolveDisplayedPowerW({
+      manualState: resolveActiveManualState({
+        fallbackManualState: activeItem.manualState,
+        resolvedManualState: battery.strategyRuntime.activeResolvedManualState,
+        targetMethod: activeItem.targetMethod,
+      }),
+      manualPowerW: activeItem.manualPowerW,
+      maximumChargePowerW: battery.maximumChargePowerW,
+      maximumDischargePowerW: battery.maximumDischargePowerW,
+    }),
     manualChargeTargetSoc: activeItem.manualChargeTargetSoc,
     manualDischargeTargetSoc: activeItem.manualDischargeTargetSoc,
     manualTargetSoc: activeItem.manualTargetSoc,
@@ -367,6 +397,23 @@ function describeDischargeTarget(
 
 function describePower(powerW: number | null): string | null {
   return powerW === null ? null : `at ${powerW}W`;
+}
+
+function resolveDisplayedPowerW(input: {
+  manualState: BatteryManualState | null;
+  manualPowerW: number | null;
+  maximumChargePowerW: number;
+  maximumDischargePowerW: number;
+}): number | null {
+  if (input.manualState === "charging") {
+    return input.maximumChargePowerW;
+  }
+
+  if (input.manualState === "discharging") {
+    return input.maximumDischargePowerW;
+  }
+
+  return input.manualPowerW;
 }
 
 function summarizeActiveStrategy(input: {

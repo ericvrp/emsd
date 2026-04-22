@@ -32,6 +32,7 @@ import {
   refreshWeatherForecast,
   setBatteryEnabled,
   setBatteryMinimumDischargePercent,
+  setBatteryPowerLimits,
   setHouseStrategy,
   setHouseStrategyPlan,
   setMeterEnabled,
@@ -344,6 +345,72 @@ export async function setBatteryMinimumDischargePercentAction(
     });
     return {
       notice: `Updated minimum discharge for ${batteryName}.`,
+      tab: "devices",
+    };
+  }, "devices");
+}
+
+export async function setBatteryPowerLimitsAction(
+  formData: FormData,
+): Promise<void> {
+  const siteId = stringValue(formData, "siteId");
+
+  return runAction(async () => {
+    const batteryId = stringValue(formData, "batteryId");
+    const batteryName =
+      optionalStringValue(formData, "batteryName") ?? batteryId;
+    const maximumChargePowerW = Number(
+      stringValue(formData, "maximumChargePowerW"),
+    );
+    const maximumDischargePowerW = Number(
+      stringValue(formData, "maximumDischargePowerW"),
+    );
+    await setBatteryPowerLimits({
+      id: batteryId,
+      maximumChargePowerW,
+      maximumDischargePowerW,
+      siteId,
+    });
+    return {
+      notice: `Updated power limits for ${batteryName}.`,
+      tab: "devices",
+    };
+  }, "devices");
+}
+
+export async function updateBatterySettingsAction(
+  formData: FormData,
+): Promise<void> {
+  const siteId = stringValue(formData, "siteId");
+
+  return runAction(async () => {
+    const batteryId = stringValue(formData, "batteryId");
+    const batteryName =
+      optionalStringValue(formData, "batteryName") ?? batteryId;
+    const minimumDischargePercent = Number(
+      stringValue(formData, "minimumDischargePercent"),
+    );
+    const maximumChargePowerW = Number(
+      stringValue(formData, "maximumChargePowerW"),
+    );
+    const maximumDischargePowerW = Number(
+      stringValue(formData, "maximumDischargePowerW"),
+    );
+
+    await setBatteryPowerLimits({
+      id: batteryId,
+      maximumChargePowerW,
+      maximumDischargePowerW,
+      siteId,
+    });
+    await setBatteryMinimumDischargePercent({
+      id: batteryId,
+      minimumDischargePercent,
+      siteId,
+    });
+
+    return {
+      notice: `Updated settings for ${batteryName}.`,
       tab: "devices",
     };
   }, "devices");

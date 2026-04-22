@@ -84,6 +84,7 @@ import {
   listWeatherForecastSources,
   setBatteryEnabled,
   setBatteryMinimumDischargePercent,
+  setBatteryPowerLimits,
   setHouseStrategy,
   setHouseStrategyPlan,
   setMeterEnabled,
@@ -281,6 +282,8 @@ function createManagedBatteryFromDiscovered(
       enabled: true,
       id: discovered.discoveryId,
       ipAddress: discovered.ipAddress,
+      maximumChargePowerW: 800,
+      maximumDischargePowerW: 800,
       minimumDischargePercent: 10,
       manualChargeTargetSoc: 100,
       manualDischargeTargetSoc: 10,
@@ -358,6 +361,8 @@ function toManagedDeviceRecord(
         batteryManualTargetDurationMinutes: null,
         batteryManualTargetEndTime: null,
         batteryManualModeActive: false,
+        maximumChargePowerW: null,
+        maximumDischargePowerW: null,
         minimumDischargePercent: null,
         updatedAt: record.updatedAt,
       };
@@ -390,6 +395,8 @@ function toManagedDeviceRecord(
       batteryManualTargetEndTime:
         record.strategyRuntime.manualTargetEndTime ?? null,
       batteryManualModeActive: record.manualModeActive,
+      maximumChargePowerW: record.maximumChargePowerW,
+      maximumDischargePowerW: record.maximumDischargePowerW,
       minimumDischargePercent: record.minimumDischargePercent,
       updatedAt: record.updatedAt,
     };
@@ -412,6 +419,8 @@ function toManagedDeviceRecord(
     batteryManualTargetDurationMinutes: null,
     batteryManualTargetEndTime: null,
     batteryManualModeActive: false,
+    maximumChargePowerW: null,
+    maximumDischargePowerW: null,
     minimumDischargePercent: null,
     updatedAt: record.updatedAt,
   };
@@ -813,6 +822,31 @@ export async function runApiAction(
       return toManagedDeviceRecord(battery, new Date());
     }
 
+    case "battery-set-power-limits": {
+      const battery = setBatteryPowerLimits(
+        requireString(input.id, "id"),
+        {
+          maximumChargePowerW:
+            typeof input.maximumChargePowerW === "number"
+              ? input.maximumChargePowerW
+              : 800,
+          maximumDischargePowerW:
+            typeof input.maximumDischargePowerW === "number"
+              ? input.maximumDischargePowerW
+              : 800,
+        },
+        requireString(input.siteId, "siteId"),
+      );
+
+      if (!battery) {
+        throw new Error(
+          `Managed battery not found: ${requireString(input.id, "id")}`,
+        );
+      }
+
+      return toManagedDeviceRecord(battery, new Date());
+    }
+
     case "battery-delete": {
       const battery = deleteBattery(
         requireString(input.id, "id"),
@@ -852,9 +886,9 @@ export async function runApiAction(
             ? null
             : firstBattery.manualState;
       const manualPowerW =
-        typeof input.manualPowerW === "number"
-          ? input.manualPowerW
-          : firstBattery.manualPowerW;
+        strategyMode === "manual"
+          ? resolveBatteryManualPower(firstBattery, manualState)
+          : null;
       const manualChargeTargetSoc =
         typeof input.manualChargeTargetSoc === "number"
           ? input.manualChargeTargetSoc
@@ -900,7 +934,6 @@ export async function runApiAction(
         manualTargetMethod === "auto"
           ? await buildManualAutoTargets({
               batteries,
-              manualPowerW: normalizedManualPowerW,
               manualState: normalizedManualState,
               now: new Date(),
               siteId,
@@ -1001,10 +1034,12 @@ export async function runApiAction(
           value: strategyPlan,
         });
 
-        const strategy = resolveBatteryStrategyFromPlanItem({
-          item: normalizedBatteryPlan[0],
-          minimumDischargePercent: battery.minimumDischargePercent,
-        });
+          const strategy = resolveBatteryStrategyFromPlanItem({
+            item: normalizedBatteryPlan[0],
+            minimumDischargePercent: battery.minimumDischargePercent,
+            maximumChargePowerW: battery.maximumChargePowerW,
+            maximumDischargePowerW: battery.maximumDischargePowerW,
+          });
 
         try {
           await createBatteryPlugin(battery).setStrategy(strategy);
@@ -1396,7 +1431,6 @@ export async function runApiAction(
 
 async function buildManualAutoTargets(input: {
   batteries: BatteryRecord[];
-  manualPowerW: number | null;
   manualState: Extract<BatteryManualState, "charging" | "discharging">;
   now: Date;
   siteId: string;
@@ -1431,7 +1465,7 @@ async function buildManualAutoTargets(input: {
     for (const battery of input.batteries) {
       const sample = await readManualAutoTargetSample(battery);
       const item = createManualAutoTargetItem({
-        manualPowerW: input.manualPowerW,
+        battery,
         manualState: input.manualState,
       });
       const dynamicPriceTargetEstimate = estimateDynamicPriceTarget({
@@ -1460,7 +1494,7 @@ async function buildManualAutoTargets(input: {
 }
 
 function createManualAutoTargetItem(input: {
-  manualPowerW: number | null;
+  battery: BatteryRecord;
   manualState: Extract<BatteryManualState, "charging" | "discharging">;
 }): BatteryStrategyPlanItem {
   return {
@@ -1474,11 +1508,29 @@ function createManualAutoTargetItem(input: {
     triggerKind: null,
     strategyMode: "manual",
     manualState: input.manualState,
-    manualPowerW: input.manualPowerW,
+    manualPowerW: resolveBatteryManualPower(input.battery, input.manualState),
     manualChargeTargetSoc: null,
     manualDischargeTargetSoc: null,
     manualTargetSoc: null,
   };
+}
+
+function resolveBatteryManualPower(
+  battery: Pick<
+    BatteryRecord,
+    "maximumChargePowerW" | "maximumDischargePowerW" | "manualPowerW"
+  >,
+  manualState: BatteryManualState | null,
+): number | null {
+  if (manualState === "charging") {
+    return battery.maximumChargePowerW;
+  }
+
+  if (manualState === "discharging") {
+    return battery.maximumDischargePowerW;
+  }
+
+  return battery.manualPowerW ?? null;
 }
 
 function normalizeDayKey(value: string | null): string | null {
