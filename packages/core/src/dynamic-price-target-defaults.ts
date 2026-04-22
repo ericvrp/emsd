@@ -32,4 +32,4 @@ export const DYNAMIC_PRICE_TARGET_BACKUP_RESERVE_MARGIN_PERCENT = 2;
  * Target buffer percentage per hour until target time.
  * For high-price windows: hoursUntilTarget * this value, rounded to nearest whole percent.
  */
-export const DYNAMIC_PRICE_TARGET_BUFFER_PERCENT_PER_HOUR = 0.5;
+export const DYNAMIC_PRICE_TARGET_BUFFER_PERCENT_PER_HOUR = 0.25;
