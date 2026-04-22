@@ -19,6 +19,12 @@ import {
 } from "../lib/power-format";
 import { UI_CHART_STYLES, UI_COLORS } from "../lib/ui-colors";
 import {
+  LEFT_Y_AXIS_WIDTH,
+  RIGHT_Y_AXIS_WIDTH,
+  STANDARD_LEFT_AXIS_MARGIN,
+  STANDARD_RIGHT_AXIS_MARGIN,
+} from "./history/constants";
+import {
   LegendChip,
   aggregatePowerSamples,
   buildMirroredYAxis,
@@ -380,7 +386,12 @@ function GridOverviewChart({
               <LineChart
                 data={chartData}
                 height={height}
-                margin={{ top: 12, right: 56, bottom: 0, left: 56 }}
+                margin={{
+                  top: 12,
+                  right: STANDARD_RIGHT_AXIS_MARGIN,
+                  bottom: 0,
+                  left: STANDARD_LEFT_AXIS_MARGIN,
+                }}
                 width={width}
               >
                 <CartesianGrid
@@ -407,9 +418,9 @@ function GridOverviewChart({
                   tickLine={false}
                   tickMargin={8}
                   ticks={axisConfig.ticks}
-                  width={56}
-                  yAxisId="left"
-                />
+                   width={LEFT_Y_AXIS_WIDTH}
+                   yAxisId="left"
+                 />
                 <YAxis
                   axisLine={false}
                   domain={axisConfig.domain}
@@ -422,9 +433,9 @@ function GridOverviewChart({
                   tickLine={false}
                   tickMargin={8}
                   ticks={axisConfig.ticks}
-                  width={56}
-                  yAxisId="right"
-                />
+                   width={RIGHT_Y_AXIS_WIDTH}
+                   yAxisId="right"
+                 />
                 <ReferenceLine
                   stroke={UI_COLORS.chartZeroLine}
                   strokeDasharray="4 6"

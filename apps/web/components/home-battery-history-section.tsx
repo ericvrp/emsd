@@ -214,7 +214,7 @@ export function HomeBatteryHistorySection({
         </SectionSummaryCard>
       </div>
 
-      <div className="mt-5 space-y-4 rounded-[1.4rem] border border-white/10 bg-white/5 p-4">
+      <div className="mt-5 space-y-4 rounded-[1.4rem] border border-white/10 bg-white/5 pb-4 pl-6 pr-4 pt-4">
         {graphRefreshError ? (
           <RefreshWarning message={graphRefreshError} />
         ) : null}
