@@ -121,10 +121,10 @@ export function buildExpectedSiteLoadProfile(
   }
 
   const rawExpectedLoadBySlot = new Map(
-    [...buckets.entries()].map(([slotKey, values]) => [slotKey, round2(median(values))]),
+    [...buckets.entries()].map(([slotKey, values]) => [slotKey, round2(mean(values))]),
   );
-  const expectedLoadBySlot = smoothExpectedLoadBySlot(rawExpectedLoadBySlot);
-  const fallbackLoadW = round2(median([...expectedLoadBySlot.values()]));
+  const expectedLoadBySlot = rawExpectedLoadBySlot;
+  const fallbackLoadW = round2(mean([...expectedLoadBySlot.values()]));
 
   return {
     expectedLoadBySlot,
@@ -303,32 +303,6 @@ function inferSocDirection(
   return 0;
 }
 
-function smoothExpectedLoadBySlot(
-  rawExpectedLoadBySlot: Map<string, number>,
-): Map<string, number> {
-  const sortedKeys = [...rawExpectedLoadBySlot.keys()].sort();
-
-  return new Map(
-    sortedKeys.map((slotKey, index) => {
-      const neighborhoodValues = [-1, 0, 1]
-        .map((offset) => sortedKeys[index + offset] ?? null)
-        .map((neighborKey) =>
-          neighborKey === null
-            ? null
-            : (rawExpectedLoadBySlot.get(neighborKey) ?? null),
-        )
-        .filter((value): value is number => typeof value === "number");
-
-      return [
-        slotKey,
-        neighborhoodValues.length === 0
-          ? 0
-          : round2(median(neighborhoodValues)),
-      ];
-    }),
-  );
-}
-
 function createLocalDayPeriods(dayKey: string): string[] {
   const start = getLocalDayStart(dayKey);
   const periods: string[] = [];
@@ -361,25 +335,12 @@ function getSlotKey(date: Date): string {
   return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-function median(values: number[]): number {
+function mean(values: number[]): number {
   if (values.length === 0) {
     return 0;
   }
 
-  const sorted = [...values].sort((left, right) => left - right);
-  const middleIndex = Math.floor(sorted.length / 2);
-  const middle = sorted[middleIndex];
-
-  if (middle === undefined) {
-    return 0;
-  }
-
-  if (sorted.length % 2 === 1) {
-    return middle;
-  }
-
-  const previous = sorted[middleIndex - 1];
-  return previous === undefined ? middle : (previous + middle) / 2;
+  return values.reduce((total, value) => total + value, 0) / values.length;
 }
 
 function pad(value: number): string {

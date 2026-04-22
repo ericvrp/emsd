@@ -37,6 +37,24 @@ test("buildExpectedSiteLoadSeriesForLocalDay builds a full selected-day series f
   expect(series.find((point) => point.periodStart === "2026-04-15T08:00:00.000Z")?.value).toBe(210);
 });
 
+test("buildExpectedSiteLoadProfile uses exact-slot means without neighboring smoothing", () => {
+  const historySeries: SiteLoadPoint[] = [
+    { periodStart: "2026-04-13T08:00:00.000Z", value: 200 },
+    { periodStart: "2026-04-14T08:00:00.000Z", value: 220 },
+    { periodStart: "2026-04-13T08:15:00.000Z", value: 300 },
+    { periodStart: "2026-04-14T08:15:00.000Z", value: 420 },
+    { periodStart: "2026-04-15T08:15:00.000Z", value: 480 },
+    { periodStart: "2026-04-13T08:30:00.000Z", value: 800 },
+    { periodStart: "2026-04-14T08:30:00.000Z", value: 820 },
+  ];
+  const profile = buildExpectedSiteLoadProfile(
+    historySeries,
+    new Date("2026-04-16T00:00:00.000Z"),
+  );
+
+  expect(resolveExpectedSiteLoadW("2026-04-16T08:15:00.000Z", profile)).toBe(400);
+});
+
 test("fillSiteLoadSeriesForLocalDay keeps actual samples and fills missing periods with null", () => {
   const filled = fillSiteLoadSeriesForLocalDay({
     dayKey: "2026-04-15",

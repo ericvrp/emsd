@@ -85,7 +85,7 @@ test("low-price auto resolves to a pre-discharge target when solar is expected a
   expect(estimate.targetTime).toBe("2026-04-19T10:00:00.000Z");
   expect(estimate.resolvedManualState).toBe("discharging");
   expect(estimate.skipReason).toBeNull();
-  expect(estimate.targetTimeSignal?.predictedSolarW).toBe(900);
+  expect(estimate.targetTimeSignal?.predictedSolarW).toBe(1000);
   expect(estimate.targetTimeSignal?.recoveryThresholdW).toBeGreaterThan(0);
   expect(estimate.estimatedReservePercentAtTargetTime).toBeGreaterThan(12);
 });
@@ -151,7 +151,7 @@ function createMorningSolarForecastSamples(): SolarForecastSampleRecord[] {
     ghiWm2: periodStart === "2026-04-19T10:00:00.000Z" ? 700 : 200,
     periodStart,
     siteId: "site-1",
-    value: periodStart === "2026-04-19T10:00:00.000Z" ? 900 : 200,
+    value: periodStart === "2026-04-19T10:00:00.000Z" ? 1000 : 200,
   }));
 }
 
