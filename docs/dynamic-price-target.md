@@ -124,9 +124,9 @@ This logic is wired from `apps/daemon/src/index.ts` and the completion logic liv
 
 ## CLI Evaluation Script
 
-`bun run dynamic-price-target:evaluate` uses the same estimator to evaluate a synthetic action for a chosen date and time.
+`bun run dynamic-price-target:evaluate` uses the same estimator to evaluate a synthetic action for a chosen price marker.
 
-If neither `--date` nor `--time` is supplied, the script now evaluates from the next relevant price trigger instead of the current wall-clock time.
+If neither `--marker-date` nor `--marker-time` is supplied, the script evaluates from the next relevant price trigger instead of the current wall-clock time.
 
 Default behavior:
 - prints one concise summary line per battery
@@ -145,8 +145,8 @@ Available verbose blocks:
 - `replay`
 
 The script supports:
-- `--date YYYY-MM-DD`
-- `--time HH:MM`
+- `--marker-date YYYY-MM-DD`
+- `--marker-time HH:MM`
 - `--price high,low`
 - `--backup-reserve-margin <percent>`
 - `--backup-reserve-margin-per-hour <percent>`
@@ -154,7 +154,7 @@ The script supports:
 - `--site <site-id>`
 - `--days <n>`
 
-For low-price auto evaluation, the script now follows the daemon's pre-discharge behavior instead of building a synthetic charge window around the low-price moment.
+For low-price auto evaluation, `--marker-date` and `--marker-time` select the low-price marker being evaluated. The script then derives the same pre-discharge start trigger that the daemon uses, so explicit marker selection matches the default low-price path.
 
 ## Main Files
 

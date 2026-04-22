@@ -11,30 +11,47 @@ import {
   resolveEvaluationReferenceTime,
 } from "./evaluate-dynamic-price-target";
 
-test("resolveEvaluationReferenceTime keeps the explicit replay time when date or time is set", () => {
+test("resolveEvaluationReferenceTime keeps the explicit marker time for high-price items", () => {
   expect(
     resolveEvaluationReferenceTime({
-      date: "2026-04-19",
+      markerDate: "2026-04-19",
       dynamicPriceSamples: createDynamicPriceSamples([]),
-      hasExplicitDateOrTime: true,
+      hasExplicitMarkerTime: true,
       item: createHighPriceItem(),
-      time: "17:30",
+      markerTime: "17:30",
     }).toISOString(),
   ).toBe(createReplayTime("2026-04-19", "17:30").toISOString());
+});
+
+test("resolveEvaluationReferenceTime uses the paired pre-discharge trigger for explicit low-price markers", () => {
+  expect(
+    resolveEvaluationReferenceTime({
+      markerDate: "2026-04-19",
+      dynamicPriceSamples: createDynamicPriceSamples([
+        ["2026-04-19T02:00:00.000Z", 20],
+        ["2026-04-19T06:00:00.000Z", 30],
+        ["2026-04-19T10:00:00.000Z", 10],
+        ["2026-04-19T14:00:00.000Z", 18],
+      ]),
+      hasExplicitMarkerTime: true,
+      item: createLowPriceAutoItem(),
+      markerTime: "10:00",
+    }).toISOString(),
+  ).toBe("2026-04-19T06:00:00.000Z");
 });
 
 test("resolveEvaluationReferenceTime uses the next high-price marker by default", () => {
   expect(
     resolveEvaluationReferenceTime({
-      date: "2026-04-19",
+      markerDate: "2026-04-19",
       dynamicPriceSamples: createDynamicPriceSamples([
         ["2026-04-19T04:00:00.000Z", 10],
         ["2026-04-19T08:00:00.000Z", 30],
         ["2026-04-19T12:00:00.000Z", 10],
       ]),
-      hasExplicitDateOrTime: false,
+      hasExplicitMarkerTime: false,
       item: createHighPriceItem(),
-      time: "06:00",
+      markerTime: "06:00",
     }).toISOString(),
   ).toBe("2026-04-19T08:00:00.000Z");
 });
@@ -42,16 +59,16 @@ test("resolveEvaluationReferenceTime uses the next high-price marker by default"
 test("resolveEvaluationReferenceTime uses the next low-price auto trigger by default", () => {
   expect(
     resolveEvaluationReferenceTime({
-      date: "2026-04-19",
+      markerDate: "2026-04-19",
       dynamicPriceSamples: createDynamicPriceSamples([
         ["2026-04-19T02:00:00.000Z", 20],
         ["2026-04-19T06:00:00.000Z", 30],
         ["2026-04-19T10:00:00.000Z", 10],
         ["2026-04-19T14:00:00.000Z", 18],
       ]),
-      hasExplicitDateOrTime: false,
+      hasExplicitMarkerTime: false,
       item: createLowPriceAutoItem(),
-      time: "01:00",
+      markerTime: "01:00",
     }).toISOString(),
   ).toBe("2026-04-19T06:00:00.000Z");
 });

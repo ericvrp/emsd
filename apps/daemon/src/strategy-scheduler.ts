@@ -679,6 +679,24 @@ export function getNextPriceMarkerTriggerAt(input: {
   return null;
 }
 
+export function getLowPriceAutoTriggerAtForMarker(input: {
+  dynamicPriceSamples: DynamicPriceSampleRecord[];
+  markerAt: Date;
+}): Date | null {
+  const highMarkers = getPriceMarkersForToday({
+    triggerKind: "high-price",
+    now: input.markerAt,
+    dynamicPriceSamples: input.dynamicPriceSamples,
+  });
+
+  return (
+    [...highMarkers]
+      .reverse()
+      .find((candidate) => candidate.getTime() < input.markerAt.getTime()) ??
+    null
+  );
+}
+
 export function getPriceMarkersForToday(input: {
   triggerKind: "low-price" | "high-price";
   now: Date;

@@ -7,6 +7,7 @@ import type {
 } from "@emsd/core";
 import {
   formatDaemonLogTimestamp,
+  getLowPriceAutoTriggerAtForMarker,
   formatScheduledItemCompletion,
   getScheduledItemCompletion,
   getStrategyTriggerAt,
@@ -101,6 +102,21 @@ test("getStrategyTriggerAt uses the preceding high-price marker for low-price au
   expect(
     getTodayTriggerAt(item, new Date("2026-04-09T07:00:00.000Z")),
   ).toBeNull();
+});
+
+test("getLowPriceAutoTriggerAtForMarker returns the preceding high-price marker", () => {
+  expect(
+    getLowPriceAutoTriggerAtForMarker({
+      markerAt: new Date("2026-04-09T16:00:00.000Z"),
+      dynamicPriceSamples: createDynamicPriceSamples([
+        ["2026-04-09T00:00:00.000Z", 20],
+        ["2026-04-09T04:00:00.000Z", 30],
+        ["2026-04-09T08:00:00.000Z", 10],
+        ["2026-04-09T12:00:00.000Z", 25],
+        ["2026-04-09T16:00:00.000Z", 5],
+      ]),
+    })?.toISOString(),
+  ).toBe("2026-04-09T12:00:00.000Z");
 });
 
 test("shouldCompleteScheduledItem uses the active plan item rather than the persisted battery strategy", () => {

@@ -27,7 +27,10 @@ import {
   readSolarForecastSamples,
 } from "../apps/daemon/src/database";
 import { estimateDynamicPriceTarget } from "../apps/daemon/src/dynamic-price-target";
-import { getNextStrategyTriggerAt } from "../apps/daemon/src/strategy-scheduler";
+import {
+  getLowPriceAutoTriggerAtForMarker,
+  getNextStrategyTriggerAt,
+} from "../apps/daemon/src/strategy-scheduler";
 
 // Script defaults sourced from shared algorithm constants
 const DEFAULT_DAYS = DEFAULT_DYNAMIC_PRICE_TARGET_EVALUATION_DAYS;
@@ -41,15 +44,15 @@ const DEFAULT_TARGET_BUFFER_PERCENT_PER_HOUR =
 
 interface ScriptOptions {
   backupReserveMargin: number;
-  date: string;
+  markerDate: string;
   days: number;
-  hasExplicitDateOrTime: boolean;
+  hasExplicitMarkerTime: boolean;
   minimumSolarSurplusWOverride: number;
   powerW: number;
   priceSignals: PriceSignal[];
   siteId: string | null;
   targetBufferPercentPerHourOverride: number;
-  time: string;
+  markerTime: string;
   verboseBlocks: Set<VerboseBlock>;
 }
 
@@ -101,17 +104,17 @@ interface EvaluationContext {
 }
 
 function parseArgs(args: string[]): ScriptOptions {
-  let date = getCurrentLocalDate();
+  let markerDate = getCurrentLocalDate();
   let days = DEFAULT_DAYS;
   let backupReserveMargin = DEFAULT_BACKUP_RESERVE_MARGIN;
-  let hasExplicitDateOrTime = false;
+  let hasExplicitMarkerTime = false;
   let minimumSolarSurplusWOverride = DEFAULT_MINIMUM_SOLAR_SURPLUS_W;
   let powerW = DEFAULT_POWER_W;
   let priceSignals: PriceSignal[] = ["high", "low"];
   let siteId: string | null = null;
   let targetBufferPercentPerHourOverride =
     DEFAULT_TARGET_BUFFER_PERCENT_PER_HOUR;
-  let time = getCurrentLocalClockTime();
+  let markerTime = getCurrentLocalClockTime();
   const verboseBlocks = new Set<VerboseBlock>();
 
   for (let index = 0; index < args.length; index += 1) {
@@ -127,15 +130,15 @@ function parseArgs(args: string[]): ScriptOptions {
       continue;
     }
 
-    const dateArg = parseStringArg(args, index, "--date");
+    const dateArg = parseStringArg(args, index, "--marker-date");
 
     if (dateArg) {
       if (!isIsoDate(dateArg.value)) {
-        throw new Error("--date must use YYYY-MM-DD format.");
+        throw new Error("--marker-date must use YYYY-MM-DD format.");
       }
 
-      date = dateArg.value;
-      hasExplicitDateOrTime = true;
+      markerDate = dateArg.value;
+      hasExplicitMarkerTime = true;
       index = dateArg.newIndex;
       continue;
     }
@@ -198,15 +201,15 @@ function parseArgs(args: string[]): ScriptOptions {
       continue;
     }
 
-    const timeArg = parseStringArg(args, index, "--time");
+    const timeArg = parseStringArg(args, index, "--marker-time");
 
     if (timeArg) {
       if (!isClockTime(timeArg.value)) {
-        throw new Error("--time must use HH:MM format.");
+        throw new Error("--marker-time must use HH:MM format.");
       }
 
-      time = timeArg.value;
-      hasExplicitDateOrTime = true;
+      markerTime = timeArg.value;
+      hasExplicitMarkerTime = true;
       index = timeArg.newIndex;
       continue;
     }
@@ -241,20 +244,28 @@ function parseArgs(args: string[]): ScriptOptions {
       continue;
     }
 
+    if (arg === "--date" || arg.startsWith("--date=")) {
+      throw new Error("--date was renamed to --marker-date.");
+    }
+
+    if (arg === "--time" || arg.startsWith("--time=")) {
+      throw new Error("--time was renamed to --marker-time.");
+    }
+
     throw new Error(`Unknown argument: ${arg}`);
   }
 
   return {
-    date,
+    markerDate,
     days,
     backupReserveMargin,
-    hasExplicitDateOrTime,
+    hasExplicitMarkerTime,
     powerW,
     priceSignals,
     siteId,
     minimumSolarSurplusWOverride,
     targetBufferPercentPerHourOverride,
-    time,
+    markerTime,
     verboseBlocks,
   };
 }
@@ -270,7 +281,7 @@ function printHelp(): void {
       `  minimum solar surplus: ${DEFAULT_MINIMUM_SOLAR_SURPLUS_W}W`,
       `  backup reserve margin per hour: ${DEFAULT_TARGET_BUFFER_PERCENT_PER_HOUR}%`,
       `  power: ${DEFAULT_POWER_W}W`,
-      "  date/time: next relevant price marker unless --date or --time is set",
+      "  marker date/time: next relevant price marker unless --marker-date or --marker-time is set",
       `  days: ${DEFAULT_DAYS}`,
       `  --verbose enables: ${DEFAULT_VERBOSE_BLOCKS.join(", ")}`,
       "",
@@ -278,12 +289,12 @@ function printHelp(): void {
       "  bun run dynamic-price-target:evaluate",
       "  bun run dynamic-price-target:evaluate -- --price=low",
       "  bun run dynamic-price-target:evaluate -- --price=high,low",
-      "  bun run dynamic-price-target:evaluate -- --date=2026-04-19",
+      "  bun run dynamic-price-target:evaluate -- --marker-date=2026-04-19",
       "  bun run dynamic-price-target:evaluate -- --backup-reserve-margin=2",
       "  bun run dynamic-price-target:evaluate -- --minimum-solar-surplus=75",
       "  bun run dynamic-price-target:evaluate -- --backup-reserve-margin-per-hour=0.5",
       "  bun run dynamic-price-target:evaluate -- --power=1800",
-      "  bun run dynamic-price-target:evaluate -- --time=17:30",
+      "  bun run dynamic-price-target:evaluate -- --marker-time=17:30",
       "  bun run dynamic-price-target:evaluate -- --site=<site-id>",
       "  bun run dynamic-price-target:evaluate -- --verbose",
       "  bun run dynamic-price-target:evaluate -- --verbose=meta,why,history",
@@ -316,8 +327,8 @@ function main() {
 
         if (evaluationOptions.verboseBlocks.has("meta")) {
           console.log(
-            evaluationOptions.hasExplicitDateOrTime
-              ? `Estimating synthetic ${formatActionLabel(evaluationOptions.action)} target for ${evaluationOptions.priceSignal} price at ${evaluationOptions.powerW}W for ${evaluationOptions.date} ${evaluationOptions.time}.`
+            evaluationOptions.hasExplicitMarkerTime
+              ? `Estimating synthetic ${formatActionLabel(evaluationOptions.action)} target for ${evaluationOptions.priceSignal} price at ${evaluationOptions.powerW}W for marker ${evaluationOptions.markerDate} ${evaluationOptions.markerTime}.`
               : `Estimating synthetic ${formatActionLabel(evaluationOptions.action)} target for the next ${evaluationOptions.priceSignal} price marker at ${evaluationOptions.powerW}W.`,
           );
         }
@@ -366,11 +377,11 @@ function evaluateSite(
     powerW: options.powerW,
   });
   const estimateAt = resolveEvaluationReferenceTime({
-    date: options.date,
+    markerDate: options.markerDate,
     dynamicPriceSamples,
-    hasExplicitDateOrTime: options.hasExplicitDateOrTime,
+    hasExplicitMarkerTime: options.hasExplicitMarkerTime,
     item: syntheticItem,
-    time: options.time,
+    markerTime: options.markerTime,
   });
   const candidateDays = getCandidateDaysFromBatterySamples(
     batteryPowerSamples,
@@ -501,16 +512,25 @@ export function createReplayTime(day: string, time: string): Date {
 }
 
 export function resolveEvaluationReferenceTime(input: {
-  date: string;
+  markerDate: string;
   dynamicPriceSamples: ReturnType<typeof readDynamicPriceSamples>;
-  hasExplicitDateOrTime: boolean;
+  hasExplicitMarkerTime: boolean;
   item: BatteryStrategyPlanItem;
-  time: string;
+  markerTime: string;
 }): Date {
-  const fallbackTime = createReplayTime(input.date, input.time);
+  const fallbackTime = createReplayTime(input.markerDate, input.markerTime);
 
-  if (input.hasExplicitDateOrTime) {
-    return fallbackTime;
+  if (input.hasExplicitMarkerTime) {
+    if (input.item.triggerKind !== "low-price" || input.item.manualState !== "charging") {
+      return fallbackTime;
+    }
+
+    return (
+      getLowPriceAutoTriggerAtForMarker({
+        dynamicPriceSamples: input.dynamicPriceSamples,
+        markerAt: fallbackTime,
+      }) ?? fallbackTime
+    );
   }
 
   return (
@@ -1039,5 +1059,12 @@ function clampPercent(value: number, minimum: number): number {
 }
 
 if (import.meta.main) {
-  main();
+  try {
+    main();
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Unknown error.";
+    console.error(`Error: ${message}`);
+    process.exit(1);
+  }
 }
