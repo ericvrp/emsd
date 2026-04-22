@@ -279,26 +279,6 @@ export function estimateDynamicPriceTarget(input: {
         predictedPowerW: number;
       } => point !== null,
     );
-  const expectedHouseLoadWh = round2(
-    forecastPeriods.reduce((total, point) => {
-      return (
-        total +
-        resolveExpectedHouseLoadWh(
-          point.periodStart,
-          loadProfile,
-          point.overlapHours,
-        )
-      );
-    }, 0),
-  );
-  const predictedSolarGenerationWh = round2(
-    forecastPeriods.reduce((total, point) => {
-      return total + point.predictedPowerW * point.overlapHours;
-    }, 0),
-  );
-  const estimatedRemainingEnergyWh = round2(
-    Math.max(0, expectedHouseLoadWh - predictedSolarGenerationWh),
-  );
   let cumulativeExpectedHouseLoadWh = 0;
   let cumulativePredictedSolarWh = 0;
   const energyBuckets = forecastPeriods.map((point) => {
@@ -335,6 +315,12 @@ export function estimateDynamicPriceTarget(input: {
       cumulativeNetBatteryEnergyNeededWh,
     };
   });
+  const lastEnergyBucket = energyBuckets[energyBuckets.length - 1] ?? null;
+  const expectedHouseLoadWh = lastEnergyBucket?.cumulativeExpectedHouseLoadWh ?? 0;
+  const predictedSolarGenerationWh =
+    lastEnergyBucket?.cumulativePredictedSolarWh ?? 0;
+  const estimatedRemainingEnergyWh =
+    lastEnergyBucket?.cumulativeNetBatteryEnergyNeededWh ?? 0;
   const reserveFloorResult = shouldUseDynamicReserveFloor(input.item)
     ? calculateDynamicReserveFloorPercent({
         backupReserveMarginPercent: input.backupReserveMarginOverride,

@@ -359,7 +359,7 @@ function GridOverviewChart({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-wrap gap-2 text-xs font-medium text-slate-300">
           <LegendChip color={UI_COLORS.gridExport} label="Grid Power" />
-          <LegendChip color={UI_COLORS.gridImport} label="Measured Site Load" />
+          <LegendChip color={UI_COLORS.gridImport} label="Inferred Site Load" />
           <LegendChip
             color={UI_COLORS.solarPrediction}
             label="Expected Site Load"
@@ -482,7 +482,7 @@ function GridOverviewChart({
                   dataKey="actualSiteLoadCurrentValue"
                   dot={false}
                   isAnimationActive={false}
-                  name="Measured Site Load"
+                  name="Inferred Site Load"
                   stroke={UI_COLORS.gridImport}
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -495,7 +495,7 @@ function GridOverviewChart({
                   dataKey="actualSiteLoadFutureValue"
                   dot={false}
                   isAnimationActive={false}
-                  name="Measured Site Load"
+                  name="Inferred Site Load"
                   stroke={UI_COLORS.gridImport}
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -581,7 +581,7 @@ function formatGridOverviewTooltipLabel(value: number, key?: string): string {
     return "Expected Site Load";
   }
 
-  return "Measured Site Load";
+  return "Inferred Site Load";
 }
 
 function formatGridChartTime(value: string | number): string {

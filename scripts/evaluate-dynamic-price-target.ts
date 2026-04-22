@@ -810,13 +810,13 @@ export function buildEnergyEstimateRows(input: {
       input.referenceTime,
       input.dynamicPriceTargetEstimate.targetTime,
     ),
-    "Expected house load before target bucket": formatWh(
+    "Expected house load before target time": formatWh(
       input.dynamicPriceTargetEstimate.expectedHouseLoadWh,
     ),
-    "Predicted solar before target bucket": formatWh(
+    "Predicted solar before target time": formatWh(
       input.dynamicPriceTargetEstimate.predictedSolarGenerationWh,
     ),
-    "Net battery energy needed before target bucket": `${formatWh(input.dynamicPriceTargetEstimate.estimatedRemainingEnergyWh)} = max(0, ${formatWh(input.dynamicPriceTargetEstimate.expectedHouseLoadWh)} - ${formatWh(input.dynamicPriceTargetEstimate.predictedSolarGenerationWh)})`,
+    "Net battery energy needed before target time": `${formatWh(input.dynamicPriceTargetEstimate.estimatedRemainingEnergyWh)} = max(0, ${formatWh(input.dynamicPriceTargetEstimate.expectedHouseLoadWh)} - ${formatWh(input.dynamicPriceTargetEstimate.predictedSolarGenerationWh)})`,
     "Battery capacity basis": formatWh(input.capacityWh),
     "Energy converted to target": `${energyTargetPercent}% = ceil(${formatWh(input.dynamicPriceTargetEstimate.estimatedRemainingEnergyWh)} / ${formatWh(input.capacityWh)} * 100)`,
     "Final target formula": `${getDisplayedTargetPercentForEstimate(input)}% = ${reserveAtTargetPercent}% reserve at target + ${energyTargetPercent}% interval energy`,
@@ -828,7 +828,6 @@ export function buildEnergyBucketRows(
 ): Array<Record<string, string>> {
   return energyBuckets.map((row) => ({
     time: formatClockTime(row.time),
-    duration: formatDurationMinutes(row.durationMinutes),
     expectedHouseLoadWh: formatWh(row.expectedHouseLoadWh),
     cumulativeExpectedHouseLoadWh: formatWh(row.cumulativeExpectedHouseLoadWh),
     predictedSolarWh: formatWh(row.predictedSolarWh),

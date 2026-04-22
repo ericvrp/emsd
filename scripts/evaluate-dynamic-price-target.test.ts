@@ -111,9 +111,9 @@ test("buildEnergyEstimateRows explains the interval and target formula", () => {
     }),
   ).toEqual({
     "Integration interval": "2026-04-21 19:45 -> 2026-04-22 07:30 (11h 45m)",
-    "Expected house load before target bucket": "2637.77 Wh",
-    "Predicted solar before target bucket": "288.73 Wh",
-    "Net battery energy needed before target bucket": "2349.04 Wh = max(0, 2637.77 Wh - 288.73 Wh)",
+    "Expected house load before target time": "2637.77 Wh",
+    "Predicted solar before target time": "288.73 Wh",
+    "Net battery energy needed before target time": "2349.04 Wh = max(0, 2637.77 Wh - 288.73 Wh)",
     "Battery capacity basis": "6000 Wh",
     "Energy converted to target": "39% = ceil(2349.04 Wh / 6000 Wh * 100)",
     "Final target formula": "57% = 18% reserve at target + 39% interval energy",
@@ -157,7 +157,6 @@ test("buildEnergyBucketRows formats cumulative energy buckets", () => {
   expect(buildEnergyBucketRows(buckets)).toEqual([
     {
       time: "19:45",
-      duration: "15m",
       expectedHouseLoadWh: "55 Wh",
       cumulativeExpectedHouseLoadWh: "55 Wh",
       predictedSolarWh: "0 Wh",
@@ -166,7 +165,6 @@ test("buildEnergyBucketRows formats cumulative energy buckets", () => {
     },
     {
       time: "20:00",
-      duration: "15m",
       expectedHouseLoadWh: "57.50 Wh",
       cumulativeExpectedHouseLoadWh: "112.50 Wh",
       predictedSolarWh: "0 Wh",
@@ -175,7 +173,6 @@ test("buildEnergyBucketRows formats cumulative energy buckets", () => {
     },
     {
       time: "07:15",
-      duration: "15m",
       expectedHouseLoadWh: "58.69 Wh",
       cumulativeExpectedHouseLoadWh: "2356.19 Wh",
       predictedSolarWh: "63.37 Wh",

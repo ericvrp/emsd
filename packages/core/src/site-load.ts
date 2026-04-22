@@ -260,6 +260,10 @@ function inferBatteryPowerDirection(input: {
   next: BatteryPowerSampleRecord | null;
   previous: BatteryPowerSampleRecord | null;
 }): -1 | 0 | 1 {
+  if (Math.abs(input.current.powerW ?? 0) === 0) {
+    return 1;
+  }
+
   const nextDirection = inferSocDirection(
     input.current.socPercent,
     input.next?.socPercent ?? null,

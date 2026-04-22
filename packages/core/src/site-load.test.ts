@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import {
+  buildHouseLoadHistorySeries,
   buildExpectedSiteLoadProfile,
   buildExpectedSiteLoadSeriesForLocalDay,
   fillSiteLoadSeriesForLocalDay,
@@ -45,4 +46,44 @@ test("fillSiteLoadSeriesForLocalDay keeps actual samples and fills missing perio
   expect(filled).toHaveLength(96);
   expect(filled.find((point) => point.periodStart === "2026-04-15T08:00:00.000Z")?.value).toBe(250);
   expect(filled.find((point) => point.periodStart === "2026-04-15T08:15:00.000Z")?.value).toBeNull();
+});
+
+test("buildHouseLoadHistorySeries keeps zero-watt battery samples when SoC is flat", () => {
+  expect(
+    buildHouseLoadHistorySeries({
+      batteryPowerSamples: [
+        {
+          batteryId: "battery-1",
+          observedAt: "2026-04-21T14:00:00.000Z",
+          periodStart: "2026-04-21T14:00:00.000Z",
+          powerW: 0,
+          siteId: "site-1",
+          socPercent: 100,
+        },
+      ],
+      p1MeterSamples: [
+        {
+          meterId: "meter-1",
+          observedAt: "2026-04-21T14:00:00.000Z",
+          periodStart: "2026-04-21T14:00:00.000Z",
+          powerW: -2591,
+          siteId: "site-1",
+        },
+      ],
+      solarEnergyProviderSamples: [
+        {
+          observedAt: "2026-04-21T14:00:00.000Z",
+          periodStart: "2026-04-21T14:00:00.000Z",
+          powerW: 3057.28,
+          providerId: "solar-1",
+          siteId: "site-1",
+        },
+      ],
+    }),
+  ).toEqual([
+    {
+      periodStart: "2026-04-21T14:00:00.000Z",
+      value: 466.2800000000002,
+    },
+  ]);
 });
