@@ -142,14 +142,11 @@ export function WeatherForecastSection({
         return;
       }
 
-        try {
-          const params = new URLSearchParams({ siteId: site.id });
-          const response = await fetch(
-          `/api/solar/graph?${params.toString()}`,
-            {
-              cache: "no-store",
-            },
-        );
+      try {
+        const params = new URLSearchParams({ siteId: site.id });
+        const response = await fetch(`/api/solar/graph?${params.toString()}`, {
+          cache: "no-store",
+        });
 
         if (response.status === 401) {
           window.location.href = "/login";

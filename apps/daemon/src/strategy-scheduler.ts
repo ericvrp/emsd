@@ -85,27 +85,27 @@ export function getScheduledItemCompletion(input: {
 
   if (!startedAt) {
     return {
-        reason: "missing-start-time",
-        nowAt: now.toISOString(),
-        observedAt: runtime.activeObservedAt,
-        startedAt: null,
-        state: activeManualState,
-        status: sample.status,
-        socPercent: sample.socPercent,
-      };
+      reason: "missing-start-time",
+      nowAt: now.toISOString(),
+      observedAt: runtime.activeObservedAt,
+      startedAt: null,
+      state: activeManualState,
+      status: sample.status,
+      socPercent: sample.socPercent,
+    };
   }
 
   if (item.targetMethod === "duration") {
     if (item.targetDurationMinutes === null) {
       return {
-          reason: "duration-elapsed",
-          nowAt: now.toISOString(),
-          observedAt: runtime.activeObservedAt,
-          startedAt,
-          state: activeManualState,
-          status: sample.status,
-          socPercent: sample.socPercent,
-          targetDurationMinutes: null,
+        reason: "duration-elapsed",
+        nowAt: now.toISOString(),
+        observedAt: runtime.activeObservedAt,
+        startedAt,
+        state: activeManualState,
+        status: sample.status,
+        socPercent: sample.socPercent,
+        targetDurationMinutes: null,
       };
     }
 
@@ -196,7 +196,9 @@ export function getScheduledItemCompletion(input: {
 
   if (item.strategyMode === "manual" && activeManualState === "idle") {
     const targetSoc =
-      activeTargetSoc ?? item.manualTargetSoc ?? battery.minimumDischargePercent;
+      activeTargetSoc ??
+      item.manualTargetSoc ??
+      battery.minimumDischargePercent;
 
     if (sample.socPercent !== null && sample.socPercent <= targetSoc) {
       return {
@@ -545,8 +547,7 @@ export function shouldMarkScheduledItemObserved(input: {
   }
 
   return (
-    (activeManualState === "charging" &&
-      input.sample.status === "charging") ||
+    (activeManualState === "charging" && input.sample.status === "charging") ||
     (activeManualState === "discharging" &&
       input.sample.status === "discharging")
   );

@@ -321,7 +321,9 @@ test("battery strategy-plan get and set support dynamic targets", async () => {
 
     const updatedBatteries = JSON.parse(output[3] ?? "[]");
     expect(updatedBatteries[0]?.strategyPlan?.[1]?.targetMethod).toBe("auto");
-    expect(updatedBatteries[0]?.strategyPlan?.[1]?.triggerKind).toBe("high-price");
+    expect(updatedBatteries[0]?.strategyPlan?.[1]?.triggerKind).toBe(
+      "high-price",
+    );
   } finally {
     process.env.EMSD_DB_PATH = originalDatabasePath;
     globalThis.fetch = originalFetch;

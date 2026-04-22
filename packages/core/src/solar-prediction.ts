@@ -187,10 +187,14 @@ function computeRecencyWeightedMean(samples: HistoricalMatchSample[]): number {
     totalWeight += weight;
   }
 
-  return totalWeight === 0 ? computeMean(samples.map((sample) => sample.ratio)) : weightedTotal / totalWeight;
+  return totalWeight === 0
+    ? computeMean(samples.map((sample) => sample.ratio))
+    : weightedTotal / totalWeight;
 }
 
-function computeWinsorizedWeightedMean(samples: HistoricalMatchSample[]): number {
+function computeWinsorizedWeightedMean(
+  samples: HistoricalMatchSample[],
+): number {
   if (samples.length < 4) {
     return computeRecencyWeightedMean(samples);
   }
@@ -232,15 +236,20 @@ function buildForecastSimilarityWeight(
   targetForecastValue: number,
   historicalForecastValue: number,
 ): number {
-  const maxForecastValue = Math.max(targetForecastValue, historicalForecastValue);
+  const maxForecastValue = Math.max(
+    targetForecastValue,
+    historicalForecastValue,
+  );
 
   if (maxForecastValue <= 0) {
     return 1;
   }
 
   return (
-    Math.min(targetForecastValue, historicalForecastValue) / maxForecastValue
-  ) ** V2_FORECAST_SIMILARITY_EXPONENT;
+    (Math.min(targetForecastValue, historicalForecastValue) /
+      maxForecastValue) **
+    V2_FORECAST_SIMILARITY_EXPONENT
+  );
 }
 
 function buildWeightedSampleWeight(sample: HistoricalMatchSample): number {
@@ -263,7 +272,9 @@ function computeObservedGenerationCeiling(
   return ceiling;
 }
 
-function computeWeightedRegressionRatio(samples: HistoricalMatchSample[]): number {
+function computeWeightedRegressionRatio(
+  samples: HistoricalMatchSample[],
+): number {
   let numerator = 0;
   let denominator = 0;
 
@@ -289,8 +300,7 @@ function buildV2PredictionValue(input: {
   const regressionRatio = computeWeightedRegressionRatio(input.samples);
   const calibrationWeight = Math.min(0.85, 0.35 + input.samples.length * 0.1);
   const blendedRatio =
-    robustRatio * (1 - calibrationWeight) +
-    regressionRatio * calibrationWeight;
+    robustRatio * (1 - calibrationWeight) + regressionRatio * calibrationWeight;
   const predictedValue = input.forecastValue * blendedRatio;
 
   if (input.generationCeiling === null) {

@@ -13,7 +13,9 @@ import {
   Save,
   ScanSearch,
   Search,
+  Sun,
   Trash2,
+  Zap,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
@@ -30,6 +32,7 @@ import {
   deleteWeatherForecastSourceAction,
   setBatteryMinimumDischargePercentAction,
   updateDynamicPriceSourceAction,
+  updateDynamicPriceSourceExportDeductionAction,
   updateSiteAction,
   updateWeatherForecastSourceAction,
 } from "../app/actions";
@@ -43,7 +46,12 @@ import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader } from "./ui/card";
 import { DialogPortal } from "./ui/dialog-portal";
 
-type SettingsTab = "devices" | "site" | "discover";
+type SettingsTab =
+  | "devices"
+  | "site"
+  | "discover"
+  | "price-provider"
+  | "solar-forecast-provider";
 
 function formatManagedDeviceState(state: string): string {
   return state.replace(/-/g, " ");
@@ -76,7 +84,15 @@ export function SettingsPanel({
     <Card className="overflow-hidden border-white/10 bg-slate-950/75">
       <CardHeader className="border-b border-white/8 p-0">
         <div className={`${UI_STYLES.tabBar} pt-2.5 sm:pt-3`}>
-          {(["site", "discover", "devices"] as SettingsTab[]).map((tab) => {
+          {(
+            [
+              "site",
+              "discover",
+              "devices",
+              "price-provider",
+              "solar-forecast-provider",
+            ] as SettingsTab[]
+          ).map((tab) => {
             const isDisabled = !hasSite && tab !== "site";
 
             return (
@@ -98,14 +114,24 @@ export function SettingsPanel({
                   <HardDrive size={15} />
                 ) : tab === "site" ? (
                   <Home size={15} />
-                ) : (
+                ) : tab === "discover" ? (
                   <ScanSearch size={15} />
+                ) : tab === "price-provider" ? (
+                  <Zap size={15} />
+                ) : (
+                  <Sun size={15} />
                 )}
-                {tab === "devices"
-                  ? "Devices"
-                  : tab === "site"
-                    ? "Site"
-                    : "Discover"}
+                <span className="hidden lg:inline">
+                  {tab === "devices"
+                    ? "Devices"
+                    : tab === "site"
+                      ? "Site"
+                      : tab === "discover"
+                        ? "Discover"
+                        : tab === "price-provider"
+                          ? "Price provider"
+                          : "Solar forecast"}
+                </span>
               </button>
             );
           })}
@@ -156,6 +182,20 @@ export function SettingsPanel({
                 selectedSiteId={currentSite.id}
               />
             </section>
+          ) : (
+            <SiteSetupPanel embedded />
+          )
+        ) : null}
+        {activeTab === "price-provider" ? (
+          currentSite ? (
+            <PriceProviderPanel site={currentSite} />
+          ) : (
+            <SiteSetupPanel embedded />
+          )
+        ) : null}
+        {activeTab === "solar-forecast-provider" ? (
+          currentSite ? (
+            <SolarForecastProviderPanel site={currentSite} />
           ) : (
             <SiteSetupPanel embedded />
           )
@@ -908,6 +948,134 @@ function SourceList({
         </p>
       )}
     </>
+  );
+}
+
+function PriceProviderPanel({ site }: { site: SiteSnapshot }) {
+  return (
+    <section className="space-y-5">
+      <div>
+        <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-violet-300/90">
+          <Zap size={13} />
+          Price Provider
+        </p>
+        <h2 className="mt-2 text-2xl font-semibold text-white">
+          Dynamic price provider settings
+        </h2>
+        <p className="mt-2 text-sm leading-6 text-slate-400">
+          Manage export price deduction for your normalized price provider.
+        </p>
+      </div>
+      {site.dynamicPriceSources.length === 0 ? (
+        <p className="text-sm leading-6 text-slate-400">
+          No dynamic price sources configured yet.
+        </p>
+      ) : (
+        <div className="grid gap-3">
+          {site.dynamicPriceSources.map((source) => (
+            <article
+              key={source.id}
+              className="rounded-[1.4rem] border border-white/10 bg-white/5 p-4 ring-1 ring-violet-300/5"
+            >
+              <div className="min-w-0">
+                <h4 className="truncate text-base font-semibold text-white">
+                  {source.name}
+                </h4>
+                <p className="mt-1 truncate text-xs text-slate-400">
+                  {source.id}
+                </p>
+                <p className="mt-1 text-xs uppercase tracking-[0.14em] text-violet-300/80">
+                  {source.provider}
+                </p>
+              </div>
+              <form
+                action={updateDynamicPriceSourceExportDeductionAction}
+                className="mt-4 space-y-3"
+              >
+                <input type="hidden" name="siteId" value={site.id} />
+                <input type="hidden" name="sourceId" value={source.id} />
+                <input type="hidden" name="name" value={source.name} />
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium text-slate-300">
+                    Export deduction ({source.provider} computes export price as
+                    import price minus this value)
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      className="w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400/50"
+                      defaultValue={source.exportDeduction}
+                      max={10}
+                      min={0}
+                      name="exportDeduction"
+                      step={0.01}
+                      type="number"
+                    />
+                    <span className="text-sm text-slate-400">
+                      {source.provider === "tibber" ? "EUR/kWh" : "unit/kWh"}
+                    </span>
+                  </div>
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  <SubmitButton className={secondaryButtonClass}>
+                    Save
+                  </SubmitButton>
+                </div>
+              </form>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function SolarForecastProviderPanel({ site }: { site: SiteSnapshot }) {
+  return (
+    <section className="space-y-5">
+      <div>
+        <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-300/90">
+          <Sun size={13} />
+          Solar Forecast Provider
+        </p>
+        <h2 className="mt-2 text-2xl font-semibold text-white">
+          Solar forecast provider settings
+        </h2>
+        <p className="mt-2 text-sm leading-6 text-slate-400">
+          View the configured solar forecast provider for this site.
+        </p>
+      </div>
+      {site.weatherSources.length === 0 ? (
+        <p className="text-sm leading-6 text-slate-400">
+          No solar forecast sources configured yet. Open-Meteo is used as the
+          default forecast provider.
+        </p>
+      ) : (
+        <div className="grid gap-3">
+          {site.weatherSources.map((source) => (
+            <article
+              key={source.id}
+              className="rounded-[1.4rem] border border-white/10 bg-white/5 p-4 ring-1 ring-sky-300/5"
+            >
+              <div className="min-w-0">
+                <h4 className="truncate text-base font-semibold text-white">
+                  {source.name}
+                </h4>
+                <p className="mt-1 truncate text-xs text-slate-400">
+                  {source.id}
+                </p>
+                <p className="mt-1 text-xs uppercase tracking-[0.14em] text-sky-300/80">
+                  {source.provider}
+                </p>
+              </div>
+              <dl className="mt-4 grid gap-3 text-sm text-slate-300 sm:grid-cols-2">
+                <MetaItem label="Provider" value={source.provider} />
+                <MetaItem label="Surface" value={source.surface} />
+              </dl>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 

@@ -13,6 +13,7 @@ import {
   fillSingleValueDay,
   splitSingleValueSeriesByTime,
 } from "./history";
+import { formatTooltipTimestamp } from "./history/utils";
 import { RefreshWarning } from "./refresh-warning";
 import { SectionSummaryCard } from "./section-summary-card";
 import type { SiteSnapshot } from "./settings-panel";
@@ -52,6 +53,7 @@ export function PricingSection({
   const [graphRefreshError, setGraphRefreshError] = useState<string | null>(
     null,
   );
+  const [showExportPrice, setShowExportPrice] = useState(false);
   const daySelection = useTopLevelDaySelection({ archive, requestedDay });
   const selectedDayPricePoints = fillSingleValueDay(
     archive.dynamicPriceSamples.map((sample) => ({
@@ -178,12 +180,22 @@ export function PricingSection({
             </p>
           ) : null}
         </div>
-        <SectionSummaryCard title="Current price">
+        <SectionSummaryCard
+          onClick={() => setShowExportPrice((prev) => !prev)}
+          title={
+            showExportPrice ? "Current export price" : "Current import price"
+          }
+        >
           <p className="text-2xl font-semibold text-white sm:text-3xl">
             {currentPricePoint === null || snapshot === null
               ? "Unavailable"
               : formatPriceSummaryValue(
-                  currentPricePoint.importPrice,
+                  showExportPrice
+                    ? computeExportPrice(
+                        currentPricePoint.importPrice,
+                        site.dynamicPriceSources[0]?.exportDeduction,
+                      )
+                    : currentPricePoint.importPrice,
                   priceCurrency,
                 )}
           </p>
@@ -208,6 +220,14 @@ export function PricingSection({
             highestMarkerPeriodStarts={highestMarkerPeriodStarts}
             nowMarkerPeriodStart={daySelection.nowMarkerPeriodStart}
             points={splitSingleValueSeriesByTime(selectedDayPricePoints)}
+            tooltipContent={
+              <PriceTooltip
+                currency={priceCurrency}
+                exportDeduction={
+                  site.dynamicPriceSources[0]?.exportDeduction ?? 0.13
+                }
+              />
+            }
             valueFormatter={(value) =>
               `${value.toFixed(3)} ${priceCurrency}/kWh`
             }
@@ -242,6 +262,106 @@ function formatPriceCoverageSummary(
   _points: DynamicPricePointRecord[],
 ): string | null {
   return null;
+}
+
+function computeExportPrice(
+  importPrice: number,
+  exportDeduction: number | undefined,
+): number {
+  return importPrice - (exportDeduction ?? 0.13);
+}
+
+function PriceTooltip({
+  active,
+  currency,
+  exportDeduction,
+  label,
+  payload,
+}: {
+  active?: boolean;
+  currency: string;
+  exportDeduction: number;
+  label?: string;
+  payload?: Array<{
+    color?: string;
+    dataKey?: string;
+    name?: string;
+    payload?: { periodStart: string };
+    value?: number;
+  }>;
+}) {
+  if (!active || !label || !payload || payload.length === 0) {
+    return null;
+  }
+
+  const entry = payload.find((p) => typeof p.value === "number");
+
+  if (!entry || typeof entry.value !== "number") {
+    return null;
+  }
+
+  const importPrice = entry.value;
+  const exportPrice = computeExportPrice(importPrice, exportDeduction);
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-slate-950/95 px-3 py-2 text-sm text-slate-50 shadow-[0_24px_70px_rgba(2,6,23,0.6)] backdrop-blur">
+      <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+        {formatTooltipTimestamp(label)}
+      </p>
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between gap-4">
+          <span className="flex items-center gap-2 text-slate-200">
+            <svg
+              aria-hidden="true"
+              className="shrink-0"
+              height="8"
+              viewBox="0 0 18 8"
+              width="18"
+            >
+              <line
+                stroke={UI_COLORS.price}
+                strokeLinecap="round"
+                strokeWidth="2.8"
+                x1="1.4"
+                x2="16.6"
+                y1="4"
+                y2="4"
+              />
+            </svg>
+            Import price
+          </span>
+          <span className="font-medium text-white">
+            {formatPriceSummaryValue(importPrice, currency)}
+          </span>
+        </div>
+        <div className="flex items-center justify-between gap-4">
+          <span className="flex items-center gap-2 text-slate-200">
+            <svg
+              aria-hidden="true"
+              className="shrink-0"
+              height="8"
+              viewBox="0 0 18 8"
+              width="18"
+            >
+              <line
+                stroke={UI_COLORS.success}
+                strokeLinecap="round"
+                strokeWidth="2.8"
+                x1="1.4"
+                x2="16.6"
+                y1="4"
+                y2="4"
+              />
+            </svg>
+            Export price
+          </span>
+          <span className="font-medium text-white">
+            {formatPriceSummaryValue(exportPrice, currency)}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function formatPriceSummaryValue(value: number, currency: string): string {

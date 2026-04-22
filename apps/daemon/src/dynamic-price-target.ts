@@ -146,7 +146,10 @@ export function estimateDynamicPriceTarget(input: {
     p1MeterSamples: input.p1MeterSamples,
     solarEnergyProviderSamples: input.solarEnergyProviderSamples,
   });
-  const sharedLoadProfile = buildExpectedSiteLoadProfile(historySeries, input.now);
+  const sharedLoadProfile = buildExpectedSiteLoadProfile(
+    historySeries,
+    input.now,
+  );
   const loadProfile: LoadProfile = {
     expectedLoadBySlot: sharedLoadProfile.expectedLoadBySlot,
     fallbackLoadW: sharedLoadProfile.fallbackLoadW,
@@ -316,7 +319,8 @@ export function estimateDynamicPriceTarget(input: {
     };
   });
   const lastEnergyBucket = energyBuckets[energyBuckets.length - 1] ?? null;
-  const expectedHouseLoadWh = lastEnergyBucket?.cumulativeExpectedHouseLoadWh ?? 0;
+  const expectedHouseLoadWh =
+    lastEnergyBucket?.cumulativeExpectedHouseLoadWh ?? 0;
   const predictedSolarGenerationWh =
     lastEnergyBucket?.cumulativePredictedSolarWh ?? 0;
   const estimatedRemainingEnergyWh =
@@ -516,10 +520,11 @@ function buildTargetTimeSignal(input: {
     input.loadProfile.expectedLoadBySlot.size === 0
       ? null
       : resolveExpectedSiteLoadW(input.targetTime, input.loadProfile);
-  const predictedSolarW = getPredictedSolarPowerAtOrAfter({
-    targetTime: input.targetTime,
-    predictedSeries: input.predictedSeries,
-  }) ??
+  const predictedSolarW =
+    getPredictedSolarPowerAtOrAfter({
+      targetTime: input.targetTime,
+      predictedSeries: input.predictedSeries,
+    }) ??
     getForecastSolarPowerAtOrAfter({
       solarForecastSamples: input.solarForecastSamples,
       targetTime: input.targetTime,

@@ -1,9 +1,7 @@
 import { CalendarClock, Hand } from "lucide-react";
 import { deriveBatteryStatusFromPower } from "@emsd/core/client";
 import type { ReactNode } from "react";
-import {
-  formatAbsolutePowerValue,
-} from "../../lib/power-format";
+import { formatAbsolutePowerValue } from "../../lib/power-format";
 import { UI_COLORS } from "../../lib/ui-colors";
 import type { BatteryHistoryPoint, TooltipPayloadEntry } from "./types";
 import { deduplicateTooltipEntries, formatPercentValue } from "./utils";

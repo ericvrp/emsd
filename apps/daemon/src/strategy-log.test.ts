@@ -192,7 +192,8 @@ test("uses the resolved runtime action in the scheduled start summary when low-p
       }),
       "",
       {
-        reasoning: "expected demand until the low-price marker, recent history, predicted solar contribution",
+        reasoning:
+          "expected demand until the low-price marker, recent history, predicted solar contribution",
         resolvedManualState: "discharging",
         targetSocPercent: 38,
         reserveSocPercent: 15,

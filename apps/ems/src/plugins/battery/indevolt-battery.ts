@@ -38,7 +38,8 @@ export const indevoltBatteryPlugin: DiscoveryPlugin = {
     const serial = getStringValue(payload?.["0"]);
     const firmwareVersion = getStringValue(payload?.["1118"]);
     const telemetryPowerW = parseIndevoltSignedPower(payload);
-    const batteryPower = telemetryPowerW === null ? null : Math.round(telemetryPowerW);
+    const batteryPower =
+      telemetryPowerW === null ? null : Math.round(telemetryPowerW);
     const batteryState = formatDefaultBatteryState(payload?.["6001"]);
     const batterySoc = getStringOrNumber(payload?.["6002"]);
     const workMode = formatDefaultBatteryWorkMode(payload?.["7101"]);

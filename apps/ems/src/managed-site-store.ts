@@ -93,6 +93,7 @@ const DYNAMIC_PRICE_SOURCE_REQUIRED_COLUMNS = [
   "id",
   "home_id",
   "provider",
+  "export_deduction",
   "site_id",
   "name",
   "updated_at",
@@ -159,6 +160,7 @@ interface SourceRow {
   id: string;
   provider: string | null;
   surface: string | null;
+  export_deduction: number | null;
   site_id: string;
   name: string;
   updated_at: string;
@@ -248,12 +250,14 @@ interface CreateSourceInput {
   name: string;
   provider?: WeatherProvider | "tibber";
   surface?: WeatherForecastSurface;
+  exportDeduction?: number | undefined;
 }
 
 interface UpdateSourceInput {
   name: string;
   provider?: WeatherProvider | "tibber";
   surface?: WeatherForecastSurface;
+  exportDeduction?: number | undefined;
 }
 
 export function listSites(databasePath = getDatabasePath()): SiteRecord[] {
@@ -1347,8 +1351,8 @@ function createSource(
     } else {
       db.query(
         `
-          INSERT INTO dynamic_price_sources (id, site_id, name, provider, home_id, updated_at)
-          VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+          INSERT INTO dynamic_price_sources (id, site_id, name, provider, home_id, export_deduction, updated_at)
+          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
         `,
       ).run(
         input.id,
@@ -1356,6 +1360,7 @@ function createSource(
         input.name,
         normalizeDynamicPriceProvider(null),
         null,
+        input.exportDeduction ?? 0.13,
         now,
       );
     }
@@ -1409,19 +1414,20 @@ function updateSource(
         siteId,
       );
     } else {
+      const existingPriceSource = existing as DynamicPriceSourceRecord;
+
       db.query(
         `
           UPDATE dynamic_price_sources
-          SET name = ?2, provider = ?3, home_id = ?4, updated_at = ?5
-          WHERE id = ?1 AND site_id = ?6
+          SET name = ?2, provider = ?3, home_id = ?4, export_deduction = ?5, updated_at = ?6
+          WHERE id = ?1 AND site_id = ?7
         `,
       ).run(
         id,
         input.name,
-        normalizeDynamicPriceProvider(
-          (existing as DynamicPriceSourceRecord).provider,
-        ),
+        normalizeDynamicPriceProvider(existingPriceSource.provider),
         null,
+        input.exportDeduction ?? existingPriceSource.exportDeduction,
         new Date().toISOString(),
         siteId,
       );
@@ -1825,6 +1831,12 @@ function ensureDynamicPriceSourceColumns(db: Database): void {
     db.exec("ALTER TABLE dynamic_price_sources ADD COLUMN home_id TEXT;");
   }
 
+  if (!columns.includes("export_deduction")) {
+    db.exec(
+      "ALTER TABLE dynamic_price_sources ADD COLUMN export_deduction REAL NOT NULL DEFAULT 0.13;",
+    );
+  }
+
   db.exec(`
     UPDATE dynamic_price_sources
     SET provider = CASE provider
@@ -1842,7 +1854,9 @@ function ensureBatteryStrategyHistoryColumns(db: Database): void {
   const columns = getTableColumns(db, "battery_strategy_history");
 
   if (!columns.includes("manual_state")) {
-    db.exec("ALTER TABLE battery_strategy_history ADD COLUMN manual_state TEXT;");
+    db.exec(
+      "ALTER TABLE battery_strategy_history ADD COLUMN manual_state TEXT;",
+    );
   }
 
   if (!columns.includes("active_item_id")) {
@@ -2168,7 +2182,7 @@ function readSources(
             ORDER BY name ASC, id ASC
           `
         : `
-            SELECT id, site_id, name, provider, NULL as surface, home_id, updated_at
+            SELECT id, site_id, name, provider, NULL as surface, home_id, export_deduction, updated_at
             FROM dynamic_price_sources
             WHERE site_id = ?1
             ORDER BY name ASC, id ASC
@@ -2282,7 +2296,7 @@ function getSourceById(
             WHERE id = ?1 AND site_id = ?2
           `
         : `
-            SELECT id, site_id, name, provider, NULL as surface, home_id, updated_at
+            SELECT id, site_id, name, provider, NULL as surface, home_id, export_deduction, updated_at
             FROM dynamic_price_sources
             WHERE id = ?1 AND site_id = ?2
           `,
@@ -2463,6 +2477,8 @@ function mapSourceRow(
     siteId: row.site_id,
     name: row.name,
     provider: normalizeDynamicPriceProvider(row.provider),
+    exportDeduction:
+      typeof row.export_deduction === "number" ? row.export_deduction : 0.13,
     updatedAt: row.updated_at,
   } satisfies DynamicPriceSourceRecord;
 }

@@ -36,6 +36,7 @@ import {
   setHouseStrategyPlan,
   setMeterEnabled,
   updateDynamicPriceSource,
+  updateDynamicPriceSourceExportDeduction,
   updateSite,
   updateWeatherForecastSource,
 } from "../lib/ems-bridge";
@@ -525,6 +526,28 @@ export async function deleteDynamicPriceSourceAction(
     await deleteDynamicPriceSource({ id: sourceId, siteId });
     return { notice: `Deleted price source ${sourceId}.`, tab: "pricing" };
   }, "pricing");
+}
+
+export async function updateDynamicPriceSourceExportDeductionAction(
+  formData: FormData,
+): Promise<void> {
+  const siteId = stringValue(formData, "siteId");
+
+  return runAction(async () => {
+    const sourceId = stringValue(formData, "sourceId");
+    const name = stringValue(formData, "name");
+    const exportDeduction = Number(stringValue(formData, "exportDeduction"));
+    await updateDynamicPriceSourceExportDeduction({
+      exportDeduction,
+      id: sourceId,
+      name,
+      siteId,
+    });
+    return {
+      notice: `Updated export deduction for price source ${sourceId}.`,
+      tab: "price-provider",
+    };
+  }, "price-provider");
 }
 
 export async function setHouseStrategyAction(

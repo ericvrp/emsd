@@ -295,7 +295,10 @@ export function BatteryStrategyPlanForm({
                           type="number"
                           value={String(item.manualPowerW ?? 2400)}
                         />
-                        <Label className="text-xs text-slate-400" htmlFor={`${item.id}-power`}>
+                        <Label
+                          className="text-xs text-slate-400"
+                          htmlFor={`${item.id}-power`}
+                        >
                           Power (W)
                         </Label>
                       </div>
@@ -306,9 +309,9 @@ export function BatteryStrategyPlanForm({
                   <td className={contentCellClass}>
                     {!isDefault &&
                     (action === "charging" ||
-                    action === "discharging" ||
-                    action === "idle" ||
-                    action === "self-consumption") ? (
+                      action === "discharging" ||
+                      action === "idle" ||
+                      action === "self-consumption") ? (
                       <div className="grid min-w-[320px] items-end gap-3 md:grid-cols-2">
                         <div className="flex flex-col gap-2 justify-end">
                           <Select
@@ -437,7 +440,9 @@ export function BatteryStrategyPlanForm({
                     {isDefault ? null : (
                       <div className="flex justify-end gap-2">
                         <Button
-                          aria-label={item.enabled ? "Disable item" : "Enable item"}
+                          aria-label={
+                            item.enabled ? "Disable item" : "Enable item"
+                          }
                           className="h-9 w-9 px-0"
                           onClick={() =>
                             updateItem(item.id, (currentItem) => ({
@@ -520,8 +525,8 @@ export function BatteryStrategyPlanForm({
                   Delete this schedule item?
                 </h3>
                 <p className="mt-3 text-sm leading-6 text-slate-300">
-                  {describePendingDeleteItem(items, pendingDeleteItemId)} will be
-                  removed from the strategy plan.
+                  {describePendingDeleteItem(items, pendingDeleteItemId)} will
+                  be removed from the strategy plan.
                 </p>
                 <div className="mt-5 flex flex-wrap justify-end gap-3">
                   <Button

@@ -163,6 +163,7 @@ export interface DynamicPriceSourceRecord {
   siteId: string;
   name: string;
   provider: "tibber";
+  exportDeduction: number;
   updatedAt: string;
 }
 

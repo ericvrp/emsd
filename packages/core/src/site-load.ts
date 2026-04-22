@@ -65,7 +65,8 @@ export function buildHouseLoadHistorySeries(input: {
       };
     })
     .filter(
-      (point): point is { periodStart: string; value: number } => point !== null,
+      (point): point is { periodStart: string; value: number } =>
+        point !== null,
     )
     .sort(
       (left, right) =>
@@ -121,7 +122,10 @@ export function buildExpectedSiteLoadProfile(
   }
 
   const rawExpectedLoadBySlot = new Map(
-    [...buckets.entries()].map(([slotKey, values]) => [slotKey, round2(mean(values))]),
+    [...buckets.entries()].map(([slotKey, values]) => [
+      slotKey,
+      round2(mean(values)),
+    ]),
   );
   const expectedLoadBySlot = rawExpectedLoadBySlot;
   const fallbackLoadW = round2(mean([...expectedLoadBySlot.values()]));
@@ -310,7 +314,9 @@ function createLocalDayPeriods(dayKey: string): string[] {
   for (
     let current = new Date(start);
     current.getDate() === start.getDate();
-    current.setMinutes(current.getMinutes() + DYNAMIC_PRICE_TARGET_PERIOD_MINUTES)
+    current.setMinutes(
+      current.getMinutes() + DYNAMIC_PRICE_TARGET_PERIOD_MINUTES,
+    )
   ) {
     periods.push(current.toISOString());
   }
@@ -326,9 +332,11 @@ function getLocalDayStart(dayKey: string): Date {
 
 function getLocalDayKey(value: string): string {
   const date = new Date(value);
-  return [date.getFullYear(), pad(date.getMonth() + 1), pad(date.getDate())].join(
-    "-",
-  );
+  return [
+    date.getFullYear(),
+    pad(date.getMonth() + 1),
+    pad(date.getDate()),
+  ].join("-");
 }
 
 function getSlotKey(date: Date): string {

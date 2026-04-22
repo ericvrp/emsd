@@ -151,14 +151,14 @@ export function BatteryStrategyDialog({
                         </div>
                       </div>
                     ) : (
-                        <BatteryStrategyPlanForm
-                          batteryId={batteryId}
-                          batteryName={batteryName}
-                          minimumDischargePercent={minimumDischargePercent}
-                          returnPath={returnPath}
-                          siteId={siteId}
-                          strategyPlan={strategyPlan}
-                        />
+                      <BatteryStrategyPlanForm
+                        batteryId={batteryId}
+                        batteryName={batteryName}
+                        minimumDischargePercent={minimumDischargePercent}
+                        returnPath={returnPath}
+                        siteId={siteId}
+                        strategyPlan={strategyPlan}
+                      />
                     )}
                   </div>
                 </div>

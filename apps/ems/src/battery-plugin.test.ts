@@ -39,14 +39,15 @@ test("Indevolt battery normalization signs discharge power from state code", asy
       { status: 200 },
     )) as unknown as typeof fetch;
 
-  await expect(createBatteryPlugin(buildBattery()).getNormalizedInfo()).resolves
-    .toMatchObject({
-      capacityWh: 4800,
-      currentW: 900,
-      socPercent: 48,
-      status: "discharging",
-      strategyMode: "manual",
-    });
+  await expect(
+    createBatteryPlugin(buildBattery()).getNormalizedInfo(),
+  ).resolves.toMatchObject({
+    capacityWh: 4800,
+    currentW: 900,
+    socPercent: 48,
+    status: "discharging",
+    strategyMode: "manual",
+  });
 });
 
 function buildBattery(): BatteryRecord {

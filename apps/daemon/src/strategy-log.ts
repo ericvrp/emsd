@@ -100,7 +100,8 @@ export function formatScheduledStrategyStartedSummary(
 ): string {
   void observedDelay;
   const base = `${describeStrategyScheduleHuman(item)} is now active for ${batteryId}: ${describeStrategyPlanItemHuman(
-    estimate?.resolvedManualState && estimate.resolvedManualState !== item.manualState
+    estimate?.resolvedManualState &&
+      estimate.resolvedManualState !== item.manualState
       ? buildResolvedEstimateItem(item, estimate)
       : item,
   )}`;
@@ -543,7 +544,9 @@ function describeActionWithTarget(
       : `${prefix}${action} at ${input.powerW}W`;
   }
 
-  return targetLabel ? `${prefix}${action} ${targetLabel}` : `${prefix}${action}`;
+  return targetLabel
+    ? `${prefix}${action} ${targetLabel}`
+    : `${prefix}${action}`;
 }
 
 function formatDurationTargetLabel(input: {

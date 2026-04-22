@@ -1091,7 +1091,10 @@ function pad(value: number): string {
   return String(value).padStart(2, "0");
 }
 
-async function withFrozenDate<T>(isoString: string, run: () => Promise<T>): Promise<T> {
+async function withFrozenDate<T>(
+  isoString: string,
+  run: () => Promise<T>,
+): Promise<T> {
   const RealDate = Date;
   const frozenTime = new RealDate(isoString).getTime();
 

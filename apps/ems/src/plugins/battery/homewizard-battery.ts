@@ -1,4 +1,7 @@
-import { deriveBatteryStatusFromPower, type ManagedDeviceState } from "@emsd/core";
+import {
+  deriveBatteryStatusFromPower,
+  type ManagedDeviceState,
+} from "@emsd/core";
 import type { BatteryTelemetrySample } from "../../discovery-types";
 import {
   getStringValue,
@@ -124,12 +127,18 @@ function getHomeWizardAuthToken(ipAddress: string): string | null {
   return token.trim();
 }
 
-function parseHomeWizardManagedState(powerW: number | null): ManagedDeviceState {
+function parseHomeWizardManagedState(
+  powerW: number | null,
+): ManagedDeviceState {
   return deriveBatteryStatusFromPower(powerW);
 }
 
-function formatHomeWizardState(payload: Record<string, unknown> | null): string {
-  return deriveBatteryStatusFromPower(parseInvertedRoundedNumber(payload?.power_w));
+function formatHomeWizardState(
+  payload: Record<string, unknown> | null,
+): string {
+  return deriveBatteryStatusFromPower(
+    parseInvertedRoundedNumber(payload?.power_w),
+  );
 }
 
 function formatHomeWizardStrategyMode(

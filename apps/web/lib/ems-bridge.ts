@@ -317,6 +317,15 @@ export function updateDynamicPriceSource(input: {
   return runBridge<DynamicPriceSourceRecord>("price-update", input);
 }
 
+export function updateDynamicPriceSourceExportDeduction(input: {
+  exportDeduction: number;
+  id: string;
+  name: string;
+  siteId: string;
+}) {
+  return runBridge<DynamicPriceSourceRecord>("price-update", input);
+}
+
 export function deleteDynamicPriceSource(input: {
   id: string;
   siteId: string;
@@ -332,6 +341,9 @@ export function refreshDynamicPriceSnapshot(input: { siteId: string }) {
   return runBridge<DynamicPriceSnapshotRecord>("price-refresh-snapshot", input);
 }
 
-export function getHistoryArchive(input: { day?: string | null; siteId: string }) {
+export function getHistoryArchive(input: {
+  day?: string | null;
+  siteId: string;
+}) {
   return runBridge<HistoryArchive>("history-get-archive", input);
 }

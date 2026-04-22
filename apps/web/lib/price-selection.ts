@@ -17,7 +17,9 @@ export function buildPriceMarkerPeriodStarts(archive: HistoryArchive): {
   );
 
   return {
-    lowestMarkerPeriodStarts: selections.lowest.map((point) => point.periodStart),
+    lowestMarkerPeriodStarts: selections.lowest.map(
+      (point) => point.periodStart,
+    ),
     highestMarkerPeriodStarts: selections.highest.map(
       (point) => point.periodStart,
     ),

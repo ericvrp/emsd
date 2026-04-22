@@ -286,7 +286,9 @@ export async function runBatteryCommand(args: string[] = []): Promise<number> {
         return 0;
       }
 
-      throw new Error(`Unknown battery strategy-plan command: ${args[1] ?? "<missing>"}`);
+      throw new Error(
+        `Unknown battery strategy-plan command: ${args[1] ?? "<missing>"}`,
+      );
     }
 
     throw new Error(`Unknown battery command: ${args[0]}`);

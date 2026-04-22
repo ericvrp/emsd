@@ -7,13 +7,8 @@ export type SolarPredictionSmoothingMode =
   | "average-5"
   | "weighted-5";
 
-export const SOLAR_PREDICTION_SMOOTHING_MODES: SolarPredictionSmoothingMode[] = [
-  "off",
-  "weighted-3",
-  "average-3",
-  "average-5",
-  "weighted-5",
-];
+export const SOLAR_PREDICTION_SMOOTHING_MODES: SolarPredictionSmoothingMode[] =
+  ["off", "weighted-3", "average-3", "average-5", "weighted-5"];
 
 export const DEFAULT_SOLAR_PREDICTION_SMOOTHING_MODE: SolarPredictionSmoothingMode =
   "average-5";
@@ -75,7 +70,11 @@ function buildWeightedPredictionValue(
 
     if (
       weightedPoint.offset !== 0 &&
-      !isAdjacentPredictionBucket(referencePoint, candidate, weightedPoint.offset)
+      !isAdjacentPredictionBucket(
+        referencePoint,
+        candidate,
+        weightedPoint.offset,
+      )
     ) {
       continue;
     }

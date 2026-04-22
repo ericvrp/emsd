@@ -426,7 +426,10 @@ function evaluateSite(
       backupReserveMarginOverride: options.backupReserveMargin,
       dynamicPriceSamples,
       item: batterySyntheticItem,
-      items: [battery.strategyPlan[0] ?? batterySyntheticItem, batterySyntheticItem],
+      items: [
+        battery.strategyPlan[0] ?? batterySyntheticItem,
+        batterySyntheticItem,
+      ],
       now: estimateAt,
       p1MeterSamples,
       sample: {
@@ -524,7 +527,10 @@ export function resolveEvaluationReferenceTime(input: {
   const fallbackTime = createReplayTime(input.markerDate, input.markerTime);
 
   if (input.hasExplicitMarkerTime) {
-    if (input.item.triggerKind !== "low-price" || input.item.manualState !== "charging") {
+    if (
+      input.item.triggerKind !== "low-price" ||
+      input.item.manualState !== "charging"
+    ) {
       return fallbackTime;
     }
 
@@ -661,7 +667,9 @@ function printCurrentEstimateSummary(input: EvaluationContext): void {
     input.dynamicPriceTargetEstimate.resolvedManualState === "charging";
   const currentTargetPercent = getDisplayedTargetPercentForEstimate(input);
   const reserveAtTargetPercent = getDisplayedReserveAtTargetPercent(input);
-  const actionLabel = formatResolvedActionLabel(input.dynamicPriceTargetEstimate);
+  const actionLabel = formatResolvedActionLabel(
+    input.dynamicPriceTargetEstimate,
+  );
   const summary = input.dynamicPriceTargetEstimate.skipReason
     ? `${input.siteName} (${input.siteId}) | ${input.battery.name} (${input.batteryId}) | ${formatPriceSignalLabel(input.priceSignal)} ${actionLabel} skipped | ${input.dynamicPriceTargetEstimate.skipReason}`
     : `${input.siteName} (${input.siteId}) | ${input.battery.name} (${input.batteryId}) | target percentage ${reserveAtTargetPercent}% at ${formatTargetTime(input.dynamicPriceTargetEstimate.targetTime)} | ${formatPriceSignalLabel(input.priceSignal)} ${actionLabel} target ${currentTargetPercent}% start time ${formatReferenceMoment(input.referenceTime)}`;
@@ -783,7 +791,9 @@ export function buildCurrentEstimateRows(input: {
     "Reserve at target": `${getDisplayedReserveAtTargetPercent(input)}%`,
     [isCharging ? "Charge target" : "Discharge target"]:
       `${getDisplayedTargetPercentForEstimate(input)}%`,
-    "Target time": formatTargetTime(input.dynamicPriceTargetEstimate.targetTime),
+    "Target time": formatTargetTime(
+      input.dynamicPriceTargetEstimate.targetTime,
+    ),
     "Start to target duration": formatDurationUntilTarget(
       input.referenceTime,
       input.dynamicPriceTargetEstimate.targetTime,
@@ -1099,8 +1109,7 @@ if (import.meta.main) {
   try {
     main();
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Unknown error.";
+    const message = error instanceof Error ? error.message : "Unknown error.";
     console.error(`Error: ${message}`);
     process.exit(1);
   }

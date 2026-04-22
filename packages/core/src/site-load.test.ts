@@ -20,7 +20,9 @@ test("resolveExpectedSiteLoadW uses a fallback profile value for missing slots",
     new Date("2026-04-15T00:00:00.000Z"),
   );
 
-  expect(resolveExpectedSiteLoadW("2026-04-15T09:00:00.000Z", profile)).toBe(305);
+  expect(resolveExpectedSiteLoadW("2026-04-15T09:00:00.000Z", profile)).toBe(
+    305,
+  );
 });
 
 test("buildExpectedSiteLoadSeriesForLocalDay builds a full selected-day series from prior history", () => {
@@ -34,7 +36,10 @@ test("buildExpectedSiteLoadSeriesForLocalDay builds a full selected-day series f
   });
 
   expect(series).toHaveLength(96);
-  expect(series.find((point) => point.periodStart === "2026-04-15T08:00:00.000Z")?.value).toBe(210);
+  expect(
+    series.find((point) => point.periodStart === "2026-04-15T08:00:00.000Z")
+      ?.value,
+  ).toBe(210);
 });
 
 test("buildExpectedSiteLoadProfile uses exact-slot means without neighboring smoothing", () => {
@@ -52,7 +57,9 @@ test("buildExpectedSiteLoadProfile uses exact-slot means without neighboring smo
     new Date("2026-04-16T00:00:00.000Z"),
   );
 
-  expect(resolveExpectedSiteLoadW("2026-04-16T08:15:00.000Z", profile)).toBe(400);
+  expect(resolveExpectedSiteLoadW("2026-04-16T08:15:00.000Z", profile)).toBe(
+    400,
+  );
 });
 
 test("fillSiteLoadSeriesForLocalDay keeps actual samples and fills missing periods with null", () => {
@@ -62,8 +69,14 @@ test("fillSiteLoadSeriesForLocalDay keeps actual samples and fills missing perio
   });
 
   expect(filled).toHaveLength(96);
-  expect(filled.find((point) => point.periodStart === "2026-04-15T08:00:00.000Z")?.value).toBe(250);
-  expect(filled.find((point) => point.periodStart === "2026-04-15T08:15:00.000Z")?.value).toBeNull();
+  expect(
+    filled.find((point) => point.periodStart === "2026-04-15T08:00:00.000Z")
+      ?.value,
+  ).toBe(250);
+  expect(
+    filled.find((point) => point.periodStart === "2026-04-15T08:15:00.000Z")
+      ?.value,
+  ).toBeNull();
 });
 
 test("buildHouseLoadHistorySeries keeps zero-watt battery samples when SoC is flat", () => {

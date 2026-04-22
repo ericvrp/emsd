@@ -136,7 +136,7 @@ export function BatteryHistoryChart({
       point.futureDischargingPower,
       point.currentChargePercent,
       point.futureChargePercent,
-      ].some((value) => typeof value === "number"),
+    ].some((value) => typeof value === "number"),
   );
   const chartData = points.map((point) => ({
     ...point,
@@ -354,16 +354,11 @@ function getBatteryStrategyLegendItems(
   color: string;
   label: string;
 }> {
-  const presentStates = new Set(
-    segments.map((segment) => segment.state),
-  );
+  const presentStates = new Set(segments.map((segment) => segment.state));
 
-  const orderedStates: Array<NonNullable<BatteryHistoryPoint["strategyDisplayState"]>> = [
-    "self-consumption",
-    "charge",
-    "discharge",
-    "idle",
-  ];
+  const orderedStates: Array<
+    NonNullable<BatteryHistoryPoint["strategyDisplayState"]>
+  > = ["self-consumption", "charge", "discharge", "idle"];
 
   return orderedStates
     .filter((state) => presentStates.has(state))
@@ -424,6 +419,7 @@ export function SingleValueHistoryChart({
   nowMarkerPeriodStart,
   points,
   showLegend = true,
+  tooltipContent,
   valueFormatter,
   yAxisLabel,
   yAxisDomain,
@@ -439,6 +435,7 @@ export function SingleValueHistoryChart({
   nowMarkerPeriodStart: string | null;
   points: SplitSingleValuePoint[];
   showLegend?: boolean;
+  tooltipContent?: ReactElement;
   valueFormatter: (value: number) => string;
   yAxisLabel?: string;
   yAxisDomain?: [number, number];
@@ -567,11 +564,13 @@ export function SingleValueHistoryChart({
                 />
                 <Tooltip
                   content={
-                    <HistoryTooltip
-                      formatter={valueFormatter}
-                      labelFormatter={formatTooltipTimestamp}
-                      {...(entryLabelFormatter ? { entryLabelFormatter } : {})}
-                    />
+                    tooltipContent ?? (
+                      <HistoryTooltip
+                        formatter={valueFormatter}
+                        labelFormatter={formatTooltipTimestamp}
+                        {...(entryLabelFormatter ? { entryLabelFormatter } : {})}
+                      />
+                    )
                   }
                 />
                 {nowMarkerPeriodStart ? (

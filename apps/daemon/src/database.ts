@@ -106,6 +106,7 @@ interface DynamicPriceSourceRow {
   home_id: string | null;
   id: string;
   provider: DynamicPriceSourceRecord["provider"];
+  export_deduction: number | null;
   site_id: string;
   name: string;
   updated_at: string;
@@ -280,6 +281,7 @@ export function openDaemonDatabase(databasePath = getDatabasePath()): Database {
       site_id TEXT NOT NULL,
       provider TEXT NOT NULL DEFAULT 'tibber',
       home_id TEXT,
+      export_deduction REAL NOT NULL DEFAULT 0.13,
       name TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       FOREIGN KEY(site_id) REFERENCES sites(id)
@@ -476,7 +478,7 @@ export function readDynamicPriceSources(
   const rows = db
     .query<DynamicPriceSourceRow, []>(
       `
-        SELECT id, site_id, name, provider, home_id, updated_at
+        SELECT id, site_id, name, provider, home_id, export_deduction, updated_at
         FROM dynamic_price_sources
         ORDER BY name ASC, id ASC
       `,
@@ -488,6 +490,8 @@ export function readDynamicPriceSources(
     siteId: row.site_id,
     name: row.name,
     provider: row.provider,
+    exportDeduction:
+      typeof row.export_deduction === "number" ? row.export_deduction : 0.13,
     updatedAt: row.updated_at,
   }));
 }
@@ -825,6 +829,12 @@ function ensureDynamicPriceSourceColumns(db: Database): void {
 
   if (!columns.includes("home_id")) {
     db.exec("ALTER TABLE dynamic_price_sources ADD COLUMN home_id TEXT;");
+  }
+
+  if (!columns.includes("export_deduction")) {
+    db.exec(
+      "ALTER TABLE dynamic_price_sources ADD COLUMN export_deduction REAL NOT NULL DEFAULT 0.13;",
+    );
   }
 
   db.exec(`
@@ -1265,7 +1275,9 @@ export function readBatteryStrategyHistory(
     activeItemId: row.active_item_id,
     batteryId: row.battery_id,
     displayLabel: row.display_label,
-    displayState: normalizeBatteryStrategyHistoryDisplayState(row.display_state),
+    displayState: normalizeBatteryStrategyHistoryDisplayState(
+      row.display_state,
+    ),
     endedAt: row.ended_at,
     manualState: row.manual_state,
     observedAt: row.observed_at,

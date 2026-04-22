@@ -667,7 +667,8 @@ export async function runApiAction(
 
     case "history-get-archive": {
       const siteId = requireString(input.siteId, "siteId");
-      const selectedDayKey = normalizeDayKey(optionalString(input.day)) ?? getCurrentLocalDayKey();
+      const selectedDayKey =
+        normalizeDayKey(optionalString(input.day)) ?? getCurrentLocalDayKey();
       const db = openDaemonDatabase();
 
       try {
@@ -1260,6 +1261,10 @@ export async function runApiAction(
           id: requireString(input.id, "id"),
           name: requireString(input.name, "name"),
           provider: "tibber",
+          exportDeduction:
+            typeof input.exportDeduction === "number"
+              ? input.exportDeduction
+              : undefined,
         },
         requireString(input.siteId, "siteId"),
       );
@@ -1270,6 +1275,10 @@ export async function runApiAction(
         {
           name: requireString(input.name, "name"),
           provider: "tibber",
+          exportDeduction:
+            typeof input.exportDeduction === "number"
+              ? input.exportDeduction
+              : undefined,
         },
         requireString(input.siteId, "siteId"),
       );

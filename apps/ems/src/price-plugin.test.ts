@@ -165,6 +165,7 @@ function buildSource(): DynamicPriceSourceRecord {
     siteId: "home",
     name: "Tibber",
     provider: "tibber",
+    exportDeduction: 0.13,
     updatedAt: "2026-04-07T00:00:00.000Z",
   };
 }

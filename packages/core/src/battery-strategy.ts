@@ -1,7 +1,4 @@
-import type {
-  BatteryManualState,
-  BatteryStrategyPlanItem,
-} from "./index";
+import type { BatteryManualState, BatteryStrategyPlanItem } from "./index";
 
 export function isLowPriceAutoDischargeItem(
   item: Pick<

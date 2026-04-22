@@ -284,7 +284,10 @@ function combineBatteryHistorySeries(input: {
       historyForDisplay,
       powerPoint.periodStart,
     );
-    const overlay = buildStrategyOverlayStyle(strategyEntry?.source ?? null, strategyEntry?.displayState ?? null);
+    const overlay = buildStrategyOverlayStyle(
+      strategyEntry?.source ?? null,
+      strategyEntry?.displayState ?? null,
+    );
 
     return {
       currentChargePercent: chargePoint?.currentValue ?? null,
@@ -340,7 +343,9 @@ function findStrategyEntryAtPeriodStart(
   return (
     strategyHistory.find((entry) => {
       const startedAtMs = new Date(entry.startedAt).getTime();
-      const endedAtMs = entry.endedAt ? new Date(entry.endedAt).getTime() : null;
+      const endedAtMs = entry.endedAt
+        ? new Date(entry.endedAt).getTime()
+        : null;
 
       if (Number.isNaN(startedAtMs)) {
         return false;

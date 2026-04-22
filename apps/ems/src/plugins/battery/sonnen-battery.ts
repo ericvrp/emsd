@@ -1,4 +1,7 @@
-import { deriveBatteryStatusFromPower, type ManagedDeviceState } from "@emsd/core";
+import {
+  deriveBatteryStatusFromPower,
+  type ManagedDeviceState,
+} from "@emsd/core";
 import type { BatteryTelemetrySample } from "../../discovery-types";
 import {
   getStringOrNumber,
