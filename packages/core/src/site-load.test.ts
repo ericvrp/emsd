@@ -118,3 +118,51 @@ test("buildHouseLoadHistorySeries keeps zero-watt battery samples when SoC is fl
     },
   ]);
 });
+
+test("buildHouseLoadHistorySeries uses signed battery power instead of SoC movement", () => {
+  expect(
+    buildHouseLoadHistorySeries({
+      batteryPowerSamples: [
+        {
+          batteryId: "battery-1",
+          observedAt: "2026-04-21T14:00:00.000Z",
+          periodStart: "2026-04-21T14:00:00.000Z",
+          powerW: -900,
+          siteId: "site-1",
+          socPercent: 60,
+        },
+        {
+          batteryId: "battery-1",
+          observedAt: "2026-04-21T14:15:00.000Z",
+          periodStart: "2026-04-21T14:15:00.000Z",
+          powerW: -850,
+          siteId: "site-1",
+          socPercent: 61,
+        },
+      ],
+      p1MeterSamples: [
+        {
+          meterId: "meter-1",
+          observedAt: "2026-04-21T14:00:00.000Z",
+          periodStart: "2026-04-21T14:00:00.000Z",
+          powerW: 1000,
+          siteId: "site-1",
+        },
+      ],
+      solarEnergyProviderSamples: [
+        {
+          observedAt: "2026-04-21T14:00:00.000Z",
+          periodStart: "2026-04-21T14:00:00.000Z",
+          powerW: 0,
+          providerId: "solar-1",
+          siteId: "site-1",
+        },
+      ],
+    }),
+  ).toEqual([
+    {
+      periodStart: "2026-04-21T14:00:00.000Z",
+      value: 100,
+    },
+  ]);
+});

@@ -2,7 +2,6 @@ import {
   DYNAMIC_PRICE_TARGET_HISTORY_LOOKBACK_DAYS,
   DYNAMIC_PRICE_TARGET_MAX_SAME_WEEKDAY_MATCHES,
   DYNAMIC_PRICE_TARGET_PERIOD_MINUTES,
-  DYNAMIC_PRICE_TARGET_SOC_DIRECTION_EPSILON_PERCENT,
 } from "./dynamic-price-target-defaults";
 import type {
   BatteryPowerSampleRecord,
@@ -12,8 +11,6 @@ import type {
 
 const HISTORY_LOOKBACK_DAYS = DYNAMIC_PRICE_TARGET_HISTORY_LOOKBACK_DAYS;
 const MAX_SAME_WEEKDAY_MATCHES = DYNAMIC_PRICE_TARGET_MAX_SAME_WEEKDAY_MATCHES;
-const SOC_DIRECTION_EPSILON_PERCENT =
-  DYNAMIC_PRICE_TARGET_SOC_DIRECTION_EPSILON_PERCENT;
 
 export interface SiteLoadPoint {
   periodStart: string;
@@ -61,7 +58,7 @@ export function buildHouseLoadHistorySeries(input: {
 
       return {
         periodStart,
-        value: Math.max(0, solarPowerW + gridPowerW - batteryPowerW),
+        value: Math.max(0, solarPowerW + gridPowerW + batteryPowerW),
       };
     })
     .filter(
@@ -214,97 +211,20 @@ function aggregatePowerByPeriodStart(
 function aggregateSignedBatteryPowerByPeriodStart(
   samples: BatteryPowerSampleRecord[],
 ): Map<string, number> {
-  const grouped = new Map<string, BatteryPowerSampleRecord[]>();
-
-  for (const sample of samples) {
-    const current = grouped.get(sample.batteryId) ?? [];
-    current.push(sample);
-    grouped.set(sample.batteryId, current);
-  }
-
   const byPeriod = new Map<string, number>();
 
-  for (const batterySamples of grouped.values()) {
-    const sortedSamples = [...batterySamples].sort(
-      (left, right) =>
-        new Date(left.periodStart).getTime() -
-        new Date(right.periodStart).getTime(),
-    );
-
-    for (let index = 0; index < sortedSamples.length; index += 1) {
-      const current = sortedSamples[index];
-
-      if (!current || typeof current.powerW !== "number") {
-        continue;
-      }
-
-      const sign = inferBatteryPowerDirection({
-        current,
-        next: sortedSamples[index + 1] ?? null,
-        previous: sortedSamples[index - 1] ?? null,
-      });
-
-      if (sign === 0) {
-        continue;
-      }
-
-      byPeriod.set(
-        current.periodStart,
-        (byPeriod.get(current.periodStart) ?? 0) +
-          Math.abs(current.powerW) * sign,
-      );
+  for (const sample of samples) {
+    if (typeof sample.powerW !== "number") {
+      continue;
     }
+
+    byPeriod.set(
+      sample.periodStart,
+      (byPeriod.get(sample.periodStart) ?? 0) + sample.powerW,
+    );
   }
 
   return byPeriod;
-}
-
-function inferBatteryPowerDirection(input: {
-  current: BatteryPowerSampleRecord;
-  next: BatteryPowerSampleRecord | null;
-  previous: BatteryPowerSampleRecord | null;
-}): -1 | 0 | 1 {
-  if (Math.abs(input.current.powerW ?? 0) === 0) {
-    return 1;
-  }
-
-  const nextDirection = inferSocDirection(
-    input.current.socPercent,
-    input.next?.socPercent ?? null,
-  );
-
-  if (nextDirection !== 0) {
-    return nextDirection;
-  }
-
-  return inferSocDirection(
-    input.previous?.socPercent ?? null,
-    input.current.socPercent,
-  );
-}
-
-function inferSocDirection(
-  beforeSocPercent: number | null,
-  afterSocPercent: number | null,
-): -1 | 0 | 1 {
-  if (
-    typeof beforeSocPercent !== "number" ||
-    typeof afterSocPercent !== "number"
-  ) {
-    return 0;
-  }
-
-  const delta = afterSocPercent - beforeSocPercent;
-
-  if (delta > SOC_DIRECTION_EPSILON_PERCENT) {
-    return 1;
-  }
-
-  if (delta < -SOC_DIRECTION_EPSILON_PERCENT) {
-    return -1;
-  }
-
-  return 0;
 }
 
 function createLocalDayPeriods(dayKey: string): string[] {

@@ -635,7 +635,7 @@ function getActualNetLoadWh(input: {
         const solarPowerW = solarByPeriod.get(key) ?? 0;
         const houseLoadW = Math.max(
           0,
-          solarPowerW + gridPowerW - batteryPowerW,
+          solarPowerW + gridPowerW + batteryPowerW,
         );
         return total + houseLoadW * 0.25;
       }, 0)
