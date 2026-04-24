@@ -4,7 +4,7 @@
 
 `Export surplus` is the built-in price-triggered discharge rule.
 
-Its purpose is to create battery headroom before the next meaningful solar-production window, while still keeping enough reserve to carry the house until solar is expected to take over again.
+Its purpose is to make money from otherwise unneeded battery capacity during favorable export windows, while still keeping enough reserve for expected household demand.
 
 ## Current Behavior
 

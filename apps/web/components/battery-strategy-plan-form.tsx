@@ -642,7 +642,7 @@ function getBuiltInStrategyDescription(
     case BatteryStrategyBuiltinItemKey.Automatic:
       return "Fallback when no scheduled item is active.";
     case BatteryStrategyBuiltinItemKey.ExportSurplus:
-      return "Discharges during a local high-price window to create room for expected solar while keeping reserve until solar takes over again.";
+      return "Discharges during a local high-price window to earn from otherwise unneeded battery capacity while keeping reserve for expected household demand.";
     case BatteryStrategyBuiltinItemKey.DelayedCharging:
       return "Under construction and disabled by default because the current delayed-charging behavior is not correct yet.";
   }
