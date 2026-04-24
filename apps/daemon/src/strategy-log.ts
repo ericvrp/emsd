@@ -5,7 +5,12 @@ import type {
   BatteryStrategyRecord,
   DynamicPriceSampleRecord,
 } from "@emsd/core";
-import { resolveActiveManualState } from "@emsd/core";
+import {
+  BatteryStrategyTriggerKind,
+  formatBatteryStrategyTriggerKindLabel,
+  isBatteryStrategyPriceTrigger,
+  resolveActiveManualState,
+} from "@emsd/core";
 import type { ScheduledItemCompletion } from "./strategy-scheduler";
 import {
   formatDaemonLogTimestamp,
@@ -435,7 +440,20 @@ function summarizeActiveStrategy(input: {
   triggerKind?: BatteryStrategyPlanItem["triggerKind"];
 }): string {
   if (input.strategyMode === "self-consumption") {
-    return "Self-consumption";
+    return input.targetMethod === null
+      ? "Self-consumption"
+      : describeActionWithTarget("Self-consumption", {
+          powerW: null,
+          preferPowerWhenAvailable: false,
+          defaultTargetSoc: input.resolvedTargetSoc ?? input.manualTargetSoc,
+          targetMethod: input.targetMethod,
+          targetDurationMinutes: input.targetDurationMinutes,
+          targetEndTime: input.targetEndTime,
+          targetTime: input.targetTime,
+          activeStartedAt: input.activeStartedAt,
+          now: input.now,
+          triggerKind: input.triggerKind,
+        });
   }
 
   if (input.strategyMode === "auto") {
@@ -519,7 +537,7 @@ function buildResolvedEstimateItem(
 }
 
 function describeActionWithTarget(
-  action: "Charging" | "Discharging" | "Idle",
+  action: "Charging" | "Discharging" | "Idle" | "Self-consumption",
   input: {
     powerW: number | null;
     preferPowerWhenAvailable: boolean;
@@ -575,10 +593,10 @@ function describeActionWithTarget(
   }
 
   const prefix =
-    input.triggerKind === "high-price"
-      ? "High price: "
-      : input.triggerKind === "low-price"
-        ? "Low price: "
+    input.triggerKind === BatteryStrategyTriggerKind.ExportSurplus
+      ? "Export surplus: "
+      : input.triggerKind === BatteryStrategyTriggerKind.DelayedCharging
+        ? "Delayed charging: "
         : "";
 
   if (
@@ -680,18 +698,14 @@ function describeStrategyScheduleHuman(item: BatteryStrategyPlanItem): string {
 
   if (
     item.kind === "daily" &&
-    item.triggerKind === "daily-time" &&
+    item.triggerKind === BatteryStrategyTriggerKind.DailyTime &&
     item.startTime
   ) {
     return `the ${item.startTime} schedule`;
   }
 
-  if (item.triggerKind === "low-price") {
-    return "the low-price schedule";
-  }
-
-  if (item.triggerKind === "high-price") {
-    return "the high-price schedule";
+  if (item.triggerKind && isBatteryStrategyPriceTrigger(item.triggerKind)) {
+    return `the ${formatBatteryStrategyTriggerKindLabel(item.triggerKind).toLowerCase()} schedule`;
   }
 
   return `${item.kind} schedule`;
@@ -781,5 +795,5 @@ function joinHumanParts(parts: Array<string | null>): string {
 function isPriceTrigger(
   triggerKind: BatteryStrategyPlanItem["triggerKind"] | undefined,
 ): boolean {
-  return triggerKind === "high-price" || triggerKind === "low-price";
+  return isBatteryStrategyPriceTrigger(triggerKind);
 }

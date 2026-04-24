@@ -13,6 +13,7 @@ import {
   type BatteryStrategyPlanItem,
   type BatteryStrategyMode,
   type BatteryStrategyPlanRecord,
+  BatteryStrategyTriggerKind,
   type BulkDiscoveryAddResult,
   type DashboardSnapshot,
   type DynamicPriceSnapshotRecord,
@@ -643,7 +644,10 @@ function createBatteryStrategyRuntimeForPlanSave(input: {
   );
 
   for (const item of input.plan.slice(1)) {
-    if (!item.enabled || item.triggerKind === "daily-time") {
+    if (
+      !item.enabled ||
+      item.triggerKind === BatteryStrategyTriggerKind.DailyTime
+    ) {
       continue;
     }
 
@@ -925,18 +929,19 @@ export async function runApiAction(
           ? manualDischargeTargetSoc
           : firstBattery.minimumDischargePercent;
       const normalizedManualTargetSoc =
-        strategyMode === "manual" ? manualTargetSoc : 100;
+        strategyMode === "manual" || strategyMode === "self-consumption"
+          ? manualTargetSoc
+          : 100;
       const manualAutoTargetByBatteryId =
         input.manualModeActive === true &&
-        strategyMode === "manual" &&
-        (normalizedManualState === "charging" ||
-          normalizedManualState === "discharging") &&
+        strategyMode !== "auto" &&
         manualTargetMethod === "auto"
           ? await buildManualAutoTargets({
               batteries,
               manualState: normalizedManualState,
               now: new Date(),
               siteId,
+              strategyMode,
             })
           : null;
 
@@ -950,7 +955,10 @@ export async function runApiAction(
             manualState: normalizedManualState,
             manualTargetSoc: normalizedManualTargetSoc,
           },
-          normalizedManualState,
+          {
+            manualState: normalizedManualState,
+            strategyMode,
+          },
           manualAutoTargetByBatteryId?.[battery.id]?.targetSocPercent ?? null,
         );
 
@@ -1034,12 +1042,12 @@ export async function runApiAction(
           value: strategyPlan,
         });
 
-          const strategy = resolveBatteryStrategyFromPlanItem({
-            item: normalizedBatteryPlan[0],
-            minimumDischargePercent: battery.minimumDischargePercent,
-            maximumChargePowerW: battery.maximumChargePowerW,
-            maximumDischargePowerW: battery.maximumDischargePowerW,
-          });
+        const strategy = resolveBatteryStrategyFromPlanItem({
+          item: normalizedBatteryPlan[0],
+          minimumDischargePercent: battery.minimumDischargePercent,
+          maximumChargePowerW: battery.maximumChargePowerW,
+          maximumDischargePowerW: battery.maximumDischargePowerW,
+        });
 
         try {
           await createBatteryPlugin(battery).setStrategy(strategy);
@@ -1431,9 +1439,10 @@ export async function runApiAction(
 
 async function buildManualAutoTargets(input: {
   batteries: BatteryRecord[];
-  manualState: Extract<BatteryManualState, "charging" | "discharging">;
+  manualState: BatteryManualState | null;
   now: Date;
   siteId: string;
+  strategyMode: Exclude<BatteryStrategyMode, "auto">;
 }): Promise<
   Record<
     string,
@@ -1467,6 +1476,7 @@ async function buildManualAutoTargets(input: {
       const item = createManualAutoTargetItem({
         battery,
         manualState: input.manualState,
+        strategyMode: input.strategyMode,
       });
       const dynamicPriceTargetEstimate = estimateDynamicPriceTarget({
         battery,
@@ -1495,7 +1505,8 @@ async function buildManualAutoTargets(input: {
 
 function createManualAutoTargetItem(input: {
   battery: BatteryRecord;
-  manualState: Extract<BatteryManualState, "charging" | "discharging">;
+  manualState: BatteryManualState | null;
+  strategyMode: Exclude<BatteryStrategyMode, "auto">;
 }): BatteryStrategyPlanItem {
   return {
     enabled: true,
@@ -1506,7 +1517,7 @@ function createManualAutoTargetItem(input: {
     targetEndTime: null,
     targetMethod: "auto",
     triggerKind: null,
-    strategyMode: "manual",
+    strategyMode: input.strategyMode,
     manualState: input.manualState,
     manualPowerW: resolveBatteryManualPower(input.battery, input.manualState),
     manualChargeTargetSoc: null,
@@ -1570,7 +1581,7 @@ function applyManualAutoTargetToStrategy(
     | "manualTargetSoc"
     | "strategyMode"
   >,
-  manualState: BatteryManualState | null,
+  action: Pick<BatteryRecord, "manualState" | "strategyMode">,
   targetSocPercent: number | null,
 ): Pick<
   BatteryRecord,
@@ -1585,7 +1596,7 @@ function applyManualAutoTargetToStrategy(
     return strategy;
   }
 
-  if (manualState === "charging") {
+  if (action.manualState === "charging") {
     return {
       ...strategy,
       manualChargeTargetSoc: targetSocPercent,
@@ -1593,10 +1604,20 @@ function applyManualAutoTargetToStrategy(
     };
   }
 
-  if (manualState === "discharging") {
+  if (action.manualState === "discharging") {
     return {
       ...strategy,
       manualDischargeTargetSoc: targetSocPercent,
+      manualTargetSoc: targetSocPercent,
+    };
+  }
+
+  if (
+    action.manualState === "idle" ||
+    action.strategyMode === "self-consumption"
+  ) {
+    return {
+      ...strategy,
       manualTargetSoc: targetSocPercent,
     };
   }

@@ -1,13 +1,14 @@
 import { expect, test } from "bun:test";
-import type {
-  BatteryPowerSampleRecord,
-  BatteryRecord,
-  BatteryStrategyPlanItem,
-  DynamicPriceSampleRecord,
-  NormalizedBatteryInfo,
-  P1MeterSampleRecord,
-  SolarEnergyProviderSampleRecord,
-  SolarForecastSampleRecord,
+import {
+  BatteryStrategyTriggerKind,
+  type BatteryPowerSampleRecord,
+  type BatteryRecord,
+  type BatteryStrategyPlanItem,
+  type DynamicPriceSampleRecord,
+  type NormalizedBatteryInfo,
+  type P1MeterSampleRecord,
+  type SolarEnergyProviderSampleRecord,
+  type SolarForecastSampleRecord,
 } from "@emsd/core";
 import { estimateDynamicPriceTarget } from "./dynamic-price-target";
 
@@ -40,9 +41,9 @@ test("evening auto discharge targets tomorrow morning and keeps a reserve above 
   expect(targetTime.getDate()).toBe(new Date("2026-04-20T08:30:00").getDate());
   expect(targetTime.getHours()).toBe(8);
   expect(targetTime.getMinutes()).toBe(30);
-  // 10% minimum + 2% backup margin + round(12.08 hours * 0.5%/hour) = 18%
-  expect(estimate.estimatedReservePercentAtTargetTime).toBe(18);
-  expect(estimate.estimatedTargetPercent).toBeGreaterThan(18);
+  // 10% minimum + 1% backup margin + round(12.08 hours * 0.2%/hour) = 13%
+  expect(estimate.estimatedReservePercentAtTargetTime).toBe(13);
+  expect(estimate.estimatedTargetPercent).toBeGreaterThan(13);
   expect(estimate.estimatedRemainingEnergyWh).toBeGreaterThan(0);
   expect(estimate.resolvedManualState).toBe("discharging");
   expect(estimate.skipReason).toBeNull();
@@ -54,10 +55,10 @@ test("evening auto discharge targets tomorrow morning and keeps a reserve above 
   expect(lastBucket.cumulativeNetBatteryEnergyNeededWh).toBe(
     estimate.estimatedRemainingEnergyWh,
   );
-  expect(estimate.windowKind).toBe("evening-high-price");
+  expect(estimate.windowKind).toBe("evening-export-surplus");
 });
 
-test("low-price auto resolves to a pre-discharge target when solar is expected at the low marker", () => {
+test("delayed-charging auto resolves to a pre-discharge target when solar is expected at the low marker", () => {
   const now = new Date("2026-04-19T06:00:00.000Z");
   const battery = createBattery();
   const item = createAutoLowPriceItem();
@@ -85,12 +86,12 @@ test("low-price auto resolves to a pre-discharge target when solar is expected a
   expect(estimate.targetTime).toBe("2026-04-19T10:00:00.000Z");
   expect(estimate.resolvedManualState).toBe("discharging");
   expect(estimate.skipReason).toBeNull();
-  expect(estimate.targetTimeSignal?.predictedSolarW).toBe(1000);
+  expect(estimate.targetTimeSignal?.predictedSolarW).toBe(1400);
   expect(estimate.targetTimeSignal?.recoveryThresholdW).toBeGreaterThan(0);
   expect(estimate.estimatedReservePercentAtTargetTime).toBeGreaterThan(12);
 });
 
-test("low-price auto is skipped when solar is not expected at the low marker", () => {
+test("delayed-charging auto is skipped when solar is not expected at the low marker", () => {
   const now = new Date("2026-04-19T06:00:00.000Z");
   const battery = createBattery();
   const item = createAutoLowPriceItem();
@@ -124,7 +125,7 @@ test("low-price auto is skipped when solar is not expected at the low marker", (
 function createAutoLowPriceItem(): BatteryStrategyPlanItem {
   return {
     enabled: true,
-    id: "auto-low-price",
+    id: "auto-delayed-charging",
     kind: "daily",
     manualChargeTargetSoc: 100,
     manualDischargeTargetSoc: null,
@@ -136,7 +137,7 @@ function createAutoLowPriceItem(): BatteryStrategyPlanItem {
     targetDurationMinutes: null,
     targetEndTime: null,
     targetMethod: "auto",
-    triggerKind: "low-price",
+    triggerKind: BatteryStrategyTriggerKind.DelayedCharging,
   };
 }
 
@@ -151,7 +152,7 @@ function createMorningSolarForecastSamples(): SolarForecastSampleRecord[] {
     ghiWm2: periodStart === "2026-04-19T10:00:00.000Z" ? 700 : 200,
     periodStart,
     siteId: "site-1",
-    value: periodStart === "2026-04-19T10:00:00.000Z" ? 1000 : 200,
+      value: periodStart === "2026-04-19T10:00:00.000Z" ? 1400 : 200,
   }));
 }
 
@@ -273,7 +274,7 @@ function createDefaultItem(): BatteryStrategyPlanItem {
 function createAutoDischargeItem(): BatteryStrategyPlanItem {
   return {
     enabled: true,
-    id: "auto-high-price",
+    id: "auto-export-surplus",
     kind: "daily",
     manualChargeTargetSoc: null,
     manualDischargeTargetSoc: null,
@@ -285,7 +286,7 @@ function createAutoDischargeItem(): BatteryStrategyPlanItem {
     targetDurationMinutes: null,
     targetEndTime: null,
     targetMethod: "auto",
-    triggerKind: "high-price",
+    triggerKind: BatteryStrategyTriggerKind.ExportSurplus,
   };
 }
 

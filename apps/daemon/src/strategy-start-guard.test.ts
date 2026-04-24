@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test";
-import type {
-  BatteryStrategyPlanItem,
-  ManagedDeviceTelemetryRecord,
+import {
+  BatteryStrategyTriggerKind,
+  type BatteryStrategyPlanItem,
+  type ManagedDeviceTelemetryRecord,
 } from "@emsd/core";
 import {
   getCurrentSiteSolarPowerW,
@@ -29,7 +30,7 @@ test("getCurrentSiteSolarPowerW sums current site solar telemetry", () => {
   ).toBe(580);
 });
 
-test("getScheduledStartSkipReason skips low-price charging when solar is not above threshold", () => {
+test("getScheduledStartSkipReason skips delayed-charging when solar is not above threshold", () => {
   expect(
     getScheduledStartSkipReason({
       batteryId: "battery-1",
@@ -55,7 +56,7 @@ test("getScheduledStartSkipReason skips low-price charging when solar is not abo
   ).toBeNull();
 });
 
-test("getScheduledStartSkipReason does not apply the live solar guard to low-price auto items", () => {
+test("getScheduledStartSkipReason does not apply the live solar guard to delayed-charging auto items", () => {
   expect(
     getScheduledStartSkipReason({
       batteryId: "battery-1",
@@ -89,7 +90,7 @@ function createPlanItem(
     id: "item-1",
     kind: "daily",
     startTime: null,
-    triggerKind: "low-price",
+    triggerKind: BatteryStrategyTriggerKind.DelayedCharging,
     targetDurationMinutes: null,
     targetEndTime: null,
     targetMethod: "soc",

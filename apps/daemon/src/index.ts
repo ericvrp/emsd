@@ -14,6 +14,7 @@ import {
   ensureParentDirectory,
   getDaemonLockPath,
   getDatabasePath,
+  isBatteryStrategyPriceTrigger,
   resolveActiveManualState,
   resolveBatteryStrategyFromPlanItem,
 } from "@emsd/core";
@@ -602,23 +603,42 @@ function shouldRestoreDefaultStrategy(
   sample: NormalizedBatteryInfo,
   now: Date,
 ): boolean {
-  if (
-    !battery.manualModeActive ||
-    !battery.manualModeStarted ||
-    battery.strategyMode !== "manual"
-  ) {
+  if (!battery.manualModeActive || !battery.manualModeStarted) {
+    return false;
+  }
+
+  if (hasManualDurationExpired(battery, now)) {
+    return true;
+  }
+
+  if (hasManualEndTimeElapsed(battery, now)) {
+    return true;
+  }
+
+  if (battery.strategyMode === "self-consumption") {
+    const targetSoc =
+      battery.strategyRuntime.manualTargetMethod === "auto"
+        ? battery.strategyRuntime.activeTargetSocPercent
+        : battery.manualTargetSoc;
+
+    if (targetSoc === null || sample.socPercent === null) {
+      return false;
+    }
+
+    const startSoc = battery.strategyRuntime.activeStartSocPercent;
+
+    return startSoc !== null
+      ? startSoc <= targetSoc
+        ? sample.socPercent >= targetSoc
+        : sample.socPercent <= targetSoc
+      : sample.socPercent === targetSoc;
+  }
+
+  if (battery.strategyMode !== "manual") {
     return false;
   }
 
   if (battery.manualState === "charging") {
-    if (hasManualDurationExpired(battery, now)) {
-      return true;
-    }
-
-    if (hasManualEndTimeElapsed(battery, now)) {
-      return true;
-    }
-
     if (
       sample.socPercent !== null &&
       battery.manualChargeTargetSoc !== null &&
@@ -631,14 +651,6 @@ function shouldRestoreDefaultStrategy(
   }
 
   if (battery.manualState === "discharging") {
-    if (hasManualDurationExpired(battery, now)) {
-      return true;
-    }
-
-    if (hasManualEndTimeElapsed(battery, now)) {
-      return true;
-    }
-
     if (
       sample.socPercent !== null &&
       battery.manualDischargeTargetSoc !== null &&
@@ -650,7 +662,20 @@ function shouldRestoreDefaultStrategy(
     return sample.status !== "discharging";
   }
 
-  return true;
+  if (battery.manualState === "idle") {
+    const targetSoc =
+      battery.strategyRuntime.manualTargetMethod === "auto"
+        ? battery.strategyRuntime.activeTargetSocPercent
+        : battery.manualTargetSoc;
+
+    return (
+      sample.socPercent !== null &&
+      targetSoc !== null &&
+      sample.socPercent <= targetSoc
+    );
+  }
+
+  return false;
 }
 
 function hasManualDurationExpired(battery: BatteryRecord, now: Date): boolean {
@@ -809,9 +834,8 @@ async function runScheduledStrategy(
   }
 
   const dueItems = battery.strategyPlan.slice(1).filter((item) => item.enabled);
-  const dynamicPriceSamples = dueItems.some(
-    (item) =>
-      item.triggerKind === "low-price" || item.triggerKind === "high-price",
+  const dynamicPriceSamples = dueItems.some((item) =>
+    isBatteryStrategyPriceTrigger(item.triggerKind),
   )
     ? readDynamicPriceSamples(db, battery.siteId)
     : [];
@@ -1263,9 +1287,8 @@ function logAppliedBatteryControlChanges(
   let dynamicPriceSamples: ReturnType<typeof readDynamicPriceSamples> = [];
 
   if (
-    battery.strategyPlan.some(
-      (item) =>
-        item.triggerKind === "low-price" || item.triggerKind === "high-price",
+    battery.strategyPlan.some((item) =>
+      isBatteryStrategyPriceTrigger(item.triggerKind),
     )
   ) {
     const db = openDaemonDatabase();

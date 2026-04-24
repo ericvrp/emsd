@@ -3,6 +3,7 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { BatteryStrategyTriggerKind } from "@emsd/core";
 import { discoverHostDevices } from "./discover";
 import { runEms } from "./index";
 
@@ -303,7 +304,7 @@ test("battery strategy-plan get and set support dynamic targets", async () => {
       targetDurationMinutes: null,
       targetEndTime: null,
       targetMethod: "auto",
-      triggerKind: "high-price",
+      triggerKind: BatteryStrategyTriggerKind.ExportSurplus,
     });
     writeFileSync(planFilePath, JSON.stringify(currentPlan), "utf8");
 
@@ -322,7 +323,7 @@ test("battery strategy-plan get and set support dynamic targets", async () => {
     const updatedBatteries = JSON.parse(output[3] ?? "[]");
     expect(updatedBatteries[0]?.strategyPlan?.[1]?.targetMethod).toBe("auto");
     expect(updatedBatteries[0]?.strategyPlan?.[1]?.triggerKind).toBe(
-      "high-price",
+      BatteryStrategyTriggerKind.ExportSurplus,
     );
   } finally {
     process.env.EMSD_DB_PATH = originalDatabasePath;

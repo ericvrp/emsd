@@ -1,7 +1,9 @@
 import {
   PRICE_SELECTION_WINDOW_MS,
+  BatteryStrategyTriggerKind,
   findPriceSelections,
-  isLowPriceAutoDischargeItem,
+  isBatteryStrategyPriceTrigger,
+  isDelayedChargingAutoDischargeItem,
   resolveActiveManualState,
 } from "@emsd/core";
 import type {
@@ -293,7 +295,7 @@ export function shouldSkipScheduledItem(
   now: Date,
 ): boolean {
   if (
-    (item.triggerKind === "low-price" || item.triggerKind === "high-price") &&
+    isBatteryStrategyPriceTrigger(item.triggerKind) &&
     now.getTime() >= triggerAt.getTime() + PRICE_TRIGGER_ELIGIBILITY_WINDOW_MS
   ) {
     return true;
@@ -367,7 +369,7 @@ export function getTodayTriggerAt(
 ): Date | null {
   if (
     item.kind !== "daily" ||
-    item.triggerKind !== "daily-time" ||
+    item.triggerKind !== BatteryStrategyTriggerKind.DailyTime ||
     !item.startTime
   ) {
     return null;
@@ -391,15 +393,15 @@ export function getStrategyTriggerAt(input: {
 }): Date | null {
   const { item, now, dynamicPriceSamples = [] } = input;
 
-  if (item.triggerKind === "daily-time") {
+  if (item.triggerKind === BatteryStrategyTriggerKind.DailyTime) {
     return getTodayTriggerAt(item, now);
   }
 
-  if (item.triggerKind !== "low-price" && item.triggerKind !== "high-price") {
+  if (!isBatteryStrategyPriceTrigger(item.triggerKind)) {
     return null;
   }
 
-  if (isLowPriceAutoDischargeItem(item)) {
+  if (isDelayedChargingAutoDischargeItem(item)) {
     return getLowPriceAutoTriggerAt({ now, dynamicPriceSamples });
   }
 
@@ -417,15 +419,15 @@ export function getNextStrategyTriggerAt(input: {
 }): Date | null {
   const { item, now, dynamicPriceSamples = [] } = input;
 
-  if (item.triggerKind === "daily-time") {
+  if (item.triggerKind === BatteryStrategyTriggerKind.DailyTime) {
     return getTodayTriggerAt(item, now);
   }
 
-  if (item.triggerKind !== "low-price" && item.triggerKind !== "high-price") {
+  if (!isBatteryStrategyPriceTrigger(item.triggerKind)) {
     return null;
   }
 
-  if (isLowPriceAutoDischargeItem(item)) {
+  if (isDelayedChargingAutoDischargeItem(item)) {
     return getNextLowPriceAutoTriggerAt({ now, dynamicPriceSamples });
   }
 
@@ -610,12 +612,12 @@ function getLowPriceAutoTriggerMarkers(input: {
   dynamicPriceSamples: DynamicPriceSampleRecord[];
 }): Date[] {
   const lowMarkers = getPriceMarkersForToday({
-    triggerKind: "low-price",
+    triggerKind: BatteryStrategyTriggerKind.DelayedCharging,
     now: input.now,
     dynamicPriceSamples: input.dynamicPriceSamples,
   });
   const highMarkers = getPriceMarkersForToday({
-    triggerKind: "high-price",
+    triggerKind: BatteryStrategyTriggerKind.ExportSurplus,
     now: input.now,
     dynamicPriceSamples: input.dynamicPriceSamples,
   });
@@ -639,7 +641,9 @@ function getLowPriceAutoTriggerMarkers(input: {
 }
 
 function getPriceMarkerTriggerAt(input: {
-  triggerKind: "low-price" | "high-price";
+  triggerKind:
+    | BatteryStrategyTriggerKind.DelayedCharging
+    | BatteryStrategyTriggerKind.ExportSurplus;
   now: Date;
   dynamicPriceSamples: DynamicPriceSampleRecord[];
 }): Date | null {
@@ -665,7 +669,9 @@ function getPriceMarkerTriggerAt(input: {
 }
 
 export function getNextPriceMarkerTriggerAt(input: {
-  triggerKind: "low-price" | "high-price";
+  triggerKind:
+    | BatteryStrategyTriggerKind.DelayedCharging
+    | BatteryStrategyTriggerKind.ExportSurplus;
   now: Date;
   dynamicPriceSamples: DynamicPriceSampleRecord[];
 }): Date | null {
@@ -685,7 +691,7 @@ export function getLowPriceAutoTriggerAtForMarker(input: {
   markerAt: Date;
 }): Date | null {
   const highMarkers = getPriceMarkersForToday({
-    triggerKind: "high-price",
+    triggerKind: BatteryStrategyTriggerKind.ExportSurplus,
     now: input.markerAt,
     dynamicPriceSamples: input.dynamicPriceSamples,
   });
@@ -699,7 +705,9 @@ export function getLowPriceAutoTriggerAtForMarker(input: {
 }
 
 export function getPriceMarkersForToday(input: {
-  triggerKind: "low-price" | "high-price";
+  triggerKind:
+    | BatteryStrategyTriggerKind.DelayedCharging
+    | BatteryStrategyTriggerKind.ExportSurplus;
   now: Date;
   dynamicPriceSamples: DynamicPriceSampleRecord[];
 }): Date[] {
@@ -711,7 +719,7 @@ export function getPriceMarkersForToday(input: {
     PRICE_SELECTION_WINDOW_MS,
   );
   const markerPeriodStarts =
-    input.triggerKind === "low-price"
+    input.triggerKind === BatteryStrategyTriggerKind.DelayedCharging
       ? selections.lowest.map((point) => point.periodStart)
       : selections.highest.map((point) => point.periodStart);
 

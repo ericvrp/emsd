@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test";
-import type {
-  BatteryRecord,
-  BatteryStrategyPlanItem,
-  BatteryStrategyRuntimeRecord,
+import {
+  BatteryStrategyTriggerKind,
+  type BatteryRecord,
+  type BatteryStrategyPlanItem,
+  type BatteryStrategyRuntimeRecord,
 } from "@emsd/core";
 import {
   describeCurrentBatteryStrategyHuman,
@@ -104,13 +105,13 @@ test("summarizes the next enabled item when an earlier one is disabled", () => {
   );
 });
 
-test("summarizes a future high-price item later today", () => {
+test("summarizes a future export-surplus item later today", () => {
   const battery = buildBattery({
     strategyPlan: [
       buildDefaultItem(),
       buildDailyItem({
         id: "expensive",
-        triggerKind: "high-price",
+        triggerKind: BatteryStrategyTriggerKind.ExportSurplus,
         startTime: "08:00",
       }),
     ],
@@ -139,7 +140,7 @@ test("summarizes a future high-price item later today", () => {
       ],
     ),
   ).toBe(
-    "strategy plan updated for battery-1: default self-consumption with a 10% discharge floor; next the high-price schedule: scheduled discharge to 80% at 2400W",
+    "strategy plan updated for battery-1: default self-consumption with a 10% discharge floor; next the export surplus schedule: scheduled discharge to 80% at 2400W",
   );
 });
 
@@ -178,7 +179,7 @@ test("includes the dynamic target estimate in the scheduled start summary", () =
   );
 });
 
-test("uses the resolved runtime action in the scheduled start summary when low-price auto discharges", () => {
+test("uses the resolved runtime action in the scheduled start summary when delayed-charging auto discharges", () => {
   expect(
     formatScheduledStrategyStartedSummary(
       "battery-1",
@@ -188,12 +189,12 @@ test("uses the resolved runtime action in the scheduled start summary when low-p
         manualState: "charging",
         manualTargetSoc: 100,
         targetMethod: "auto",
-        triggerKind: "low-price",
+        triggerKind: BatteryStrategyTriggerKind.DelayedCharging,
       }),
       "",
       {
         reasoning:
-          "expected demand until the low-price marker, recent history, predicted solar contribution",
+          "expected demand until the delayed charging marker, recent history, predicted solar contribution",
         resolvedManualState: "discharging",
         targetSocPercent: 38,
         reserveSocPercent: 15,
@@ -201,7 +202,7 @@ test("uses the resolved runtime action in the scheduled start summary when low-p
       },
     ),
   ).toBe(
-    "the low-price schedule is now active for battery-1: scheduled discharge to 38% at 2400W; discharging to 38% to reserve 15% by 10:00 based on expected demand until the low-price marker, recent history, predicted solar contribution",
+    "the delayed charging schedule is now active for battery-1: scheduled discharge to 38% at 2400W; discharging to 38% to reserve 15% by 10:00 based on expected demand until the delayed charging marker, recent history, predicted solar contribution",
   );
 });
 
@@ -209,11 +210,11 @@ test("summarizes price-triggered strategy lifecycle with the trigger kind", () =
   expect(
     formatScheduledStrategyStartedSummary(
       "battery-1",
-      buildDailyItem({ triggerKind: "high-price" }),
+      buildDailyItem({ triggerKind: BatteryStrategyTriggerKind.ExportSurplus }),
       "",
     ),
   ).toBe(
-    "the high-price schedule is now active for battery-1: scheduled discharge to 80% at 2400W",
+    "the export surplus schedule is now active for battery-1: scheduled discharge to 80% at 2400W",
   );
 });
 
@@ -393,6 +394,24 @@ test("strategy status summary reports self-consumption for manual override", () 
   ).toBe("Self-consumption");
 });
 
+test("strategy status summary reports self-consumption manual override duration", () => {
+  expect(
+    formatBatteryStrategyStatusSummary(
+      buildBattery({
+        strategyMode: "self-consumption",
+        manualModeActive: true,
+        manualTargetSoc: 55,
+        strategyRuntime: buildRuntime({
+          manualTargetMethod: "duration",
+          manualTargetDurationMinutes: 6,
+          manualTargetStartedAt: "2026-04-12T17:30:00.000Z",
+        }),
+      }),
+      new Date("2026-04-12T17:31:10.000Z"),
+    ),
+  ).toBe("Self-consumption for 5 minutes");
+});
+
 test("strategy status summary prefers power for manual discharging override", () => {
   expect(
     formatBatteryStrategyStatusSummary(
@@ -454,7 +473,7 @@ test("strategy status summary reports idle without zero target", () => {
   ).toBe("Idle");
 });
 
-test("strategy status summary prefixes high-price trigger kind", () => {
+test("strategy status summary prefixes export-surplus trigger kind", () => {
   expect(
     formatBatteryStrategyStatusSummary(
       buildBattery({
@@ -466,7 +485,7 @@ test("strategy status summary prefixes high-price trigger kind", () => {
           buildDefaultItem(),
           buildDailyItem({
             id: "daily-2",
-            triggerKind: "high-price",
+            triggerKind: BatteryStrategyTriggerKind.ExportSurplus,
             manualState: "discharging",
             manualDischargeTargetSoc: 58,
             manualTargetSoc: 58,
@@ -476,10 +495,10 @@ test("strategy status summary prefixes high-price trigger kind", () => {
       }),
       new Date("2026-04-21T19:45:08.000Z"),
     ),
-  ).toBe("High price: Discharging to 58%");
+  ).toBe("Export surplus: Discharging to 58%");
 });
 
-test("strategy status summary prefixes low-price trigger kind", () => {
+test("strategy status summary prefixes delayed-charging trigger kind", () => {
   expect(
     formatBatteryStrategyStatusSummary(
       buildBattery({
@@ -491,7 +510,7 @@ test("strategy status summary prefixes low-price trigger kind", () => {
           buildDefaultItem(),
           buildDailyItem({
             id: "daily-2",
-            triggerKind: "low-price",
+            triggerKind: BatteryStrategyTriggerKind.DelayedCharging,
             manualState: "charging",
             manualChargeTargetSoc: 100,
             manualTargetSoc: 100,
@@ -501,7 +520,7 @@ test("strategy status summary prefixes low-price trigger kind", () => {
       }),
       new Date("2026-04-21T02:15:00.000Z"),
     ),
-  ).toBe("Low price: Charging to 100%");
+  ).toBe("Delayed charging: Charging to 100%");
 });
 
 function buildBattery(overrides: Partial<BatteryRecord> = {}): BatteryRecord {
@@ -560,7 +579,7 @@ function buildMorningItem(
     id: "daily-1",
     kind: "daily",
     startTime: "08:00",
-    triggerKind: "daily-time",
+    triggerKind: BatteryStrategyTriggerKind.DailyTime,
     targetDurationMinutes: null,
     targetEndTime: null,
     targetMethod: "soc",
@@ -582,7 +601,7 @@ function buildDailyItem(
     id: "daily-2",
     kind: "daily",
     startTime: "19:30",
-    triggerKind: "daily-time",
+    triggerKind: BatteryStrategyTriggerKind.DailyTime,
     targetDurationMinutes: null,
     targetEndTime: null,
     targetMethod: "soc",

@@ -1,6 +1,7 @@
+import { BatteryStrategyTriggerKind } from "./battery-strategy-shared";
 import type { BatteryManualState, BatteryStrategyPlanItem } from "./index";
 
-export function isLowPriceAutoDischargeItem(
+export function isDelayedChargingAutoDischargeItem(
   item: Pick<
     BatteryStrategyPlanItem,
     "manualState" | "strategyMode" | "targetMethod" | "triggerKind"
@@ -10,7 +11,7 @@ export function isLowPriceAutoDischargeItem(
     item.strategyMode === "manual" &&
     item.manualState === "charging" &&
     item.targetMethod === "auto" &&
-    item.triggerKind === "low-price"
+    item.triggerKind === BatteryStrategyTriggerKind.DelayedCharging
   );
 }
 

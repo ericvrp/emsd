@@ -831,6 +831,11 @@ export function setHouseStrategy(
     const observedAt = new Date().toISOString();
 
     for (const battery of batteries) {
+      const tracksManualTarget = input.manualModeActive === true;
+      const waitsForObservedStart =
+        input.strategyMode === "manual" &&
+        (input.manualState === "charging" ||
+          input.manualState === "discharging");
       const manualAutoTarget =
         input.manualTargetMethod === "auto"
           ? (input.manualAutoTargetByBatteryId?.[battery.id] ?? null)
@@ -849,9 +854,10 @@ export function setHouseStrategy(
           : (input.manualDischargeTargetSoc ?? null);
       const manualTargetSoc =
         manualAutoTarget !== null &&
-        input.strategyMode === "manual" &&
-        (input.manualState === "charging" ||
-          input.manualState === "discharging")
+        (input.strategyMode === "self-consumption" ||
+          input.manualState === "charging" ||
+          input.manualState === "discharging" ||
+          input.manualState === "idle")
           ? manualAutoTarget.targetSocPercent
           : (input.manualTargetSoc ?? null);
       const baseRuntime = clearActiveBatteryStrategyRuntime(
@@ -859,52 +865,26 @@ export function setHouseStrategy(
       );
       const nextRuntime = stringifyBatteryStrategyRuntime({
         ...baseRuntime,
-        manualTargetMethod:
-          input.manualModeActive === true &&
-          input.strategyMode === "manual" &&
-          (input.manualState === "charging" ||
-            input.manualState === "discharging")
-            ? (input.manualTargetMethod ?? "soc")
-            : null,
+        manualTargetMethod: tracksManualTarget
+          ? (input.manualTargetMethod ?? "soc")
+          : null,
         manualTargetDurationMinutes:
-          input.manualModeActive === true &&
-          input.strategyMode === "manual" &&
-          (input.manualState === "charging" ||
-            input.manualState === "discharging") &&
-          input.manualTargetMethod === "duration"
+          tracksManualTarget && input.manualTargetMethod === "duration"
             ? (input.manualTargetDurationMinutes ?? null)
             : null,
         manualTargetEndTime:
-          input.manualModeActive === true &&
-          input.strategyMode === "manual" &&
-          (input.manualState === "charging" ||
-            input.manualState === "discharging") &&
-          input.manualTargetMethod === "end-time"
+          tracksManualTarget && input.manualTargetMethod === "end-time"
             ? (input.manualTargetEndTime ?? null)
             : null,
         activeTargetSocPercent:
-          input.manualModeActive === true &&
-          input.strategyMode === "manual" &&
-          (input.manualState === "charging" ||
-            input.manualState === "discharging") &&
-          input.manualTargetMethod === "auto"
+          tracksManualTarget && input.manualTargetMethod === "auto"
             ? (manualAutoTarget?.targetSocPercent ?? null)
             : null,
         activeTargetTime:
-          input.manualModeActive === true &&
-          input.strategyMode === "manual" &&
-          (input.manualState === "charging" ||
-            input.manualState === "discharging") &&
-          input.manualTargetMethod === "auto"
+          tracksManualTarget && input.manualTargetMethod === "auto"
             ? (manualAutoTarget?.targetTime ?? null)
             : null,
-        manualTargetStartedAt:
-          input.manualModeActive === true &&
-          input.strategyMode === "manual" &&
-          (input.manualState === "charging" ||
-            input.manualState === "discharging")
-            ? observedAt
-            : null,
+        manualTargetStartedAt: tracksManualTarget ? observedAt : null,
       });
 
       db.query(
@@ -932,7 +912,7 @@ export function setHouseStrategy(
         manualDischargeTargetSoc,
         manualTargetSoc,
         input.manualModeActive === true ? 1 : 0,
-        0,
+        tracksManualTarget && !waitsForObservedStart ? 1 : 0,
         nextRuntime,
         observedAt,
         siteId,

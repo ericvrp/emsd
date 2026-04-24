@@ -86,6 +86,9 @@ export function BatteryStrategyForm({
     useState(
       String(strategy.manualDischargeTargetSoc ?? minimumDischargePercent),
     );
+  const [manualTargetSocInput, setManualTargetSocInput] = useState(
+    String(strategy.manualTargetSoc ?? 100),
+  );
   const [durationMinutes, setDurationMinutes] = useState(
     String(manualTargetDurationMinutes ?? 60),
   );
@@ -130,12 +133,14 @@ export function BatteryStrategyForm({
   const parsedManualDischargeTargetSoc = parseOptionalNumber(
     manualDischargeTargetSocInput,
   );
+  const parsedManualTargetSoc = parseOptionalNumber(manualTargetSocInput);
   const parsedDurationMinutes = parseOptionalNumber(durationMinutes);
   const endTimeDurationMinutes = getDurationMinutesUntilEndTime(endTime, now);
+  const selectedAction = getManualModeAction(strategyMode, manualState);
   const resolvedManualPowerW =
-    manualState === "charging"
+    selectedAction === "charging"
       ? maximumChargePowerW
-      : manualState === "discharging"
+      : selectedAction === "discharging"
         ? maximumDischargePowerW
         : null;
   const canEstimateTarget =
@@ -143,42 +148,44 @@ export function BatteryStrategyForm({
     currentSocPercent !== null &&
     resolvedManualPowerW !== null &&
     resolvedManualPowerW > 0 &&
-    manualState !== "idle";
+    (selectedAction === "charging" || selectedAction === "discharging");
+  const storedManualTargetSoc = clampTargetSoc(
+    getCurrentStoredTargetSoc({
+      action: selectedAction,
+      minimumDischargePercent,
+      parsedManualChargeTargetSoc,
+      parsedManualDischargeTargetSoc,
+      parsedManualTargetSoc,
+    }),
+    selectedAction,
+    minimumDischargePercent,
+  );
 
   const effectiveManualTargetSoc = useMemo(() => {
-    if (strategyMode !== "manual") {
+    if (strategyMode !== "manual" && strategyMode !== "self-consumption") {
       return strategy.manualTargetSoc ?? 100;
     }
 
-    if (manualState === "idle") {
-      return 0;
-    }
-
     if (targetMethod === "soc") {
-      return clampTargetSoc(
-        getCurrentStoredTargetSoc({
-          manualState,
-          minimumDischargePercent,
-          parsedManualChargeTargetSoc,
-          parsedManualDischargeTargetSoc,
-        }),
-        manualState,
-        minimumDischargePercent,
-      );
+      return storedManualTargetSoc;
     }
 
     if (targetMethod === "auto") {
       return null;
     }
 
+    if (selectedAction !== "charging" && selectedAction !== "discharging") {
+      return storedManualTargetSoc;
+    }
+
     const estimatedTargetSoc = estimateTargetSoc({
       capacityWh,
       currentSocPercent,
-      direction: manualState,
-        durationMinutes:
-          targetMethod === "duration"
-            ? parsedDurationMinutes
-            : endTimeDurationMinutes,
+      direction: selectedAction,
+      durationMinutes:
+        targetMethod === "duration"
+          ? parsedDurationMinutes
+          : endTimeDurationMinutes,
       minimumDischargePercent,
       powerW: resolvedManualPowerW,
     });
@@ -188,19 +195,21 @@ export function BatteryStrategyForm({
     capacityWh,
     currentSocPercent,
     endTimeDurationMinutes,
-    manualState,
     minimumDischargePercent,
     parsedDurationMinutes,
     parsedManualChargeTargetSoc,
     parsedManualDischargeTargetSoc,
+    parsedManualTargetSoc,
     resolvedManualPowerW,
+    selectedAction,
+    storedManualTargetSoc,
     strategy.manualTargetSoc,
     strategyMode,
     targetMethod,
   ]);
 
   const estimatedDurationMinutes = useMemo(() => {
-    if (strategyMode !== "manual" || manualState === "idle") {
+    if (strategyMode !== "manual" && strategyMode !== "self-consumption") {
       return null;
     }
 
@@ -216,10 +225,14 @@ export function BatteryStrategyForm({
       return null;
     }
 
+    if (selectedAction !== "charging" && selectedAction !== "discharging") {
+      return null;
+    }
+
     return estimateDurationMinutes({
       capacityWh,
       currentSocPercent,
-      direction: manualState,
+      direction: selectedAction,
       powerW: resolvedManualPowerW,
       targetSoc: effectiveManualTargetSoc,
     });
@@ -228,9 +241,9 @@ export function BatteryStrategyForm({
     currentSocPercent,
     effectiveManualTargetSoc,
     endTimeDurationMinutes,
-    manualState,
     parsedDurationMinutes,
     resolvedManualPowerW,
+    selectedAction,
     strategyMode,
     targetMethod,
   ]);
@@ -263,13 +276,13 @@ export function BatteryStrategyForm({
       <input
         type="hidden"
         name="manualTargetSoc"
-        value={targetMethod === "auto" ? "" : (effectiveManualTargetSoc ?? "")}
+        value={
+          targetMethod === "auto"
+            ? ""
+            : String(effectiveManualTargetSoc ?? storedManualTargetSoc)
+        }
       />
-      <input
-        type="hidden"
-        name="targetMethod"
-        value={manualState === "idle" ? "soc" : targetMethod}
-      />
+      <input type="hidden" name="targetMethod" value={targetMethod} />
       <input
         type="hidden"
         name="targetDurationMinutes"
@@ -378,7 +391,7 @@ export function BatteryStrategyForm({
         ) : null}
       </div>
 
-      {strategyMode === "manual" ? (
+      {strategyMode === "manual" || strategyMode === "self-consumption" ? (
         <>
           {showContextSummary ? (
             <div className="rounded-2xl border border-white/8 bg-white/4 p-4 text-sm text-slate-300">
@@ -394,26 +407,31 @@ export function BatteryStrategyForm({
             </div>
           ) : null}
 
-          {manualState !== "idle" ? (
-            <>
-                <div className="grid gap-3 xl:grid-cols-3">
-                  <div className="space-y-2 rounded-2xl border border-white/8 bg-white/4 px-3 py-2.5">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      Power limit
-                    </p>
-                    <p className="text-sm font-medium text-slate-100">
-                      {resolvedManualPowerW === null
-                        ? "No power limit"
-                        : `${resolvedManualPowerW} W`}
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      Set on the device page.
-                    </p>
-                  </div>
+          {selectedAction !== "charging" && selectedAction !== "discharging" ? (
+            <input type="hidden" name="manualPowerW" value="" />
+          ) : null}
 
-                  <div className="space-y-2">
-                    <Label htmlFor={`${batteryId}-target-method`}>
-                      Target method
+          <>
+            {selectedAction === "charging" ||
+            selectedAction === "discharging" ? (
+              <div className="grid gap-3 xl:grid-cols-3">
+                <div className="space-y-2 rounded-2xl border border-white/8 bg-white/4 px-3 py-2.5">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Power limit
+                  </p>
+                  <p className="text-sm font-medium text-slate-100">
+                    {resolvedManualPowerW === null
+                      ? "No power limit"
+                      : `${resolvedManualPowerW} W`}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    Set on the device page.
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor={`${batteryId}-target-method`}>
+                    Target method
                   </Label>
                   <Select
                     onValueChange={(value: string) =>
@@ -432,113 +450,141 @@ export function BatteryStrategyForm({
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
+            ) : null}
 
-                {targetMethod === "soc" ? (
-                  <div className="space-y-2">
-                    <Label htmlFor={`${batteryId}-target-soc`}>
-                      {manualState === "charging"
-                        ? "Charge target percentage (%)"
-                        : "Discharge target percentage (%)"}
-                    </Label>
-                    <Input
-                      id={`${batteryId}-target-soc`}
-                      max={100}
-                      min={
-                        manualState === "discharging"
-                          ? minimumDischargePercent
-                          : 5
+            <div className="grid gap-3 xl:grid-cols-3">
+              {selectedAction !== "charging" &&
+              selectedAction !== "discharging" ? (
+                <div className="space-y-2 rounded-2xl border border-white/8 bg-white/4 px-3 py-2.5">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Target method
+                  </p>
+                  <Select
+                    onValueChange={(value: string) =>
+                      setTargetMethod(value as TargetMethod)
+                    }
+                    value={targetMethod}
+                  >
+                    <SelectTrigger id={`${batteryId}-target-method`}>
+                      <SelectValue placeholder="Select method" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="soc">Percentage</SelectItem>
+                      <SelectItem value="duration">Duration</SelectItem>
+                      <SelectItem value="end-time">End time</SelectItem>
+                      <SelectItem value="auto">Dynamic</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : null}
+
+              {targetMethod === "soc" ? (
+                <div className="space-y-2">
+                  <Label htmlFor={`${batteryId}-target-soc`}>
+                    {getTargetSocLabel(selectedAction)}
+                  </Label>
+                  <Input
+                    id={`${batteryId}-target-soc`}
+                    max={100}
+                    min={getTargetSocMinimum(
+                      selectedAction,
+                      minimumDischargePercent,
+                    )}
+                    onChange={(event) => {
+                      if (selectedAction === "charging") {
+                        setManualChargeTargetSocInput(event.target.value);
+                        return;
                       }
-                      onChange={(event) => {
-                        if (manualState === "charging") {
-                          setManualChargeTargetSocInput(event.target.value);
-                          return;
-                        }
 
+                      if (selectedAction === "discharging") {
                         setManualDischargeTargetSocInput(event.target.value);
-                      }}
-                      step={1}
-                      type="number"
-                      value={
-                        manualState === "charging"
-                          ? manualChargeTargetSocInput
-                          : manualDischargeTargetSocInput
+                        return;
                       }
-                    />
-                  </div>
-                ) : null}
 
-                {targetMethod === "duration" ? (
-                  <div className="space-y-2">
-                    <Label htmlFor={`${batteryId}-duration`}>
-                      Duration (minutes)
-                    </Label>
-                    <Input
-                      id={`${batteryId}-duration`}
-                      min={1}
-                      onChange={(event) =>
-                        setDurationMinutes(event.target.value)
-                      }
-                      step={5}
-                      type="number"
-                      value={durationMinutes}
-                    />
-                  </div>
-                ) : null}
+                      setManualTargetSocInput(event.target.value);
+                    }}
+                    step={1}
+                    type="number"
+                    value={getTargetSocInputValue({
+                      action: selectedAction,
+                      manualChargeTargetSocInput,
+                      manualDischargeTargetSocInput,
+                      manualTargetSocInput,
+                    })}
+                  />
+                </div>
+              ) : null}
 
-                {targetMethod === "end-time" ? (
-                  <div className="space-y-2">
-                    <Label htmlFor={`${batteryId}-end-time`}>End time</Label>
-                    <Input
-                      id={`${batteryId}-end-time`}
-                      onChange={(event) => setEndTime(event.target.value)}
-                      type="time"
-                      value={endTime}
-                    />
-                  </div>
-                ) : null}
-              </div>
+              {targetMethod === "duration" ? (
+                <div className="space-y-2">
+                  <Label htmlFor={`${batteryId}-duration`}>
+                    Duration (minutes)
+                  </Label>
+                  <Input
+                    id={`${batteryId}-duration`}
+                    min={1}
+                    onChange={(event) => setDurationMinutes(event.target.value)}
+                    step={5}
+                    type="number"
+                    value={durationMinutes}
+                  />
+                </div>
+              ) : null}
 
-              <div className="grid gap-2 sm:grid-cols-3">
-                <StrategyStatCard
-                  label="Target"
-                  value={
-                    targetMethod === "auto"
-                      ? "Dynamic"
-                      : formatSoc(effectiveManualTargetSoc)
-                  }
-                />
-                <StrategyStatCard
-                  label="Duration"
-                  value={
-                    targetMethod === "auto"
-                      ? "Dynamic"
-                      : formatDuration(estimatedDurationMinutes)
-                  }
-                />
-                <StrategyStatCard
-                  label="Ends"
-                  value={targetMethod === "auto" ? "Dynamic" : estimatedEndTime}
-                />
-              </div>
-              <div className="space-y-1 text-xs text-slate-500">
-                {targetMethod === "auto" ? (
-                  <p>
-                    Dynamic targeting is computed when the manual strategy is
-                    applied, based on recent usage and predicted solar recovery.
-                  </p>
-                ) : null}
-                {!canEstimateTarget ? (
-                  <p>
-                    Time-based targeting becomes available when the battery has
-                    a known capacity, a current charge level, and a manual power
-                    target.
-                  </p>
-                ) : null}
-              </div>
-            </>
-          ) : (
-            <input type="hidden" name="manualPowerW" value="" />
-          )}
+              {targetMethod === "end-time" ? (
+                <div className="space-y-2">
+                  <Label htmlFor={`${batteryId}-end-time`}>End time</Label>
+                  <Input
+                    id={`${batteryId}-end-time`}
+                    onChange={(event) => setEndTime(event.target.value)}
+                    type="time"
+                    value={endTime}
+                  />
+                </div>
+              ) : null}
+            </div>
+
+            <div className="grid gap-2 sm:grid-cols-3">
+              <StrategyStatCard
+                label="Target"
+                value={
+                  targetMethod === "auto"
+                    ? "Dynamic"
+                    : formatSoc(effectiveManualTargetSoc)
+                }
+              />
+              <StrategyStatCard
+                label="Duration"
+                value={
+                  targetMethod === "auto"
+                    ? "Dynamic"
+                    : formatDuration(estimatedDurationMinutes)
+                }
+              />
+              <StrategyStatCard
+                label="Ends"
+                value={targetMethod === "auto" ? "Dynamic" : estimatedEndTime}
+              />
+            </div>
+            <div className="space-y-1 text-xs text-slate-500">
+              {targetMethod === "auto" ? (
+                <p>
+                  Dynamic targeting is computed when the manual strategy is
+                  applied, based on recent usage and predicted solar recovery.
+                </p>
+              ) : null}
+              {!canEstimateTarget &&
+              (selectedAction === "charging" ||
+                selectedAction === "discharging") ? (
+                <p>
+                  Time-based targeting becomes available when the battery has a
+                  known capacity, a current charge level, and a manual power
+                  target.
+                </p>
+              ) : null}
+            </div>
+          </>
         </>
       ) : (
         <input type="hidden" name="manualPowerW" value="" />
@@ -634,16 +680,27 @@ function estimateTargetSoc(input: {
 }
 
 function getCurrentStoredTargetSoc(input: {
-  manualState: "charging" | "discharging";
+  action: ManualModeAction;
   minimumDischargePercent: number;
   parsedManualChargeTargetSoc: number | null;
   parsedManualDischargeTargetSoc: number | null;
+  parsedManualTargetSoc: number | null;
 }): number {
-  if (input.manualState === "charging") {
+  if (input.action === "charging") {
     return input.parsedManualChargeTargetSoc ?? 100;
   }
 
-  return input.parsedManualDischargeTargetSoc ?? input.minimumDischargePercent;
+  if (input.action === "discharging") {
+    return (
+      input.parsedManualDischargeTargetSoc ?? input.minimumDischargePercent
+    );
+  }
+
+  if (input.action === "idle") {
+    return input.parsedManualTargetSoc ?? input.minimumDischargePercent;
+  }
+
+  return input.parsedManualTargetSoc ?? 100;
 }
 
 function estimateDurationMinutes(input: {
@@ -678,11 +735,50 @@ function estimateDurationMinutes(input: {
 
 function clampTargetSoc(
   value: number,
-  direction: "charging" | "discharging",
+  direction: ManualModeAction,
   minimumDischargePercent: number,
 ): number {
-  const minimum = direction === "discharging" ? minimumDischargePercent : 5;
+  const minimum = getTargetSocMinimum(direction, minimumDischargePercent);
   return Math.max(minimum, Math.min(100, Math.round(value)));
+}
+
+function getTargetSocMinimum(
+  action: ManualModeAction,
+  minimumDischargePercent: number,
+): number {
+  return action === "discharging" || action === "idle"
+    ? minimumDischargePercent
+    : 5;
+}
+
+function getTargetSocLabel(action: ManualModeAction): string {
+  switch (action) {
+    case "charging":
+      return "Charge target percentage (%)";
+    case "discharging":
+      return "Discharge target percentage (%)";
+    case "idle":
+      return "Idle target percentage (%)";
+    case "self-consumption":
+      return "Self-consumption target percentage (%)";
+  }
+}
+
+function getTargetSocInputValue(input: {
+  action: ManualModeAction;
+  manualChargeTargetSocInput: string;
+  manualDischargeTargetSocInput: string;
+  manualTargetSocInput: string;
+}): string {
+  if (input.action === "charging") {
+    return input.manualChargeTargetSocInput;
+  }
+
+  if (input.action === "discharging") {
+    return input.manualDischargeTargetSocInput;
+  }
+
+  return input.manualTargetSocInput;
 }
 
 function getDefaultTargetSoc(

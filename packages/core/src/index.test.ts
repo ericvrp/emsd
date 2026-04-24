@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import {
+  BatteryStrategyTriggerKind,
   MAX_SOLAR_PREDICTION_PRECEDING_DAYS,
   SOLAR_PREDICTION_MATCH_TOLERANCE_MS,
   buildPredictedSolarGenerationSeries,
@@ -72,7 +73,7 @@ test("createBatteryStrategyRuntimeForPlanApply marks earlier same-day items as t
         targetDurationMinutes: null,
         targetEndTime: null,
         targetMethod: "soc",
-        triggerKind: "daily-time",
+        triggerKind: BatteryStrategyTriggerKind.DailyTime,
         strategyMode: "manual",
         manualState: "discharging",
         manualPowerW: 2400,
@@ -88,7 +89,7 @@ test("createBatteryStrategyRuntimeForPlanApply marks earlier same-day items as t
         targetDurationMinutes: null,
         targetEndTime: null,
         targetMethod: "soc",
-        triggerKind: "daily-time",
+        triggerKind: BatteryStrategyTriggerKind.DailyTime,
         strategyMode: "manual",
         manualState: "discharging",
         manualPowerW: 2400,
@@ -134,7 +135,7 @@ test("createBatteryStrategyRuntimeForPlanApply keeps same-time items pending", (
         targetDurationMinutes: null,
         targetEndTime: null,
         targetMethod: "soc",
-        triggerKind: "daily-time",
+        triggerKind: BatteryStrategyTriggerKind.DailyTime,
         strategyMode: "manual",
         manualState: "discharging",
         manualPowerW: 2400,
@@ -185,7 +186,7 @@ test("normalizeBatteryStrategyPlan defaults idle percentage targets to minimum d
         targetDurationMinutes: null,
         targetEndTime: null,
         targetMethod: "soc",
-        triggerKind: "daily-time",
+        triggerKind: BatteryStrategyTriggerKind.DailyTime,
         strategyMode: "manual",
         manualState: "idle",
         manualPowerW: null,
@@ -196,7 +197,54 @@ test("normalizeBatteryStrategyPlan defaults idle percentage targets to minimum d
     ],
   });
 
-  expect(normalized[1]?.manualTargetSoc).toBe(20);
+  expect(
+    normalized.find((item) => item.id === "idle-window")?.manualTargetSoc,
+  ).toBe(20);
+});
+
+test("normalizeBatteryStrategyPlan forces the first item to self-consumption", () => {
+  const normalized = normalizeBatteryStrategyPlan({
+    minimumDischargePercent: 20,
+    strategy: {
+      strategyMode: "manual",
+      manualState: "idle",
+      manualPowerW: null,
+      manualChargeTargetSoc: 100,
+      manualDischargeTargetSoc: 20,
+      manualTargetSoc: 20,
+    },
+    value: [
+      {
+        enabled: true,
+        id: "default",
+        kind: "default",
+        startTime: null,
+        targetDurationMinutes: null,
+        targetEndTime: null,
+        targetMethod: null,
+        triggerKind: null,
+        strategyMode: "manual",
+        manualState: "idle",
+        manualPowerW: null,
+        manualChargeTargetSoc: null,
+        manualDischargeTargetSoc: null,
+        manualTargetSoc: 20,
+      },
+    ],
+  });
+
+  expect(normalized[0]).toMatchObject({
+    enabled: true,
+    kind: "default",
+    manualChargeTargetSoc: 100,
+    manualDischargeTargetSoc: 20,
+    manualPowerW: null,
+    manualState: null,
+    manualTargetSoc: 100,
+    strategyMode: "self-consumption",
+    targetMethod: null,
+    triggerKind: null,
+  });
 });
 
 test("normalizeBatteryStrategyPlan accepts low and high price triggers and drops removed placeholders", () => {
@@ -235,7 +283,7 @@ test("normalizeBatteryStrategyPlan accepts low and high price triggers and drops
         targetDurationMinutes: null,
         targetEndTime: null,
         targetMethod: "soc",
-        triggerKind: "low-price",
+        triggerKind: BatteryStrategyTriggerKind.DelayedCharging,
         strategyMode: "manual",
         manualState: "idle",
         manualPowerW: null,
@@ -251,7 +299,7 @@ test("normalizeBatteryStrategyPlan accepts low and high price triggers and drops
         targetDurationMinutes: null,
         targetEndTime: null,
         targetMethod: "soc",
-        triggerKind: "high-price",
+        triggerKind: BatteryStrategyTriggerKind.ExportSurplus,
         strategyMode: "manual",
         manualState: "idle",
         manualPowerW: null,
@@ -278,9 +326,13 @@ test("normalizeBatteryStrategyPlan accepts low and high price triggers and drops
     ],
   });
 
-  expect(normalized[1]?.triggerKind).toBe("low-price");
-  expect(normalized[2]?.triggerKind).toBe("high-price");
-  expect(normalized[3]?.triggerKind).toBe("daily-time");
+  expect(normalized[1]?.triggerKind).toBe(
+    BatteryStrategyTriggerKind.ExportSurplus,
+  );
+  expect(normalized[2]?.triggerKind).toBe(
+    BatteryStrategyTriggerKind.DelayedCharging,
+  );
+  expect(normalized[3]?.triggerKind).toBe(BatteryStrategyTriggerKind.DailyTime);
 });
 
 test("normalizeBatteryStrategyPlan defaults enabled to true", () => {
@@ -317,7 +369,7 @@ test("normalizeBatteryStrategyPlan defaults enabled to true", () => {
         targetDurationMinutes: null,
         targetEndTime: null,
         targetMethod: "soc",
-        triggerKind: "daily-time",
+        triggerKind: BatteryStrategyTriggerKind.DailyTime,
         strategyMode: "manual",
         manualState: "idle",
         manualPowerW: null,
@@ -330,6 +382,8 @@ test("normalizeBatteryStrategyPlan defaults enabled to true", () => {
 
   expect(normalized[0]?.enabled).toBe(true);
   expect(normalized[1]?.enabled).toBe(true);
+  expect(normalized[2]?.enabled).toBe(false);
+  expect(normalized[3]?.enabled).toBe(true);
 });
 
 test("buildPredictedSolarGenerationSeries uses the current v2 predictor over preceding days", () => {

@@ -4,6 +4,7 @@ import type {
   DynamicPriceTargetEstimate,
 } from "../packages/core/src/index";
 import {
+  BatteryStrategyTriggerKind,
   DEFAULT_DYNAMIC_PRICE_TARGET_EVALUATION_DAYS,
   DEFAULT_MANUAL_STRATEGY_POWER_W,
   DYNAMIC_PRICE_TARGET_BACKUP_RESERVE_MARGIN_PERCENT,
@@ -49,7 +50,7 @@ interface ScriptOptions {
   hasExplicitMarkerTime: boolean;
   minimumSolarSurplusWOverride: number;
   powerW: number;
-  priceSignals: PriceSignal[];
+  strategyTriggerKinds: StrategyTriggerKind[];
   siteId: string | null;
   targetBufferPercentPerHourOverride: number;
   markerTime: string;
@@ -58,10 +59,12 @@ interface ScriptOptions {
 
 interface EvaluationOptions extends ScriptOptions {
   action: Extract<BatteryManualState, "charging" | "discharging">;
-  priceSignal: PriceSignal;
+  strategyTriggerKind: StrategyTriggerKind;
 }
 
-type PriceSignal = "high" | "low";
+type StrategyTriggerKind =
+  | BatteryStrategyTriggerKind.ExportSurplus
+  | BatteryStrategyTriggerKind.DelayedCharging;
 
 type VerboseBlock =
   | "meta"
@@ -99,20 +102,23 @@ interface EvaluationContext {
   minimumSolarSurplusWOverride: number;
   reserveTargetPercent: number;
   referenceTime: Date;
-  priceSignal: PriceSignal;
+  strategyTriggerKind: StrategyTriggerKind;
   siteId: string;
   siteName: string;
   verboseBlocks: Set<VerboseBlock>;
 }
 
-function parseArgs(args: string[]): ScriptOptions {
+export function parseArgs(args: string[]): ScriptOptions {
   let markerDate = getCurrentLocalDate();
   let days = DEFAULT_DAYS;
   let backupReserveMargin = DEFAULT_BACKUP_RESERVE_MARGIN;
   let hasExplicitMarkerTime = false;
   let minimumSolarSurplusWOverride = DEFAULT_MINIMUM_SOLAR_SURPLUS_W;
   let powerW = DEFAULT_POWER_W;
-  let priceSignals: PriceSignal[] = ["high", "low"];
+  let strategyTriggerKinds: StrategyTriggerKind[] = [
+    BatteryStrategyTriggerKind.ExportSurplus,
+    BatteryStrategyTriggerKind.DelayedCharging,
+  ];
   let siteId: string | null = null;
   let targetBufferPercentPerHourOverride =
     DEFAULT_TARGET_BUFFER_PERCENT_PER_HOUR;
@@ -216,11 +222,11 @@ function parseArgs(args: string[]): ScriptOptions {
       continue;
     }
 
-    const priceArg = parseStringArg(args, index, "--price");
+    const strategyArg = parseStringArg(args, index, "--strategy");
 
-    if (priceArg) {
-      priceSignals = parsePriceSignals(priceArg.value);
-      index = priceArg.newIndex;
+    if (strategyArg) {
+      strategyTriggerKinds = parseStrategyTriggerKinds(strategyArg.value);
+      index = strategyArg.newIndex;
       continue;
     }
 
@@ -263,7 +269,7 @@ function parseArgs(args: string[]): ScriptOptions {
     backupReserveMargin,
     hasExplicitMarkerTime,
     powerW,
-    priceSignals,
+    strategyTriggerKinds,
     siteId,
     minimumSolarSurplusWOverride,
     targetBufferPercentPerHourOverride,
@@ -278,7 +284,7 @@ function printHelp(): void {
       "Evaluate the dynamic price target method against recent history.",
       "",
       "Defaults:",
-      "  price: high,low",
+      "  strategy: export-surplus,delayed-charging",
       `  backup reserve margin: ${DEFAULT_BACKUP_RESERVE_MARGIN}%`,
       `  minimum solar surplus: ${DEFAULT_MINIMUM_SOLAR_SURPLUS_W}W`,
       `  backup reserve margin per hour: ${DEFAULT_TARGET_BUFFER_PERCENT_PER_HOUR}%`,
@@ -289,8 +295,8 @@ function printHelp(): void {
       "",
       "Usage:",
       "  bun run dynamic-price-target:evaluate",
-      "  bun run dynamic-price-target:evaluate -- --price=low",
-      "  bun run dynamic-price-target:evaluate -- --price=high,low",
+      "  bun run dynamic-price-target:evaluate -- --strategy=delayed-charging",
+      "  bun run dynamic-price-target:evaluate -- --strategy=export-surplus,delayed-charging",
       "  bun run dynamic-price-target:evaluate -- --marker-date=2026-04-19",
       "  bun run dynamic-price-target:evaluate -- --backup-reserve-margin=2",
       "  bun run dynamic-price-target:evaluate -- --minimum-solar-surplus=75",
@@ -325,14 +331,17 @@ function main() {
     }
 
     for (const site of sites) {
-      for (const priceSignal of options.priceSignals) {
-        const evaluationOptions = createEvaluationOptions(options, priceSignal);
+      for (const strategyTriggerKind of options.strategyTriggerKinds) {
+        const evaluationOptions = createEvaluationOptions(
+          options,
+          strategyTriggerKind,
+        );
 
         if (evaluationOptions.verboseBlocks.has("meta")) {
           console.log(
             evaluationOptions.hasExplicitMarkerTime
-              ? `Estimating synthetic ${formatActionLabel(evaluationOptions.action)} target for ${evaluationOptions.priceSignal} price at ${evaluationOptions.powerW}W for marker ${evaluationOptions.markerDate} ${evaluationOptions.markerTime}.`
-              : `Estimating synthetic ${formatActionLabel(evaluationOptions.action)} target for the next ${evaluationOptions.priceSignal} price marker at ${evaluationOptions.powerW}W.`,
+              ? `Estimating synthetic ${formatActionLabel(evaluationOptions.action)} target for ${formatStrategyTriggerKindLabel(evaluationOptions.strategyTriggerKind)} at ${evaluationOptions.powerW}W for marker ${evaluationOptions.markerDate} ${evaluationOptions.markerTime}.`
+              : `Estimating synthetic ${formatActionLabel(evaluationOptions.action)} target for the next ${formatStrategyTriggerKindLabel(evaluationOptions.strategyTriggerKind)} marker at ${evaluationOptions.powerW}W.`,
           );
         }
 
@@ -346,12 +355,15 @@ function main() {
 
 function createEvaluationOptions(
   options: ScriptOptions,
-  priceSignal: PriceSignal,
+  strategyTriggerKind: StrategyTriggerKind,
 ): EvaluationOptions {
   return {
     ...options,
-    action: priceSignal === "low" ? "charging" : "discharging",
-    priceSignal,
+    action:
+      strategyTriggerKind === BatteryStrategyTriggerKind.DelayedCharging
+        ? "charging"
+        : "discharging",
+    strategyTriggerKind,
   };
 }
 
@@ -465,7 +477,7 @@ function evaluateSite(
       candidateDays,
       dynamicPriceTargetEstimate,
       minimumSolarSurplusWOverride: options.minimumSolarSurplusWOverride,
-      priceSignal: options.priceSignal,
+      strategyTriggerKind: options.strategyTriggerKind,
       reserveTargetPercent,
       referenceTime: estimateAt,
       siteId,
@@ -498,7 +510,10 @@ function createSyntheticPlanItem(input: {
     targetDurationMinutes: null,
     targetEndTime: null,
     targetMethod: "auto",
-    triggerKind: input.action === "charging" ? "low-price" : "high-price",
+    triggerKind:
+      input.action === "charging"
+        ? BatteryStrategyTriggerKind.DelayedCharging
+        : BatteryStrategyTriggerKind.ExportSurplus,
   };
 }
 
@@ -528,7 +543,7 @@ export function resolveEvaluationReferenceTime(input: {
 
   if (input.hasExplicitMarkerTime) {
     if (
-      input.item.triggerKind !== "low-price" ||
+      input.item.triggerKind !== BatteryStrategyTriggerKind.DelayedCharging ||
       input.item.manualState !== "charging"
     ) {
       return fallbackTime;
@@ -671,8 +686,8 @@ function printCurrentEstimateSummary(input: EvaluationContext): void {
     input.dynamicPriceTargetEstimate,
   );
   const summary = input.dynamicPriceTargetEstimate.skipReason
-    ? `${input.siteName} (${input.siteId}) | ${input.battery.name} (${input.batteryId}) | ${formatPriceSignalLabel(input.priceSignal)} ${actionLabel} skipped | ${input.dynamicPriceTargetEstimate.skipReason}`
-    : `${input.siteName} (${input.siteId}) | ${input.battery.name} (${input.batteryId}) | target percentage ${reserveAtTargetPercent}% at ${formatTargetTime(input.dynamicPriceTargetEstimate.targetTime)} | ${formatPriceSignalLabel(input.priceSignal)} ${actionLabel} target ${currentTargetPercent}% start time ${formatReferenceMoment(input.referenceTime)}`;
+    ? `${input.siteName} (${input.siteId}) | ${input.battery.name} (${input.batteryId}) | ${formatStrategyTriggerKindLabel(input.strategyTriggerKind)} ${actionLabel} skipped | ${input.dynamicPriceTargetEstimate.skipReason}`
+    : `${input.siteName} (${input.siteId}) | ${input.battery.name} (${input.batteryId}) | target percentage ${reserveAtTargetPercent}% at ${formatTargetTime(input.dynamicPriceTargetEstimate.targetTime)} | ${formatStrategyTriggerKindLabel(input.strategyTriggerKind)} ${actionLabel} target ${currentTargetPercent}% start time ${formatReferenceMoment(input.referenceTime)}`;
 
   if (input.verboseBlocks.has("current")) {
     console.log("Current estimate:");
@@ -681,7 +696,7 @@ function printCurrentEstimateSummary(input: EvaluationContext): void {
         buildCurrentEstimateRows({
           dynamicPriceTargetEstimate: input.dynamicPriceTargetEstimate,
           minimumSolarSurplusWOverride: input.minimumSolarSurplusWOverride,
-          priceSignal: input.priceSignal,
+          strategyTriggerKind: input.strategyTriggerKind,
           referenceTime: input.referenceTime,
           reserveTargetPercent: input.reserveTargetPercent,
         }),
@@ -777,7 +792,7 @@ function printCurrentEstimateSummary(input: EvaluationContext): void {
 export function buildCurrentEstimateRows(input: {
   dynamicPriceTargetEstimate: DynamicPriceTargetEstimate;
   minimumSolarSurplusWOverride: number;
-  priceSignal: PriceSignal;
+  strategyTriggerKind: StrategyTriggerKind;
   referenceTime: Date;
   reserveTargetPercent: number;
 }): Record<string, string> {
@@ -785,7 +800,7 @@ export function buildCurrentEstimateRows(input: {
     input.dynamicPriceTargetEstimate.resolvedManualState === "charging";
   return {
     Action: formatResolvedActionLabel(input.dynamicPriceTargetEstimate),
-    Price: formatPriceSignalLabel(input.priceSignal),
+    Strategy: formatStrategyTriggerKindLabel(input.strategyTriggerKind),
     "Start time": formatReferenceMoment(input.referenceTime),
     "Minimum solar surplus": formatW(input.minimumSolarSurplusWOverride),
     "Reserve at target": `${getDisplayedReserveAtTargetPercent(input)}%`,
@@ -930,8 +945,10 @@ function formatResolvedActionLabel(
   return estimate.resolvedManualState === "charging" ? "charge" : "discharge";
 }
 
-function formatPriceSignalLabel(priceSignal: PriceSignal): string {
-  return priceSignal === "high" ? "high-price" : "low-price";
+function formatStrategyTriggerKindLabel(
+  strategyTriggerKind: StrategyTriggerKind,
+): string {
+  return strategyTriggerKind;
 }
 
 function getDisplayedTargetPercent(
@@ -941,10 +958,12 @@ function getDisplayedTargetPercent(
   return Math.max(reserveTargetPercent, estimatedTargetPercent);
 }
 
-function parsePriceSignals(value: string | undefined): PriceSignal[] {
+function parseStrategyTriggerKinds(
+  value: string | undefined,
+): StrategyTriggerKind[] {
   if (!value) {
     throw new Error(
-      "--price requires a comma-separated list of 'high' and/or 'low'.",
+      "--strategy requires a comma-separated list of 'export-surplus' and/or 'delayed-charging'.",
     );
   }
 
@@ -954,22 +973,26 @@ function parsePriceSignals(value: string | undefined): PriceSignal[] {
     .filter((entry) => entry.length > 0);
 
   const invalidEntries = entries.filter(
-    (entry) => entry !== "high" && entry !== "low",
+    (entry) =>
+      entry !== BatteryStrategyTriggerKind.ExportSurplus &&
+      entry !== BatteryStrategyTriggerKind.DelayedCharging,
   );
 
   if (invalidEntries.length > 0) {
     throw new Error(
-      `--price only accepts 'high' and 'low'; received: ${invalidEntries.join(", ")}.`,
+      `--strategy only accepts 'export-surplus' and 'delayed-charging'; received: ${invalidEntries.join(", ")}.`,
     );
   }
 
-  const signals = entries as PriceSignal[];
+  const strategyTriggerKinds = entries as StrategyTriggerKind[];
 
-  if (signals.length === 0) {
-    throw new Error("--price must contain one or both of: high, low.");
+  if (strategyTriggerKinds.length === 0) {
+    throw new Error(
+      "--strategy must contain one or both of: export-surplus, delayed-charging.",
+    );
   }
 
-  return [...new Set(signals)];
+  return [...new Set(strategyTriggerKinds)];
 }
 
 function parseBackupReserveMargin(value: string | undefined): number {

@@ -17,6 +17,11 @@ This repository currently contains an initial runnable scaffold:
 - The web app is placeholder-only for now.
 - The daemon enforces a single running instance by taking a runtime lock in `var/run/emsd.lock`.
 
+## Documentation
+
+- Battery strategy docs live in `docs/strategies/README.md`, with one page per built-in strategy type.
+- The shared `targetMethod: auto` estimator is documented in `docs/dynamic-price-target.md`.
+
 ## Requirements
 
 - Bun
@@ -92,7 +97,7 @@ bun run dynamic-price-target:evaluate
 ```
 
 - `bun run solar-prediction:evaluate` evaluates the solar prediction algorithm used by the daemon and UI against local forecast and production history.
-- `bun run dynamic-price-target:evaluate` evaluates the dynamic price target method used by the daemon for high/low price battery strategy items.
+- `bun run dynamic-price-target:evaluate` evaluates the dynamic price target method used by the daemon for export-surplus and delayed-charging battery strategy items.
 
 ### Daemon
 

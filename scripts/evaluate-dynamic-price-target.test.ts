@@ -1,18 +1,36 @@
 import { expect, test } from "bun:test";
-import type {
-  BatteryStrategyPlanItem,
-  DynamicPriceSampleRecord,
-  DynamicPriceTargetEstimate,
+import {
+  BatteryStrategyTriggerKind,
+  type BatteryStrategyPlanItem,
+  type DynamicPriceSampleRecord,
+  type DynamicPriceTargetEstimate,
 } from "../packages/core/src/index";
 import {
   buildCurrentEstimateRows,
   buildEnergyBucketRows,
   buildEnergyEstimateRows,
   createReplayTime,
+  parseArgs,
   resolveEvaluationReferenceTime,
 } from "./evaluate-dynamic-price-target";
 
-test("resolveEvaluationReferenceTime keeps the explicit marker time for high-price items", () => {
+test("parseArgs accepts --strategy for export-surplus and delayed-charging", () => {
+  expect(
+    parseArgs(["--strategy=export-surplus,delayed-charging"])
+      .strategyTriggerKinds,
+  ).toEqual([
+    "export-surplus",
+    "delayed-charging",
+  ]);
+});
+
+test("parseArgs rejects unknown strategy names", () => {
+  expect(() => parseArgs(["--strategy=high"])).toThrow(
+    "--strategy only accepts 'export-surplus' and 'delayed-charging'; received: high.",
+  );
+});
+
+test("resolveEvaluationReferenceTime keeps the explicit marker time for export-surplus items", () => {
   expect(
     resolveEvaluationReferenceTime({
       markerDate: "2026-04-19",
@@ -24,7 +42,7 @@ test("resolveEvaluationReferenceTime keeps the explicit marker time for high-pri
   ).toBe(createReplayTime("2026-04-19", "17:30").toISOString());
 });
 
-test("resolveEvaluationReferenceTime uses the paired pre-discharge trigger for explicit low-price markers", () => {
+test("resolveEvaluationReferenceTime uses the paired pre-discharge trigger for explicit delayed-charging markers", () => {
   expect(
     resolveEvaluationReferenceTime({
       markerDate: "2026-04-19",
@@ -41,7 +59,7 @@ test("resolveEvaluationReferenceTime uses the paired pre-discharge trigger for e
   ).toBe("2026-04-19T06:00:00.000Z");
 });
 
-test("resolveEvaluationReferenceTime uses the next high-price marker by default", () => {
+test("resolveEvaluationReferenceTime uses the next export-surplus marker by default", () => {
   expect(
     resolveEvaluationReferenceTime({
       markerDate: "2026-04-19",
@@ -57,7 +75,7 @@ test("resolveEvaluationReferenceTime uses the next high-price marker by default"
   ).toBe("2026-04-19T08:00:00.000Z");
 });
 
-test("resolveEvaluationReferenceTime uses the next low-price auto trigger by default", () => {
+test("resolveEvaluationReferenceTime uses the next delayed-charging auto trigger by default", () => {
   expect(
     resolveEvaluationReferenceTime({
       markerDate: "2026-04-19",
@@ -82,13 +100,13 @@ test("buildCurrentEstimateRows shows start time and start-based duration", () =>
       batteryMinimumDischargePercent: 10,
       dynamicPriceTargetEstimate: createEstimate(),
       minimumSolarSurplusWOverride: 50,
-      priceSignal: "high",
+      strategyTriggerKind: "export-surplus",
       referenceTime,
       reserveTargetPercent: 12,
     }),
   ).toEqual({
     Action: "discharge",
-    Price: "high-price",
+    Strategy: "export-surplus",
     "Start time": "2026-04-21 19:45",
     "Minimum solar surplus": "50 W",
     "Reserve at target": "18%",
@@ -186,19 +204,19 @@ test("buildEnergyBucketRows formats cumulative energy buckets", () => {
 function createHighPriceItem(): BatteryStrategyPlanItem {
   return {
     ...createLowPriceAutoItem(),
-    id: "high-price-item",
+    id: "export-surplus-item",
     manualChargeTargetSoc: null,
     manualDischargeTargetSoc: 10,
     manualState: "discharging",
     manualTargetSoc: 10,
-    triggerKind: "high-price",
+    triggerKind: BatteryStrategyTriggerKind.ExportSurplus,
   };
 }
 
 function createLowPriceAutoItem(): BatteryStrategyPlanItem {
   return {
     enabled: true,
-    id: "low-price-item",
+    id: "delayed-charging-item",
     kind: "daily",
     manualChargeTargetSoc: 100,
     manualDischargeTargetSoc: null,
@@ -210,7 +228,7 @@ function createLowPriceAutoItem(): BatteryStrategyPlanItem {
     targetDurationMinutes: null,
     targetEndTime: null,
     targetMethod: "auto",
-    triggerKind: "low-price",
+    triggerKind: BatteryStrategyTriggerKind.DelayedCharging,
   };
 }
 
@@ -251,6 +269,6 @@ function createEstimate(): DynamicPriceTargetEstimate {
       recoveryThresholdW: 250,
     },
     warning: null,
-    windowKind: "evening-high-price",
+    windowKind: "evening-export-surplus",
   };
 }

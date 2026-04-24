@@ -1,6 +1,7 @@
 import {
-  LOW_PRICE_CHARGE_MIN_SITE_SOLAR_POWER_W,
-  isLowPriceAutoDischargeItem,
+  DELAYED_CHARGING_MIN_SITE_SOLAR_POWER_W,
+  BatteryStrategyTriggerKind,
+  isDelayedChargingAutoDischargeItem,
   type BatteryStrategyPlanItem,
   type ManagedDeviceTelemetryRecord,
 } from "@emsd/core";
@@ -32,19 +33,22 @@ export function getScheduledStartSkipReason(input: {
   siteCurrentSolarPowerW: number | null;
 }): string | null {
   if (
-    input.item.triggerKind !== "low-price" ||
+    input.item.triggerKind !== BatteryStrategyTriggerKind.DelayedCharging ||
     input.item.manualState !== "charging" ||
-    isLowPriceAutoDischargeItem(input.item)
+    isDelayedChargingAutoDischargeItem(input.item)
   ) {
     return null;
   }
 
   if (input.siteCurrentSolarPowerW === null) {
-    return `skipped: site solar unavailable (need >${LOW_PRICE_CHARGE_MIN_SITE_SOLAR_POWER_W}W)`;
+    return `skipped: site solar unavailable (need >${DELAYED_CHARGING_MIN_SITE_SOLAR_POWER_W}W)`;
   }
 
-  if (input.siteCurrentSolarPowerW <= LOW_PRICE_CHARGE_MIN_SITE_SOLAR_POWER_W) {
-    return `skipped: site solar ${Math.round(input.siteCurrentSolarPowerW)}W below ${LOW_PRICE_CHARGE_MIN_SITE_SOLAR_POWER_W}W`;
+  if (
+    input.siteCurrentSolarPowerW <=
+    DELAYED_CHARGING_MIN_SITE_SOLAR_POWER_W
+  ) {
+    return `skipped: site solar ${Math.round(input.siteCurrentSolarPowerW)}W below ${DELAYED_CHARGING_MIN_SITE_SOLAR_POWER_W}W`;
   }
 
   return null;

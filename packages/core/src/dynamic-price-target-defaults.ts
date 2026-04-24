@@ -22,14 +22,14 @@ export const DYNAMIC_PRICE_TARGET_SOC_DIRECTION_EPSILON_PERCENT = 0.05;
 /** Default manual discharge/charge power in watts. */
 export const DEFAULT_MANUAL_STRATEGY_POWER_W = 2400;
 
-/** Minimum current site solar production required to start low-price charging. */
-export const LOW_PRICE_CHARGE_MIN_SITE_SOLAR_POWER_W = 500;
+/** Minimum current site solar production required to start delayed charging. */
+export const DELAYED_CHARGING_MIN_SITE_SOLAR_POWER_W = 500;
 
 /** Fixed backup reserve margin used by live dynamic price targeting. */
 export const DYNAMIC_PRICE_TARGET_BACKUP_RESERVE_MARGIN_PERCENT = 1;
 
 /**
  * Target buffer percentage per hour until target time.
- * For high-price windows: hoursUntilTarget * this value, rounded to nearest whole percent.
+ * For export-surplus windows: hoursUntilTarget * this value, rounded to nearest whole percent.
  */
 export const DYNAMIC_PRICE_TARGET_BUFFER_PERCENT_PER_HOUR = 0.2;

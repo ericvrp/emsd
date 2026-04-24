@@ -2,7 +2,14 @@
 
 ## Algorithms
 
-- `dynamic-price-target.md`: daemon-owned dynamic price target method and evaluation flow
+- `dynamic-price-target.md`: daemon-owned dynamic target estimator used by `targetMethod: auto`
+
+## Strategies
+
+- `strategies/README.md`: overview of built-in battery strategy types and their status
+- `strategies/self-consumption.md`: default fallback strategy
+- `strategies/export-surplus.md`: built-in export-surplus rule
+- `strategies/delayed-charging.md`: delayed-charging rule status and implementation notes
 
 ## Plugins
 

@@ -1,12 +1,17 @@
 import { mkdirSync } from "node:fs";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  BATTERY_STRATEGY_FIXED_ITEM_COUNT,
+  BatteryStrategyTriggerKind,
+} from "./battery-strategy-shared";
 
 export * from "./cli-args";
 export * from "./score-script-defaults";
 export * from "./dynamic-price-target-defaults";
 export * from "./dynamic-price-target-reserve";
 export * from "./battery-strategy";
+export * from "./battery-strategy-shared";
 export * from "./site-load";
 export { deriveBatteryStatusFromPower } from "./battery-power";
 export * from "./price-selection";
@@ -45,11 +50,6 @@ export type BatteryStrategyTargetMethod =
   | "duration"
   | "end-time"
   | "auto";
-
-export type BatteryStrategyTriggerKind =
-  | "daily-time"
-  | "low-price"
-  | "high-price";
 
 export interface BatteryStrategyPlanItem extends BatteryStrategyRecord {
   enabled: boolean;
@@ -467,25 +467,9 @@ export function createDefaultBatteryStrategyPlan(
   minimumDischargePercent: number,
 ): BatteryStrategyPlanRecord {
   return [
-    {
-      enabled: true,
-      id: createBatteryStrategyPlanId(),
-      kind: "default",
-      startTime: null,
-      targetDurationMinutes: null,
-      targetEndTime: null,
-      targetMethod: null,
-      triggerKind: null,
-      strategyMode:
-        strategy.strategyMode === "self-consumption"
-          ? "self-consumption"
-          : "manual",
-      manualState: strategy.strategyMode === "self-consumption" ? null : "idle",
-      manualPowerW: null,
-      manualChargeTargetSoc: 100,
-      manualDischargeTargetSoc: minimumDischargePercent,
-      manualTargetSoc: 100,
-    },
+    createAutomaticBatteryStrategyPlanItem(strategy, minimumDischargePercent),
+    createExportSurplusBatteryStrategyPlanItem(),
+    createDelayedChargingBatteryStrategyPlanItem(),
   ];
 }
 
@@ -529,32 +513,67 @@ export function normalizeBatteryStrategyPlan(input: {
     targetEndTime: null,
     targetMethod: null,
     triggerKind: null,
-    strategyMode:
-      firstItem.strategyMode === "self-consumption"
-        ? "self-consumption"
-        : "manual",
-    manualState: firstItem.strategyMode === "self-consumption" ? null : "idle",
+    strategyMode: "self-consumption",
+    manualState: null,
     manualPowerW: null,
+    manualChargeTargetSoc: 100,
+    manualDischargeTargetSoc: input.minimumDischargePercent,
+    manualTargetSoc: 100,
   };
 
-  const normalizedRestItems = restItems.map((item) => ({
-    ...item,
-    kind: "daily" as const,
-    startTime: isDailyStartTime(item.startTime) ? item.startTime : "08:00",
-    triggerKind: normalizeTriggerKind(item.triggerKind) ?? "daily-time",
-    targetMethod: normalizeTargetMethod(item.targetMethod),
-    targetDurationMinutes:
-      normalizeTargetMethod(item.targetMethod) === "duration"
-        ? normalizeTargetDurationMinutes(item.targetDurationMinutes)
-        : null,
-    targetEndTime:
-      normalizeTargetMethod(item.targetMethod) === "end-time" &&
-      isDailyStartTime(item.targetEndTime)
-        ? item.targetEndTime
-        : null,
-  }));
+  const exportSurplusSourceIndex = restItems.findIndex(
+    (item) => item.triggerKind === BatteryStrategyTriggerKind.ExportSurplus,
+  );
+  const exportSurplusSource =
+    exportSurplusSourceIndex === -1
+      ? null
+      : (restItems[exportSurplusSourceIndex] ?? null);
+  const delayedChargingSourceIndex = restItems.findIndex(
+    (item, index) =>
+      index !== exportSurplusSourceIndex &&
+      item.triggerKind === BatteryStrategyTriggerKind.DelayedCharging,
+  );
+  const delayedChargingSource =
+    delayedChargingSourceIndex === -1
+      ? null
+      : (restItems[delayedChargingSourceIndex] ?? null);
+  const normalizedFixedItems = [
+    normalizeFixedBatteryStrategyPlanItem({
+      fallback: fallback[1] ?? createExportSurplusBatteryStrategyPlanItem(),
+      value: exportSurplusSource,
+    }),
+    normalizeFixedBatteryStrategyPlanItem({
+      fallback: fallback[2] ?? createDelayedChargingBatteryStrategyPlanItem(),
+      value: delayedChargingSource,
+    }),
+  ];
 
-  return [normalizedFirstItem, ...normalizedRestItems];
+  const normalizedRestItems = restItems
+    .map((item) => ({
+      ...item,
+      kind: "daily" as const,
+      startTime: isDailyStartTime(item.startTime) ? item.startTime : "08:00",
+      triggerKind:
+        normalizeTriggerKind(item.triggerKind) ??
+        BatteryStrategyTriggerKind.DailyTime,
+      targetMethod: normalizeTargetMethod(item.targetMethod),
+      targetDurationMinutes:
+        normalizeTargetMethod(item.targetMethod) === "duration"
+          ? normalizeTargetDurationMinutes(item.targetDurationMinutes)
+          : null,
+      targetEndTime:
+        normalizeTargetMethod(item.targetMethod) === "end-time" &&
+        isDailyStartTime(item.targetEndTime)
+          ? item.targetEndTime
+          : null,
+    }))
+    .filter(
+      (_, index) =>
+        index !== exportSurplusSourceIndex &&
+        index !== delayedChargingSourceIndex,
+    );
+
+  return [normalizedFirstItem, ...normalizedFixedItems, ...normalizedRestItems];
 }
 
 export function parseBatteryStrategyPlanJson(input: {
@@ -705,7 +724,7 @@ function getBatteryStrategyPlanTriggerAt(
 ): Date | null {
   if (
     item.kind !== "daily" ||
-    item.triggerKind !== "daily-time" ||
+    item.triggerKind !== BatteryStrategyTriggerKind.DailyTime ||
     !isDailyStartTime(item.startTime)
   ) {
     return null;
@@ -834,13 +853,107 @@ function normalizeTargetMethod(
 }
 
 function normalizeTriggerKind(
-  value: BatteryStrategyPlanItem["triggerKind"] | undefined,
+  value: unknown,
 ): BatteryStrategyTriggerKind | null {
-  return value === "daily-time" ||
-    value === "low-price" ||
-    value === "high-price"
-    ? value
-    : null;
+  if (value === BatteryStrategyTriggerKind.DailyTime) {
+    return BatteryStrategyTriggerKind.DailyTime;
+  }
+
+  if (value === BatteryStrategyTriggerKind.DelayedCharging) {
+    return BatteryStrategyTriggerKind.DelayedCharging;
+  }
+
+  if (value === BatteryStrategyTriggerKind.ExportSurplus) {
+    return BatteryStrategyTriggerKind.ExportSurplus;
+  }
+
+  return null;
+}
+
+function createAutomaticBatteryStrategyPlanItem(
+  strategy: BatteryStrategyRecord,
+  minimumDischargePercent: number,
+): BatteryStrategyPlanItem {
+  void strategy;
+
+  return {
+    enabled: true,
+    id: createBatteryStrategyPlanId(),
+    kind: "default",
+    startTime: null,
+    targetDurationMinutes: null,
+    targetEndTime: null,
+    targetMethod: null,
+    triggerKind: null,
+    strategyMode: "self-consumption",
+    manualState: null,
+    manualPowerW: null,
+    manualChargeTargetSoc: 100,
+    manualDischargeTargetSoc: minimumDischargePercent,
+    manualTargetSoc: 100,
+  };
+}
+
+function createExportSurplusBatteryStrategyPlanItem(): BatteryStrategyPlanItem {
+  return {
+    enabled: true,
+    id: createBatteryStrategyPlanId(),
+    kind: "daily",
+    startTime: null,
+    targetDurationMinutes: null,
+    targetEndTime: null,
+    targetMethod: "auto",
+    triggerKind: BatteryStrategyTriggerKind.ExportSurplus,
+    strategyMode: "manual",
+    manualState: "discharging",
+    manualPowerW: null,
+    manualChargeTargetSoc: null,
+    manualDischargeTargetSoc: null,
+    manualTargetSoc: null,
+  };
+}
+
+function createDelayedChargingBatteryStrategyPlanItem(): BatteryStrategyPlanItem {
+  return {
+    enabled: false,
+    id: createBatteryStrategyPlanId(),
+    kind: "daily",
+    startTime: null,
+    targetDurationMinutes: null,
+    targetEndTime: null,
+    targetMethod: "auto",
+    triggerKind: BatteryStrategyTriggerKind.DelayedCharging,
+    strategyMode: "manual",
+    manualState: "charging",
+    manualPowerW: null,
+    manualChargeTargetSoc: null,
+    manualDischargeTargetSoc: null,
+    manualTargetSoc: null,
+  };
+}
+
+function normalizeFixedBatteryStrategyPlanItem(input: {
+  fallback: BatteryStrategyPlanItem;
+  value: BatteryStrategyPlanItem | null;
+}): BatteryStrategyPlanItem {
+  const source = input.value ?? input.fallback;
+
+  return {
+    ...source,
+    enabled: input.value?.enabled ?? input.fallback.enabled,
+    kind: "daily",
+    startTime: null,
+    targetDurationMinutes: null,
+    targetEndTime: null,
+    targetMethod: "auto",
+    triggerKind: input.fallback.triggerKind,
+    strategyMode: "manual",
+    manualState: input.fallback.manualState,
+    manualPowerW: null,
+    manualChargeTargetSoc: null,
+    manualDischargeTargetSoc: null,
+    manualTargetSoc: null,
+  };
 }
 
 function normalizeTargetDurationMinutes(value: unknown): number | null {

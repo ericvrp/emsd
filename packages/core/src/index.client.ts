@@ -1,6 +1,7 @@
 export * from "./price-selection";
 export * from "./solar-prediction";
 export * from "./solar-prediction-smoothing";
+export * from "./battery-strategy-shared";
 export { deriveBatteryStatusFromPower } from "./battery-power";
 
 export type {
@@ -14,7 +15,6 @@ export type {
   BatteryStrategyPlanRecord,
   BatteryStrategyPlanItemKind,
   BatteryStrategyTargetMethod,
-  BatteryStrategyTriggerKind,
   BatteryStrategyMode,
   BatteryManualState,
   NormalizedBatteryInfo,

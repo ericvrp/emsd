@@ -1,4 +1,5 @@
 import {
+  BatteryStrategyTriggerKind,
   DEFAULT_SOLAR_PREDICTION_SMOOTHING_MODE,
   calculateDynamicReserveFloorPercent,
   DYNAMIC_PRICE_TARGET_BUFFER_PERCENT_PER_HOUR,
@@ -8,7 +9,7 @@ import {
   buildExpectedSiteLoadProfile,
   buildHouseLoadHistorySeries,
   buildPredictedSolarGenerationSeries,
-  isLowPriceAutoDischargeItem,
+  isDelayedChargingAutoDischargeItem,
   resolveExpectedSiteLoadW,
   type BatteryPowerSampleRecord,
   type BatteryRecord,
@@ -58,7 +59,7 @@ export interface DynamicPriceTargetEstimate {
     predictedSolarW: number | null;
     recoveryThresholdW: number | null;
   } | null;
-  windowKind: "general" | "morning-high-price" | "evening-high-price";
+  windowKind: "general" | "morning-export-surplus" | "evening-export-surplus";
 }
 
 interface LoadProfile {
@@ -156,7 +157,8 @@ export function estimateDynamicPriceTarget(input: {
     historicalPeriodsUsed: sharedLoadProfile.historicalPeriodsUsed,
     sameWeekdayPeriodsUsed: sharedLoadProfile.sameWeekdayPeriodsUsed,
   };
-  const isLowPriceAutoDischarge = isLowPriceAutoDischargeItem(input.item);
+  const isDelayedChargingAutoDischarge =
+    isDelayedChargingAutoDischargeItem(input.item);
   const windowKind = getWindowKind(input.item, input.now);
   const solarRecoverySignal = findSolarRecoveryTime({
     minimumSolarSurplusW:
@@ -165,9 +167,9 @@ export function estimateDynamicPriceTarget(input: {
     predictedSeries,
     loadProfile,
   });
-  const lowPriceMarkerTime = isLowPriceAutoDischarge
+  const lowPriceMarkerTime = isDelayedChargingAutoDischarge
     ? getNextPriceMarkerTriggerAt({
-        triggerKind: "low-price",
+        triggerKind: BatteryStrategyTriggerKind.DelayedCharging,
         now: input.now,
         dynamicPriceSamples: input.dynamicPriceSamples,
       })
@@ -189,7 +191,7 @@ export function estimateDynamicPriceTarget(input: {
     solarForecastSamples: input.solarForecastSamples,
     targetTime,
   });
-  const skipReason = isLowPriceAutoDischarge
+  const skipReason = isDelayedChargingAutoDischarge
     ? getLowPriceAutoDischargeSkipReason({
         batteryId: input.battery.id,
         itemId: input.item.id,
@@ -217,7 +219,7 @@ export function estimateDynamicPriceTarget(input: {
       predictedSolarGenerationWh: 0,
       reasoning: "battery capacity is unavailable",
       targetTime: targetTime?.toISOString() ?? fallbackTargetTime,
-      targetTimeSignal: isLowPriceAutoDischarge
+      targetTimeSignal: isDelayedChargingAutoDischarge
         ? targetTimeSignal
         : serializeSolarRecoverySignal(solarRecoverySignal),
       warning: null,
@@ -244,7 +246,7 @@ export function estimateDynamicPriceTarget(input: {
       predictedSolarGenerationWh: 0,
       reasoning: "no target horizon could be determined",
       targetTime: fallbackTargetTime,
-      targetTimeSignal: isLowPriceAutoDischarge
+      targetTimeSignal: isDelayedChargingAutoDischarge
         ? targetTimeSignal
         : serializeSolarRecoverySignal(solarRecoverySignal),
       warning: null,
@@ -378,10 +380,10 @@ export function estimateDynamicPriceTarget(input: {
       expectedLoadBySlot: loadProfile.expectedLoadBySlot,
       predictedSolarGenerationWh,
       solarRecoveryTime: solarRecoverySignal?.time ?? null,
-      useLowPriceMarker: isLowPriceAutoDischarge,
+      useLowPriceMarker: isDelayedChargingAutoDischarge,
     }),
     targetTime: targetTime.toISOString(),
-    targetTimeSignal: isLowPriceAutoDischarge
+    targetTimeSignal: isDelayedChargingAutoDischarge
       ? targetTimeSignal
       : serializeSolarRecoverySignal(solarRecoverySignal),
     historyStats: {
@@ -589,7 +591,7 @@ function getLowPriceAutoDischargeSkipReason(input: {
   targetTimeSignal: DynamicPriceTargetEstimate["targetTimeSignal"];
 }): string | null {
   if (input.targetTime === null) {
-    return `skipped: no low-price marker resolved for item ${input.itemId}`;
+    return `skipped: no delayed charging marker resolved for item ${input.itemId}`;
   }
 
   if (input.targetTimeSignal?.predictedSolarW === null) {
@@ -642,8 +644,8 @@ function resolveTargetTime(input: {
     return endAt;
   }
 
-  if (input.item.triggerKind === "high-price") {
-    if (input.windowKind === "evening-high-price") {
+  if (input.item.triggerKind === BatteryStrategyTriggerKind.ExportSurplus) {
+    if (input.windowKind === "evening-export-surplus") {
       return input.solarRecoveryTime ?? nextMorningFallback(input.now);
     }
 
@@ -654,11 +656,11 @@ function resolveTargetTime(input: {
     );
   }
 
-  if (isLowPriceAutoDischargeItem(input.item)) {
+  if (isDelayedChargingAutoDischargeItem(input.item)) {
     return input.lowPriceMarkerTime;
   }
 
-  if (input.item.triggerKind === "low-price") {
+  if (input.item.triggerKind === BatteryStrategyTriggerKind.DelayedCharging) {
     return nextScheduleBoundary ?? endOfDay(input.now);
   }
 
@@ -770,7 +772,7 @@ function buildReasoning(input: {
   const parts = [] as string[];
 
   if (input.useLowPriceMarker) {
-    parts.push("expected demand until the low-price marker");
+    parts.push("expected demand until the delayed charging marker");
   } else if (input.solarRecoveryTime !== null) {
     parts.push("expected demand until solar recovery");
   } else {
@@ -797,24 +799,31 @@ function buildReasoning(input: {
 }
 
 function shouldUseDynamicReserveFloor(item: BatteryStrategyPlanItem): boolean {
-  return item.triggerKind === "high-price" || isLowPriceAutoDischargeItem(item);
+  return (
+    item.triggerKind === BatteryStrategyTriggerKind.ExportSurplus ||
+    isDelayedChargingAutoDischargeItem(item)
+  );
 }
 
 function resolveDynamicEstimateManualState(
   item: BatteryStrategyPlanItem,
 ): BatteryStrategyPlanItem["manualState"] {
-  return isLowPriceAutoDischargeItem(item) ? "discharging" : item.manualState;
+  return isDelayedChargingAutoDischargeItem(item)
+    ? "discharging"
+    : item.manualState;
 }
 
 function getWindowKind(
   item: BatteryStrategyPlanItem,
   now: Date,
 ): DynamicPriceTargetEstimate["windowKind"] {
-  if (item.triggerKind !== "high-price") {
+  if (item.triggerKind !== BatteryStrategyTriggerKind.ExportSurplus) {
     return "general";
   }
 
-  return now.getHours() >= 15 ? "evening-high-price" : "morning-high-price";
+  return now.getHours() >= 15
+    ? "evening-export-surplus"
+    : "morning-export-surplus";
 }
 
 function resolvePeriodHours(samples: SolarForecastSampleRecord[]): number {

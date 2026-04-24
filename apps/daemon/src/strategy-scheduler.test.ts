@@ -1,9 +1,10 @@
 import { expect, test } from "bun:test";
-import type {
-  BatteryRecord,
-  BatteryStrategyPlanItem,
-  DynamicPriceSampleRecord,
-  NormalizedBatteryInfo,
+import {
+  BatteryStrategyTriggerKind,
+  type BatteryRecord,
+  type BatteryStrategyPlanItem,
+  type DynamicPriceSampleRecord,
+  type NormalizedBatteryInfo,
 } from "@emsd/core";
 import {
   formatDaemonLogTimestamp,
@@ -38,7 +39,7 @@ test("getTodayTriggerAt keeps the configured local clock time", () => {
   expect(triggerAt?.getMinutes()).toBe(0);
 });
 
-test("getStrategyTriggerAt uses the latest due low and high price markers for today", () => {
+test("getStrategyTriggerAt uses the latest due delayed-charging and export-surplus markers for today", () => {
   const now = new Date("2026-04-09T14:30:00.000Z");
   const dynamicPriceSamples = createDynamicPriceSamples([
     ["2026-04-09T00:00:00.000Z", 20],
@@ -49,12 +50,16 @@ test("getStrategyTriggerAt uses the latest due low and high price markers for to
   ]);
 
   const lowPriceTriggerAt = getStrategyTriggerAt({
-    item: createDailyItem({ triggerKind: "low-price" }),
+    item: createDailyItem({
+      triggerKind: BatteryStrategyTriggerKind.DelayedCharging,
+    }),
     now,
     dynamicPriceSamples,
   });
   const highPriceTriggerAt = getStrategyTriggerAt({
-    item: createDailyItem({ triggerKind: "high-price" }),
+    item: createDailyItem({
+      triggerKind: BatteryStrategyTriggerKind.ExportSurplus,
+    }),
     now,
     dynamicPriceSamples,
   });
@@ -65,7 +70,9 @@ test("getStrategyTriggerAt uses the latest due low and high price markers for to
 
 test("getStrategyTriggerAt returns the next upcoming price marker when none are due yet", () => {
   const triggerAt = getStrategyTriggerAt({
-    item: createDailyItem({ triggerKind: "low-price" }),
+    item: createDailyItem({
+      triggerKind: BatteryStrategyTriggerKind.DelayedCharging,
+    }),
     now: new Date("2026-04-09T01:00:00.000Z"),
     dynamicPriceSamples: createDynamicPriceSamples([
       ["2026-04-09T00:00:00.000Z", 20],
@@ -77,11 +84,11 @@ test("getStrategyTriggerAt returns the next upcoming price marker when none are 
   expect(triggerAt?.toISOString()).toBe("2026-04-09T04:00:00.000Z");
 });
 
-test("getStrategyTriggerAt uses the preceding high-price marker for low-price auto items", () => {
+test("getStrategyTriggerAt uses the preceding export-surplus marker for delayed-charging auto items", () => {
   const item = createDailyItem({
     manualState: "charging",
     targetMethod: "auto",
-    triggerKind: "low-price",
+    triggerKind: BatteryStrategyTriggerKind.DelayedCharging,
   });
   const dynamicPriceSamples = createDynamicPriceSamples([
     ["2026-04-09T00:00:00.000Z", 20],
@@ -104,7 +111,7 @@ test("getStrategyTriggerAt uses the preceding high-price marker for low-price au
   ).toBeNull();
 });
 
-test("getLowPriceAutoTriggerAtForMarker returns the preceding high-price marker", () => {
+test("getLowPriceAutoTriggerAtForMarker returns the preceding export-surplus marker", () => {
   expect(
     getLowPriceAutoTriggerAtForMarker({
       markerAt: new Date("2026-04-09T16:00:00.000Z"),
@@ -188,12 +195,12 @@ test("shouldCompleteScheduledItem uses the computed dynamic target while an auto
   ).toBe(true);
 });
 
-test("shouldMarkScheduledItemObserved uses the resolved runtime state for low-price auto items", () => {
+test("shouldMarkScheduledItemObserved uses the resolved runtime state for delayed-charging auto items", () => {
   const item = createDailyItem({
     id: "daily-1",
     manualState: "charging",
     targetMethod: "auto",
-    triggerKind: "low-price",
+    triggerKind: BatteryStrategyTriggerKind.DelayedCharging,
   });
 
   expect(
@@ -536,7 +543,9 @@ test("shouldSkipDelayedSocItemBecauseLaterItemIsDue keeps same-time items in arr
 });
 
 test("shouldSkipScheduledItem expires price-triggered items after 30 minutes", () => {
-  const item = createDailyItem({ triggerKind: "high-price" });
+  const item = createDailyItem({
+    triggerKind: BatteryStrategyTriggerKind.ExportSurplus,
+  });
   const triggerAt = new Date("2026-04-09T10:00:00.000Z");
 
   expect(
@@ -601,7 +610,7 @@ function createDailyItem(
     targetDurationMinutes: null,
     targetEndTime: null,
     targetMethod: "soc",
-    triggerKind: "daily-time",
+    triggerKind: BatteryStrategyTriggerKind.DailyTime,
     strategyMode: "manual",
     manualState: "discharging",
     manualPowerW: 2400,

@@ -3,6 +3,7 @@ import type {
   BatteryStrategyPlanItem,
   BatteryStrategyTargetMethod,
 } from "@emsd/core/client";
+import { BatteryStrategyTriggerKind } from "@emsd/core/client";
 
 export type StrategyAction = "self-consumption" | BatteryManualState;
 
@@ -51,7 +52,9 @@ export function applyStrategyAction(
           ? (item.manualDischargeTargetSoc ?? minimumDischargePercent)
           : (item.manualChargeTargetSoc ?? 100),
     triggerKind:
-      item.kind === "daily" ? (item.triggerKind ?? "daily-time") : null,
+      item.kind === "daily"
+        ? (item.triggerKind ?? BatteryStrategyTriggerKind.DailyTime)
+        : null,
     targetDurationMinutes:
       getPersistedTargetMethod(item) === "duration"
         ? (item.targetDurationMinutes ?? null)

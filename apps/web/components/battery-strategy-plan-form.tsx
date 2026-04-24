@@ -4,24 +4,26 @@ import type {
   BatteryStrategyPlanItem,
   BatteryStrategyPlanRecord,
   BatteryStrategyTargetMethod,
+} from "@emsd/core/client";
+import {
+  BATTERY_STRATEGY_FIXED_ITEM_COUNT,
+  BatteryStrategyBuiltinItemKey,
   BatteryStrategyTriggerKind,
+  formatBatteryStrategyBuiltinItemLabel,
+  formatBatteryStrategyTriggerKindLabel,
+  getBatteryStrategyBuiltinItemKey,
 } from "@emsd/core/client";
 import {
   ArrowDown,
   ArrowUp,
-  Battery,
-  BatteryCharging,
-  BatteryIcon,
   Plus,
   Save,
   ToggleLeft,
   ToggleRight,
   Trash2,
-  Zap,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { setHouseStrategyPlanAction } from "../app/actions";
-import { UI_STYLES } from "../lib/ui-colors";
 import {
   applyStrategyAction,
   type StrategyAction,
@@ -87,6 +89,8 @@ export function BatteryStrategyPlanForm({
     };
   }, [pendingDeleteItemId]);
 
+  const scheduledItems = items.slice(BATTERY_STRATEGY_FIXED_ITEM_COUNT);
+
   function updateItem(
     itemId: string,
     updater: (item: BatteryStrategyPlanItem) => BatteryStrategyPlanItem,
@@ -112,13 +116,16 @@ export function BatteryStrategyPlanForm({
     setItems((currentItems) => {
       const index = currentItems.findIndex((item) => item.id === itemId);
 
-      if (index < 1) {
+      if (index < BATTERY_STRATEGY_FIXED_ITEM_COUNT) {
         return currentItems;
       }
 
       const nextIndex = index + direction;
 
-      if (nextIndex < 1 || nextIndex >= currentItems.length) {
+      if (
+        nextIndex < BATTERY_STRATEGY_FIXED_ITEM_COUNT ||
+        nextIndex >= currentItems.length
+      ) {
         return currentItems;
       }
 
@@ -153,307 +160,356 @@ export function BatteryStrategyPlanForm({
         value={JSON.stringify(items)}
       />
 
-      <div className="overflow-x-auto rounded-2xl border border-white/8 bg-slate-950/40">
-        <table className="min-w-[980px] w-full border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-white/8 text-left text-xs uppercase tracking-[0.18em] text-slate-400">
-              <th className="px-4 py-3 font-medium">When</th>
-              <th className="px-4 py-3 font-medium">Set</th>
-              <th className="px-4 py-3 font-medium">Settings</th>
-              <th className="px-4 py-3 font-medium">Target</th>
-              <th className="px-4 py-3 text-right font-medium">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((item, index) => {
-              const action = getStrategyAction(item);
-              const isDefault = index === 0;
-              const triggerKind = getPersistedTriggerKind(item);
-              const targetMethod = getPersistedTargetMethod(item);
-              const contentCellClass = `px-4 py-4${item.enabled ? "" : " opacity-55"}`;
+      <div className="space-y-4">
+        <div className="rounded-2xl border border-white/8 bg-slate-950/40 p-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+            Always included
+          </p>
+          <div className="mt-3 grid gap-3 lg:grid-cols-3">
+            {Array.from(
+              { length: BATTERY_STRATEGY_FIXED_ITEM_COUNT },
+              (_, index) => {
+                const item = items[index];
+                const builtInItemKey = getBatteryStrategyBuiltinItemKey(index);
 
-              return (
-                <tr
-                  key={item.id}
-                  className="border-b border-white/8 align-top last:border-b-0"
-                >
-                  <td className={contentCellClass}>
-                    {isDefault ? null : (
-                      <div className="space-y-3">
+                if (!item || !builtInItemKey) {
+                  return null;
+                }
+
+                return (
+                  <BuiltInStrategyItemCard
+                    key={item.id}
+                    description={getBuiltInStrategyDescription(builtInItemKey)}
+                    enabled={item.enabled}
+                    title={getBuiltInStrategyTitle(builtInItemKey)}
+                    {...(builtInItemKey ===
+                      BatteryStrategyBuiltinItemKey.Automatic
+                      ? {}
+                      : {
+                          onToggle: () =>
+                            updateItem(item.id, (currentItem) => ({
+                              ...currentItem,
+                              enabled: !currentItem.enabled,
+                            })),
+                        })}
+                  />
+                );
+              },
+            )}
+          </div>
+        </div>
+
+        {scheduledItems.length > 0 ? (
+          <div className="overflow-x-auto rounded-2xl border border-white/8 bg-slate-950/40">
+            <table className="min-w-[980px] w-full border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-white/8 text-left text-xs uppercase tracking-[0.18em] text-slate-400">
+                  <th className="px-4 py-3 font-medium">When</th>
+                  <th className="px-4 py-3 font-medium">Set</th>
+                  <th className="px-4 py-3 font-medium">Settings</th>
+                  <th className="px-4 py-3 font-medium">Target</th>
+                  <th className="px-4 py-3 text-right font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {scheduledItems.map((item, scheduledIndex) => {
+                  const index =
+                    scheduledIndex + BATTERY_STRATEGY_FIXED_ITEM_COUNT;
+                  const action = getStrategyAction(item);
+                  const triggerKind = getPersistedTriggerKind(item);
+                  const targetMethod = getPersistedTargetMethod(item);
+                  const contentCellClass = `px-4 py-4${item.enabled ? "" : " opacity-55"}`;
+
+                  return (
+                    <tr
+                      key={item.id}
+                      className="border-b border-white/8 align-top last:border-b-0"
+                    >
+                      <td className={contentCellClass}>
+                        <div className="space-y-3">
+                          <div className="space-y-2">
+                            <Label
+                              className="sr-only"
+                              htmlFor={`${item.id}-trigger-kind`}
+                            >
+                              Start method
+                            </Label>
+                            <Select
+                              disabled={!item.enabled}
+                              onValueChange={(value: string) =>
+                                updateItem(item.id, (currentItem) => ({
+                                  ...currentItem,
+                                  triggerKind:
+                                    value as BatteryStrategyTriggerKind,
+                                }))
+                              }
+                              value={triggerKind}
+                            >
+                              <SelectTrigger id={`${item.id}-trigger-kind`}>
+                                <SelectValue placeholder="Select start method" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem
+                                  value={BatteryStrategyTriggerKind.DailyTime}
+                                >
+                                  Scheduled time
+                                </SelectItem>
+                                <SelectItem
+                                  value={
+                                    BatteryStrategyTriggerKind.ExportSurplus
+                                  }
+                                >
+                                  {formatBatteryStrategyTriggerKindLabel(
+                                    BatteryStrategyTriggerKind.ExportSurplus,
+                                  )}
+                                </SelectItem>
+                                <SelectItem
+                                  value={
+                                    BatteryStrategyTriggerKind.DelayedCharging
+                                  }
+                                >
+                                  {formatBatteryStrategyTriggerKindLabel(
+                                    BatteryStrategyTriggerKind.DelayedCharging,
+                                  )}
+                                </SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          {triggerKind ===
+                          BatteryStrategyTriggerKind.DailyTime ? (
+                            <div className="space-y-2">
+                              <Label
+                                className="sr-only"
+                                htmlFor={`${item.id}-start-time`}
+                              >
+                                Start time
+                              </Label>
+                              <Input
+                                disabled={!item.enabled}
+                                id={`${item.id}-start-time`}
+                                onChange={(event) =>
+                                  updateItem(item.id, (currentItem) => ({
+                                    ...currentItem,
+                                    startTime: event.target.value,
+                                  }))
+                                }
+                                type="time"
+                                value={item.startTime ?? "08:00"}
+                              />
+                            </div>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td className={contentCellClass}>
                         <div className="space-y-2">
                           <Label
                             className="sr-only"
-                            htmlFor={`${item.id}-trigger-kind`}
+                            htmlFor={`${item.id}-action`}
                           >
-                            Start method
+                            Action
                           </Label>
                           <Select
                             disabled={!item.enabled}
                             onValueChange={(value: string) =>
-                              updateItem(item.id, (currentItem) => ({
-                                ...currentItem,
-                                triggerKind:
-                                  value as BatteryStrategyTriggerKind,
-                              }))
-                            }
-                            value={triggerKind}
-                          >
-                            <SelectTrigger id={`${item.id}-trigger-kind`}>
-                              <SelectValue placeholder="Select start method" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="daily-time">
-                                Scheduled time
-                              </SelectItem>
-                              <SelectItem value="low-price">
-                                Low price
-                              </SelectItem>
-                              <SelectItem value="high-price">
-                                High price
-                              </SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        {triggerKind === "daily-time" ? (
-                          <div className="space-y-2">
-                            <Label
-                              className="sr-only"
-                              htmlFor={`${item.id}-start-time`}
-                            >
-                              Start time
-                            </Label>
-                            <Input
-                              disabled={!item.enabled}
-                              id={`${item.id}-start-time`}
-                              onChange={(event) =>
-                                updateItem(item.id, (currentItem) => ({
-                                  ...currentItem,
-                                  startTime: event.target.value,
-                                }))
-                              }
-                              type="time"
-                              value={item.startTime ?? "08:00"}
-                            />
-                          </div>
-                        ) : null}
-                      </div>
-                    )}
-                  </td>
-                  <td className={contentCellClass}>
-                    <div className="space-y-2">
-                      <Label className="sr-only" htmlFor={`${item.id}-action`}>
-                        {isDefault ? "Fallback action" : "Action"}
-                      </Label>
-                      <Select
-                        disabled={!item.enabled}
-                        onValueChange={(value: string) =>
-                          updateItem(item.id, (currentItem) =>
-                            applyStrategyAction(
-                              currentItem,
-                              value as StrategyAction,
-                              minimumDischargePercent,
-                            ),
-                          )
-                        }
-                        value={action}
-                      >
-                        <SelectTrigger id={`${item.id}-action`}>
-                          <SelectValue placeholder="Select action" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="self-consumption">
-                            Self-consumption
-                          </SelectItem>
-                          <SelectItem value="idle">Idle</SelectItem>
-                          {!isDefault ? (
-                            <SelectItem value="charging">Charge</SelectItem>
-                          ) : null}
-                          {!isDefault ? (
-                            <SelectItem value="discharging">
-                              Discharge
-                            </SelectItem>
-                          ) : null}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </td>
-                  <td className={contentCellClass}>
-                    {action === "charging" || action === "discharging" ? (
-                      <div />
-                    ) : (
-                      <div />
-                    )}
-                  </td>
-                  <td className={contentCellClass}>
-                    {!isDefault &&
-                    (action === "charging" ||
-                      action === "discharging" ||
-                      action === "idle" ||
-                      action === "self-consumption") ? (
-                      <div className="grid min-w-[320px] items-end gap-3 md:grid-cols-2">
-                        <div className="flex flex-col gap-2 justify-end">
-                          <Select
-                            disabled={!item.enabled}
-                            onValueChange={(value: string) =>
                               updateItem(item.id, (currentItem) =>
-                                updateTargetMethod(
+                                applyStrategyAction(
                                   currentItem,
-                                  action,
-                                  value as BatteryStrategyTargetMethod,
+                                  value as StrategyAction,
                                   minimumDischargePercent,
                                 ),
                               )
                             }
-                            value={targetMethod}
+                            value={action}
                           >
-                            <SelectTrigger id={`${item.id}-target-method`}>
-                              <SelectValue placeholder="Select method" />
+                            <SelectTrigger id={`${item.id}-action`}>
+                              <SelectValue placeholder="Select action" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="soc">Percentage</SelectItem>
-                              <SelectItem value="duration">Duration</SelectItem>
-                              <SelectItem value="end-time">End time</SelectItem>
-                              <SelectItem value="auto">Dynamic</SelectItem>
+                              <SelectItem value="self-consumption">
+                                Self-consumption
+                              </SelectItem>
+                              <SelectItem value="idle">Idle</SelectItem>
+                              <SelectItem value="charging">Charge</SelectItem>
+                              <SelectItem value="discharging">
+                                Discharge
+                              </SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
-                        {targetMethod === "soc" ? (
+                      </td>
+                      <td className={contentCellClass}>
+                        <div />
+                      </td>
+                      <td className={contentCellClass}>
+                        <div className="grid min-w-[320px] items-end gap-3 md:grid-cols-2">
                           <div className="flex flex-col gap-2 justify-end">
-                            <Input
+                            <Select
                               disabled={!item.enabled}
-                              id={`${item.id}-target-soc`}
-                              max={100}
-                              min={
-                                action === "discharging" || action === "idle"
-                                  ? minimumDischargePercent
-                                  : 5
-                              }
-                              onChange={(event) =>
+                              onValueChange={(value: string) =>
                                 updateItem(item.id, (currentItem) =>
-                                  updateManualTarget(
+                                  updateTargetMethod(
                                     currentItem,
                                     action,
-                                    parseNumber(event.target.value),
+                                    value as BatteryStrategyTargetMethod,
                                     minimumDischargePercent,
                                   ),
                                 )
                               }
-                              step={1}
-                              type="number"
-                              value={String(
-                                getTargetSocValue(
-                                  item,
-                                  action,
-                                  minimumDischargePercent,
-                                ),
-                              )}
-                            />
+                              value={targetMethod}
+                            >
+                              <SelectTrigger id={`${item.id}-target-method`}>
+                                <SelectValue placeholder="Select method" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="soc">Percentage</SelectItem>
+                                <SelectItem value="duration">
+                                  Duration
+                                </SelectItem>
+                                <SelectItem value="end-time">
+                                  End time
+                                </SelectItem>
+                                <SelectItem value="auto">Dynamic</SelectItem>
+                              </SelectContent>
+                            </Select>
                           </div>
-                        ) : null}
-                        {targetMethod === "duration" ? (
-                          <div className="flex flex-col gap-2 justify-end xl:col-span-1">
-                            <Input
-                              disabled={!item.enabled}
-                              id={`${item.id}-duration`}
-                              min={1}
-                              onChange={(event) =>
-                                updateItem(item.id, (currentItem) => ({
-                                  ...currentItem,
-                                  targetDurationMinutes: parseNumber(
-                                    event.target.value,
+                          {targetMethod === "soc" ? (
+                            <div className="flex flex-col gap-2 justify-end">
+                              <Input
+                                disabled={!item.enabled}
+                                id={`${item.id}-target-soc`}
+                                max={100}
+                                min={
+                                  action === "discharging" || action === "idle"
+                                    ? minimumDischargePercent
+                                    : 5
+                                }
+                                onChange={(event) =>
+                                  updateItem(item.id, (currentItem) =>
+                                    updateManualTarget(
+                                      currentItem,
+                                      action,
+                                      parseNumber(event.target.value),
+                                      minimumDischargePercent,
+                                    ),
+                                  )
+                                }
+                                step={1}
+                                type="number"
+                                value={String(
+                                  getTargetSocValue(
+                                    item,
+                                    action,
+                                    minimumDischargePercent,
                                   ),
-                                }))
-                              }
-                              type="number"
-                              value={String(item.targetDurationMinutes ?? "")}
-                            />
-                          </div>
-                        ) : null}
-                        {targetMethod === "end-time" ? (
-                          <div className="flex flex-col gap-2 justify-end xl:col-span-1">
-                            <Input
-                              disabled={!item.enabled}
-                              id={`${item.id}-end-time`}
-                              onChange={(event) =>
-                                updateItem(item.id, (currentItem) => ({
-                                  ...currentItem,
-                                  targetEndTime: event.target.value,
-                                }))
-                              }
-                              type="time"
-                              value={item.targetEndTime ?? ""}
-                            />
-                          </div>
-                        ) : null}
-                      </div>
-                    ) : (
-                      <div />
-                    )}
-                  </td>
-                  <td className="px-4 py-4">
-                    {isDefault ? null : (
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          aria-label={
-                            item.enabled ? "Disable item" : "Enable item"
-                          }
-                          className="h-9 w-9 px-0"
-                          onClick={() =>
-                            updateItem(item.id, (currentItem) => ({
-                              ...currentItem,
-                              enabled: !currentItem.enabled,
-                            }))
-                          }
-                          title={item.enabled ? "Disable item" : "Enable item"}
-                          type="button"
-                          variant="ghost"
-                        >
-                          {item.enabled ? (
-                            <ToggleRight size={16} />
-                          ) : (
-                            <ToggleLeft size={16} />
-                          )}
-                        </Button>
-                        <Button
-                          aria-label={`Move daily item ${index} up`}
-                          className="h-9 w-9 px-0"
-                          disabled={index === 1}
-                          onClick={() => moveItem(item.id, -1)}
-                          title="Move up"
-                          type="button"
-                          variant="ghost"
-                        >
-                          <ArrowUp size={14} />
-                        </Button>
-                        <Button
-                          aria-label={`Move daily item ${index} down`}
-                          className="h-9 w-9 px-0"
-                          disabled={index === items.length - 1}
-                          onClick={() => moveItem(item.id, 1)}
-                          title="Move down"
-                          type="button"
-                          variant="ghost"
-                        >
-                          <ArrowDown size={14} />
-                        </Button>
-                        <Button
-                          aria-label={`Delete daily item ${index}`}
-                          className="h-9 w-9 px-0"
-                          onClick={() => setPendingDeleteItemId(item.id)}
-                          title="Delete item"
-                          type="button"
-                          variant="danger"
-                        >
-                          <Trash2 size={14} />
-                        </Button>
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                                )}
+                              />
+                            </div>
+                          ) : null}
+                          {targetMethod === "duration" ? (
+                            <div className="flex flex-col gap-2 justify-end xl:col-span-1">
+                              <Input
+                                disabled={!item.enabled}
+                                id={`${item.id}-duration`}
+                                min={1}
+                                onChange={(event) =>
+                                  updateItem(item.id, (currentItem) => ({
+                                    ...currentItem,
+                                    targetDurationMinutes: parseNumber(
+                                      event.target.value,
+                                    ),
+                                  }))
+                                }
+                                type="number"
+                                value={String(item.targetDurationMinutes ?? "")}
+                              />
+                            </div>
+                          ) : null}
+                          {targetMethod === "end-time" ? (
+                            <div className="flex flex-col gap-2 justify-end xl:col-span-1">
+                              <Input
+                                disabled={!item.enabled}
+                                id={`${item.id}-end-time`}
+                                onChange={(event) =>
+                                  updateItem(item.id, (currentItem) => ({
+                                    ...currentItem,
+                                    targetEndTime: event.target.value,
+                                  }))
+                                }
+                                type="time"
+                                value={item.targetEndTime ?? ""}
+                              />
+                            </div>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            aria-label={
+                              item.enabled ? "Disable item" : "Enable item"
+                            }
+                            className="h-9 w-9 px-0"
+                            onClick={() =>
+                              updateItem(item.id, (currentItem) => ({
+                                ...currentItem,
+                                enabled: !currentItem.enabled,
+                              }))
+                            }
+                            title={
+                              item.enabled ? "Disable item" : "Enable item"
+                            }
+                            type="button"
+                            variant="ghost"
+                          >
+                            {item.enabled ? (
+                              <ToggleRight size={16} />
+                            ) : (
+                              <ToggleLeft size={16} />
+                            )}
+                          </Button>
+                          <Button
+                            aria-label={`Move daily item ${index} up`}
+                            className="h-9 w-9 px-0"
+                            disabled={
+                              index === BATTERY_STRATEGY_FIXED_ITEM_COUNT
+                            }
+                            onClick={() => moveItem(item.id, -1)}
+                            title="Move up"
+                            type="button"
+                            variant="ghost"
+                          >
+                            <ArrowUp size={14} />
+                          </Button>
+                          <Button
+                            aria-label={`Move daily item ${index} down`}
+                            className="h-9 w-9 px-0"
+                            disabled={index === items.length - 1}
+                            onClick={() => moveItem(item.id, 1)}
+                            title="Move down"
+                            type="button"
+                            variant="ghost"
+                          >
+                            <ArrowDown size={14} />
+                          </Button>
+                          <Button
+                            aria-label={`Delete daily item ${index}`}
+                            className="h-9 w-9 px-0"
+                            onClick={() => setPendingDeleteItemId(item.id)}
+                            title="Delete item"
+                            type="button"
+                            variant="danger"
+                          >
+                            <Trash2 size={14} />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
@@ -522,11 +578,74 @@ function describePendingDeleteItem(
 
   const triggerKind = getPersistedTriggerKind(item);
 
-  if (triggerKind === "daily-time") {
+  if (triggerKind === BatteryStrategyTriggerKind.DailyTime) {
     return `The ${item.startTime ?? "08:00"} schedule`;
   }
 
-  return `The ${triggerKind} schedule`;
+  return `The ${formatBatteryStrategyTriggerKindLabel(triggerKind)} schedule`;
+}
+
+function BuiltInStrategyItemCard({
+  description,
+  enabled,
+  onToggle,
+  title,
+}: {
+  description: string;
+  enabled: boolean;
+  onToggle?: () => void;
+  title: string;
+}) {
+  const cardClassName = enabled
+    ? "flex items-start justify-between gap-3 rounded-2xl border border-white/8 bg-white/4 px-4 py-3"
+    : "flex items-start justify-between gap-3 rounded-2xl border border-white/6 bg-white/[0.02] px-4 py-3";
+  const contentClassName = enabled ? "space-y-1" : "space-y-1 opacity-55";
+
+  return (
+    <div className={cardClassName}>
+      <div className={contentClassName}>
+        <p className="font-medium text-white">{title}</p>
+        <p className="text-xs text-slate-400">{description}</p>
+      </div>
+      {onToggle ? (
+        <Button
+          aria-label={enabled ? `Disable ${title}` : `Enable ${title}`}
+          className="h-9 w-9 shrink-0 px-0"
+          onClick={onToggle}
+          title={enabled ? `Disable ${title}` : `Enable ${title}`}
+          type="button"
+          variant="ghost"
+        >
+          {enabled ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
+        </Button>
+      ) : (
+        <p className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+          Always on
+        </p>
+      )}
+    </div>
+  );
+}
+
+function getBuiltInStrategyTitle(key: BatteryStrategyBuiltinItemKey): string {
+  if (key === BatteryStrategyBuiltinItemKey.Automatic) {
+    return "Self-consumption";
+  }
+
+  return formatBatteryStrategyBuiltinItemLabel(key);
+}
+
+function getBuiltInStrategyDescription(
+  key: BatteryStrategyBuiltinItemKey,
+): string {
+  switch (key) {
+    case BatteryStrategyBuiltinItemKey.Automatic:
+      return "Fallback when no scheduled item is active.";
+    case BatteryStrategyBuiltinItemKey.ExportSurplus:
+      return "Discharges during a local high-price window to create room for expected solar while keeping reserve until solar takes over again.";
+    case BatteryStrategyBuiltinItemKey.DelayedCharging:
+      return "Under construction and disabled by default because the current delayed-charging behavior is not correct yet.";
+  }
 }
 
 function createDailyPlanItem(
@@ -537,7 +656,7 @@ function createDailyPlanItem(
     id: createLocalStrategyPlanId(),
     kind: "daily",
     startTime: "08:00",
-    triggerKind: "daily-time",
+    triggerKind: BatteryStrategyTriggerKind.DailyTime,
     targetDurationMinutes: null,
     targetEndTime: null,
     targetMethod: null,
@@ -571,7 +690,7 @@ function getPersistedTargetMethod(
 function getPersistedTriggerKind(
   item: BatteryStrategyPlanItem,
 ): BatteryStrategyTriggerKind {
-  return item.triggerKind ?? "daily-time";
+  return item.triggerKind ?? BatteryStrategyTriggerKind.DailyTime;
 }
 
 function updateTargetMethod(

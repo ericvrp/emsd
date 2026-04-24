@@ -11,15 +11,27 @@ The goal is:
 - choose a reserve percentage that should still be held at that `targetTime`
 - convert that into the stop target percentage to use for the active scheduled item
 
-For low-price schedules with `targetMethod === "auto"`, the daemon now resolves a pre-discharge flow instead of charging at the low marker itself:
-- resolve the upcoming low-price marker as the target horizon
-- require solar to be expected at that low-price marker
-- trigger earlier at the best preceding local high-price marker
-- discharge only down to a reserve floor that should still hold enough charge at the low-price marker
+For delayed-charging schedules with `targetMethod === "auto"`, the current code path resolves a pre-discharge flow instead of charging at the delayed-charging marker itself:
+- resolve the upcoming delayed-charging marker as the target horizon
+- require solar to be expected at that delayed-charging marker
+- trigger earlier at the best preceding local export-surplus marker
+- discharge only down to a reserve floor that should still hold enough charge at the delayed-charging marker
 
 This same estimator is used by:
 - the daemon activation path for dynamic price target schedule items
 - `bun run dynamic-price-target:evaluate`
+
+## Strategy Notes
+
+Product-facing explanations for the built-in rules now live in:
+- `strategies/self-consumption.md`
+- `strategies/export-surplus.md`
+- `strategies/delayed-charging.md`
+
+Important:
+- `Export surplus` is documented as an active built-in rule
+- `Delayed charging` is still under construction and the current implementation is not correct yet
+- this file documents the shared estimator implementation, not the final product wording for each strategy type
 
 ## Core Model
 
@@ -106,15 +118,15 @@ Default values:
 - `backupReserveMarginPerHour = 0.2%`
 
 This reserve-floor helper is used by:
-- high-price auto discharge until solar recovery
-- low-price auto pre-discharge until the selected low-price marker
+- export-surplus auto discharge until solar recovery
+- the current delayed-charging experimental path until the selected delayed-charging marker
 
 ## Daemon Behavior
 
 When a dynamic schedule item activates:
 - the daemon computes the estimate in `apps/daemon/src/dynamic-price-target.ts`
 - applies the computed stop target to the activated strategy
-- low-price auto items may resolve from configured `charging` to runtime `discharging`
+- delayed-charging auto items may currently resolve from configured `charging` to runtime `discharging`
 - stores the resolved target SoC and target time in runtime state
 - stores the resolved runtime manual state for completion checks and status text
 - uses that same resolved target for completion checks
@@ -147,14 +159,14 @@ Available verbose blocks:
 The script supports:
 - `--marker-date YYYY-MM-DD`
 - `--marker-time HH:MM`
-- `--price high,low`
+- `--strategy export-surplus,delayed-charging`
 - `--backup-reserve-margin <percent>`
 - `--backup-reserve-margin-per-hour <percent>`
 - `--power <watts>`
 - `--site <site-id>`
 - `--days <n>`
 
-For low-price auto evaluation, `--marker-date` and `--marker-time` select the low-price marker being evaluated. The script then derives the same pre-discharge start trigger that the daemon uses, so explicit marker selection matches the default low-price path.
+For delayed-charging auto evaluation, `--marker-date` and `--marker-time` select the delayed-charging marker being evaluated. The script then derives the same current experimental start trigger that the daemon uses. This is useful for implementation analysis, but it should not be treated as validated final delayed-charging behavior.
 
 ## Main Files
 

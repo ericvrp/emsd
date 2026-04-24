@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { DashboardSnapshot, HistoryArchive } from "@emsd/core";
 import {
+  BatteryStrategyTriggerKind,
   DEFAULT_SOLAR_PREDICTION_SMOOTHING_MODE,
   applySolarSeriesSmoothing,
   buildPredictedSolarGenerationSeries,
@@ -547,7 +548,7 @@ test("house-strategy-set supports auto manual discharge targets", async () => {
   expect(device?.batteryManualTargetMethod).toBe("auto");
 });
 
-test("house-strategy-set clears stale manual fields for self-consumption", async () => {
+test("house-strategy-set preserves manual target metadata for self-consumption", async () => {
   const databasePath = createTempDatabase();
 
   globalThis.fetch = Object.assign(
@@ -595,14 +596,14 @@ test("house-strategy-set clears stale manual fields for self-consumption", async
     manualChargeTargetSoc: 100,
     manualDischargeTargetSoc: 25,
     manualModeActive: true,
-    manualPowerW: 2400,
-    manualState: "discharging",
-    manualTargetSoc: 25,
+    manualPowerW: null,
+    manualState: null,
+    manualTargetSoc: 55,
     siteId: "home",
     strategyMode: "self-consumption",
-    targetDurationMinutes: null,
+    targetDurationMinutes: 6,
     targetEndTime: null,
-    targetMethod: "soc",
+    targetMethod: "duration",
   });
 
   const updated = getBattery("battery-1", "home", databasePath);
@@ -612,8 +613,91 @@ test("house-strategy-set clears stale manual fields for self-consumption", async
   expect(updated?.manualPowerW).toBeNull();
   expect(updated?.manualChargeTargetSoc).toBe(100);
   expect(updated?.manualDischargeTargetSoc).toBe(11);
-  expect(updated?.manualTargetSoc).toBe(100);
-  expect(updated?.strategyRuntime.manualTargetMethod).toBeNull();
+  expect(updated?.manualTargetSoc).toBe(55);
+  expect(updated?.manualModeStarted).toBe(true);
+  expect(updated?.strategyRuntime.manualTargetMethod).toBe("duration");
+  expect(updated?.strategyRuntime.manualTargetDurationMinutes).toBe(6);
+  expect(updated?.strategyRuntime.manualTargetEndTime).toBeNull();
+
+  const snapshot = (await runApiAction("snapshot")) as DashboardSnapshot;
+  const device = snapshot.sites[0]?.devices[0];
+
+  expect(device?.batteryManualTargetMethod).toBe("duration");
+  expect(device?.batteryManualTargetDurationMinutes).toBe(6);
+  expect(device?.batteryManualTargetEndTime).toBeNull();
+});
+
+test("house-strategy-set preserves manual target metadata for idle", async () => {
+  const databasePath = createTempDatabase();
+
+  globalThis.fetch = Object.assign(
+    async () =>
+      new Response(JSON.stringify({ result: true }), {
+        headers: { "content-type": "application/json" },
+        status: 200,
+      }),
+    {
+      preconnect: originalFetch.preconnect.bind(originalFetch),
+    },
+  ) as typeof fetch;
+
+  createSite(
+    {
+      id: "home",
+      location: "52.367600, 4.904100",
+      name: "Home",
+    },
+    databasePath,
+  );
+  createBattery(
+    {
+      connected: true,
+      enabled: true,
+      id: "battery-1",
+      ipAddress: "192.168.1.10",
+      minimumDischargePercent: 11,
+      model: "indevolt-battery",
+      name: "Battery",
+      plugin: "indevolt-battery",
+      status: "idle",
+    },
+    "home",
+    databasePath,
+  );
+
+  await runApiAction("house-strategy-set", {
+    manualChargeTargetSoc: 100,
+    manualDischargeTargetSoc: 11,
+    manualModeActive: true,
+    manualPowerW: null,
+    manualState: "idle",
+    manualTargetSoc: 35,
+    siteId: "home",
+    strategyMode: "manual",
+    targetDurationMinutes: null,
+    targetEndTime: "13:30",
+    targetMethod: "end-time",
+  });
+
+  const updated = getBattery("battery-1", "home", databasePath);
+
+  expect(updated?.strategyMode).toBe("manual");
+  expect(updated?.manualState).toBe("idle");
+  expect(updated?.manualPowerW).toBeNull();
+  expect(updated?.manualChargeTargetSoc).toBe(100);
+  expect(updated?.manualDischargeTargetSoc).toBe(11);
+  expect(updated?.manualTargetSoc).toBe(35);
+  expect(updated?.manualModeStarted).toBe(true);
+  expect(updated?.strategyRuntime.manualTargetMethod).toBe("end-time");
+  expect(updated?.strategyRuntime.manualTargetDurationMinutes).toBeNull();
+  expect(updated?.strategyRuntime.manualTargetEndTime).toBe("13:30");
+
+  const snapshot = (await runApiAction("snapshot")) as DashboardSnapshot;
+  const device = snapshot.sites[0]?.devices[0];
+
+  expect(device?.batteryManualTargetMethod).toBe("end-time");
+  expect(device?.batteryManualTargetDurationMinutes).toBeNull();
+  expect(device?.batteryManualTargetEndTime).toBe("13:30");
 });
 
 test("history-get-archive applies default prediction smoothing server-side", async () => {
@@ -939,7 +1023,7 @@ test("house-strategy-plan-set accepts low and high price triggers", async () => 
         targetDurationMinutes: null,
         targetEndTime: null,
         targetMethod: "soc",
-        triggerKind: "low-price",
+        triggerKind: BatteryStrategyTriggerKind.DelayedCharging,
         strategyMode: "manual",
         manualState: "charging",
         manualPowerW: 2400,
@@ -955,7 +1039,7 @@ test("house-strategy-plan-set accepts low and high price triggers", async () => 
         targetDurationMinutes: null,
         targetEndTime: null,
         targetMethod: "soc",
-        triggerKind: "high-price",
+        triggerKind: BatteryStrategyTriggerKind.ExportSurplus,
         strategyMode: "manual",
         manualState: "discharging",
         manualPowerW: 2400,
@@ -968,13 +1052,17 @@ test("house-strategy-plan-set accepts low and high price triggers", async () => 
 
   const updated = getBattery("battery-1", "home", databasePath);
 
-  expect(updated?.strategyPlan[1]?.triggerKind).toBe("low-price");
-  expect(updated?.strategyPlan[1]?.enabled).toBe(false);
-  expect(updated?.strategyPlan[2]?.triggerKind).toBe("high-price");
-  expect(updated?.strategyPlan[2]?.enabled).toBe(true);
+  expect(updated?.strategyPlan[1]?.triggerKind).toBe(
+    BatteryStrategyTriggerKind.ExportSurplus,
+  );
+  expect(updated?.strategyPlan[1]?.enabled).toBe(true);
+  expect(updated?.strategyPlan[2]?.triggerKind).toBe(
+    BatteryStrategyTriggerKind.DelayedCharging,
+  );
+  expect(updated?.strategyPlan[2]?.enabled).toBe(false);
 });
 
-test("house-strategy-plan-set marks past same-day high-price markers as already triggered", async () => {
+test("house-strategy-plan-set marks past same-day export-surplus markers as already triggered", async () => {
   const databasePath = createTempDatabase();
 
   globalThis.fetch = Object.assign(
@@ -1088,7 +1176,7 @@ test("house-strategy-plan-set marks past same-day high-price markers as already 
           targetDurationMinutes: null,
           targetEndTime: null,
           targetMethod: "soc",
-          triggerKind: "high-price",
+          triggerKind: BatteryStrategyTriggerKind.ExportSurplus,
           strategyMode: "manual",
           manualState: "discharging",
           manualPowerW: 2400,
