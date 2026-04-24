@@ -25,6 +25,9 @@ export const DEFAULT_MANUAL_STRATEGY_POWER_W = 2400;
 /** Minimum current site solar production required to start delayed charging. */
 export const DELAYED_CHARGING_MIN_SITE_SOLAR_POWER_W = 500;
 
+/** Extra headroom to preserve above backup reserve for delayed charging. */
+export const DELAYED_CHARGING_TARGET_FLOOR_BUFFER_PERCENT = 5;
+
 /** Fixed backup reserve margin used by live dynamic price targeting. */
 export const DYNAMIC_PRICE_TARGET_BACKUP_RESERVE_MARGIN_PERCENT = 1;
 

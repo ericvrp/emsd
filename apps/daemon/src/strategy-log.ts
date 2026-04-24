@@ -726,6 +726,10 @@ function describeCompletionReasonHuman(
       return completion.targetDurationMinutes === null
         ? "its duration completed"
         : `${completion.targetDurationMinutes} minute(s) elapsed`;
+    case "delayed-charging-window-start-reached":
+      return completion.endAt
+        ? `the delayed charging window started at ${formatLocalCutoffTimestamp(completion.endAt)}`
+        : "the delayed charging window started";
     case "end-time-reached":
       return completion.endAt
         ? `it reached its cutoff at ${formatLocalCutoffTimestamp(completion.endAt)}`
@@ -778,7 +782,8 @@ function getNextStrategyItemForToday(
 
     if (
       nextTriggerAt === null ||
-      triggerAt.getTime() < nextTriggerAt.getTime()
+      triggerAt.getTime() < nextTriggerAt.getTime() ||
+      (triggerAt.getTime() === nextTriggerAt.getTime() && nextItem !== null)
     ) {
       nextItem = item;
       nextTriggerAt = triggerAt;

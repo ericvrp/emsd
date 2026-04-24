@@ -33,6 +33,25 @@ That expected net charge then determines how much empty capacity the battery sho
 
 The provisional start threshold (pre-discharge target floor) is the battery's backup reserve plus 10%. The battery should not be discharged below this level in anticipation of solar charging.
 
+## Start Time
+
+The delayed-charging start time is not defined by a preceding `export-surplus` or other high-price marker.
+
+Instead, once the low-price period start and the desired battery level at that moment are known, the daemon should compute the latest feasible pre-discharge start time that still allows the battery to reach that level before the low-price period begins.
+
+In practice this means the start time should be derived from:
+
+- the low-price period start time
+- the battery's current SoC
+- the desired SoC at the low-price period start
+- the effective available discharge power
+
+The intent is:
+
+- if the battery is already at or below the desired pre-discharge level, do not start pre-discharging and simply wait
+- if the battery is above that level, start discharging only as late as necessary to arrive at the desired level by the low-price period start
+- never discharge below the provisional start threshold of backup reserve plus 10%
+
 ## Design Goal
 
 The goal is not to charge from the grid during the low-price period.
@@ -57,7 +76,7 @@ Because `Delayed charging` (Index 2) is higher than `Export surplus` (Index 1), 
 - the strategy depends on expected solar being available during that period
 - the pre-discharge target is based on expected net solar surplus during the low-price window
 - once the battery reaches the desired start level, it should wait rather than continue discharging
-- the provisional start threshold is the battery backup reserve plus 5%
+- the provisional start threshold is the battery backup reserve plus 10%
 
 ## Status
 

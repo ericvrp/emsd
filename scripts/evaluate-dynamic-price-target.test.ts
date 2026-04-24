@@ -92,6 +92,27 @@ test("resolveEvaluationReferenceTime uses the next delayed-charging auto trigger
   ).toBe("2026-04-19T06:00:00.000Z");
 });
 
+test("resolveEvaluationReferenceTime uses the next day's delayed-charging auto trigger when today's low marker is gone", () => {
+  expect(
+    resolveEvaluationReferenceTime({
+      markerDate: "2026-04-19",
+      dynamicPriceSamples: createDynamicPriceSamples([
+        ["2026-04-19T16:00:00.000Z", 20],
+        ["2026-04-19T18:00:00.000Z", 35],
+        ["2026-04-19T20:00:00.000Z", 22],
+        ["2026-04-19T22:00:00.000Z", 20],
+        ["2026-04-20T08:00:00.000Z", 12],
+        ["2026-04-20T10:00:00.000Z", 5],
+        ["2026-04-20T12:00:00.000Z", 14],
+        ["2026-04-20T14:00:00.000Z", 25],
+      ]),
+      hasExplicitMarkerTime: false,
+      item: createLowPriceAutoItem(),
+      markerTime: "23:30",
+    }).toISOString(),
+  ).toBe("2026-04-19T18:00:00.000Z");
+});
+
 test("buildCurrentEstimateRows shows start time and start-based duration", () => {
   const referenceTime = createReplayTime("2026-04-21", "19:45");
 

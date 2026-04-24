@@ -31,6 +31,7 @@ import { estimateDynamicPriceTarget } from "../apps/daemon/src/dynamic-price-tar
 import {
   getLowPriceAutoTriggerAtForMarker,
   getNextStrategyTriggerAt,
+  getStrategyTriggerAt,
 } from "../apps/daemon/src/strategy-scheduler";
 
 // Script defaults sourced from shared algorithm constants
@@ -558,11 +559,18 @@ export function resolveEvaluationReferenceTime(input: {
   }
 
   return (
-    getNextStrategyTriggerAt({
-      item: input.item,
-      now: fallbackTime,
-      dynamicPriceSamples: input.dynamicPriceSamples,
-    }) ?? fallbackTime
+    (input.item.triggerKind === BatteryStrategyTriggerKind.DelayedCharging &&
+    input.item.manualState === "charging"
+      ? getStrategyTriggerAt({
+          item: input.item,
+          now: fallbackTime,
+          dynamicPriceSamples: input.dynamicPriceSamples,
+        })
+      : getNextStrategyTriggerAt({
+          item: input.item,
+          now: fallbackTime,
+          dynamicPriceSamples: input.dynamicPriceSamples,
+        })) ?? fallbackTime
   );
 }
 

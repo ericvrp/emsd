@@ -11,11 +11,17 @@ The goal is:
 - choose a reserve percentage that should still be held at that `targetTime`
 - convert that into the stop target percentage to use for the active scheduled item
 
-For delayed-charging schedules with `targetMethod === "auto"`, the current code path resolves a pre-discharge flow instead of charging at the delayed-charging marker itself:
-- resolve the upcoming delayed-charging marker as the target horizon
-- require solar to be expected at that delayed-charging marker
-- trigger earlier at the best preceding local export-surplus marker
-- discharge only down to a reserve floor that should still hold enough charge at the delayed-charging marker
+For delayed-charging schedules with `targetMethod === "auto"`, the intended flow is:
+- resolve the upcoming delayed-charging marker as the low-price window start
+- estimate the net solar charge opportunity during the low-price window itself
+- compute the desired battery level at the low-price window start
+- derive the latest feasible pre-discharge start time from the current SoC, the desired SoC at the low-price window start, and the effective discharge power
+- never discharge below the delayed-charging provisional floor of backup reserve plus 10%
+
+Important:
+- delayed charging start time should not be tied to a preceding `export-surplus` or other high-price marker
+- if the battery is already at or below the desired delayed-charging start level, the daemon should wait instead of continuing to discharge
+- the current code still contains legacy experimental behavior in this area and should not be treated as the final delayed-charging implementation
 
 This same estimator is used by:
 - the daemon activation path for dynamic price target schedule items
@@ -119,7 +125,10 @@ Default values:
 
 This reserve-floor helper is used by:
 - export-surplus auto discharge until solar recovery
-- the current delayed-charging experimental path until the selected delayed-charging marker
+
+Delayed charging should use its own provisional start threshold rule:
+
+`delayedChargingStartFloorPercent = minimumDischargePercent + 10`
 
 ## Daemon Behavior
 
@@ -131,6 +140,8 @@ When a dynamic schedule item activates:
 - stores the resolved runtime manual state for completion checks and status text
 - uses that same resolved target for completion checks
 - logs the dynamic estimate in the normal scheduled-start log line
+
+The delayed-charging start time should be the latest feasible pre-discharge start time needed to reach the computed delayed-charging start target by the low-price window start. It should not be derived from the preceding `export-surplus` marker.
 
 This logic is wired from `apps/daemon/src/index.ts` and the completion logic lives in `apps/daemon/src/strategy-scheduler.ts`.
 
@@ -166,7 +177,7 @@ The script supports:
 - `--site <site-id>`
 - `--days <n>`
 
-For delayed-charging auto evaluation, `--marker-date` and `--marker-time` select the delayed-charging marker being evaluated. The script then derives the same current experimental start trigger that the daemon uses. This is useful for implementation analysis, but it should not be treated as validated final delayed-charging behavior.
+For delayed-charging auto evaluation, `--marker-date` and `--marker-time` select the delayed-charging marker being evaluated. The intended delayed-charging evaluation should then explain the computed latest feasible pre-discharge start time rather than relying on a preceding `export-surplus` marker.
 
 ## Main Files
 

@@ -72,7 +72,7 @@ import {
   isItemAlreadyTriggeredToday,
   needsCompletionTracking,
   shouldMarkScheduledItemObserved,
-  shouldSkipDelayedSocItemBecauseLaterItemIsDue,
+  shouldTransitionDelayedChargingToIdle,
   shouldSkipScheduledItem,
   shouldWaitForObservedStart,
 } from "./strategy-scheduler";
@@ -618,7 +618,7 @@ function shouldRestoreDefaultStrategy(
   if (battery.strategyMode === "self-consumption") {
     const targetSoc =
       battery.strategyRuntime.manualTargetMethod === "auto"
-        ? battery.strategyRuntime.activeTargetSocPercent
+        ? (battery.strategyRuntime.activeTargetSocPercent ?? null)
         : battery.manualTargetSoc;
 
     if (targetSoc === null || sample.socPercent === null) {
@@ -665,7 +665,7 @@ function shouldRestoreDefaultStrategy(
   if (battery.manualState === "idle") {
     const targetSoc =
       battery.strategyRuntime.manualTargetMethod === "auto"
-        ? battery.strategyRuntime.activeTargetSocPercent
+        ? (battery.strategyRuntime.activeTargetSocPercent ?? null)
         : battery.manualTargetSoc;
 
     return (
@@ -795,6 +795,56 @@ async function runScheduledStrategy(
       );
     }
 
+    if (
+      shouldTransitionDelayedChargingToIdle({
+        item: activeItem,
+        now,
+        runtime,
+        sample,
+      })
+    ) {
+      const idleStrategy = applyEstimatedTargetToStrategy(
+        resolveBatteryStrategyFromPlanItem({
+          item: activeItem,
+          minimumDischargePercent: battery.minimumDischargePercent,
+          maximumChargePowerW: battery.maximumChargePowerW,
+          maximumDischargePowerW: battery.maximumDischargePowerW,
+        }),
+        activeItem,
+        "idle",
+        runtime.activeTargetSocPercent ?? null,
+        battery.minimumDischargePercent,
+        battery.maximumChargePowerW,
+        battery.maximumDischargePowerW,
+      );
+
+      await createBatteryPlugin(battery).setStrategy(idleStrategy);
+
+      runtime = {
+        ...runtime,
+        activeResolvedManualState: "idle",
+      };
+
+      updateBatteryStrategyState(db, {
+        batteryId: battery.id,
+        siteId: battery.siteId,
+        manualModeActive: false,
+        manualModeStarted: false,
+        strategy: idleStrategy,
+      });
+      updateBatteryStrategyRuntime(db, {
+        batteryId: battery.id,
+        siteId: battery.siteId,
+        strategyRuntime: runtime,
+      });
+
+      logVerbose(
+        verbose,
+        `holding delayed charging target for ${battery.id}: ${describeStrategyPlanItem(activeItem)}`,
+      );
+      return;
+    }
+
     const completion = getScheduledItemCompletion({
       battery,
       item: activeItem,
@@ -842,7 +892,13 @@ async function runScheduledStrategy(
   const managedDeviceTelemetry = readManagedDeviceTelemetry(db);
   let runtime = battery.strategyRuntime;
 
-  for (const [index, item] of dueItems.entries()) {
+  for (let index = dueItems.length - 1; index >= 0; index -= 1) {
+    const item = dueItems[index];
+
+    if (!item) {
+      continue;
+    }
+
     const triggerAt = getStrategyTriggerAt({
       item,
       now,
@@ -876,35 +932,6 @@ async function runScheduledStrategy(
         verbose,
         `strategy item already triggered today for ${battery.id}: ${describeStrategyPlanItem(item)} triggerAt=${formatDaemonLogTimestamp(triggerAt)}`,
       );
-      continue;
-    }
-
-    if (
-      shouldSkipDelayedSocItemBecauseLaterItemIsDue({
-        ...(dynamicPriceSamples.length > 0 ? { dynamicPriceSamples } : {}),
-        items: dueItems,
-        currentIndex: index,
-        currentTriggerAt: triggerAt,
-        now,
-        runtime,
-      })
-    ) {
-      logVerbose(
-        verbose,
-        `skipping delayed strategy item for ${battery.id} because a later item is already due: ${describeStrategyPlanItem(item)} triggerAt=${formatDaemonLogTimestamp(triggerAt)} now=${formatDaemonLogTimestamp(now)}`,
-      );
-      runtime = {
-        ...runtime,
-        lastTriggeredAtByItemId: {
-          ...runtime.lastTriggeredAtByItemId,
-          [item.id]: triggerAt.toISOString(),
-        },
-      };
-      updateBatteryStrategyRuntime(db, {
-        batteryId: battery.id,
-        siteId: battery.siteId,
-        strategyRuntime: runtime,
-      });
       continue;
     }
 
@@ -1019,6 +1046,8 @@ async function runScheduledStrategy(
       resolvedManualState,
       dynamicPriceTargetEstimate?.estimatedTargetPercent ?? null,
       battery.minimumDischargePercent,
+      battery.maximumChargePowerW,
+      battery.maximumDischargePowerW,
     );
 
     logVerbose(
@@ -1071,7 +1100,7 @@ async function runScheduledStrategy(
       strategyRuntime: nextRuntime,
     });
 
-    if (!shouldWaitForObservedStart(item)) {
+    if (!shouldWaitForObservedStart(item, resolvedManualState)) {
       logInfoWithVerboseDetails(
         verbose,
         formatScheduledStrategyStartedSummary(
@@ -1117,6 +1146,8 @@ function applyEstimatedTargetToStrategy(
   resolvedManualState: BatteryStrategyPlanItem["manualState"],
   estimatedTargetPercent: number | null,
   minimumDischargePercent: number,
+  maximumChargePowerW: number,
+  maximumDischargePowerW: number,
 ): ReturnType<typeof resolveBatteryStrategyFromPlanItem> {
   if (item.targetMethod !== "auto" || estimatedTargetPercent === null) {
     return strategy;
@@ -1131,6 +1162,7 @@ function applyEstimatedTargetToStrategy(
       ...strategy,
       manualChargeTargetSoc: estimatedTargetPercent,
       manualDischargeTargetSoc: null,
+      manualPowerW: maximumChargePowerW,
       manualState: "charging",
       manualTargetSoc: estimatedTargetPercent,
     };
@@ -1143,6 +1175,8 @@ function applyEstimatedTargetToStrategy(
       ...strategy,
       manualChargeTargetSoc: null,
       manualDischargeTargetSoc: targetSoc,
+      manualPowerW:
+        resolvedManualState === "discharging" ? maximumDischargePowerW : null,
       manualState: resolvedManualState,
       manualTargetSoc: targetSoc,
     };

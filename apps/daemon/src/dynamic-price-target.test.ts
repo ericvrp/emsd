@@ -30,7 +30,7 @@ test("evening auto discharge targets tomorrow morning and keeps a reserve above 
     items: [createDefaultItem(), item],
     now,
     p1MeterSamples: history.p1MeterSamples,
-    sample: createSample(),
+    sample: createSample({ capacityWh: 5000, socPercent: 90 }),
     solarEnergyProviderSamples: history.solarEnergyProviderSamples,
     solarForecastSamples,
   });
@@ -58,12 +58,12 @@ test("evening auto discharge targets tomorrow morning and keeps a reserve above 
   expect(estimate.windowKind).toBe("evening-export-surplus");
 });
 
-test("delayed-charging auto resolves to a pre-discharge target when solar is expected at the low marker", () => {
+test("delayed-charging auto reserves daytime headroom from the low-price window", () => {
   const now = new Date("2026-04-19T06:00:00.000Z");
   const battery = createBattery();
   const item = createAutoLowPriceItem();
-  const solarForecastSamples = createMorningSolarForecastSamples();
-  const history = createMorningUsageHistory();
+  const solarForecastSamples = createDaytimeSolarForecastSamples(3000);
+  const history = createDaytimeUsageHistory(250);
   const estimate = estimateDynamicPriceTarget({
     battery,
     batteryPowerSamples: history.batteryPowerSamples,
@@ -72,7 +72,8 @@ test("delayed-charging auto resolves to a pre-discharge target when solar is exp
       ["2026-04-19T02:00:00.000Z", 20],
       ["2026-04-19T06:00:00.000Z", 30],
       ["2026-04-19T10:00:00.000Z", 10],
-      ["2026-04-19T14:00:00.000Z", 18],
+      ["2026-04-19T14:00:00.000Z", 28],
+      ["2026-04-19T18:00:00.000Z", 18],
     ]),
     item,
     items: [createDefaultItem(), item],
@@ -84,18 +85,22 @@ test("delayed-charging auto resolves to a pre-discharge target when solar is exp
   });
 
   expect(estimate.targetTime).toBe("2026-04-19T10:00:00.000Z");
-  expect(estimate.resolvedManualState).toBe("discharging");
+  expect(estimate.expectedHouseLoadWh).toBeGreaterThan(0);
+  expect(estimate.predictedSolarGenerationWh).toBeGreaterThan(
+    estimate.expectedHouseLoadWh,
+  );
   expect(estimate.skipReason).toBeNull();
-  expect(estimate.targetTimeSignal?.predictedSolarW).toBe(1400);
-  expect(estimate.targetTimeSignal?.recoveryThresholdW).toBeGreaterThan(0);
-  expect(estimate.estimatedReservePercentAtTargetTime).toBeGreaterThan(12);
+  expect(estimate.targetTimeSignal?.predictedSolarW).toBeGreaterThan(0);
+  expect(estimate.estimatedReservePercentAtTargetTime).toBe(15);
+  expect(estimate.estimatedTargetPercent).toBeLessThan(100);
+  expect(estimate.reasoning).toContain("delayed charging window");
 });
 
-test("delayed-charging auto is skipped when solar is not expected at the low marker", () => {
+test("delayed-charging auto idles when the battery is already at the target", () => {
   const now = new Date("2026-04-19T06:00:00.000Z");
   const battery = createBattery();
   const item = createAutoLowPriceItem();
-  const history = createMorningUsageHistory();
+  const history = createDaytimeUsageHistory(250);
   const estimate = estimateDynamicPriceTarget({
     battery,
     batteryPowerSamples: history.batteryPowerSamples,
@@ -104,7 +109,37 @@ test("delayed-charging auto is skipped when solar is not expected at the low mar
       ["2026-04-19T02:00:00.000Z", 20],
       ["2026-04-19T06:00:00.000Z", 30],
       ["2026-04-19T10:00:00.000Z", 10],
-      ["2026-04-19T14:00:00.000Z", 18],
+      ["2026-04-19T14:00:00.000Z", 28],
+      ["2026-04-19T18:00:00.000Z", 18],
+    ]),
+    item,
+    items: [createDefaultItem(), item],
+    now,
+    p1MeterSamples: history.p1MeterSamples,
+    sample: createSample({ socPercent: 35 }),
+    solarEnergyProviderSamples: history.solarEnergyProviderSamples,
+    solarForecastSamples: createDaytimeSolarForecastSamples(1600),
+  });
+
+  expect(estimate.resolvedManualState).toBe("idle");
+  expect(estimate.skipReason).toBeNull();
+});
+
+test("delayed-charging auto is skipped when no net solar charge is expected", () => {
+  const now = new Date("2026-04-19T06:00:00.000Z");
+  const battery = createBattery();
+  const item = createAutoLowPriceItem();
+  const history = createDaytimeUsageHistory(700);
+  const estimate = estimateDynamicPriceTarget({
+    battery,
+    batteryPowerSamples: history.batteryPowerSamples,
+    backupReserveMarginOverride: 2,
+    dynamicPriceSamples: createDynamicPriceSamples([
+      ["2026-04-19T02:00:00.000Z", 20],
+      ["2026-04-19T06:00:00.000Z", 30],
+      ["2026-04-19T10:00:00.000Z", 10],
+      ["2026-04-19T14:00:00.000Z", 28],
+      ["2026-04-19T18:00:00.000Z", 18],
     ]),
     item,
     items: [createDefaultItem(), item],
@@ -114,12 +149,11 @@ test("delayed-charging auto is skipped when solar is not expected at the low mar
     solarEnergyProviderSamples: history.solarEnergyProviderSamples,
     solarForecastSamples: createZeroSolarForecastSamples(
       "2026-04-19T06:00:00.000Z",
-      "2026-04-19T11:00:00.000Z",
+      "2026-04-19T14:00:00.000Z",
     ),
   });
 
-  expect(estimate.resolvedManualState).toBe("discharging");
-  expect(estimate.skipReason).toContain("below threshold");
+  expect(estimate.skipReason).toContain("no net solar charge expected");
 });
 
 function createAutoLowPriceItem(): BatteryStrategyPlanItem {
@@ -141,22 +175,38 @@ function createAutoLowPriceItem(): BatteryStrategyPlanItem {
   };
 }
 
-function createMorningSolarForecastSamples(): SolarForecastSampleRecord[] {
-  return createPeriodRange(
+function createDaytimeSolarForecastSamples(
+  daytimePowerW: number,
+): SolarForecastSampleRecord[] {
+  const basePeriods = createPeriodRange(
     "2026-04-19T06:00:00.000Z",
-    "2026-04-19T11:00:00.000Z",
-  ).map((periodStart) => ({
-    airTempC: null,
-    cloudOpacityPercent: null,
-    generatedAt: "2026-04-19T05:50:00.000Z",
-    ghiWm2: periodStart === "2026-04-19T10:00:00.000Z" ? 700 : 200,
-    periodStart,
-    siteId: "site-1",
-      value: periodStart === "2026-04-19T10:00:00.000Z" ? 1400 : 200,
-  }));
+    "2026-04-19T14:00:00.000Z",
+  );
+
+  return Array.from({ length: 8 }, (_, dayOffset) => dayOffset).flatMap(
+    (dayOffset) =>
+      basePeriods.map((periodStart) => {
+        const shiftedPeriodStart = shiftDateTime(periodStart, -dayOffset);
+        const isDaytimeWindow =
+          shiftedPeriodStart.slice(11, 16) >= "10:00" &&
+          shiftedPeriodStart.slice(11, 16) < "14:00";
+
+        return {
+          airTempC: null,
+          cloudOpacityPercent: null,
+          generatedAt: shiftDateTime("2026-04-19T05:50:00.000Z", -dayOffset),
+          ghiWm2: isDaytimeWindow ? 700 : 100,
+          periodStart: shiftedPeriodStart,
+          siteId: "site-1",
+          value: isDaytimeWindow ? daytimePowerW : 100,
+        };
+      }),
+  );
 }
 
-function createMorningUsageHistory(): {
+function createDaytimeUsageHistory(
+  siteLoadW: number,
+): {
   batteryPowerSamples: BatteryPowerSampleRecord[];
   p1MeterSamples: P1MeterSampleRecord[];
   solarEnergyProviderSamples: SolarEnergyProviderSampleRecord[];
@@ -167,28 +217,28 @@ function createMorningUsageHistory(): {
 
   for (let dayOffset = 1; dayOffset <= 7; dayOffset += 1) {
     const start = shiftDateTime("2026-04-19T06:00:00.000Z", -dayOffset);
-    const end = shiftDateTime("2026-04-19T10:15:00.000Z", -dayOffset);
+    const end = shiftDateTime("2026-04-19T14:00:00.000Z", -dayOffset);
 
     for (const periodStart of createPeriodRange(start, end)) {
-      const periodDate = new Date(periodStart);
-      const hour = periodDate.getUTCHours();
-      const minute = periodDate.getUTCMinutes();
       const solarPowerW =
-        hour < 9 ? 0 : hour === 9 ? 300 : minute === 0 ? 750 : 500;
+        periodStart >= shiftDateTime("2026-04-19T10:00:00.000Z", -dayOffset) &&
+        periodStart < shiftDateTime("2026-04-19T14:00:00.000Z", -dayOffset)
+          ? 900
+          : 0;
 
       batteryPowerSamples.push({
         batteryId: "battery-1",
         observedAt: periodStart,
         periodStart,
-        powerW: 120,
+        powerW: 0,
         siteId: "site-1",
-        socPercent: 65 - (hour - 6) * 1.5 - minute / 60,
+        socPercent: 70,
       });
       p1MeterSamples.push({
         meterId: "meter-1",
         observedAt: periodStart,
         periodStart,
-        powerW: 250,
+        powerW: siteLoadW - solarPowerW,
         siteId: "site-1",
       });
       solarEnergyProviderSamples.push({
@@ -290,7 +340,9 @@ function createAutoDischargeItem(): BatteryStrategyPlanItem {
   };
 }
 
-function createSample(): NormalizedBatteryInfo {
+function createSample(
+  overrides: Partial<NormalizedBatteryInfo> = {},
+): NormalizedBatteryInfo {
   return {
     capacityWh: 10000,
     currentW: 0,
@@ -304,6 +356,7 @@ function createSample(): NormalizedBatteryInfo {
     socPercent: 70,
     status: "idle",
     strategyMode: "self-consumption",
+    ...overrides,
   };
 }
 

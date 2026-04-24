@@ -18,6 +18,7 @@ import {
   shouldMarkScheduledItemObserved,
   shouldSkipScheduledItem,
   shouldSkipDelayedSocItemBecauseLaterItemIsDue,
+  shouldTransitionDelayedChargingToIdle,
   shouldWaitForObservedStart,
 } from "./strategy-scheduler";
 
@@ -111,6 +112,32 @@ test("getStrategyTriggerAt uses the preceding export-surplus marker for delayed-
   ).toBeNull();
 });
 
+test("getStrategyTriggerAt carries delayed-charging auto into the next day's low-price window", () => {
+  const item = createDailyItem({
+    manualState: "charging",
+    targetMethod: "auto",
+    triggerKind: BatteryStrategyTriggerKind.DelayedCharging,
+  });
+  const dynamicPriceSamples = createDynamicPriceSamples([
+    ["2026-04-09T16:00:00.000Z", 20],
+    ["2026-04-09T18:00:00.000Z", 35],
+    ["2026-04-09T20:00:00.000Z", 22],
+    ["2026-04-09T22:00:00.000Z", 20],
+    ["2026-04-10T08:00:00.000Z", 12],
+    ["2026-04-10T10:00:00.000Z", 5],
+    ["2026-04-10T12:00:00.000Z", 14],
+    ["2026-04-10T14:00:00.000Z", 25],
+  ]);
+
+  expect(
+    getStrategyTriggerAt({
+      item,
+      now: new Date("2026-04-09T19:00:00.000Z"),
+      dynamicPriceSamples,
+    })?.toISOString(),
+  ).toBe("2026-04-09T18:00:00.000Z");
+});
+
 test("getLowPriceAutoTriggerAtForMarker returns the preceding export-surplus marker", () => {
   expect(
     getLowPriceAutoTriggerAtForMarker({
@@ -124,6 +151,24 @@ test("getLowPriceAutoTriggerAtForMarker returns the preceding export-surplus mar
       ]),
     })?.toISOString(),
   ).toBe("2026-04-09T12:00:00.000Z");
+});
+
+test("getLowPriceAutoTriggerAtForMarker can pair a next-day delayed-charging marker with the previous day's export-surplus marker", () => {
+  expect(
+    getLowPriceAutoTriggerAtForMarker({
+      markerAt: new Date("2026-04-10T10:00:00.000Z"),
+      dynamicPriceSamples: createDynamicPriceSamples([
+        ["2026-04-09T16:00:00.000Z", 20],
+        ["2026-04-09T18:00:00.000Z", 35],
+        ["2026-04-09T20:00:00.000Z", 22],
+        ["2026-04-09T22:00:00.000Z", 20],
+        ["2026-04-10T08:00:00.000Z", 12],
+        ["2026-04-10T10:00:00.000Z", 5],
+        ["2026-04-10T12:00:00.000Z", 14],
+        ["2026-04-10T14:00:00.000Z", 25],
+      ]),
+    })?.toISOString(),
+  ).toBe("2026-04-09T18:00:00.000Z");
 });
 
 test("shouldCompleteScheduledItem uses the active plan item rather than the persisted battery strategy", () => {
@@ -193,6 +238,98 @@ test("shouldCompleteScheduledItem uses the computed dynamic target while an auto
       sample,
     }),
   ).toBe(true);
+});
+
+test("shouldTransitionDelayedChargingToIdle when the target is reached before the low-price marker", () => {
+  const item = createDailyItem({
+    id: "daily-1",
+    manualState: "charging",
+    targetMethod: "auto",
+    triggerKind: BatteryStrategyTriggerKind.DelayedCharging,
+  });
+
+  expect(
+    shouldTransitionDelayedChargingToIdle({
+      item,
+      now: new Date("2026-04-09T09:00:00.000Z"),
+      runtime: {
+        activeItemId: "daily-1",
+        activeObservedAt: "2026-04-09T07:00:05.000Z",
+        activeResolvedManualState: "discharging",
+        activeStartSocPercent: 60,
+        activeStartedAt: "2026-04-09T07:00:00.000Z",
+        activeTargetSocPercent: 40,
+        activeTargetTime: "2026-04-09T10:00:00.000Z",
+        lastTriggeredAtByItemId: { "daily-1": "2026-04-09T07:00:00.000Z" },
+      },
+      sample: createSample({ socPercent: 39, status: "discharging" }),
+    }),
+  ).toBe(true);
+});
+
+test("shouldCompleteScheduledItem keeps delayed-charging active after the target is reached before the window starts", () => {
+  const battery = createBattery({
+    strategyRuntime: {
+      activeItemId: "daily-1",
+      activeObservedAt: "2026-04-09T07:00:05.000Z",
+      activeResolvedManualState: "discharging",
+      activeStartSocPercent: 60,
+      activeStartedAt: "2026-04-09T07:00:00.000Z",
+      activeTargetSocPercent: 40,
+      activeTargetTime: "2026-04-09T10:00:00.000Z",
+      lastTriggeredAtByItemId: { "daily-1": "2026-04-09T07:00:00.000Z" },
+    },
+  });
+  const item = createDailyItem({
+    id: "daily-1",
+    manualState: "charging",
+    targetMethod: "auto",
+    triggerKind: BatteryStrategyTriggerKind.DelayedCharging,
+  });
+
+  expect(
+    getScheduledItemCompletion({
+      battery,
+      item,
+      now: new Date("2026-04-09T09:00:00.000Z"),
+      runtime: battery.strategyRuntime,
+      sample: createSample({ socPercent: 39, status: "discharging" }),
+    }),
+  ).toBeNull();
+});
+
+test("shouldCompleteScheduledItem completes delayed-charging when the low-price window starts", () => {
+  const battery = createBattery({
+    strategyRuntime: {
+      activeItemId: "daily-1",
+      activeObservedAt: "2026-04-09T07:00:05.000Z",
+      activeResolvedManualState: "idle",
+      activeStartSocPercent: 60,
+      activeStartedAt: "2026-04-09T07:00:00.000Z",
+      activeTargetSocPercent: 40,
+      activeTargetTime: "2026-04-09T10:00:00.000Z",
+      lastTriggeredAtByItemId: { "daily-1": "2026-04-09T07:00:00.000Z" },
+    },
+  });
+  const item = createDailyItem({
+    id: "daily-1",
+    manualState: "charging",
+    targetMethod: "auto",
+    triggerKind: BatteryStrategyTriggerKind.DelayedCharging,
+  });
+
+  expect(
+    getScheduledItemCompletion({
+      battery,
+      item,
+      now: new Date("2026-04-09T10:00:00.000Z"),
+      runtime: battery.strategyRuntime,
+      sample: createSample({ socPercent: 40, status: "idle" }),
+    }),
+  ).toMatchObject({
+    endAt: "2026-04-09T10:00:00.000Z",
+    reason: "delayed-charging-window-start-reached",
+  });
 });
 
 test("shouldMarkScheduledItemObserved uses the resolved runtime state for delayed-charging auto items", () => {
@@ -450,6 +587,12 @@ test("shouldWaitForObservedStart only waits for charging or discharging", () => 
   expect(
     shouldWaitForObservedStart(
       createDailyItem({ strategyMode: "self-consumption", manualState: null }),
+    ),
+  ).toBe(false);
+  expect(
+    shouldWaitForObservedStart(
+      createDailyItem({ strategyMode: "manual", manualState: "charging" }),
+      "idle",
     ),
   ).toBe(false);
 });
