@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import {
-  BatteryStrategyTriggerKind,
   type BatteryPowerSampleRecord,
   type BatteryRecord,
   type BatteryStrategyPlanItem,
+  BatteryStrategyTriggerKind,
   type DynamicPriceSampleRecord,
   type NormalizedBatteryInfo,
   type P1MeterSampleRecord,
@@ -29,6 +29,7 @@ test("evening auto discharge targets tomorrow morning and keeps a reserve above 
     item,
     items: [createDefaultItem(), item],
     now,
+    normalizedImportExportSpread: 0.13,
     p1MeterSamples: history.p1MeterSamples,
     sample: createSample({ capacityWh: 5000, socPercent: 90 }),
     solarEnergyProviderSamples: history.solarEnergyProviderSamples,
@@ -78,6 +79,7 @@ test("delayed-charging auto reserves daytime headroom from the low-price window"
     item,
     items: [createDefaultItem(), item],
     now,
+    normalizedImportExportSpread: 0.13,
     p1MeterSamples: history.p1MeterSamples,
     sample: createSample(),
     solarEnergyProviderSamples: history.solarEnergyProviderSamples,
@@ -91,8 +93,27 @@ test("delayed-charging auto reserves daytime headroom from the low-price window"
   );
   expect(estimate.skipReason).toBeNull();
   expect(estimate.targetTimeSignal?.predictedSolarW).toBeGreaterThan(0);
-  expect(estimate.estimatedReservePercentAtTargetTime).toBe(15);
+  expect(estimate.estimatedReservePercentAtTargetTime).toBe(20);
   expect(estimate.estimatedTargetPercent).toBeLessThan(100);
+  expect(estimate.startTime).not.toBeNull();
+  expect(estimate.effectiveDischargePowerW).toBe(2400);
+  expect(estimate.delayedChargingDetails).toMatchObject({
+    actualWindowEnd: "2026-04-19T11:15:00.000Z",
+    actualWindowEndPrice: 10,
+    actualWindowStart: "2026-04-19T10:00:00.000Z",
+    actualWindowStartPrice: 10,
+    lowestPrice: 10,
+    lowPriceMargin: 0.325,
+    lowPriceMarkerTime: "2026-04-19T10:00:00.000Z",
+    minimumTimeToFullChargeMinutes: 75,
+    normalizedImportExportSpread: 0.13,
+    potentialWindowEnd: "2026-04-19T11:15:00.000Z",
+    potentialWindowStart: "2026-04-19T08:45:00.000Z",
+  });
+  expect(
+    new Date(estimate.startTime ?? "").getTime() +
+      (estimate.requiredDischargeMinutes ?? 0) * 60_000,
+  ).toBeLessThanOrEqual(new Date(estimate.targetTime ?? "").getTime());
   expect(estimate.reasoning).toContain("delayed charging window");
 });
 
@@ -115,6 +136,7 @@ test("delayed-charging auto idles when the battery is already at the target", ()
     item,
     items: [createDefaultItem(), item],
     now,
+    normalizedImportExportSpread: 0.13,
     p1MeterSamples: history.p1MeterSamples,
     sample: createSample({ socPercent: 35 }),
     solarEnergyProviderSamples: history.solarEnergyProviderSamples,
@@ -144,6 +166,7 @@ test("delayed-charging auto is skipped when no net solar charge is expected", ()
     item,
     items: [createDefaultItem(), item],
     now,
+    normalizedImportExportSpread: 0.13,
     p1MeterSamples: history.p1MeterSamples,
     sample: createSample(),
     solarEnergyProviderSamples: history.solarEnergyProviderSamples,
@@ -204,9 +227,7 @@ function createDaytimeSolarForecastSamples(
   );
 }
 
-function createDaytimeUsageHistory(
-  siteLoadW: number,
-): {
+function createDaytimeUsageHistory(siteLoadW: number): {
   batteryPowerSamples: BatteryPowerSampleRecord[];
   p1MeterSamples: P1MeterSampleRecord[];
   solarEnergyProviderSamples: SolarEnergyProviderSampleRecord[];

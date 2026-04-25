@@ -382,7 +382,7 @@ test("normalizeBatteryStrategyPlan defaults enabled to true", () => {
 
   expect(normalized[0]?.enabled).toBe(true);
   expect(normalized[1]?.enabled).toBe(true);
-  expect(normalized[2]?.enabled).toBe(false);
+  expect(normalized[2]?.enabled).toBe(true);
   expect(normalized[3]?.enabled).toBe(true);
 });
 

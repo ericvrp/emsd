@@ -10,9 +10,9 @@ This section documents the built-in strategy types that appear in the battery st
 Current built-in strategy status:
 - `Self-consumption`: normal fallback behavior
 - `Export surplus`: active built-in rule
-- `Delayed charging`: under construction and disabled by default because the current implementation is not correct yet
+- `Delayed charging`: active built-in rule
 
-The shared dynamic target estimator used by strategy items with `targetMethod: auto` is documented separately in `../dynamic-price-target.md`.
+The shared dynamic target estimator used by strategy items with `targetMethod: auto` is documented separately in `../scripts/dynamic-price-target.md`.
 
 Use the strategy documents as the product-facing explanation of what each rule means.
-Use `dynamic-price-target.md` as implementation documentation for the shared estimator that currently supports those rules.
+Use `../scripts/dynamic-price-target.md` as implementation documentation for the shared estimator and evaluation script that currently support those rules.

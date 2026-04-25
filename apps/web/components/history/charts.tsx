@@ -568,7 +568,9 @@ export function SingleValueHistoryChart({
                       <HistoryTooltip
                         formatter={valueFormatter}
                         labelFormatter={formatTooltipTimestamp}
-                        {...(entryLabelFormatter ? { entryLabelFormatter } : {})}
+                        {...(entryLabelFormatter
+                          ? { entryLabelFormatter }
+                          : {})}
                       />
                     )
                   }

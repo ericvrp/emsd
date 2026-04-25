@@ -1,14 +1,16 @@
 import { expect, test } from "bun:test";
+import type { DynamicPriceTargetEstimate } from "../apps/daemon/src/dynamic-price-target";
 import {
-  BatteryStrategyTriggerKind,
   type BatteryStrategyPlanItem,
+  BatteryStrategyTriggerKind,
   type DynamicPriceSampleRecord,
-  type DynamicPriceTargetEstimate,
 } from "../packages/core/src/index";
 import {
   buildCurrentEstimateRows,
+  buildEstimateSummaryRows,
   buildEnergyBucketRows,
   buildEnergyEstimateRows,
+  buildEstimateSummaryLine,
   createReplayTime,
   parseArgs,
   resolveEvaluationReferenceTime,
@@ -18,10 +20,7 @@ test("parseArgs accepts --strategy for export-surplus and delayed-charging", () 
   expect(
     parseArgs(["--strategy=export-surplus,delayed-charging"])
       .strategyTriggerKinds,
-  ).toEqual([
-    "export-surplus",
-    "delayed-charging",
-  ]);
+  ).toEqual(["export-surplus", "delayed-charging"]);
 });
 
 test("parseArgs rejects unknown strategy names", () => {
@@ -42,7 +41,7 @@ test("resolveEvaluationReferenceTime keeps the explicit marker time for export-s
   ).toBe(createReplayTime("2026-04-19", "17:30").toISOString());
 });
 
-test("resolveEvaluationReferenceTime uses the paired pre-discharge trigger for explicit delayed-charging markers", () => {
+test("resolveEvaluationReferenceTime keeps the explicit low-price marker for delayed-charging items", () => {
   expect(
     resolveEvaluationReferenceTime({
       markerDate: "2026-04-19",
@@ -56,7 +55,7 @@ test("resolveEvaluationReferenceTime uses the paired pre-discharge trigger for e
       item: createLowPriceAutoItem(),
       markerTime: "10:00",
     }).toISOString(),
-  ).toBe("2026-04-19T06:00:00.000Z");
+  ).toBe("2026-04-19T10:00:00.000Z");
 });
 
 test("resolveEvaluationReferenceTime uses the next export-surplus marker by default", () => {
@@ -75,7 +74,7 @@ test("resolveEvaluationReferenceTime uses the next export-surplus marker by defa
   ).toBe("2026-04-19T08:00:00.000Z");
 });
 
-test("resolveEvaluationReferenceTime uses the next delayed-charging auto trigger by default", () => {
+test("resolveEvaluationReferenceTime uses the next delayed-charging low-price marker by default", () => {
   expect(
     resolveEvaluationReferenceTime({
       markerDate: "2026-04-19",
@@ -89,10 +88,10 @@ test("resolveEvaluationReferenceTime uses the next delayed-charging auto trigger
       item: createLowPriceAutoItem(),
       markerTime: "01:00",
     }).toISOString(),
-  ).toBe("2026-04-19T06:00:00.000Z");
+  ).toBe("2026-04-19T10:00:00.000Z");
 });
 
-test("resolveEvaluationReferenceTime uses the next day's delayed-charging auto trigger when today's low marker is gone", () => {
+test("resolveEvaluationReferenceTime uses the next day's delayed-charging low-price marker when today's low marker is gone", () => {
   expect(
     resolveEvaluationReferenceTime({
       markerDate: "2026-04-19",
@@ -110,7 +109,7 @@ test("resolveEvaluationReferenceTime uses the next day's delayed-charging auto t
       item: createLowPriceAutoItem(),
       markerTime: "23:30",
     }).toISOString(),
-  ).toBe("2026-04-19T18:00:00.000Z");
+  ).toBe("2026-04-20T10:00:00.000Z");
 });
 
 test("buildCurrentEstimateRows shows start time and start-based duration", () => {
@@ -136,6 +135,181 @@ test("buildCurrentEstimateRows shows start time and start-based duration", () =>
     "Start to target duration": "11h 45m",
     Skip: "no",
   });
+});
+
+test("buildCurrentEstimateRows prefers the computed delayed-charging start time when available", () => {
+  const referenceTime = createReplayTime("2026-04-21", "19:45");
+
+  expect(
+    buildCurrentEstimateRows({
+      batteryMinimumDischargePercent: 10,
+      dynamicPriceTargetEstimate: {
+        ...createEstimate(),
+        startTime: createReplayTime("2026-04-21", "18:30").toISOString(),
+      },
+      minimumSolarSurplusWOverride: 50,
+      strategyTriggerKind: "delayed-charging",
+      referenceTime,
+      reserveTargetPercent: 12,
+    }),
+  ).toMatchObject({
+    "Start time": "2026-04-21 18:30",
+    "Start to target duration": "13h 0m",
+  });
+});
+
+test("buildEstimateSummaryLine explains how delayed-charging start time was computed", () => {
+  expect(
+    buildEstimateSummaryLine({
+      action: "charging",
+      battery: {
+        id: "battery-1",
+        minimumDischargePercent: 10,
+        name: "Battery 1",
+      } as never,
+      batteryId: "battery-1",
+      candidateDays: [],
+      capacityWh: 6000,
+      dynamicPriceTargetEstimate: {
+        ...createEstimate(),
+        effectiveDischargePowerW: 2400,
+        estimatedReservePercentAtTargetTime: 20,
+        estimatedTargetPercent: 35,
+        requiredDischargeMinutes: 75,
+        startTime: createReplayTime("2026-04-21", "18:30").toISOString(),
+        startTimeBasisSocPercent: 65,
+        targetTime: createReplayTime("2026-04-22", "07:30").toISOString(),
+      },
+      minimumSolarSurplusWOverride: 50,
+      referenceTime: createReplayTime("2026-04-21", "19:45"),
+      reserveTargetPercent: 12,
+      siteId: "site-1",
+      siteName: "Home",
+      strategyTriggerKind: "delayed-charging",
+      verboseBlocks: new Set(),
+    }),
+  ).toContain("start computed from 65% to 35% at 2400 W over 1h 15m");
+});
+
+test("buildEstimateSummaryRows keeps delayed-charging output short and strategy-specific", () => {
+  expect(
+    buildEstimateSummaryRows({
+      action: "charging",
+      battery: {
+        id: "battery-1",
+        minimumDischargePercent: 10,
+        name: "Battery 1",
+      } as never,
+      batteryId: "battery-1",
+      candidateDays: [],
+      capacityWh: 6000,
+      dynamicPriceTargetEstimate: {
+        ...createEstimate(),
+        delayedChargingDetails: {
+          actualWindowEnd: createReplayTime(
+            "2026-04-22",
+            "15:45",
+          ).toISOString(),
+          actualWindowEndPrice: -0.01,
+          actualWindowStart: createReplayTime(
+            "2026-04-22",
+            "12:45",
+          ).toISOString(),
+          actualWindowStartPrice: -0.02,
+          chargeStartSocPercent: 20,
+          chargePowerW: 2400,
+          currentSocBasisPercent: 21,
+          latestFeasiblePreDischargeStartTime: createReplayTime(
+            "2026-04-22",
+            "12:43",
+          ).toISOString(),
+          lowestPrice: -0.11,
+          lowPriceMargin: 0.104,
+          lowPriceMarkerTime: createReplayTime(
+            "2026-04-22",
+            "13:45",
+          ).toISOString(),
+          minimumTimeToFullChargeMinutes: 120,
+          normalizedImportExportSpread: 0.13,
+          potentialWindowEnd: createReplayTime(
+            "2026-04-22",
+            "15:45",
+          ).toISOString(),
+          potentialWindowStart: createReplayTime(
+            "2026-04-22",
+            "11:45",
+          ).toISOString(),
+          preDischargeTargetSocPercent: 20,
+        },
+        effectiveDischargePowerW: 2400,
+        estimatedReservePercentAtTargetTime: 20,
+        estimatedTargetPercent: 20,
+        requiredDischargeMinutes: 2,
+        startTime: createReplayTime("2026-04-22", "12:43").toISOString(),
+        startTimeBasisSocPercent: 21,
+        targetTime: createReplayTime("2026-04-22", "12:45").toISOString(),
+      },
+      minimumSolarSurplusWOverride: 50,
+      referenceTime: createReplayTime("2026-04-22", "11:00"),
+      reserveTargetPercent: 12,
+      siteId: "site-1",
+      siteName: "Home",
+      strategyTriggerKind: "delayed-charging",
+      verboseBlocks: new Set(),
+    }),
+  ).toEqual([
+    {
+      label: "Current pre-window action",
+      value:
+        "discharge from 21% to 20% to reach the pre-discharge target before the low-price window",
+    },
+    {
+      label: "Low Price Marker",
+      value: "2026-04-22 13:45 at -0.11 EUR/kWh (+ 0.10 EUR/kWh margin -> max -0.01 EUR/kWh in window)",
+    },
+    { label: "Time to charge", value: "2h from 20% to 100% (4800 Wh at 2400 W)" },
+    {
+      label: "Low price window",
+      value: "12:45 (-0.02 EUR/kWh) -> 15:45 (-0.01 EUR/kWh) (potential: 11:45 -> 15:45)",
+    },
+    {
+      label: "Pre-discharge start",
+      value: "2026-04-22 12:43 from 21% -> 20% (at 2400 W for 2m)",
+    },
+  ]);
+});
+
+test("buildEstimateSummaryRows keeps export-surplus output strategy-specific", () => {
+  expect(
+    buildEstimateSummaryRows({
+      action: "discharging",
+      battery: {
+        id: "battery-1",
+        minimumDischargePercent: 10,
+        name: "Battery 1",
+      } as never,
+      batteryId: "battery-1",
+      candidateDays: [],
+      capacityWh: 6000,
+      dynamicPriceTargetEstimate: createEstimate(),
+      minimumSolarSurplusWOverride: 50,
+      referenceTime: createReplayTime("2026-04-21", "19:45"),
+      reserveTargetPercent: 12,
+      siteId: "site-1",
+      siteName: "Home",
+      strategyTriggerKind: "export-surplus",
+      verboseBlocks: new Set(),
+    }),
+  ).toEqual([
+    { label: "Action", value: "discharge" },
+    { label: "Recovery Target Time", value: "2026-04-22 07:30" },
+    { label: "Predicted Solar", value: "300 W" },
+    { label: "Expected Load", value: "200 W" },
+    { label: "Solar Surplus", value: "+100 W" },
+    { label: "Discharge Target", value: "discharge to 57%" },
+    { label: "Start", value: "2026-04-21 19:45" },
+    { label: "Reserve At Target", value: "18%" },
+  ]);
 });
 
 test("buildEnergyEstimateRows explains the interval and target formula", () => {
@@ -273,6 +447,7 @@ function createEstimate(): DynamicPriceTargetEstimate {
     estimatedRemainingEnergyWh: 2349.04,
     estimatedReservePercentAtTargetTime: 18,
     estimatedTargetPercent: 57,
+    delayedChargingDetails: null,
     expectedHouseLoadWh: 2637.77,
     historyStats: {
       historicalPeriodsUsed: 10,
@@ -281,6 +456,10 @@ function createEstimate(): DynamicPriceTargetEstimate {
     },
     predictedSolarGenerationWh: 288.73,
     reasoning: "recent history and predicted solar recovery",
+    startTime: null,
+    startTimeBasisSocPercent: null,
+    effectiveDischargePowerW: null,
+    requiredDischargeMinutes: null,
     resolvedManualState: "discharging",
     skipReason: null,
     targetTime: createReplayTime("2026-04-22", "07:30").toISOString(),

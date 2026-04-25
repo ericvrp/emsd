@@ -1,8 +1,8 @@
 # Documentation
 
-## Algorithms
+## Scripts
 
-- `dynamic-price-target.md`: daemon-owned dynamic target estimator used by `targetMethod: auto`
+- `scripts/dynamic-price-target.md`: evaluator for the daemon-owned dynamic target estimator used by `targetMethod: auto`
 
 ## Strategies
 

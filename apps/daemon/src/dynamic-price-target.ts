@@ -1,26 +1,25 @@
 import {
-  BatteryStrategyTriggerKind,
-  DEFAULT_SOLAR_PREDICTION_SMOOTHING_MODE,
-  DELAYED_CHARGING_TARGET_FLOOR_BUFFER_PERCENT,
-  calculateDynamicReserveFloorPercent,
-  DYNAMIC_PRICE_TARGET_BUFFER_PERCENT_PER_HOUR,
-  DYNAMIC_PRICE_TARGET_MIN_SOLAR_SURPLUS_W,
-  DYNAMIC_PRICE_TARGET_PERIOD_MINUTES,
-  PRICE_SELECTION_WINDOW_MS,
-  applySolarSeriesSmoothing,
-  buildExpectedSiteLoadProfile,
-  buildHouseLoadHistorySeries,
-  buildPredictedSolarGenerationSeries,
-  isDelayedChargingAutoDischargeItem,
-  resolveExpectedSiteLoadW,
   type BatteryPowerSampleRecord,
   type BatteryRecord,
   type BatteryStrategyPlanItem,
+  BatteryStrategyTriggerKind,
+  DEFAULT_SOLAR_PREDICTION_SMOOTHING_MODE,
+  DELAYED_CHARGING_TARGET_FLOOR_BUFFER_PERCENT,
+  DYNAMIC_PRICE_TARGET_BUFFER_PERCENT_PER_HOUR,
+  DYNAMIC_PRICE_TARGET_MIN_SOLAR_SURPLUS_W,
+  DYNAMIC_PRICE_TARGET_PERIOD_MINUTES,
   type DynamicPriceSampleRecord,
   type NormalizedBatteryInfo,
   type P1MeterSampleRecord,
   type SolarEnergyProviderSampleRecord,
   type SolarForecastSampleRecord,
+  applySolarSeriesSmoothing,
+  buildExpectedSiteLoadProfile,
+  buildHouseLoadHistorySeries,
+  buildPredictedSolarGenerationSeries,
+  calculateDynamicReserveFloorPercent,
+  isDelayedChargingAutoDischargeItem,
+  resolveExpectedSiteLoadW,
 } from "@emsd/core";
 import {
   getNextPriceMarkerTriggerAt,
@@ -29,6 +28,7 @@ import {
 
 const MIN_SOLAR_SURPLUS_W = DYNAMIC_PRICE_TARGET_MIN_SOLAR_SURPLUS_W;
 const DEFAULT_PERIOD_MINUTES = DYNAMIC_PRICE_TARGET_PERIOD_MINUTES;
+const DELAYED_CHARGING_LOW_PRICE_MARGIN_FACTOR = 3;
 
 export interface DynamicPriceTargetEstimate {
   availability: "full" | "partial" | "unavailable";
@@ -43,6 +43,24 @@ export interface DynamicPriceTargetEstimate {
   estimatedRemainingEnergyWh: number;
   estimatedReservePercentAtTargetTime: number;
   estimatedTargetPercent: number;
+  delayedChargingDetails: {
+    actualWindowEnd: string;
+    actualWindowEndPrice: number;
+    actualWindowStart: string;
+    actualWindowStartPrice: number;
+    chargePowerW: number;
+    chargeStartSocPercent: number;
+    currentSocBasisPercent: number;
+    latestFeasiblePreDischargeStartTime: string | null;
+    lowestPrice: number;
+    lowPriceMargin: number;
+    lowPriceMarkerTime: string;
+    minimumTimeToFullChargeMinutes: number;
+    normalizedImportExportSpread: number;
+    potentialWindowEnd: string;
+    potentialWindowStart: string;
+    preDischargeTargetSocPercent: number | null;
+  } | null;
   expectedHouseLoadWh: number;
   historyStats: {
     historicalPeriodsUsed: number;
@@ -51,6 +69,10 @@ export interface DynamicPriceTargetEstimate {
   };
   resolvedManualState: BatteryStrategyPlanItem["manualState"];
   skipReason: string | null;
+  startTime: string | null;
+  startTimeBasisSocPercent: number | null;
+  effectiveDischargePowerW: number | null;
+  requiredDischargeMinutes: number | null;
   /** Warning message if the estimate encountered unexpected conditions (e.g., invalid target time). */
   warning: string | null;
   predictedSolarGenerationWh: number;
@@ -79,8 +101,38 @@ interface SolarRecoverySignal {
 }
 
 interface DelayedChargingWindow {
+  chargePowerW: number;
+  chargeStartSocPercent: number;
   endTime: Date;
+  endPrice: number;
+  lowPriceMargin: number;
+  lowestPrice: number;
+  lowPriceMarkerTime: Date;
+  minimumTimeToFullChargeMinutes: number;
+  normalizedImportExportSpread: number;
+  potentialEndTime: Date;
+  potentialStartTime: Date;
   startTime: Date;
+  startPrice: number;
+}
+
+interface DelayedChargingStartPlan {
+  effectiveDischargePowerW: number;
+  requiredDischargeMinutes: number;
+  startSocPercent: number;
+  startTime: Date;
+}
+
+interface DelayedChargingEstimate extends IntervalEnergyEstimate {
+  targetPercent: number;
+  window: DelayedChargingWindow;
+}
+
+interface IntervalEnergyEstimate {
+  energyBuckets: EnergyBucket[];
+  estimatedRemainingEnergyWh: number;
+  expectedHouseLoadWh: number;
+  predictedSolarGenerationWh: number;
 }
 
 interface BreakEvenTraceRow {
@@ -116,6 +168,7 @@ export function estimateDynamicPriceTarget(input: {
   solarEnergyProviderSamples: SolarEnergyProviderSampleRecord[];
   solarForecastSamples: SolarForecastSampleRecord[];
   targetBufferPercentPerHourOverride?: number;
+  normalizedImportExportSpread?: number | null;
 }): DynamicPriceTargetEstimate {
   const fallbackTargetPercent = getFallbackTargetPercent(input);
   const fallbackTargetTime = getFallbackTargetTime(input);
@@ -128,12 +181,17 @@ export function estimateDynamicPriceTarget(input: {
       estimatedRemainingEnergyWh: 0,
       estimatedReservePercentAtTargetTime: fallbackTargetPercent,
       estimatedTargetPercent: fallbackTargetPercent,
+      delayedChargingDetails: null,
       expectedHouseLoadWh: 0,
       historyStats: {
         historicalPeriodsUsed: 0,
         sameWeekdayPeriodsUsed: 0,
         slotCount: 0,
       },
+      startTime: input.now.toISOString(),
+      startTimeBasisSocPercent: input.sample.socPercent,
+      effectiveDischargePowerW: null,
+      requiredDischargeMinutes: null,
       resolvedManualState: input.item.manualState,
       skipReason: null,
       predictedSolarGenerationWh: 0,
@@ -164,8 +222,9 @@ export function estimateDynamicPriceTarget(input: {
     historicalPeriodsUsed: sharedLoadProfile.historicalPeriodsUsed,
     sameWeekdayPeriodsUsed: sharedLoadProfile.sameWeekdayPeriodsUsed,
   };
-  const isDelayedChargingAutoDischarge =
-    isDelayedChargingAutoDischargeItem(input.item);
+  const isDelayedChargingAutoDischarge = isDelayedChargingAutoDischargeItem(
+    input.item,
+  );
   const windowKind = getWindowKind(input.item, input.now);
   const solarRecoverySignal = findSolarRecoveryTime({
     minimumSolarSurplusW:
@@ -181,15 +240,7 @@ export function estimateDynamicPriceTarget(input: {
         dynamicPriceSamples: input.dynamicPriceSamples,
       })
     : null;
-  const delayedChargingWindow = isDelayedChargingAutoDischarge
-    ? resolveDelayedChargingWindow({
-        dynamicPriceSamples: input.dynamicPriceSamples,
-        item: input.item,
-        items: input.items,
-        lowPriceMarkerTime,
-      })
-    : null;
-  const targetTime = resolveTargetTime({
+  const targetTimeBeforeCapacityCheck = resolveTargetTime({
     dynamicPriceSamples: input.dynamicPriceSamples,
     item: input.item,
     items: input.items,
@@ -198,14 +249,20 @@ export function estimateDynamicPriceTarget(input: {
     solarRecoveryTime: solarRecoverySignal?.time ?? null,
     windowKind,
   });
-  const targetTimeSignal = buildTargetTimeSignal({
+  const targetTimeSignalBeforeCapacityCheck = buildTargetTimeSignal({
     minimumSolarSurplusW:
       input.minimumSolarSurplusWOverride ?? MIN_SOLAR_SURPLUS_W,
     loadProfile,
     predictedSeries,
     solarForecastSamples: input.solarForecastSamples,
-    targetTime,
+    targetTime: targetTimeBeforeCapacityCheck,
   });
+  const emptyDelayedChargingStartPlan = {
+    effectiveDischargePowerW: null,
+    requiredDischargeMinutes: null,
+    startSocPercent: null,
+    startTime: null,
+  } as const;
 
   if (input.sample.capacityWh === null) {
     return {
@@ -215,175 +272,43 @@ export function estimateDynamicPriceTarget(input: {
       estimatedRemainingEnergyWh: 0,
       estimatedReservePercentAtTargetTime: fallbackTargetPercent,
       estimatedTargetPercent: fallbackTargetPercent,
+      delayedChargingDetails: null,
       expectedHouseLoadWh: 0,
       historyStats: {
         historicalPeriodsUsed: loadProfile.historicalPeriodsUsed,
         sameWeekdayPeriodsUsed: loadProfile.sameWeekdayPeriodsUsed,
         slotCount: loadProfile.expectedLoadBySlot.size,
       },
-      resolvedManualState: resolveDynamicEstimateManualState({ item: input.item }),
+      startTime: input.now.toISOString(),
+      startTimeBasisSocPercent: input.sample.socPercent,
+      effectiveDischargePowerW: null,
+      requiredDischargeMinutes: null,
+      resolvedManualState: resolveDynamicEstimateManualState({
+        item: input.item,
+      }),
       skipReason: isDelayedChargingAutoDischarge
         ? `skipped: battery capacity unavailable for delayed charging item ${input.item.id}`
         : null,
       predictedSolarGenerationWh: 0,
       reasoning: "battery capacity is unavailable",
-      targetTime: targetTime?.toISOString() ?? fallbackTargetTime,
+      targetTime:
+        targetTimeBeforeCapacityCheck?.toISOString() ?? fallbackTargetTime,
       targetTimeSignal: isDelayedChargingAutoDischarge
-        ? targetTimeSignal
+        ? targetTimeSignalBeforeCapacityCheck
         : serializeSolarRecoverySignal(solarRecoverySignal),
       warning: null,
       windowKind,
     };
   }
 
-  if (targetTime === null) {
-    return {
-      availability: "unavailable",
-      breakEvenTrace: [],
-      energyBuckets: [],
-      estimatedRemainingEnergyWh: 0,
-      estimatedReservePercentAtTargetTime: fallbackTargetPercent,
-      estimatedTargetPercent: fallbackTargetPercent,
-      expectedHouseLoadWh: 0,
-      historyStats: {
-        historicalPeriodsUsed: loadProfile.historicalPeriodsUsed,
-        sameWeekdayPeriodsUsed: loadProfile.sameWeekdayPeriodsUsed,
-        slotCount: loadProfile.expectedLoadBySlot.size,
-      },
-      resolvedManualState: resolveDynamicEstimateManualState({ item: input.item }),
-      skipReason: isDelayedChargingAutoDischarge
-        ? getDelayedChargingSkipReason({
-            itemId: input.item.id,
-            targetTime,
-            window: delayedChargingWindow,
-            expectedNetChargeWh: null,
-          })
-        : null,
-      predictedSolarGenerationWh: 0,
-      reasoning: "no target horizon could be determined",
-      targetTime: fallbackTargetTime,
-      targetTimeSignal: isDelayedChargingAutoDischarge
-        ? targetTimeSignal
-        : serializeSolarRecoverySignal(solarRecoverySignal),
-      warning: null,
-      windowKind,
-    };
-  }
-
-  if (isDelayedChargingAutoDischarge && delayedChargingWindow === null) {
-    return {
-      availability: "unavailable",
-      breakEvenTrace: [],
-      energyBuckets: [],
-      estimatedRemainingEnergyWh: 0,
-      estimatedReservePercentAtTargetTime: fallbackTargetPercent,
-      estimatedTargetPercent: fallbackTargetPercent,
-      expectedHouseLoadWh: 0,
-      historyStats: {
-        historicalPeriodsUsed: loadProfile.historicalPeriodsUsed,
-        sameWeekdayPeriodsUsed: loadProfile.sameWeekdayPeriodsUsed,
-        slotCount: loadProfile.expectedLoadBySlot.size,
-      },
-      resolvedManualState: resolveDynamicEstimateManualState({ item: input.item }),
-      skipReason: getDelayedChargingSkipReason({
-        itemId: input.item.id,
-        targetTime,
-        window: delayedChargingWindow,
-        expectedNetChargeWh: null,
-      }),
-      predictedSolarGenerationWh: 0,
-      reasoning: "no delayed charging window could be determined",
-      targetTime: targetTime.toISOString(),
-      targetTimeSignal,
-      warning: null,
-      windowKind,
-    };
-  }
-
-  const integrationStart = isDelayedChargingAutoDischarge
-    ? (delayedChargingWindow?.startTime ?? targetTime)
-    : input.now;
-  const integrationEnd = isDelayedChargingAutoDischarge
-    ? (delayedChargingWindow?.endTime ?? targetTime)
-    : targetTime;
-
-  const periodHours = resolvePeriodHours(input.solarForecastSamples);
-  const forecastPeriods = predictedSeries
-    .map((point) => {
-      const overlapHours = resolveIntervalOverlapHours({
-        intervalEnd: integrationEnd,
-        intervalStart: integrationStart,
-        periodHours,
-        periodStart: point.periodStart,
-      });
-
-      if (overlapHours <= 0) {
-        return null;
-      }
-
-      return {
-        overlapHours,
-        periodStart: point.periodStart,
-        predictedPowerW:
-          typeof point.value === "number" ? Math.max(0, point.value) : 0,
-      };
-    })
-    .filter(
-      (
-        point,
-      ): point is {
-        overlapHours: number;
-        periodStart: string;
-        predictedPowerW: number;
-      } => point !== null,
-    );
-  let cumulativeExpectedHouseLoadWh = 0;
-  let cumulativePredictedSolarWh = 0;
-  const energyBuckets = forecastPeriods.map((point) => {
-    const durationMinutes = Math.round(point.overlapHours * 60);
-    const bucketExpectedHouseLoadWh = round2(
-      resolveExpectedHouseLoadWh(
-        point.periodStart,
-        loadProfile,
-        point.overlapHours,
-      ),
-    );
-    const bucketPredictedSolarWh = round2(
-      point.predictedPowerW * point.overlapHours,
-    );
-    cumulativeExpectedHouseLoadWh = round2(
-      cumulativeExpectedHouseLoadWh + bucketExpectedHouseLoadWh,
-    );
-    cumulativePredictedSolarWh = round2(
-      cumulativePredictedSolarWh + bucketPredictedSolarWh,
-    );
-    const cumulativeNetBatteryEnergyNeededWh = round2(
-      isDelayedChargingAutoDischarge
-        ? Math.max(0, cumulativePredictedSolarWh - cumulativeExpectedHouseLoadWh)
-        : Math.max(0, cumulativeExpectedHouseLoadWh - cumulativePredictedSolarWh),
-    );
-    return {
-      time: point.periodStart,
-      durationMinutes,
-      expectedHouseLoadWh: bucketExpectedHouseLoadWh,
-      predictedSolarWh: bucketPredictedSolarWh,
-      netBatteryEnergyNeededWh: round2(
-        isDelayedChargingAutoDischarge
-          ? Math.max(0, bucketPredictedSolarWh - bucketExpectedHouseLoadWh)
-          : Math.max(0, bucketExpectedHouseLoadWh - bucketPredictedSolarWh),
-      ),
-      cumulativeExpectedHouseLoadWh,
-      cumulativePredictedSolarWh,
-      cumulativeNetBatteryEnergyNeededWh,
-    };
-  });
-  const lastEnergyBucket = energyBuckets[energyBuckets.length - 1] ?? null;
-  const expectedHouseLoadWh =
-    lastEnergyBucket?.cumulativeExpectedHouseLoadWh ?? 0;
-  const predictedSolarGenerationWh =
-    lastEnergyBucket?.cumulativePredictedSolarWh ?? 0;
-  const estimatedRemainingEnergyWh =
-    lastEnergyBucket?.cumulativeNetBatteryEnergyNeededWh ?? 0;
+  const delayedChargingSocBasis = isDelayedChargingAutoDischarge
+    ? resolveDelayedChargingSocBasis({
+        battery: input.battery,
+        batteryPowerSamples: input.batteryPowerSamples,
+        now: input.now,
+        sampleSocPercent: input.sample.socPercent,
+      })
+    : null;
   const reserveFloorResult = isDelayedChargingAutoDischarge
     ? {
         reserveFloorPercent: clampPercent(
@@ -400,7 +325,7 @@ export function estimateDynamicPriceTarget(input: {
           itemId: input.item.id,
           minimumDischargePercent: input.battery.minimumDischargePercent,
           now: input.now,
-          reserveUntil: targetTime,
+          reserveUntil: targetTimeBeforeCapacityCheck ?? input.now,
           targetBufferPercentPerHour:
             input.targetBufferPercentPerHourOverride ??
             DYNAMIC_PRICE_TARGET_BUFFER_PERCENT_PER_HOUR,
@@ -409,27 +334,141 @@ export function estimateDynamicPriceTarget(input: {
           reserveFloorPercent: input.battery.minimumDischargePercent,
           warning: null,
         };
+  const delayedChargingEstimate = isDelayedChargingAutoDischarge
+    ? resolveDelayedChargingEstimate({
+        battery: input.battery,
+        capacityWh: input.sample.capacityWh,
+        currentSocPercent: delayedChargingSocBasis?.socPercent ?? null,
+        dynamicPriceSamples: input.dynamicPriceSamples,
+        item: input.item,
+        loadProfile,
+        lowPriceMarkerTime,
+        normalizedImportExportSpread:
+          input.normalizedImportExportSpread ?? null,
+        periodHours: resolvePeriodHours(input.solarForecastSamples),
+        predictedSeries,
+        reserveFloorPercent: reserveFloorResult.reserveFloorPercent,
+      })
+    : null;
+  const delayedChargingWindow = delayedChargingEstimate?.window ?? null;
+  const targetTime = isDelayedChargingAutoDischarge
+    ? (delayedChargingWindow?.startTime ?? null)
+    : targetTimeBeforeCapacityCheck;
+  const targetTimeSignal = buildTargetTimeSignal({
+    minimumSolarSurplusW:
+      input.minimumSolarSurplusWOverride ?? MIN_SOLAR_SURPLUS_W,
+    loadProfile,
+    predictedSeries,
+    solarForecastSamples: input.solarForecastSamples,
+    targetTime,
+  });
+
+  if (targetTime === null) {
+    return {
+      availability: "unavailable",
+      breakEvenTrace: [],
+      energyBuckets: [],
+      estimatedRemainingEnergyWh: 0,
+      estimatedReservePercentAtTargetTime: fallbackTargetPercent,
+      estimatedTargetPercent: fallbackTargetPercent,
+      delayedChargingDetails: serializeDelayedChargingDetails({
+        chargeStartSocPercent:
+          delayedChargingEstimate?.window.chargeStartSocPercent ?? null,
+        currentSocBasisPercent: delayedChargingSocBasis?.socPercent ?? null,
+        preDischargeTargetSocPercent: null,
+        startPlan: null,
+        window: delayedChargingWindow,
+      }),
+      expectedHouseLoadWh: 0,
+      historyStats: {
+        historicalPeriodsUsed: loadProfile.historicalPeriodsUsed,
+        sameWeekdayPeriodsUsed: loadProfile.sameWeekdayPeriodsUsed,
+        slotCount: loadProfile.expectedLoadBySlot.size,
+      },
+      startTime: isDelayedChargingAutoDischarge
+        ? null
+        : input.now.toISOString(),
+      startTimeBasisSocPercent: input.sample.socPercent,
+      effectiveDischargePowerW: null,
+      requiredDischargeMinutes: null,
+      resolvedManualState: resolveDynamicEstimateManualState({
+        item: input.item,
+      }),
+      skipReason: isDelayedChargingAutoDischarge
+        ? getDelayedChargingSkipReason({
+            itemId: input.item.id,
+            targetTime: isDelayedChargingAutoDischarge
+              ? lowPriceMarkerTime
+              : targetTime,
+            window: delayedChargingWindow,
+            expectedNetChargeWh: null,
+            startPlan: emptyDelayedChargingStartPlan,
+          })
+        : null,
+      predictedSolarGenerationWh: 0,
+      reasoning: "no target horizon could be determined",
+      targetTime: fallbackTargetTime,
+      targetTimeSignal: isDelayedChargingAutoDischarge
+        ? targetTimeSignal
+        : serializeSolarRecoverySignal(solarRecoverySignal),
+      warning: null,
+      windowKind,
+    };
+  }
+
+  const intervalEnergyEstimate = isDelayedChargingAutoDischarge
+    ? delayedChargingEstimate
+    : buildIntervalEnergyEstimate({
+        integrationEnd: targetTime,
+        integrationStart: input.now,
+        loadProfile,
+        mode: "load-minus-solar",
+        periodHours: resolvePeriodHours(input.solarForecastSamples),
+        predictedSeries,
+      });
+  const energyBuckets = intervalEnergyEstimate?.energyBuckets ?? [];
+  const expectedHouseLoadWh = intervalEnergyEstimate?.expectedHouseLoadWh ?? 0;
+  const predictedSolarGenerationWh =
+    intervalEnergyEstimate?.predictedSolarGenerationWh ?? 0;
+  const estimatedRemainingEnergyWh =
+    intervalEnergyEstimate?.estimatedRemainingEnergyWh ?? 0;
   const estimatedReservePercentAtTargetTime =
     reserveFloorResult.reserveFloorPercent;
   const estimatedTargetPercent = isDelayedChargingAutoDischarge
-    ? clampPercent(
+    ? (delayedChargingEstimate?.targetPercent ??
+      clampPercent(
         100 -
           Math.ceil(
-            (estimatedRemainingEnergyWh / Math.max(1, input.sample.capacityWh)) *
+            (estimatedRemainingEnergyWh /
+              Math.max(1, input.sample.capacityWh)) *
               100,
           ),
         estimatedReservePercentAtTargetTime,
-      )
+      ))
     : clampPercent(
         estimatedReservePercentAtTargetTime +
           Math.ceil(
-            (estimatedRemainingEnergyWh / Math.max(1, input.sample.capacityWh)) *
+            (estimatedRemainingEnergyWh /
+              Math.max(1, input.sample.capacityWh)) *
               100,
           ),
         input.battery.minimumDischargePercent,
       );
+  const delayedChargingStartPlan = isDelayedChargingAutoDischarge
+    ? resolveDelayedChargingStartPlan({
+        battery: input.battery,
+        batteryPowerSamples: input.batteryPowerSamples,
+        capacityWh: input.sample.capacityWh,
+        item: input.item,
+        now: input.now,
+        sampleSocPercent:
+          delayedChargingSocBasis?.socPercent ?? input.sample.socPercent,
+        targetPercent: estimatedTargetPercent,
+        targetTime,
+      })
+    : null;
   const availability =
-    forecastPeriods.length === 0 || loadProfile.expectedLoadBySlot.size === 0
+    energyBuckets.length === 0 || loadProfile.expectedLoadBySlot.size === 0
       ? "partial"
       : "full";
   const skipReason = isDelayedChargingAutoDischarge
@@ -438,6 +477,7 @@ export function estimateDynamicPriceTarget(input: {
         targetTime,
         window: delayedChargingWindow,
         expectedNetChargeWh: estimatedRemainingEnergyWh,
+        startPlan: delayedChargingStartPlan ?? emptyDelayedChargingStartPlan,
       })
     : null;
   const breakEvenTrace = buildBreakEvenTrace({
@@ -456,10 +496,30 @@ export function estimateDynamicPriceTarget(input: {
     estimatedRemainingEnergyWh,
     estimatedReservePercentAtTargetTime,
     estimatedTargetPercent,
+    delayedChargingDetails: serializeDelayedChargingDetails({
+      chargeStartSocPercent:
+        delayedChargingEstimate?.window.chargeStartSocPercent ?? null,
+      currentSocBasisPercent: delayedChargingSocBasis?.socPercent ?? null,
+      preDischargeTargetSocPercent: isDelayedChargingAutoDischarge
+        ? estimatedTargetPercent
+        : null,
+      startPlan: delayedChargingStartPlan,
+      window: delayedChargingWindow,
+    }),
     expectedHouseLoadWh,
+    startTime:
+      delayedChargingStartPlan?.startTime.toISOString() ??
+      input.now.toISOString(),
+    startTimeBasisSocPercent:
+      delayedChargingStartPlan?.startSocPercent ?? input.sample.socPercent,
+    effectiveDischargePowerW:
+      delayedChargingStartPlan?.effectiveDischargePowerW ?? null,
+    requiredDischargeMinutes:
+      delayedChargingStartPlan?.requiredDischargeMinutes ?? null,
     predictedSolarGenerationWh,
     reasoning: buildReasoning({
       availability,
+      delayedChargingStartPlan,
       expectedLoadBySlot: loadProfile.expectedLoadBySlot,
       predictedSolarGenerationWh,
       delayedChargingWindow,
@@ -477,7 +537,8 @@ export function estimateDynamicPriceTarget(input: {
     resolvedManualState: resolveDynamicEstimateManualState({
       item: input.item,
       estimatedTargetPercent,
-      sampleSocPercent: input.sample.socPercent,
+      sampleSocPercent:
+        delayedChargingStartPlan?.startSocPercent ?? input.sample.socPercent,
     }),
     skipReason,
     warning: reserveFloorResult.warning,
@@ -671,41 +732,173 @@ function getPredictedSolarPowerAtOrAfter(input: {
   return null;
 }
 
-function getLowPriceAutoDischargeSkipReason(input: {
-  batteryId: string;
-  itemId: string;
-  targetTime: Date | null;
-  targetTimeSignal: DynamicPriceTargetEstimate["targetTimeSignal"];
-}): string | null {
-  if (input.targetTime === null) {
-    return `skipped: no delayed charging marker resolved for item ${input.itemId}`;
+function resolveDelayedChargingEstimate(input: {
+  battery: BatteryRecord;
+  capacityWh: number;
+  currentSocPercent: number | null;
+  dynamicPriceSamples: DynamicPriceSampleRecord[];
+  item: BatteryStrategyPlanItem;
+  loadProfile: LoadProfile;
+  lowPriceMarkerTime: Date | null;
+  normalizedImportExportSpread: number | null;
+  periodHours: number;
+  predictedSeries: PredictedPoint[];
+  reserveFloorPercent: number;
+}): DelayedChargingEstimate | null {
+  if (input.currentSocPercent === null) {
+    return null;
   }
 
-  if (input.targetTimeSignal?.predictedSolarW === null) {
-    return `skipped: predicted solar unavailable at ${input.targetTime.toISOString()}`;
+  let chargeStartSocPercent = input.currentSocPercent;
+  let resolvedEstimate: DelayedChargingEstimate | null = null;
+
+  for (let iteration = 0; iteration < 6; iteration += 1) {
+    const window = resolveDelayedChargingWindow({
+      battery: input.battery,
+      capacityWh: input.capacityWh,
+      chargeStartSocPercent,
+      dynamicPriceSamples: input.dynamicPriceSamples,
+      item: input.item,
+      lowPriceMarkerTime: input.lowPriceMarkerTime,
+      normalizedImportExportSpread: input.normalizedImportExportSpread,
+    });
+
+    if (window === null) {
+      return null;
+    }
+
+    const intervalEstimate = buildIntervalEnergyEstimate({
+      integrationEnd: window.endTime,
+      integrationStart: window.startTime,
+      loadProfile: input.loadProfile,
+      mode: "solar-minus-load",
+      periodHours: input.periodHours,
+      predictedSeries: input.predictedSeries,
+    });
+    const targetPercent = clampPercent(
+      100 -
+        Math.ceil(
+          (intervalEstimate.estimatedRemainingEnergyWh /
+            Math.max(1, input.capacityWh)) *
+            100,
+        ),
+      input.reserveFloorPercent,
+    );
+    const nextChargeStartSocPercent = Math.min(
+      input.currentSocPercent,
+      targetPercent,
+    );
+
+    resolvedEstimate = {
+      ...intervalEstimate,
+      targetPercent,
+      window,
+    };
+
+    if (nextChargeStartSocPercent === chargeStartSocPercent) {
+      return resolvedEstimate;
+    }
+
+    chargeStartSocPercent = nextChargeStartSocPercent;
   }
 
-  if (input.targetTimeSignal?.expectedHouseLoadW === null) {
-    return `skipped: expected house load unavailable at ${input.targetTime.toISOString()}`;
-  }
+  return resolvedEstimate;
+}
 
-  const recoveryThresholdW = input.targetTimeSignal?.recoveryThresholdW;
+function buildIntervalEnergyEstimate(input: {
+  integrationEnd: Date;
+  integrationStart: Date;
+  loadProfile: LoadProfile;
+  mode: "load-minus-solar" | "solar-minus-load";
+  periodHours: number;
+  predictedSeries: PredictedPoint[];
+}): IntervalEnergyEstimate {
+  const forecastPeriods = input.predictedSeries
+    .map((point) => {
+      const overlapHours = resolveIntervalOverlapHours({
+        intervalEnd: input.integrationEnd,
+        intervalStart: input.integrationStart,
+        periodHours: input.periodHours,
+        periodStart: point.periodStart,
+      });
 
-  if (recoveryThresholdW === null || recoveryThresholdW === undefined) {
-    return `skipped: recharge threshold unavailable at ${input.targetTime.toISOString()}`;
-  }
+      if (overlapHours <= 0) {
+        return null;
+      }
 
-  const predictedSolarW = input.targetTimeSignal?.predictedSolarW;
+      return {
+        overlapHours,
+        periodStart: point.periodStart,
+        predictedPowerW:
+          typeof point.value === "number" ? Math.max(0, point.value) : 0,
+      };
+    })
+    .filter(
+      (
+        point,
+      ): point is {
+        overlapHours: number;
+        periodStart: string;
+        predictedPowerW: number;
+      } => point !== null,
+    );
+  let cumulativeExpectedHouseLoadWh = 0;
+  let cumulativePredictedSolarWh = 0;
+  const energyBuckets = forecastPeriods.map((point) => {
+    const durationMinutes = Math.round(point.overlapHours * 60);
+    const bucketExpectedHouseLoadWh = round2(
+      resolveExpectedHouseLoadWh(
+        point.periodStart,
+        input.loadProfile,
+        point.overlapHours,
+      ),
+    );
+    const bucketPredictedSolarWh = round2(
+      point.predictedPowerW * point.overlapHours,
+    );
+    cumulativeExpectedHouseLoadWh = round2(
+      cumulativeExpectedHouseLoadWh + bucketExpectedHouseLoadWh,
+    );
+    cumulativePredictedSolarWh = round2(
+      cumulativePredictedSolarWh + bucketPredictedSolarWh,
+    );
+    const cumulativeNetBatteryEnergyNeededWh = round2(
+      input.mode === "solar-minus-load"
+        ? Math.max(
+            0,
+            cumulativePredictedSolarWh - cumulativeExpectedHouseLoadWh,
+          )
+        : Math.max(
+            0,
+            cumulativeExpectedHouseLoadWh - cumulativePredictedSolarWh,
+          ),
+    );
 
-  if (predictedSolarW === null || predictedSolarW === undefined) {
-    return `skipped: predicted solar unavailable at ${input.targetTime.toISOString()}`;
-  }
+    return {
+      time: point.periodStart,
+      durationMinutes,
+      expectedHouseLoadWh: bucketExpectedHouseLoadWh,
+      predictedSolarWh: bucketPredictedSolarWh,
+      netBatteryEnergyNeededWh: round2(
+        input.mode === "solar-minus-load"
+          ? Math.max(0, bucketPredictedSolarWh - bucketExpectedHouseLoadWh)
+          : Math.max(0, bucketExpectedHouseLoadWh - bucketPredictedSolarWh),
+      ),
+      cumulativeExpectedHouseLoadWh,
+      cumulativePredictedSolarWh,
+      cumulativeNetBatteryEnergyNeededWh,
+    };
+  });
+  const lastEnergyBucket = energyBuckets[energyBuckets.length - 1] ?? null;
 
-  if (predictedSolarW <= recoveryThresholdW) {
-    return `skipped: predicted solar ${Math.round(predictedSolarW)}W below threshold ${Math.round(recoveryThresholdW)}W at ${input.targetTime.toISOString()}`;
-  }
-
-  return null;
+  return {
+    energyBuckets,
+    estimatedRemainingEnergyWh:
+      lastEnergyBucket?.cumulativeNetBatteryEnergyNeededWh ?? 0,
+    expectedHouseLoadWh: lastEnergyBucket?.cumulativeExpectedHouseLoadWh ?? 0,
+    predictedSolarGenerationWh:
+      lastEnergyBucket?.cumulativePredictedSolarWh ?? 0,
+  };
 }
 
 function getDelayedChargingSkipReason(input: {
@@ -713,6 +906,7 @@ function getDelayedChargingSkipReason(input: {
   targetTime: Date | null;
   window: DelayedChargingWindow | null;
   expectedNetChargeWh: number | null;
+  startPlan: DelayedChargingStartPlan | { startTime: null };
 }): string | null {
   if (input.targetTime === null) {
     return `skipped: no delayed charging marker resolved for item ${input.itemId}`;
@@ -730,7 +924,220 @@ function getDelayedChargingSkipReason(input: {
     return `skipped: no net solar charge expected during the delayed charging window starting ${input.targetTime.toISOString()}`;
   }
 
+  if (input.startPlan.startTime === null) {
+    return `skipped: no delayed charging start time could be resolved for item ${input.itemId}`;
+  }
+
   return null;
+}
+
+function resolveDelayedChargingStartPlan(input: {
+  battery: BatteryRecord;
+  batteryPowerSamples: BatteryPowerSampleRecord[];
+  capacityWh: number;
+  item: BatteryStrategyPlanItem;
+  now: Date;
+  sampleSocPercent: number | null;
+  targetPercent: number;
+  targetTime: Date;
+}): DelayedChargingStartPlan | null {
+  const effectiveDischargePowerW = resolveDelayedChargingDischargePowerW(
+    input.battery,
+    input.item,
+  );
+
+  if (effectiveDischargePowerW === null) {
+    return null;
+  }
+
+  if (
+    input.sampleSocPercent !== null &&
+    input.now.getTime() < input.targetTime.getTime()
+  ) {
+    return buildDelayedChargingStartPlan({
+      basisSocPercent: input.sampleSocPercent,
+      basisTime: input.now,
+      capacityWh: input.capacityWh,
+      effectiveDischargePowerW,
+      targetPercent: input.targetPercent,
+      targetTime: input.targetTime,
+    });
+  }
+
+  const historicalSocSamples = input.batteryPowerSamples
+    .filter(
+      (sample) =>
+        sample.batteryId === input.battery.id &&
+        sample.socPercent !== null &&
+        new Date(sample.periodStart).getTime() <= input.targetTime.getTime(),
+    )
+    .sort(
+      (left, right) =>
+        new Date(right.periodStart).getTime() -
+        new Date(left.periodStart).getTime(),
+    );
+
+  for (const sample of historicalSocSamples) {
+    const basisTime = new Date(sample.periodStart);
+
+    if (Number.isNaN(basisTime.getTime()) || sample.socPercent === null) {
+      continue;
+    }
+
+    const candidatePlan = buildDelayedChargingStartPlan({
+      basisSocPercent: sample.socPercent,
+      basisTime,
+      capacityWh: input.capacityWh,
+      effectiveDischargePowerW,
+      targetPercent: input.targetPercent,
+      targetTime: input.targetTime,
+    });
+
+    if (candidatePlan === null) {
+      continue;
+    }
+
+    if (candidatePlan.startTime.getTime() < basisTime.getTime()) {
+      continue;
+    }
+
+    return candidatePlan;
+  }
+
+  return null;
+}
+
+function buildDelayedChargingStartPlan(input: {
+  basisSocPercent: number;
+  basisTime: Date;
+  capacityWh: number;
+  effectiveDischargePowerW: number;
+  targetPercent: number;
+  targetTime: Date;
+}): DelayedChargingStartPlan | null {
+  if (
+    Number.isNaN(input.basisTime.getTime()) ||
+    Number.isNaN(input.targetTime.getTime()) ||
+    input.effectiveDischargePowerW <= 0
+  ) {
+    return null;
+  }
+
+  const requiredDischargeWh = Math.max(
+    0,
+    ((input.basisSocPercent - input.targetPercent) / 100) * input.capacityWh,
+  );
+  const requiredDischargeMinutes = Math.ceil(
+    (requiredDischargeWh / input.effectiveDischargePowerW) * 60,
+  );
+
+  return {
+    effectiveDischargePowerW: input.effectiveDischargePowerW,
+    requiredDischargeMinutes,
+    startSocPercent: input.basisSocPercent,
+    startTime:
+      requiredDischargeWh <= 0
+        ? input.basisTime
+        : new Date(
+            input.targetTime.getTime() - requiredDischargeMinutes * 60_000,
+          ),
+  };
+}
+
+function resolveDelayedChargingDischargePowerW(
+  battery: BatteryRecord,
+  item: BatteryStrategyPlanItem,
+): number | null {
+  if (typeof item.manualPowerW === "number" && item.manualPowerW > 0) {
+    return item.manualPowerW;
+  }
+
+  return battery.maximumDischargePowerW > 0
+    ? battery.maximumDischargePowerW
+    : null;
+}
+
+function resolveDelayedChargingChargePowerW(
+  battery: BatteryRecord,
+  item: BatteryStrategyPlanItem,
+): number | null {
+  if (typeof item.manualPowerW === "number" && item.manualPowerW > 0) {
+    return item.manualPowerW;
+  }
+
+  return battery.maximumChargePowerW > 0 ? battery.maximumChargePowerW : null;
+}
+
+function resolveDelayedChargingSocBasis(input: {
+  battery: BatteryRecord;
+  batteryPowerSamples: BatteryPowerSampleRecord[];
+  now: Date;
+  sampleSocPercent: number | null;
+}): { socPercent: number; time: Date } | null {
+  if (input.sampleSocPercent !== null) {
+    return { socPercent: input.sampleSocPercent, time: input.now };
+  }
+
+  const samples = input.batteryPowerSamples
+    .filter(
+      (sample) =>
+        sample.batteryId === input.battery.id &&
+        sample.socPercent !== null &&
+        new Date(sample.periodStart).getTime() <= input.now.getTime(),
+    )
+    .sort(
+      (left, right) =>
+        new Date(right.periodStart).getTime() -
+        new Date(left.periodStart).getTime(),
+    );
+
+  for (const sample of samples) {
+    const time = new Date(sample.periodStart);
+
+    if (Number.isNaN(time.getTime()) || sample.socPercent === null) {
+      continue;
+    }
+
+    return { socPercent: sample.socPercent, time };
+  }
+
+  return null;
+}
+
+function serializeDelayedChargingDetails(input: {
+  chargeStartSocPercent: number | null;
+  currentSocBasisPercent: number | null;
+  preDischargeTargetSocPercent: number | null;
+  startPlan: DelayedChargingStartPlan | null;
+  window: DelayedChargingWindow | null;
+}): DynamicPriceTargetEstimate["delayedChargingDetails"] {
+  if (
+    input.window === null ||
+    input.currentSocBasisPercent === null ||
+    input.chargeStartSocPercent === null
+  ) {
+    return null;
+  }
+
+  return {
+    actualWindowEnd: input.window.endTime.toISOString(),
+    actualWindowEndPrice: input.window.endPrice,
+    actualWindowStart: input.window.startTime.toISOString(),
+    actualWindowStartPrice: input.window.startPrice,
+    chargePowerW: input.window.chargePowerW,
+    chargeStartSocPercent: input.chargeStartSocPercent,
+    currentSocBasisPercent: input.currentSocBasisPercent,
+    latestFeasiblePreDischargeStartTime:
+      input.startPlan?.startTime.toISOString() ?? null,
+    lowestPrice: input.window.lowestPrice,
+    lowPriceMargin: input.window.lowPriceMargin,
+    lowPriceMarkerTime: input.window.lowPriceMarkerTime.toISOString(),
+    minimumTimeToFullChargeMinutes: input.window.minimumTimeToFullChargeMinutes,
+    normalizedImportExportSpread: input.window.normalizedImportExportSpread,
+    potentialWindowEnd: input.window.potentialEndTime.toISOString(),
+    potentialWindowStart: input.window.potentialStartTime.toISOString(),
+    preDischargeTargetSocPercent: input.preDischargeTargetSocPercent,
+  };
 }
 
 function resolveTargetTime(input: {
@@ -780,10 +1187,13 @@ function resolveTargetTime(input: {
 }
 
 function resolveDelayedChargingWindow(input: {
+  battery: BatteryRecord;
+  capacityWh: number;
+  chargeStartSocPercent: number | null;
   dynamicPriceSamples: DynamicPriceSampleRecord[];
   item: BatteryStrategyPlanItem;
-  items: BatteryStrategyPlanItem[];
   lowPriceMarkerTime: Date | null;
+  normalizedImportExportSpread: number | null;
 }): DelayedChargingWindow | null {
   const lowPriceMarkerTime = input.lowPriceMarkerTime;
 
@@ -791,35 +1201,156 @@ function resolveDelayedChargingWindow(input: {
     return null;
   }
 
-  const fallbackEnd = new Date(lowPriceMarkerTime.getTime() + PRICE_SELECTION_WINDOW_MS);
-  const nextHighPriceMarker = getNextPriceMarkerTriggerAt({
-    triggerKind: BatteryStrategyTriggerKind.ExportSurplus,
-    now: new Date(lowPriceMarkerTime.getTime() + 1),
-    dynamicPriceSamples: input.dynamicPriceSamples,
-  });
-  const nextScheduleBoundary = getNextScheduleBoundary({
-    dynamicPriceSamples: input.dynamicPriceSamples,
-    item: input.item,
-    items: input.items,
-    now: lowPriceMarkerTime,
-  });
-  const endTime = [nextHighPriceMarker, nextScheduleBoundary, fallbackEnd]
-    .filter((candidate): candidate is Date => candidate !== null)
-    .filter(
-      (candidate) =>
-        candidate.getTime() > lowPriceMarkerTime.getTime() &&
-        !Number.isNaN(candidate.getTime()),
-    )
-    .sort((left, right) => left.getTime() - right.getTime())[0];
+  if (
+    input.chargeStartSocPercent === null ||
+    input.normalizedImportExportSpread === null ||
+    input.normalizedImportExportSpread < 0
+  ) {
+    return null;
+  }
 
-  if (!endTime) {
+  const effectiveChargePowerW = resolveDelayedChargingChargePowerW(
+    input.battery,
+    input.item,
+  );
+
+  if (effectiveChargePowerW === null) {
+    return null;
+  }
+
+  const markerMs = lowPriceMarkerTime.getTime();
+  const sortedSamples = input.dynamicPriceSamples
+    .map((sample) => ({
+      date: new Date(sample.periodStart),
+      price: sample.importPrice,
+    }))
+    .filter(
+      (sample) =>
+        !Number.isNaN(sample.date.getTime()) && Number.isFinite(sample.price),
+    )
+    .sort((left, right) => left.date.getTime() - right.date.getTime());
+  const markerIndex = sortedSamples.findIndex(
+    (sample) => sample.date.getTime() === markerMs,
+  );
+
+  if (markerIndex === -1) {
+    return null;
+  }
+
+  const markerSample = sortedSamples[markerIndex];
+
+  if (!markerSample) {
+    return null;
+  }
+
+  const energyToFullWh = Math.max(
+    0,
+    input.capacityWh * ((100 - input.chargeStartSocPercent) / 100),
+  );
+  const minimumTimeToFullChargeMinutes = Math.ceil(
+    (energyToFullWh / effectiveChargePowerW) * 60,
+  );
+  const minimumTimeToFullChargeMs = minimumTimeToFullChargeMinutes * 60_000;
+  const potentialStartTime = new Date(markerMs - minimumTimeToFullChargeMs);
+  const potentialEndTime = new Date(markerMs + minimumTimeToFullChargeMs);
+  const lowPriceMargin = Number(
+    (
+      input.normalizedImportExportSpread *
+      DELAYED_CHARGING_LOW_PRICE_MARGIN_FACTOR
+    ).toFixed(6),
+  );
+  const lowPriceThreshold = markerSample.price + lowPriceMargin;
+  let startIndex = markerIndex;
+  let endIndex = markerIndex;
+
+  while (startIndex > 0) {
+    const previousSample = sortedSamples[startIndex - 1];
+
+    if (
+      !previousSample ||
+      previousSample.date.getTime() < potentialStartTime.getTime() ||
+      previousSample.price > lowPriceThreshold
+    ) {
+      break;
+    }
+
+    startIndex -= 1;
+  }
+
+  while (endIndex < sortedSamples.length - 1) {
+    const nextSample = sortedSamples[endIndex + 1];
+
+    if (
+      !nextSample ||
+      nextSample.date.getTime() > potentialEndTime.getTime() ||
+      nextSample.price > lowPriceThreshold
+    ) {
+      break;
+    }
+
+    endIndex += 1;
+  }
+
+  const startSample = sortedSamples[startIndex];
+  const endSample = sortedSamples[endIndex];
+
+  if (!startSample || !endSample) {
+    return null;
+  }
+
+  const nextSample = sortedSamples[endIndex + 1] ?? null;
+  const inferredPeriodMs = resolvePriceSamplePeriodMs(sortedSamples);
+  const endTime =
+    nextSample !== null &&
+    nextSample.date.getTime() <= potentialEndTime.getTime()
+      ? nextSample.date
+      : new Date(
+          Math.min(
+            potentialEndTime.getTime(),
+            endSample.date.getTime() + inferredPeriodMs,
+          ),
+        );
+
+  if (endTime.getTime() <= startSample.date.getTime()) {
     return null;
   }
 
   return {
+    chargePowerW: effectiveChargePowerW,
+    chargeStartSocPercent: input.chargeStartSocPercent,
     endTime,
-    startTime: lowPriceMarkerTime,
+    endPrice: endSample.price,
+    lowPriceMargin,
+    lowestPrice: markerSample.price,
+    lowPriceMarkerTime,
+    minimumTimeToFullChargeMinutes,
+    normalizedImportExportSpread: input.normalizedImportExportSpread,
+    potentialEndTime,
+    potentialStartTime,
+    startTime: startSample.date,
+    startPrice: startSample.price,
   };
+}
+
+function resolvePriceSamplePeriodMs(
+  samples: Array<{ date: Date; price: number }>,
+): number {
+  for (let index = 1; index < samples.length; index += 1) {
+    const previous = samples[index - 1];
+    const current = samples[index];
+
+    if (!previous || !current) {
+      continue;
+    }
+
+    const diffMs = current.date.getTime() - previous.date.getTime();
+
+    if (diffMs > 0) {
+      return diffMs;
+    }
+  }
+
+  return DEFAULT_PERIOD_MINUTES * 60_000;
 }
 
 function getNextScheduleBoundary(input: {
@@ -919,6 +1450,7 @@ function getFallbackTargetTime(input: {
 
 function buildReasoning(input: {
   availability: DynamicPriceTargetEstimate["availability"];
+  delayedChargingStartPlan: DelayedChargingStartPlan | null;
   delayedChargingWindow: DelayedChargingWindow | null;
   expectedLoadBySlot: Map<string, number>;
   predictedSolarGenerationWh: number;
@@ -927,7 +1459,12 @@ function buildReasoning(input: {
   const parts = [] as string[];
 
   if (input.delayedChargingWindow !== null) {
-    parts.push("expected solar charge opportunity during the delayed charging window");
+    parts.push(
+      "expected solar charge opportunity during the delayed charging window",
+    );
+    if (input.delayedChargingStartPlan !== null) {
+      parts.push("latest feasible delayed-charging start time");
+    }
   } else if (input.solarRecoveryTime !== null) {
     parts.push("expected demand until solar recovery");
   } else {

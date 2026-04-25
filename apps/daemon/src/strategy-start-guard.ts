@@ -44,10 +44,7 @@ export function getScheduledStartSkipReason(input: {
     return `skipped: site solar unavailable (need >${DELAYED_CHARGING_MIN_SITE_SOLAR_POWER_W}W)`;
   }
 
-  if (
-    input.siteCurrentSolarPowerW <=
-    DELAYED_CHARGING_MIN_SITE_SOLAR_POWER_W
-  ) {
+  if (input.siteCurrentSolarPowerW <= DELAYED_CHARGING_MIN_SITE_SOLAR_POWER_W) {
     return `skipped: site solar ${Math.round(input.siteCurrentSolarPowerW)}W below ${DELAYED_CHARGING_MIN_SITE_SOLAR_POWER_W}W`;
   }
 

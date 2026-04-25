@@ -23,4 +23,4 @@ When it activates, the daemon uses the shared dynamic target estimator to:
 
 This is an active built-in rule and should be documented as current behavior.
 
-Implementation details for the shared estimator live in `../dynamic-price-target.md`.
+Implementation details for the shared estimator live in `../scripts/dynamic-price-target.md`.

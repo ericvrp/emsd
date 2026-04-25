@@ -4,40 +4,41 @@
 
 `Dynamic` is the daemon-owned dynamic price target method for scheduled battery strategy items. It is persisted as target method `auto`.
 
-When a scheduled item with `targetMethod === "auto"` becomes active, the daemon computes a dynamic price target percentage and applies it to the live battery strategy. Fixed target methods (`soc`, `duration`, `end-time`) are unchanged.
+When a scheduled item with `targetMethod === "auto"` becomes active, the daemon computes a dynamic target percentage and applies it to the live battery strategy. Fixed target methods (`soc`, `duration`, `end-time`) are unchanged.
 
 The goal is:
 - choose a `targetTime` where solar production is expected to take over from the battery again
 - choose a reserve percentage that should still be held at that `targetTime`
 - convert that into the stop target percentage to use for the active scheduled item
 
-For delayed-charging schedules with `targetMethod === "auto"`, the intended flow is:
-- resolve the upcoming delayed-charging marker as the low-price window start
+For delayed-charging schedules with `targetMethod === "auto"`, the flow is:
+- resolve the upcoming delayed-charging marker as the local low-price marker
 - estimate the net solar charge opportunity during the low-price window itself
 - compute the desired battery level at the low-price window start
+- compute `minimumTimeToFullCharge` from that low-price-window-start SoC to full
+- derive the potential and actual low-price windows around the marker using that charge-time estimate and the normalized import/export spread
 - derive the latest feasible pre-discharge start time from the current SoC, the desired SoC at the low-price window start, and the effective discharge power
 - never discharge below the delayed-charging provisional floor of backup reserve plus 10%
 
 Important:
 - delayed charging start time should not be tied to a preceding `export-surplus` or other high-price marker
 - if the battery is already at or below the desired delayed-charging start level, the daemon should wait instead of continuing to discharge
-- the current code still contains legacy experimental behavior in this area and should not be treated as the final delayed-charging implementation
 
 This same estimator is used by:
-- the daemon activation path for dynamic price target schedule items
+- the daemon activation path for dynamic target schedule items
 - `bun run dynamic-price-target:evaluate`
 
 ## Strategy Notes
 
 Product-facing explanations for the built-in rules now live in:
-- `strategies/self-consumption.md`
-- `strategies/export-surplus.md`
-- `strategies/delayed-charging.md`
+- `../strategies/self-consumption.md`
+- `../strategies/export-surplus.md`
+- `../strategies/delayed-charging.md`
 
 Important:
 - `Export surplus` is documented as an active built-in rule
-- `Delayed charging` is still under construction and the current implementation is not correct yet
-- this file documents the shared estimator implementation, not the final product wording for each strategy type
+- `Delayed charging` is documented as an active built-in rule
+- this file documents the shared estimator and evaluation script, not the final product wording for each strategy type
 
 ## Core Model
 
@@ -60,6 +61,7 @@ The estimator uses existing daemon-owned data only:
 - `readSolarEnergyProviderSamples(db, battery.siteId)`
 - `readP1MeterSamples(db, battery.siteId)`
 - `readBatteryPowerSamples(db, battery.siteId)`
+- dynamic price source export deduction for the normalized import/export spread
 - battery config from `BatteryRecord`
 
 Weather forecast rows are not used directly as energy values. The estimator uses the existing solar prediction path built from forecast plus historical solar production.
@@ -126,7 +128,7 @@ Default values:
 This reserve-floor helper is used by:
 - export-surplus auto discharge until solar recovery
 
-Delayed charging should use its own provisional start threshold rule:
+Delayed charging uses its own provisional start threshold rule:
 
 `delayedChargingStartFloorPercent = minimumDischargePercent + 10`
 
@@ -135,7 +137,7 @@ Delayed charging should use its own provisional start threshold rule:
 When a dynamic schedule item activates:
 - the daemon computes the estimate in `apps/daemon/src/dynamic-price-target.ts`
 - applies the computed stop target to the activated strategy
-- delayed-charging auto items may currently resolve from configured `charging` to runtime `discharging`
+- delayed-charging auto items resolve from configured `charging` to runtime `discharging` while pre-discharging is needed
 - stores the resolved target SoC and target time in runtime state
 - stores the resolved runtime manual state for completion checks and status text
 - uses that same resolved target for completion checks
@@ -152,7 +154,9 @@ This logic is wired from `apps/daemon/src/index.ts` and the completion logic liv
 If neither `--marker-date` nor `--marker-time` is supplied, the script evaluates from the next relevant price trigger instead of the current wall-clock time.
 
 Default behavior:
-- prints one concise summary line per battery
+- prints a concise block for each evaluated strategy and battery
+- includes an empty line between blocks
+- includes the exact `--verbose=...` suggestion to use for more detail
 
 Verbose behavior:
 - `--verbose` shows all detail blocks
@@ -162,10 +166,10 @@ Available verbose blocks:
 - `meta`
 - `current`
 - `energy`
+- `energy-buckets`
 - `why`
 - `break-even`
 - `history`
-- `replay`
 
 The script supports:
 - `--marker-date YYYY-MM-DD`
@@ -177,7 +181,7 @@ The script supports:
 - `--site <site-id>`
 - `--days <n>`
 
-For delayed-charging auto evaluation, `--marker-date` and `--marker-time` select the delayed-charging marker being evaluated. The intended delayed-charging evaluation should then explain the computed latest feasible pre-discharge start time rather than relying on a preceding `export-surplus` marker.
+For delayed-charging auto evaluation, `--marker-date` and `--marker-time` select the delayed-charging marker being evaluated. Verbose `why` output explains the marker, price margin, potential and actual low-price windows, pre-discharge target, and computed latest feasible pre-discharge start time.
 
 ## Main Files
 
@@ -197,4 +201,4 @@ Useful checks:
 - `bun test apps/daemon/src/strategy-log.test.ts`
 - `bun run --cwd apps/daemon typecheck`
 - `bun run dynamic-price-target:evaluate`
-- `bun run dynamic-price-target:evaluate -- --verbose=why,break-even,history,replay`
+- `bun run dynamic-price-target:evaluate -- --verbose=why,energy,energy-buckets,history`

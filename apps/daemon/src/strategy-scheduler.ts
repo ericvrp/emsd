@@ -657,7 +657,11 @@ function getLowPriceAutoTriggerAt(input: {
   now: Date;
   dynamicPriceSamples: DynamicPriceSampleRecord[];
 }): Date | null {
-  const triggerMarkers = getLowPriceAutoTriggerMarkers(input);
+  const triggerMarkers = getPriceMarkersOnOrAfterDay({
+    triggerKind: BatteryStrategyTriggerKind.DelayedCharging,
+    now: input.now,
+    dynamicPriceSamples: input.dynamicPriceSamples,
+  });
   let latestDueMarker: Date | null = null;
 
   for (const markerAt of triggerMarkers) {
@@ -677,46 +681,17 @@ function getNextLowPriceAutoTriggerAt(input: {
   now: Date;
   dynamicPriceSamples: DynamicPriceSampleRecord[];
 }): Date | null {
-  for (const markerAt of getLowPriceAutoTriggerMarkers(input)) {
+  for (const markerAt of getPriceMarkersOnOrAfterDay({
+    triggerKind: BatteryStrategyTriggerKind.DelayedCharging,
+    now: input.now,
+    dynamicPriceSamples: input.dynamicPriceSamples,
+  })) {
     if (markerAt.getTime() >= input.now.getTime()) {
       return markerAt;
     }
   }
 
   return null;
-}
-
-function getLowPriceAutoTriggerMarkers(input: {
-  now: Date;
-  dynamicPriceSamples: DynamicPriceSampleRecord[];
-}): Date[] {
-  const lowMarkers = getPriceMarkersOnOrAfterDay({
-    triggerKind: BatteryStrategyTriggerKind.DelayedCharging,
-    now: input.now,
-    dynamicPriceSamples: input.dynamicPriceSamples,
-  });
-  const highMarkers = getPriceMarkersOnOrAfterDay({
-    triggerKind: BatteryStrategyTriggerKind.ExportSurplus,
-    now: startOfPreviousDay(input.now),
-    dynamicPriceSamples: input.dynamicPriceSamples,
-  });
-  const triggerMarkers = new Map<number, Date>();
-
-  for (const lowMarkerAt of lowMarkers) {
-    const previousHighMarker = [...highMarkers]
-      .reverse()
-      .find((candidate) => candidate.getTime() < lowMarkerAt.getTime());
-
-    if (!previousHighMarker) {
-      continue;
-    }
-
-    triggerMarkers.set(previousHighMarker.getTime(), previousHighMarker);
-  }
-
-  return [...triggerMarkers.values()].sort(
-    (left, right) => left.getTime() - right.getTime(),
-  );
 }
 
 function getPriceMarkerTriggerAt(input: {
@@ -772,18 +747,8 @@ export function getLowPriceAutoTriggerAtForMarker(input: {
   dynamicPriceSamples: DynamicPriceSampleRecord[];
   markerAt: Date;
 }): Date | null {
-  const highMarkers = getPriceMarkersOnOrAfterDay({
-    triggerKind: BatteryStrategyTriggerKind.ExportSurplus,
-    now: startOfPreviousDay(input.markerAt),
-    dynamicPriceSamples: input.dynamicPriceSamples,
-  });
-
-  return (
-    [...highMarkers]
-      .reverse()
-      .find((candidate) => candidate.getTime() < input.markerAt.getTime()) ??
-    null
-  );
+  void input.dynamicPriceSamples;
+  return input.markerAt;
 }
 
 export function getPriceMarkersForToday(input: {
@@ -851,13 +816,6 @@ function getAllPriceMarkers(input: {
     .map((periodStart) => new Date(periodStart))
     .filter((markerAt) => !Number.isNaN(markerAt.getTime()))
     .sort((left, right) => left.getTime() - right.getTime());
-}
-
-function startOfPreviousDay(now: Date): Date {
-  const start = new Date(now);
-  start.setHours(0, 0, 0, 0);
-  start.setDate(start.getDate() - 1);
-  return start;
 }
 
 function formatLocalDate(date: Date): string {

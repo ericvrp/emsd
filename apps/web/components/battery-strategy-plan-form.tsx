@@ -183,7 +183,7 @@ export function BatteryStrategyPlanForm({
                     enabled={item.enabled}
                     title={getBuiltInStrategyTitle(builtInItemKey)}
                     {...(builtInItemKey ===
-                      BatteryStrategyBuiltinItemKey.Automatic
+                    BatteryStrategyBuiltinItemKey.Automatic
                       ? {}
                       : {
                           onToggle: () =>

@@ -15,6 +15,7 @@ import {
   getDaemonLockPath,
   getDatabasePath,
   isBatteryStrategyPriceTrigger,
+  isDelayedChargingAutoDischargeItem,
   resolveActiveManualState,
   resolveBatteryStrategyFromPlanItem,
 } from "@emsd/core";
@@ -26,13 +27,13 @@ import { getWeatherForecast } from "../../ems/src/plugins/solar-forecast";
 import { formatDaemonHelpText, parseDaemonOptions } from "./daemon-options";
 import {
   openDaemonDatabase,
-  readBatteryById,
   readBatteries,
+  readBatteryById,
   readBatteryPowerSamples,
   readDynamicPriceSamples,
-  readManagedDeviceTelemetry,
   readDynamicPriceSnapshot,
   readDynamicPriceSources,
+  readManagedDeviceTelemetry,
   readMeters,
   readP1MeterSamples,
   readSites,
@@ -49,6 +50,7 @@ import {
   upsertManagedDeviceTelemetry,
   upsertWeatherForecast,
 } from "./database";
+import { estimateDynamicPriceTarget } from "./dynamic-price-target";
 import {
   formatFallbackStrategyRestoreSummary,
   formatManualStrategyAppliedSummary,
@@ -56,11 +58,6 @@ import {
   formatScheduledStrategyStartedSummary,
   formatStrategyPlanAppliedSummary,
 } from "./strategy-log";
-import { estimateDynamicPriceTarget } from "./dynamic-price-target";
-import {
-  getCurrentSiteSolarPowerW,
-  getScheduledStartSkipReason,
-} from "./strategy-start-guard";
 import {
   describeStrategyPlanItem,
   formatDaemonLogTimestamp,
@@ -72,10 +69,14 @@ import {
   isItemAlreadyTriggeredToday,
   needsCompletionTracking,
   shouldMarkScheduledItemObserved,
-  shouldTransitionDelayedChargingToIdle,
   shouldSkipScheduledItem,
+  shouldTransitionDelayedChargingToIdle,
   shouldWaitForObservedStart,
 } from "./strategy-scheduler";
+import {
+  getCurrentSiteSolarPowerW,
+  getScheduledStartSkipReason,
+} from "./strategy-start-guard";
 
 const lockPath = getDaemonLockPath();
 const POLL_INTERVAL_MS = 5_000;
@@ -889,6 +890,8 @@ async function runScheduledStrategy(
   )
     ? readDynamicPriceSamples(db, battery.siteId)
     : [];
+  const dynamicPriceSources =
+    dynamicPriceSamples.length > 0 ? readDynamicPriceSources(db) : [];
   const managedDeviceTelemetry = readManagedDeviceTelemetry(db);
   let runtime = battery.strategyRuntime;
 
@@ -899,11 +902,48 @@ async function runScheduledStrategy(
       continue;
     }
 
-    const triggerAt = getStrategyTriggerAt({
+    let triggerAt = getStrategyTriggerAt({
       item,
       now,
       ...(dynamicPriceSamples.length > 0 ? { dynamicPriceSamples } : {}),
     });
+
+    let dynamicPriceTargetEstimate =
+      item.targetMethod === "auto" && isDelayedChargingAutoDischargeItem(item)
+        ? estimateDynamicPriceTarget({
+            battery,
+            batteryPowerSamples: readBatteryPowerSamples(db, battery.siteId),
+            dynamicPriceSamples,
+            item,
+            items: battery.strategyPlan,
+            now,
+            normalizedImportExportSpread: resolveNormalizedImportExportSpread(
+              dynamicPriceSources,
+              battery.siteId,
+            ),
+            p1MeterSamples: readP1MeterSamples(db, battery.siteId),
+            sample,
+            solarEnergyProviderSamples: readSolarEnergyProviderSamples(
+              db,
+              battery.siteId,
+            ),
+            solarForecastSamples: readSolarForecastSamples(db, battery.siteId),
+          })
+        : null;
+
+    if (dynamicPriceTargetEstimate?.warning) {
+      logWarn(dynamicPriceTargetEstimate.warning);
+    }
+
+    if (dynamicPriceTargetEstimate?.startTime) {
+      const delayedChargingStartTime = new Date(
+        dynamicPriceTargetEstimate.startTime,
+      );
+
+      if (!Number.isNaN(delayedChargingStartTime.getTime())) {
+        triggerAt = delayedChargingStartTime;
+      }
+    }
 
     if (!triggerAt) {
       logVerbose(
@@ -985,7 +1025,7 @@ async function runScheduledStrategy(
       continue;
     }
 
-    const dynamicPriceTargetEstimate =
+    dynamicPriceTargetEstimate ??=
       item.targetMethod === "auto"
         ? estimateDynamicPriceTarget({
             battery,
@@ -994,6 +1034,10 @@ async function runScheduledStrategy(
             item,
             items: battery.strategyPlan,
             now,
+            normalizedImportExportSpread: resolveNormalizedImportExportSpread(
+              dynamicPriceSources,
+              battery.siteId,
+            ),
             p1MeterSamples: readP1MeterSamples(db, battery.siteId),
             sample,
             solarEnergyProviderSamples: readSolarEnergyProviderSamples(
@@ -1004,7 +1048,10 @@ async function runScheduledStrategy(
           })
         : null;
 
-    if (dynamicPriceTargetEstimate?.warning) {
+    if (
+      dynamicPriceTargetEstimate?.warning &&
+      !isDelayedChargingAutoDischargeItem(item)
+    ) {
       logWarn(dynamicPriceTargetEstimate.warning);
     }
 
@@ -1444,6 +1491,15 @@ function describeNextStrategyItemForToday(
   }
 
   return "none";
+}
+
+function resolveNormalizedImportExportSpread(
+  sources: DynamicPriceSourceRecord[],
+  siteId: string,
+): number | null {
+  const source = sources.find((entry) => entry.siteId === siteId) ?? null;
+
+  return source?.exportDeduction ?? null;
 }
 
 function logVerbose(enabled: boolean, message: string): void {

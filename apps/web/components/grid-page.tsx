@@ -418,9 +418,9 @@ function GridOverviewChart({
                   tickLine={false}
                   tickMargin={8}
                   ticks={axisConfig.ticks}
-                   width={LEFT_Y_AXIS_WIDTH}
-                   yAxisId="left"
-                 />
+                  width={LEFT_Y_AXIS_WIDTH}
+                  yAxisId="left"
+                />
                 <YAxis
                   axisLine={false}
                   domain={axisConfig.domain}
@@ -433,9 +433,9 @@ function GridOverviewChart({
                   tickLine={false}
                   tickMargin={8}
                   ticks={axisConfig.ticks}
-                   width={RIGHT_Y_AXIS_WIDTH}
-                   yAxisId="right"
-                 />
+                  width={RIGHT_Y_AXIS_WIDTH}
+                  yAxisId="right"
+                />
                 <ReferenceLine
                   stroke={UI_COLORS.chartZeroLine}
                   strokeDasharray="4 6"

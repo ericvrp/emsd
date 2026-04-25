@@ -915,7 +915,7 @@ function createExportSurplusBatteryStrategyPlanItem(): BatteryStrategyPlanItem {
 
 function createDelayedChargingBatteryStrategyPlanItem(): BatteryStrategyPlanItem {
   return {
-    enabled: false,
+    enabled: true,
     id: createBatteryStrategyPlanId(),
     kind: "daily",
     startTime: null,

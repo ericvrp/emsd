@@ -85,7 +85,7 @@ test("getStrategyTriggerAt returns the next upcoming price marker when none are 
   expect(triggerAt?.toISOString()).toBe("2026-04-09T04:00:00.000Z");
 });
 
-test("getStrategyTriggerAt uses the preceding export-surplus marker for delayed-charging auto items", () => {
+test("getStrategyTriggerAt uses the low-price marker for delayed-charging auto items", () => {
   const item = createDailyItem({
     manualState: "charging",
     targetMethod: "auto",
@@ -105,7 +105,7 @@ test("getStrategyTriggerAt uses the preceding export-surplus marker for delayed-
       now: new Date("2026-04-09T07:00:00.000Z"),
       dynamicPriceSamples,
     })?.toISOString(),
-  ).toBe("2026-04-09T04:00:00.000Z");
+  ).toBe("2026-04-09T08:00:00.000Z");
 
   expect(
     getTodayTriggerAt(item, new Date("2026-04-09T07:00:00.000Z")),
@@ -135,10 +135,10 @@ test("getStrategyTriggerAt carries delayed-charging auto into the next day's low
       now: new Date("2026-04-09T19:00:00.000Z"),
       dynamicPriceSamples,
     })?.toISOString(),
-  ).toBe("2026-04-09T18:00:00.000Z");
+  ).toBe("2026-04-10T10:00:00.000Z");
 });
 
-test("getLowPriceAutoTriggerAtForMarker returns the preceding export-surplus marker", () => {
+test("getLowPriceAutoTriggerAtForMarker returns the selected low-price marker", () => {
   expect(
     getLowPriceAutoTriggerAtForMarker({
       markerAt: new Date("2026-04-09T16:00:00.000Z"),
@@ -150,10 +150,10 @@ test("getLowPriceAutoTriggerAtForMarker returns the preceding export-surplus mar
         ["2026-04-09T16:00:00.000Z", 5],
       ]),
     })?.toISOString(),
-  ).toBe("2026-04-09T12:00:00.000Z");
+  ).toBe("2026-04-09T16:00:00.000Z");
 });
 
-test("getLowPriceAutoTriggerAtForMarker can pair a next-day delayed-charging marker with the previous day's export-surplus marker", () => {
+test("getLowPriceAutoTriggerAtForMarker keeps a next-day delayed-charging marker unchanged", () => {
   expect(
     getLowPriceAutoTriggerAtForMarker({
       markerAt: new Date("2026-04-10T10:00:00.000Z"),
@@ -168,7 +168,7 @@ test("getLowPriceAutoTriggerAtForMarker can pair a next-day delayed-charging mar
         ["2026-04-10T14:00:00.000Z", 25],
       ]),
     })?.toISOString(),
-  ).toBe("2026-04-09T18:00:00.000Z");
+  ).toBe("2026-04-10T10:00:00.000Z");
 });
 
 test("shouldCompleteScheduledItem uses the active plan item rather than the persisted battery strategy", () => {
