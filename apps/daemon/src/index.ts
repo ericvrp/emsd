@@ -926,11 +926,17 @@ async function runScheduledStrategy(
       }
 
       if (dynamicPriceTargetEstimate?.skipReason) {
-        logInfoWithVerboseDetails(
-          verbose,
-          dynamicPriceTargetEstimate.skipReason,
-          `skipping strategy item for ${battery.id}: ${describeStrategyPlanItemWithIndex(battery, item)} triggerAt=${formatDaemonLogTimestamp(triggerAt)} now=${formatDaemonLogTimestamp(now)}`,
-        );
+        if (
+          !dynamicPriceTargetEstimate.skipReason.startsWith(
+            "skipped: no net solar charge expected",
+          )
+        ) {
+          logInfoWithVerboseDetails(
+            verbose,
+            dynamicPriceTargetEstimate.skipReason,
+            `skipping strategy item for ${battery.id}: ${describeStrategyPlanItemWithIndex(battery, item)} triggerAt=${formatDaemonLogTimestamp(triggerAt)} now=${formatDaemonLogTimestamp(now)}`,
+          );
+        }
         runtime = {
           ...runtime,
           lastTriggeredAtByItemId: {
