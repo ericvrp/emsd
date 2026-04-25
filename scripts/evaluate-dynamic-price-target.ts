@@ -793,10 +793,6 @@ export function buildEstimateSummaryRows(
   ) {
     return [
       {
-        label: "Current pre-window action",
-        value: formatDelayedChargingActionLine(input),
-      },
-      {
         label: "Low Price Marker",
         value: `${formatTargetTime(delayedChargingDetails.lowPriceMarkerTime)} at ${formatPrice(delayedChargingDetails.lowestPrice)} (+ ${formatPrice(delayedChargingDetails.lowPriceMargin)} margin -> max ${formatPrice(delayedChargingDetails.lowestPrice + delayedChargingDetails.lowPriceMargin)} in window)`,
       },
@@ -809,7 +805,7 @@ export function buildEstimateSummaryRows(
         value: `${formatClockTime(delayedChargingDetails.actualWindowStart)} (${formatPrice(delayedChargingDetails.actualWindowStartPrice)}) -> ${formatClockTime(delayedChargingDetails.actualWindowEnd)} (${formatPrice(delayedChargingDetails.actualWindowEndPrice)}) (potential: ${formatClockTime(delayedChargingDetails.potentialWindowStart)} -> ${formatClockTime(delayedChargingDetails.potentialWindowEnd)})`,
       },
       {
-        label: "Pre-discharge start",
+        label: "Latest feasable discharge start",
         value: formatDelayedChargingStartLine(input),
       },
     ];

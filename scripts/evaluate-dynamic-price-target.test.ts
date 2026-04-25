@@ -259,11 +259,6 @@ test("buildEstimateSummaryRows keeps delayed-charging output short and strategy-
     }),
   ).toEqual([
     {
-      label: "Current pre-window action",
-      value:
-        "discharge from 21% to 20% to reach the pre-discharge target before the low-price window",
-    },
-    {
       label: "Low Price Marker",
       value: "2026-04-22 13:45 at -0.11 EUR/kWh (+ 0.10 EUR/kWh margin -> max -0.01 EUR/kWh in window)",
     },
@@ -273,7 +268,7 @@ test("buildEstimateSummaryRows keeps delayed-charging output short and strategy-
       value: "12:45 (-0.02 EUR/kWh) -> 15:45 (-0.01 EUR/kWh) (potential: 11:45 -> 15:45)",
     },
     {
-      label: "Pre-discharge start",
+      label: "Latest feasable discharge start",
       value: "2026-04-22 12:43 from 21% -> 20% (at 2400 W for 2m)",
     },
   ]);
