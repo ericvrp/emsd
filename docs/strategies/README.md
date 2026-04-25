@@ -3,6 +3,7 @@
 Battery strategy behavior is daemon-owned.
 
 This section documents the built-in strategy types that appear in the battery strategy plan UI:
+- `priority.md`
 - `self-consumption.md`
 - `export-surplus.md`
 - `delayed-charging.md`
@@ -16,3 +17,4 @@ The shared dynamic target estimator used by strategy items with `targetMethod: a
 
 Use the strategy documents as the product-facing explanation of what each rule means.
 Use `../scripts/dynamic-price-target.md` as implementation documentation for the shared estimator and evaluation script that currently support those rules.
+Use `priority.md` for the daemon's cross-strategy precedence and preemption rules.

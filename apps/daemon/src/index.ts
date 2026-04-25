@@ -742,6 +742,224 @@ async function runScheduledStrategy(
   verbose: boolean,
 ): Promise<void> {
   const activeItem = getActiveStrategyPlanItem(battery);
+  const dueItems = battery.strategyPlan.slice(1).filter((item) => item.enabled);
+  const dynamicPriceSamples = dueItems.some((item) =>
+    isBatteryStrategyPriceTrigger(item.triggerKind),
+  )
+    ? readDynamicPriceSamples(db, battery.siteId)
+    : [];
+  const dynamicPriceSources =
+    dynamicPriceSamples.length > 0 ? readDynamicPriceSources(db) : [];
+  const managedDeviceTelemetry = readManagedDeviceTelemetry(db);
+  let runtime = battery.strategyRuntime;
+
+  const resolveScheduledActivationCandidate = (
+    minimumPlanIndex: number,
+  ): {
+    dynamicPriceTargetEstimate: ReturnType<typeof estimateDynamicPriceTarget> | null;
+    item: BatteryStrategyPlanItem;
+    resolvedManualState: BatteryStrategyPlanItem["manualState"];
+    triggerAt: Date;
+  } | null => {
+    for (
+      let index = battery.strategyPlan.length - 1;
+      index >= minimumPlanIndex;
+      index -= 1
+    ) {
+      const item = battery.strategyPlan[index];
+
+      if (!item || !item.enabled) {
+        continue;
+      }
+
+      let triggerAt = getStrategyTriggerAt({
+        item,
+        now,
+        ...(dynamicPriceSamples.length > 0 ? { dynamicPriceSamples } : {}),
+      });
+
+      let dynamicPriceTargetEstimate =
+        item.targetMethod === "auto" && isDelayedChargingAutoDischargeItem(item)
+          ? estimateDynamicPriceTarget({
+              battery,
+              batteryPowerSamples: readBatteryPowerSamples(db, battery.siteId),
+              dynamicPriceSamples,
+              item,
+              items: battery.strategyPlan,
+              now,
+              normalizedImportExportSpread: resolveNormalizedImportExportSpread(
+                dynamicPriceSources,
+                battery.siteId,
+              ),
+              p1MeterSamples: readP1MeterSamples(db, battery.siteId),
+              sample,
+              solarEnergyProviderSamples: readSolarEnergyProviderSamples(
+                db,
+                battery.siteId,
+              ),
+              solarForecastSamples: readSolarForecastSamples(db, battery.siteId),
+            })
+          : null;
+
+      if (dynamicPriceTargetEstimate?.warning) {
+        logWarn(dynamicPriceTargetEstimate.warning);
+      }
+
+      if (dynamicPriceTargetEstimate?.startTime) {
+        const delayedChargingStartTime = new Date(
+          dynamicPriceTargetEstimate.startTime,
+        );
+
+        if (!Number.isNaN(delayedChargingStartTime.getTime())) {
+          triggerAt = delayedChargingStartTime;
+        }
+      }
+
+      if (!triggerAt) {
+        logVerbose(
+          verbose,
+          `ignoring non-executable strategy item for ${battery.id}: ${describeStrategyPlanItem(item)}`,
+        );
+        continue;
+      }
+
+      if (now.getTime() < triggerAt.getTime()) {
+        logVerbose(
+          verbose,
+          `strategy item not due yet for ${battery.id}: ${describeStrategyPlanItem(item)} triggerAt=${formatDaemonLogTimestamp(triggerAt)} now=${formatDaemonLogTimestamp(now)}`,
+        );
+        continue;
+      }
+
+      if (
+        isItemAlreadyTriggeredToday({
+          runtime,
+          itemId: item.id,
+          triggerAt,
+        })
+      ) {
+        logVerbose(
+          verbose,
+          `strategy item already triggered today for ${battery.id}: ${describeStrategyPlanItem(item)} triggerAt=${formatDaemonLogTimestamp(triggerAt)}`,
+        );
+        continue;
+      }
+
+      if (shouldSkipScheduledItem(item, triggerAt, now)) {
+        logVerbose(
+          verbose,
+          `skipping expired strategy item for ${battery.id}: ${describeStrategyPlanItem(item)} triggerAt=${formatDaemonLogTimestamp(triggerAt)} now=${formatDaemonLogTimestamp(now)}`,
+        );
+        runtime = {
+          ...runtime,
+          lastTriggeredAtByItemId: {
+            ...runtime.lastTriggeredAtByItemId,
+            [item.id]: triggerAt.toISOString(),
+          },
+        };
+        updateBatteryStrategyRuntime(db, {
+          batteryId: battery.id,
+          siteId: battery.siteId,
+          strategyRuntime: runtime,
+        });
+        continue;
+      }
+
+      const scheduledStartSkipReason = getScheduledStartSkipReason({
+        batteryId: battery.id,
+        item,
+        siteCurrentSolarPowerW: getCurrentSiteSolarPowerW({
+          siteId: battery.siteId,
+          telemetry: managedDeviceTelemetry,
+        }),
+      });
+
+      if (scheduledStartSkipReason !== null) {
+        logInfoWithVerboseDetails(
+          verbose,
+          scheduledStartSkipReason,
+          `skipping strategy item for ${battery.id}: ${describeStrategyPlanItemWithIndex(battery, item)} triggerAt=${formatDaemonLogTimestamp(triggerAt)} now=${formatDaemonLogTimestamp(now)}`,
+        );
+        runtime = {
+          ...runtime,
+          lastTriggeredAtByItemId: {
+            ...runtime.lastTriggeredAtByItemId,
+            [item.id]: triggerAt.toISOString(),
+          },
+        };
+        updateBatteryStrategyRuntime(db, {
+          batteryId: battery.id,
+          siteId: battery.siteId,
+          strategyRuntime: runtime,
+        });
+        continue;
+      }
+
+      dynamicPriceTargetEstimate ??=
+        item.targetMethod === "auto"
+          ? estimateDynamicPriceTarget({
+              battery,
+              batteryPowerSamples: readBatteryPowerSamples(db, battery.siteId),
+              dynamicPriceSamples,
+              item,
+              items: battery.strategyPlan,
+              now,
+              normalizedImportExportSpread: resolveNormalizedImportExportSpread(
+                dynamicPriceSources,
+                battery.siteId,
+              ),
+              p1MeterSamples: readP1MeterSamples(db, battery.siteId),
+              sample,
+              solarEnergyProviderSamples: readSolarEnergyProviderSamples(
+                db,
+                battery.siteId,
+              ),
+              solarForecastSamples: readSolarForecastSamples(db, battery.siteId),
+            })
+          : null;
+
+      if (
+        dynamicPriceTargetEstimate?.warning &&
+        !isDelayedChargingAutoDischargeItem(item)
+      ) {
+        logWarn(dynamicPriceTargetEstimate.warning);
+      }
+
+      if (dynamicPriceTargetEstimate?.skipReason) {
+        logInfoWithVerboseDetails(
+          verbose,
+          dynamicPriceTargetEstimate.skipReason,
+          `skipping strategy item for ${battery.id}: ${describeStrategyPlanItemWithIndex(battery, item)} triggerAt=${formatDaemonLogTimestamp(triggerAt)} now=${formatDaemonLogTimestamp(now)}`,
+        );
+        runtime = {
+          ...runtime,
+          lastTriggeredAtByItemId: {
+            ...runtime.lastTriggeredAtByItemId,
+            [item.id]: triggerAt.toISOString(),
+          },
+        };
+        updateBatteryStrategyRuntime(db, {
+          batteryId: battery.id,
+          siteId: battery.siteId,
+          strategyRuntime: runtime,
+        });
+        continue;
+      }
+
+      return {
+        dynamicPriceTargetEstimate,
+        item,
+        resolvedManualState: resolveActiveManualState({
+          fallbackManualState: item.manualState,
+          resolvedManualState: dynamicPriceTargetEstimate?.resolvedManualState,
+          targetMethod: item.targetMethod,
+        }),
+        triggerAt,
+      };
+    }
+
+    return null;
+  };
 
   if (battery.strategyRuntime.activeItemId && activeItem === null) {
     logVerbose(
@@ -756,8 +974,17 @@ async function runScheduledStrategy(
     return;
   }
 
-  if (activeItem) {
-    let runtime = battery.strategyRuntime;
+  const activeItemIndex = activeItem
+    ? battery.strategyPlan.findIndex((item) => item.id === activeItem.id)
+    : -1;
+  // While a non-default item is active, lower-priority items are blocked.
+  // Only higher-index items may preempt the current active item.
+  const higherPriorityCandidate =
+    activeItemIndex >= 1
+      ? resolveScheduledActivationCandidate(activeItemIndex + 1)
+      : null;
+
+  if (activeItem && higherPriorityCandidate === null) {
 
     if (
       shouldMarkScheduledItemObserved({ item: activeItem, runtime, sample })
@@ -883,296 +1110,118 @@ async function runScheduledStrategy(
     );
     return;
   }
+  const activationCandidate =
+    higherPriorityCandidate ?? resolveScheduledActivationCandidate(1);
 
-  const dueItems = battery.strategyPlan.slice(1).filter((item) => item.enabled);
-  const dynamicPriceSamples = dueItems.some((item) =>
-    isBatteryStrategyPriceTrigger(item.triggerKind),
-  )
-    ? readDynamicPriceSamples(db, battery.siteId)
-    : [];
-  const dynamicPriceSources =
-    dynamicPriceSamples.length > 0 ? readDynamicPriceSources(db) : [];
-  const managedDeviceTelemetry = readManagedDeviceTelemetry(db);
-  let runtime = battery.strategyRuntime;
-
-  for (let index = dueItems.length - 1; index >= 0; index -= 1) {
-    const item = dueItems[index];
-
-    if (!item) {
-      continue;
-    }
-
-    let triggerAt = getStrategyTriggerAt({
-      item,
-      now,
-      ...(dynamicPriceSamples.length > 0 ? { dynamicPriceSamples } : {}),
-    });
-
-    let dynamicPriceTargetEstimate =
-      item.targetMethod === "auto" && isDelayedChargingAutoDischargeItem(item)
-        ? estimateDynamicPriceTarget({
-            battery,
-            batteryPowerSamples: readBatteryPowerSamples(db, battery.siteId),
-            dynamicPriceSamples,
-            item,
-            items: battery.strategyPlan,
-            now,
-            normalizedImportExportSpread: resolveNormalizedImportExportSpread(
-              dynamicPriceSources,
-              battery.siteId,
-            ),
-            p1MeterSamples: readP1MeterSamples(db, battery.siteId),
-            sample,
-            solarEnergyProviderSamples: readSolarEnergyProviderSamples(
-              db,
-              battery.siteId,
-            ),
-            solarForecastSamples: readSolarForecastSamples(db, battery.siteId),
-          })
-        : null;
-
-    if (dynamicPriceTargetEstimate?.warning) {
-      logWarn(dynamicPriceTargetEstimate.warning);
-    }
-
-    if (dynamicPriceTargetEstimate?.startTime) {
-      const delayedChargingStartTime = new Date(
-        dynamicPriceTargetEstimate.startTime,
-      );
-
-      if (!Number.isNaN(delayedChargingStartTime.getTime())) {
-        triggerAt = delayedChargingStartTime;
-      }
-    }
-
-    if (!triggerAt) {
-      logVerbose(
-        verbose,
-        `ignoring non-executable strategy item for ${battery.id}: ${describeStrategyPlanItem(item)}`,
-      );
-      continue;
-    }
-
-    if (now.getTime() < triggerAt.getTime()) {
-      logVerbose(
-        verbose,
-        `strategy item not due yet for ${battery.id}: ${describeStrategyPlanItem(item)} triggerAt=${formatDaemonLogTimestamp(triggerAt)} now=${formatDaemonLogTimestamp(now)}`,
-      );
-      continue;
-    }
-
-    if (
-      isItemAlreadyTriggeredToday({
-        runtime,
-        itemId: item.id,
-        triggerAt,
-      })
-    ) {
-      logVerbose(
-        verbose,
-        `strategy item already triggered today for ${battery.id}: ${describeStrategyPlanItem(item)} triggerAt=${formatDaemonLogTimestamp(triggerAt)}`,
-      );
-      continue;
-    }
-
-    if (shouldSkipScheduledItem(item, triggerAt, now)) {
-      logVerbose(
-        verbose,
-        `skipping expired strategy item for ${battery.id}: ${describeStrategyPlanItem(item)} triggerAt=${formatDaemonLogTimestamp(triggerAt)} now=${formatDaemonLogTimestamp(now)}`,
-      );
-      runtime = {
-        ...runtime,
-        lastTriggeredAtByItemId: {
-          ...runtime.lastTriggeredAtByItemId,
-          [item.id]: triggerAt.toISOString(),
-        },
-      };
-      updateBatteryStrategyRuntime(db, {
-        batteryId: battery.id,
-        siteId: battery.siteId,
-        strategyRuntime: runtime,
-      });
-      continue;
-    }
-
-    const scheduledStartSkipReason = getScheduledStartSkipReason({
-      batteryId: battery.id,
-      item,
-      siteCurrentSolarPowerW: getCurrentSiteSolarPowerW({
-        siteId: battery.siteId,
-        telemetry: managedDeviceTelemetry,
-      }),
-    });
-
-    if (scheduledStartSkipReason !== null) {
-      logInfoWithVerboseDetails(
-        verbose,
-        scheduledStartSkipReason,
-        `skipping strategy item for ${battery.id}: ${describeStrategyPlanItemWithIndex(battery, item)} triggerAt=${formatDaemonLogTimestamp(triggerAt)} now=${formatDaemonLogTimestamp(now)}`,
-      );
-      runtime = {
-        ...runtime,
-        lastTriggeredAtByItemId: {
-          ...runtime.lastTriggeredAtByItemId,
-          [item.id]: triggerAt.toISOString(),
-        },
-      };
-      updateBatteryStrategyRuntime(db, {
-        batteryId: battery.id,
-        siteId: battery.siteId,
-        strategyRuntime: runtime,
-      });
-      continue;
-    }
-
-    dynamicPriceTargetEstimate ??=
-      item.targetMethod === "auto"
-        ? estimateDynamicPriceTarget({
-            battery,
-            batteryPowerSamples: readBatteryPowerSamples(db, battery.siteId),
-            dynamicPriceSamples,
-            item,
-            items: battery.strategyPlan,
-            now,
-            normalizedImportExportSpread: resolveNormalizedImportExportSpread(
-              dynamicPriceSources,
-              battery.siteId,
-            ),
-            p1MeterSamples: readP1MeterSamples(db, battery.siteId),
-            sample,
-            solarEnergyProviderSamples: readSolarEnergyProviderSamples(
-              db,
-              battery.siteId,
-            ),
-            solarForecastSamples: readSolarForecastSamples(db, battery.siteId),
-          })
-        : null;
-
-    if (
-      dynamicPriceTargetEstimate?.warning &&
-      !isDelayedChargingAutoDischargeItem(item)
-    ) {
-      logWarn(dynamicPriceTargetEstimate.warning);
-    }
-
-    if (dynamicPriceTargetEstimate?.skipReason) {
-      logInfoWithVerboseDetails(
-        verbose,
-        dynamicPriceTargetEstimate.skipReason,
-        `skipping strategy item for ${battery.id}: ${describeStrategyPlanItemWithIndex(battery, item)} triggerAt=${formatDaemonLogTimestamp(triggerAt)} now=${formatDaemonLogTimestamp(now)}`,
-      );
-      runtime = {
-        ...runtime,
-        lastTriggeredAtByItemId: {
-          ...runtime.lastTriggeredAtByItemId,
-          [item.id]: triggerAt.toISOString(),
-        },
-      };
-      updateBatteryStrategyRuntime(db, {
-        batteryId: battery.id,
-        siteId: battery.siteId,
-        strategyRuntime: runtime,
-      });
-      continue;
-    }
-
-    const resolvedManualState = resolveActiveManualState({
-      fallbackManualState: item.manualState,
-      resolvedManualState: dynamicPriceTargetEstimate?.resolvedManualState,
-      targetMethod: item.targetMethod,
-    });
-
-    const strategy = applyEstimatedTargetToStrategy(
-      resolveBatteryStrategyFromPlanItem({
-        item,
-        minimumDischargePercent: battery.minimumDischargePercent,
-        maximumChargePowerW: battery.maximumChargePowerW,
-        maximumDischargePowerW: battery.maximumDischargePowerW,
-      }),
-      item,
-      resolvedManualState,
-      dynamicPriceTargetEstimate?.estimatedTargetPercent ?? null,
-      battery.minimumDischargePercent,
-      battery.maximumChargePowerW,
-      battery.maximumDischargePowerW,
-    );
-
-    logVerbose(
-      verbose,
-      `activating strategy item for ${battery.id}: ${describeStrategyPlanItemWithIndex(battery, item)}`,
-    );
-
-    await createBatteryPlugin(battery).setStrategy(strategy);
-
-    const nextRuntime = {
-      activeItemId: needsCompletionTracking(item) ? item.id : null,
-      activeResolvedManualState:
-        needsCompletionTracking(item) && item.targetMethod === "auto"
-          ? resolvedManualState
-          : null,
-      activeTargetSocPercent:
-        needsCompletionTracking(item) && item.targetMethod === "auto"
-          ? (dynamicPriceTargetEstimate?.estimatedTargetPercent ?? null)
-          : null,
-      activeReserveSocPercent:
-        needsCompletionTracking(item) && item.targetMethod === "auto"
-          ? (dynamicPriceTargetEstimate?.estimatedReservePercentAtTargetTime ??
-            null)
-          : null,
-      activeTargetTime:
-        needsCompletionTracking(item) && item.targetMethod === "auto"
-          ? (dynamicPriceTargetEstimate?.targetTime ?? null)
-          : null,
-      activeStartedAt: needsCompletionTracking(item) ? now.toISOString() : null,
-      activeObservedAt: null,
-      activeStartSocPercent: needsCompletionTracking(item)
-        ? sample.socPercent
-        : null,
-      lastTriggeredAtByItemId: {
-        ...runtime.lastTriggeredAtByItemId,
-        [item.id]: triggerAt.toISOString(),
-      },
-    };
-
-    updateBatteryStrategyState(db, {
-      batteryId: battery.id,
-      siteId: battery.siteId,
-      manualModeActive: false,
-      manualModeStarted: false,
-      strategy,
-    });
-    updateBatteryStrategyRuntime(db, {
-      batteryId: battery.id,
-      siteId: battery.siteId,
-      strategyRuntime: nextRuntime,
-    });
-
-    if (!shouldWaitForObservedStart(item, resolvedManualState)) {
-      logInfoWithVerboseDetails(
-        verbose,
-        formatScheduledStrategyStartedSummary(
-          battery.id,
-          item,
-          "",
-          dynamicPriceTargetEstimate
-            ? {
-                reasoning: dynamicPriceTargetEstimate.reasoning,
-                resolvedManualState:
-                  dynamicPriceTargetEstimate.resolvedManualState ?? null,
-                targetSocPercent:
-                  dynamicPriceTargetEstimate.estimatedTargetPercent,
-                reserveSocPercent:
-                  dynamicPriceTargetEstimate.estimatedReservePercentAtTargetTime,
-                targetTime: dynamicPriceTargetEstimate.targetTime,
-              }
-            : null,
-        ),
-        `strategy item started for ${battery.id}: ${describeStrategyPlanItemWithIndex(battery, item)}`,
-      );
-    }
-
+  if (activationCandidate === null) {
     return;
   }
+
+  const {
+    dynamicPriceTargetEstimate,
+    item,
+    resolvedManualState,
+    triggerAt,
+  } = activationCandidate;
+
+  if (activeItem) {
+    logInfoWithVerboseDetails(
+      verbose,
+      `preempting ${describeStrategyPlanItemWithIndex(battery, activeItem)} with ${describeStrategyPlanItemWithIndex(battery, item)}`,
+      `canceling active strategy item for ${battery.id}: ${describeStrategyPlanItemWithIndex(battery, activeItem)} because higher-index item wants to activate ${describeStrategyPlanItemWithIndex(battery, item)}`,
+    );
+  }
+
+  const strategy = applyEstimatedTargetToStrategy(
+    resolveBatteryStrategyFromPlanItem({
+      item,
+      minimumDischargePercent: battery.minimumDischargePercent,
+      maximumChargePowerW: battery.maximumChargePowerW,
+      maximumDischargePowerW: battery.maximumDischargePowerW,
+    }),
+    item,
+    resolvedManualState,
+    dynamicPriceTargetEstimate?.estimatedTargetPercent ?? null,
+    battery.minimumDischargePercent,
+    battery.maximumChargePowerW,
+    battery.maximumDischargePowerW,
+  );
+
+  logVerbose(
+    verbose,
+    `activating strategy item for ${battery.id}: ${describeStrategyPlanItemWithIndex(battery, item)}`,
+  );
+
+  await createBatteryPlugin(battery).setStrategy(strategy);
+
+  const nextRuntime = {
+    activeItemId: needsCompletionTracking(item) ? item.id : null,
+    activeResolvedManualState:
+      needsCompletionTracking(item) && item.targetMethod === "auto"
+        ? resolvedManualState
+        : null,
+    activeTargetSocPercent:
+      needsCompletionTracking(item) && item.targetMethod === "auto"
+        ? (dynamicPriceTargetEstimate?.estimatedTargetPercent ?? null)
+        : null,
+    activeReserveSocPercent:
+      needsCompletionTracking(item) && item.targetMethod === "auto"
+        ? (dynamicPriceTargetEstimate?.estimatedReservePercentAtTargetTime ??
+          null)
+        : null,
+    activeTargetTime:
+      needsCompletionTracking(item) && item.targetMethod === "auto"
+        ? (dynamicPriceTargetEstimate?.targetTime ?? null)
+        : null,
+    activeStartedAt: needsCompletionTracking(item) ? now.toISOString() : null,
+    activeObservedAt: null,
+    activeStartSocPercent: needsCompletionTracking(item)
+      ? sample.socPercent
+      : null,
+    lastTriggeredAtByItemId: {
+      ...runtime.lastTriggeredAtByItemId,
+      [item.id]: triggerAt.toISOString(),
+    },
+  };
+
+  updateBatteryStrategyState(db, {
+    batteryId: battery.id,
+    siteId: battery.siteId,
+    manualModeActive: false,
+    manualModeStarted: false,
+    strategy,
+  });
+  updateBatteryStrategyRuntime(db, {
+    batteryId: battery.id,
+    siteId: battery.siteId,
+    strategyRuntime: nextRuntime,
+  });
+
+  if (!shouldWaitForObservedStart(item, resolvedManualState)) {
+    logInfoWithVerboseDetails(
+      verbose,
+      formatScheduledStrategyStartedSummary(
+        battery.id,
+        item,
+        "",
+        dynamicPriceTargetEstimate
+          ? {
+              reasoning: dynamicPriceTargetEstimate.reasoning,
+              resolvedManualState:
+                dynamicPriceTargetEstimate.resolvedManualState ?? null,
+              targetSocPercent:
+                dynamicPriceTargetEstimate.estimatedTargetPercent,
+              reserveSocPercent:
+                dynamicPriceTargetEstimate.estimatedReservePercentAtTargetTime,
+              targetTime: dynamicPriceTargetEstimate.targetTime,
+            }
+          : null,
+      ),
+      `strategy item started for ${battery.id}: ${describeStrategyPlanItemWithIndex(battery, item)}`,
+    );
+  }
+
+  return;
 }
 
 function getActiveStrategyPlanItem(

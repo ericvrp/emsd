@@ -7,6 +7,7 @@
 ## Strategies
 
 - `strategies/README.md`: overview of built-in battery strategy types and their status
+- `strategies/priority.md`: strategy priority, blocking, and preemption rules
 - `strategies/self-consumption.md`: default fallback strategy
 - `strategies/export-surplus.md`: built-in export-surplus rule
 - `strategies/delayed-charging.md`: delayed-charging rule status and implementation notes

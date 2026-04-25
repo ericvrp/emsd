@@ -59,6 +59,35 @@ test("evening auto discharge targets tomorrow morning and keeps a reserve above 
   expect(estimate.windowKind).toBe("evening-export-surplus");
 });
 
+test("evening export-surplus ignores same-day solar blips and targets next-morning recovery", () => {
+  const now = new Date("2026-04-19T18:45:00.000Z");
+  const battery = createBattery();
+  const item = createAutoDischargeItem();
+  const history = createOvernightUsageHistory();
+  const estimate = estimateDynamicPriceTarget({
+    battery,
+    batteryPowerSamples: history.batteryPowerSamples,
+    dynamicPriceSamples: [],
+    item,
+    items: [createDefaultItem(), item],
+    now,
+    normalizedImportExportSpread: 0.13,
+    p1MeterSamples: history.p1MeterSamples,
+    sample: createSample({ capacityWh: 5000, socPercent: 90 }),
+    solarEnergyProviderSamples: history.solarEnergyProviderSamples,
+    solarForecastSamples: createEveningCarryoverSolarForecastSamples(),
+  });
+
+  expect(estimate.targetTime).toBe("2026-04-20T08:30:00.000Z");
+  expect(new Date(estimate.targetTime ?? "").getTime()).toBeGreaterThan(
+    new Date("2026-04-20T00:00:00.000Z").getTime(),
+  );
+  expect(estimate.estimatedTargetPercent).toBeGreaterThan(
+    estimate.estimatedReservePercentAtTargetTime,
+  );
+  expect(estimate.estimatedReservePercentAtTargetTime).toBe(14);
+});
+
 test("delayed-charging auto reserves daytime headroom from the low-price window", () => {
   const now = new Date("2026-04-19T06:00:00.000Z");
   const battery = createBattery();
@@ -102,13 +131,18 @@ test("delayed-charging auto reserves daytime headroom from the low-price window"
     actualWindowEndPrice: 10,
     actualWindowStart: "2026-04-19T10:00:00.000Z",
     actualWindowStartPrice: 10,
+    chargePowerW: 2400,
+    chargeStartSocPercent: 70,
+    currentSocBasisPercent: 70,
+    latestFeasiblePreDischargeStartTime: "2026-04-19T06:00:00.000Z",
     lowestPrice: 10,
-    lowPriceMargin: 0.325,
+    lowPriceMargin: 0.39,
     lowPriceMarkerTime: "2026-04-19T10:00:00.000Z",
     minimumTimeToFullChargeMinutes: 75,
     normalizedImportExportSpread: 0.13,
     potentialWindowEnd: "2026-04-19T11:15:00.000Z",
     potentialWindowStart: "2026-04-19T08:45:00.000Z",
+    preDischargeTargetSocPercent: 93,
   });
   expect(
     new Date(estimate.startTime ?? "").getTime() +
@@ -394,6 +428,31 @@ function createZeroSolarForecastSamples(
     siteId: "site-1",
     value: 0,
   }));
+}
+
+function createEveningCarryoverSolarForecastSamples(): SolarForecastSampleRecord[] {
+  return createPeriodRange(
+    "2026-04-19T18:45:00.000Z",
+    "2026-04-20T09:00:00.000Z",
+  ).map((periodStart) => {
+    const clockTime = periodStart.slice(11, 16);
+    const value =
+      clockTime >= "18:45" && clockTime < "19:15"
+        ? 900
+        : clockTime >= "08:30" && clockTime < "09:00"
+          ? 1000
+          : 0;
+
+    return {
+      airTempC: null,
+      cloudOpacityPercent: null,
+      generatedAt: "2026-04-19T18:40:00.000Z",
+      ghiWm2: value,
+      periodStart,
+      siteId: "site-1",
+      value,
+    };
+  });
 }
 
 function createOvernightUsageHistory(): {

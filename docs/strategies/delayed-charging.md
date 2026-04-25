@@ -18,8 +18,8 @@ The intended flow is:
 4. Compute the battery charge level we want at the start of that period so the battery can end the period as full as possible.
 5. Before the low-price period starts, discharge down to that target level if needed.
 6. If the battery has already reached that target level before the low-price period starts, stop pre-discharging and stay idle.
-7. When the low-price period starts, switch to `self-consumption` so excess solar charges the battery naturally.
-8. When the low-price period ends, return to the normal strategy flow.
+7. When the low-price period starts, cancel the delayed-charging item and switch back to the default `self-consumption` item so excess solar charges the battery naturally.
+8. The delayed-charging item itself ends at the low-price period start; the battery then follows the normal default strategy flow during the rest of the window.
 
 ## Net Charge Estimate
 
@@ -93,13 +93,13 @@ Fixed margins age poorly: if energy prices increase significantly, a static valu
 
 Instead, `lowPriceMargin` should be derived from the normalized energy price provider output. The intended first rule is:
 
-`lowPriceMargin = normalizedImportExportSpread * 0.80`
+`lowPriceMargin = normalizedImportExportSpread * 3.0`
 
 For the current Tibber price source, the normalized import/export spread is represented by the provider's configured export deduction. If that value is `0.13 EUR/kWh`, the delayed-charging low-price margin is:
 
-`lowPriceMargin = 0.13 EUR/kWh * 0.80 = 0.104 EUR/kWh`
+`lowPriceMargin = 0.13 EUR/kWh * 3.0 = 0.39 EUR/kWh`
 
-So the margin would be about 10 cents per kWh.
+So the margin would be about 39 cents per kWh.
 
 The important property is that the margin scales with the normalized provider economics rather than being a hard-coded amount. If provider prices or tariff spreads change materially, the delayed-charging low-price window expands or contracts in proportion to that configured spread.
 
@@ -109,7 +109,7 @@ The derived low-price window then drives delayed charging behavior:
 
 - the pre-discharge target is the SoC we want at `actualLowPriceWindowStart`
 - the battery should discharge only as late as necessary to reach that target by `actualLowPriceWindowStart`
-- at `actualLowPriceWindowStart`, the daemon should switch to `self-consumption`
+- at `actualLowPriceWindowStart`, the daemon should complete the delayed-charging item and restore the default `self-consumption` strategy
 - the battery is expected to refill naturally from excess solar during the actual low-price window
 - by `actualLowPriceWindowEnd`, the strategy expects the battery to be as full as practical based on the net solar opportunity
 
@@ -158,15 +158,13 @@ The goal is to enter the low-price period with enough battery headroom that exce
 
 ## Strategy Collisions & Precedence
 
-If two or more strategy items overlap or become due at the same time, the tie-breaking rule is: **higher-indexed items always overrule lower-indexed items**.
+Cross-strategy priority, blocking, and preemption rules are documented in `priority.md`.
 
-The built-in strategy array order is:
-- **Index 0:** `Self-consumption` (default fallback)
-- **Index 1:** `Export surplus`
-- **Index 2:** `Delayed charging`
-- **Index 3+:** User-added manual schedule items
+For delayed charging specifically:
 
-Because `Delayed charging` (Index 2) is higher than `Export surplus` (Index 1), it will natively overrule an active `Export surplus` strategy if their times overlap (e.g., if a morning export opportunity clashes with the start of a delayed charging window). In turn, user-added schedule items (Index 3 or higher) will overrule both built-in rules.
+- `Delayed charging` has higher priority than built-in `Export surplus`
+- a higher-priority user schedule can preempt delayed charging
+- delayed charging blocks lower-priority items while it remains active
 
 ## Scope For Now
 
@@ -176,11 +174,11 @@ Because `Delayed charging` (Index 2) is higher than `Export surplus` (Index 1), 
 - the low-price window is derived from the low-price marker and `minimumTimeToFullCharge`, then tightened using `lowestPrice + lowPriceMargin`
 - once the battery reaches the desired start level, it should wait rather than continue discharging
 - the provisional start threshold is the battery backup reserve plus 10%
-- `lowPriceMargin` is derived from the normalized import/export spread using an initial factor of 80%
+- `lowPriceMargin` is derived from the normalized import/export spread using the current factor of 300%
 - `effectiveChargePowerW` comes from the strategy item's configured manual power or the battery's maximum charge power
 
 ## Status
 
 `Delayed charging` is implemented as an active built-in rule.
 
-The daemon uses the documented low-price window calculation, pre-discharge target, latest feasible pre-discharge start time, and self-consumption handoff at the start of the low-price window. `bun run dynamic-price-target:evaluate` exposes the same calculation details through its verbose output.
+The daemon uses the documented low-price window calculation, pre-discharge target, latest feasible pre-discharge start time, idle hold after the target is reached early, and default-strategy handoff at the start of the low-price window. `bun run dynamic-price-target:evaluate` exposes the same calculation details through its verbose output.

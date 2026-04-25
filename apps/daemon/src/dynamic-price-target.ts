@@ -227,6 +227,10 @@ export function estimateDynamicPriceTarget(input: {
   );
   const windowKind = getWindowKind(input.item, input.now);
   const solarRecoverySignal = findSolarRecoveryTime({
+    earliestRecoveryAt:
+      windowKind === "evening-export-surplus"
+        ? startOfNextDay(input.now)
+        : input.now,
     minimumSolarSurplusW:
       input.minimumSolarSurplusWOverride ?? MIN_SOLAR_SURPLUS_W,
     now: input.now,
@@ -562,12 +566,13 @@ function buildPredictedSolarSeries(
 }
 
 function findSolarRecoveryTime(input: {
+  earliestRecoveryAt?: Date;
   minimumSolarSurplusW: number;
   now: Date;
   predictedSeries: PredictedPoint[];
   loadProfile: LoadProfile;
 }): SolarRecoverySignal | null {
-  const earliestRecoveryAt = input.now;
+  const earliestRecoveryAt = input.earliestRecoveryAt ?? input.now;
 
   for (const point of input.predictedSeries) {
     const pointDate = new Date(point.periodStart);
@@ -1576,4 +1581,11 @@ function nextMorningFallback(now: Date): Date {
   fallback.setDate(fallback.getDate() + 1);
   fallback.setHours(8, 30, 0, 0);
   return fallback;
+}
+
+function startOfNextDay(now: Date): Date {
+  const start = new Date(now);
+  start.setDate(start.getDate() + 1);
+  start.setHours(0, 0, 0, 0);
+  return start;
 }

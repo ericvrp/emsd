@@ -19,6 +19,8 @@ For delayed-charging schedules with `targetMethod === "auto"`, the flow is:
 - derive the potential and actual low-price windows around the marker using that charge-time estimate and the normalized import/export spread
 - derive the latest feasible pre-discharge start time from the current SoC, the desired SoC at the low-price window start, and the effective discharge power
 - never discharge below the delayed-charging provisional floor of backup reserve plus 10%
+- once the target SoC is reached before the window starts, hold the battery idle until the low-price window begins
+- when the low-price window begins, complete the delayed-charging item and restore the default strategy instead of keeping the delayed-charging item active through the full window
 
 Important:
 - delayed charging start time should not be tied to a preceding `export-surplus` or other high-price marker
@@ -146,6 +148,8 @@ When a dynamic schedule item activates:
 The delayed-charging start time should be the latest feasible pre-discharge start time needed to reach the computed delayed-charging start target by the low-price window start. It should not be derived from the preceding `export-surplus` marker.
 
 This logic is wired from `apps/daemon/src/index.ts` and the completion logic lives in `apps/daemon/src/strategy-scheduler.ts`.
+
+If a higher-index schedule item becomes due while a lower-index item is still active, the daemon cancels the lower-index active item in the same poll cycle and immediately activates the higher-index item.
 
 ## CLI Evaluation Script
 
