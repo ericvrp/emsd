@@ -16,8 +16,15 @@ export class SolarEdgeSolarEnergyProviderPlugin {
 
     return {
       currentPowerW: production.currentPowerW,
+      productionControlStatus: "unavailable",
       status: production.currentPowerW === null ? "offline" : "connected",
     };
+  }
+
+  async setProductionEnabled(): Promise<NormalizedSolarEnergyProviderInfo> {
+    throw new Error(
+      `SolarEdge production control is unavailable for provider ${this.provider.id}.`,
+    );
   }
 }
 

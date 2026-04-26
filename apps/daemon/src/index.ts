@@ -22,10 +22,15 @@ import {
 import { createBatteryPlugin } from "../../ems/src/battery-plugins";
 import { fetchMeterTelemetry } from "../../ems/src/discover";
 import { getDynamicPriceSnapshot } from "../../ems/src/plugins/price";
-import { getSolarEnergyProviderNormalizedInfo } from "../../ems/src/plugins/solar-energy-provider";
+import {
+  getSolarEnergyProviderNormalizedInfo,
+  setSolarEnergyProviderProductionEnabled,
+} from "../../ems/src/plugins/solar-energy-provider";
 import { getWeatherForecast } from "../../ems/src/plugins/solar-forecast";
 import { formatDaemonHelpText, parseDaemonOptions } from "./daemon-options";
 import {
+  completeSolarEnergyProviderControlRequest,
+  markSolarEnergyProviderControlRequestRunning,
   openDaemonDatabase,
   readBatteries,
   readBatteryById,
@@ -36,6 +41,7 @@ import {
   readManagedDeviceTelemetry,
   readMeters,
   readP1MeterSamples,
+  readPendingSolarEnergyProviderControlRequests,
   readSites,
   readSolarEnergyProviderSamples,
   readSolarEnergyProviders,
@@ -131,6 +137,7 @@ function main(): void {
   }
 
   const options = parsedOptions;
+  process.env.EMSD_VERBOSE = options.verbose ? "1" : "0";
 
   acquireDaemonLock();
 
@@ -201,6 +208,11 @@ function main(): void {
     pollInFlight = true;
 
     try {
+      await processPendingSolarEnergyProviderControlRequests(
+        db,
+        options.verbose,
+      );
+
       const polledBatteries = readBatteries(db);
       const polledMeters = readMeters(db);
       const pollStartedAt = new Date();
@@ -320,6 +332,7 @@ function main(): void {
             kind: "battery",
             capacityWh: sample.capacityWh,
             powerW: sample.currentW,
+            productionControlStatus: null,
             socPercent: sample.socPercent,
             state: null,
             observedAt,
@@ -345,6 +358,7 @@ function main(): void {
             kind: "meter",
             capacityWh: null,
             powerW: sample.powerW,
+            productionControlStatus: null,
             socPercent: null,
             state: null,
             observedAt: new Date().toISOString(),
@@ -370,8 +384,9 @@ function main(): void {
             kind: "solar-energy-provider",
             capacityWh: null,
             powerW: sample.currentPowerW,
+            productionControlStatus: sample.productionControlStatus,
             socPercent: null,
-            state: null,
+            state: sample.status,
             observedAt: new Date().toISOString(),
           } satisfies ManagedDeviceTelemetryRecord);
         }),
@@ -408,6 +423,7 @@ function main(): void {
   process.on("SIGUSR1", () => {
     logInfo("received on-demand refresh request");
     void refreshSiteData(true);
+    void pollTelemetry();
   });
 
   function shutdown(signal: string): void {
@@ -423,6 +439,71 @@ function main(): void {
 
   process.on("SIGINT", () => shutdown("SIGINT"));
   process.on("SIGTERM", () => shutdown("SIGTERM"));
+}
+
+async function processPendingSolarEnergyProviderControlRequests(
+  db: ReturnType<typeof openDaemonDatabase>,
+  verbose: boolean,
+): Promise<void> {
+  const pendingRequests = readPendingSolarEnergyProviderControlRequests(db);
+
+  if (pendingRequests.length === 0) {
+    return;
+  }
+
+  const providers = readSolarEnergyProviders(db);
+
+  for (const request of pendingRequests) {
+    const provider = providers.find(
+      (entry) =>
+        entry.id === request.providerId && entry.siteId === request.siteId,
+    );
+    const updatedAt = new Date().toISOString();
+
+    if (!provider) {
+      completeSolarEnergyProviderControlRequest(db, {
+        message: `Managed solar energy provider not found: ${request.providerId}`,
+        requestId: request.id,
+        status: "failed",
+        updatedAt,
+      });
+      continue;
+    }
+
+    markSolarEnergyProviderControlRequestRunning(db, request.id, updatedAt);
+    const targetState = request.requestedEnabled ? "enabled" : "disabled";
+    logInfoWithVerboseDetails(
+      verbose,
+      `processing solar production control request for ${provider.id}: targetState=${targetState}`,
+      `processing solar production control request for ${provider.id} at ${provider.ipAddress}: targetState=${targetState}`,
+    );
+
+    await setSolarEnergyProviderProductionEnabled(
+      provider,
+      request.requestedEnabled,
+    )
+      .then(() => {
+        completeSolarEnergyProviderControlRequest(db, {
+          message: null,
+          requestId: request.id,
+          status: "completed",
+          updatedAt: new Date().toISOString(),
+        });
+      })
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+
+        logError(
+          `solar production control request failed for ${provider.id}: ${message}`,
+        );
+        completeSolarEnergyProviderControlRequest(db, {
+          message,
+          requestId: request.id,
+          status: "failed",
+          updatedAt: new Date().toISOString(),
+        });
+      });
+  }
 }
 
 async function refreshWeatherForecasts(
@@ -756,7 +837,9 @@ async function runScheduledStrategy(
   const resolveScheduledActivationCandidate = (
     minimumPlanIndex: number,
   ): {
-    dynamicPriceTargetEstimate: ReturnType<typeof estimateDynamicPriceTarget> | null;
+    dynamicPriceTargetEstimate: ReturnType<
+      typeof estimateDynamicPriceTarget
+    > | null;
     item: BatteryStrategyPlanItem;
     resolvedManualState: BatteryStrategyPlanItem["manualState"];
     triggerAt: Date;
@@ -797,7 +880,10 @@ async function runScheduledStrategy(
                 db,
                 battery.siteId,
               ),
-              solarForecastSamples: readSolarForecastSamples(db, battery.siteId),
+              solarForecastSamples: readSolarForecastSamples(
+                db,
+                battery.siteId,
+              ),
             })
           : null;
 
@@ -914,7 +1000,10 @@ async function runScheduledStrategy(
                 db,
                 battery.siteId,
               ),
-              solarForecastSamples: readSolarForecastSamples(db, battery.siteId),
+              solarForecastSamples: readSolarForecastSamples(
+                db,
+                battery.siteId,
+              ),
             })
           : null;
 
@@ -991,7 +1080,6 @@ async function runScheduledStrategy(
       : null;
 
   if (activeItem && higherPriorityCandidate === null) {
-
     if (
       shouldMarkScheduledItemObserved({ item: activeItem, runtime, sample })
     ) {
@@ -1123,12 +1211,8 @@ async function runScheduledStrategy(
     return;
   }
 
-  const {
-    dynamicPriceTargetEstimate,
-    item,
-    resolvedManualState,
-    triggerAt,
-  } = activationCandidate;
+  const { dynamicPriceTargetEstimate, item, resolvedManualState, triggerAt } =
+    activationCandidate;
 
   if (activeItem) {
     logInfoWithVerboseDetails(

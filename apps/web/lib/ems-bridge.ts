@@ -269,6 +269,17 @@ export function deleteSolarEnergyProvider(input: {
   return runBridge<ManagedDeviceRecord>("solar-energy-provider-delete", input);
 }
 
+export function setSolarEnergyProviderProductionEnabled(input: {
+  enabled: boolean;
+  id: string;
+  siteId: string;
+}) {
+  return runBridge<unknown>(
+    "solar-energy-provider-set-production-enabled",
+    input,
+  );
+}
+
 export function createWeatherForecastSource(input: {
   id: string;
   name: string;

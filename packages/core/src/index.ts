@@ -346,8 +346,14 @@ export interface ManagedDeviceRecord {
 
 export interface NormalizedSolarEnergyProviderInfo {
   currentPowerW: number | null;
+  productionControlStatus: SolarEnergyProviderProductionControlStatus;
   status: Extract<ManagedDeviceState, "connected" | "offline">;
 }
+
+export type SolarEnergyProviderProductionControlStatus =
+  | "enabled"
+  | "disabled"
+  | "unavailable";
 
 export function createBatteryStrategyRuntime(): BatteryStrategyRuntimeRecord {
   return {
@@ -1011,6 +1017,7 @@ export interface ManagedDeviceTelemetryRecord {
   kind: ManagedDeviceKind;
   capacityWh: number | null;
   powerW: number | null;
+  productionControlStatus: SolarEnergyProviderProductionControlStatus | null;
   socPercent: number | null;
   state: ManagedDeviceState | null;
   observedAt: string;

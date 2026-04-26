@@ -1,5 +1,6 @@
 import type {
   NormalizedSolarEnergyProviderInfo,
+  SolarEnergyProviderProductionControlStatus,
   SolarEnergyProviderRecord,
 } from "@emsd/core";
 import {
@@ -12,6 +13,7 @@ import type { DiscoveryPlugin } from "../types";
 
 const ENPHASE_DISCOVERY_MODEL = "enphase-local";
 const ENPHASE_DISCOVERY_NAME = "Enphase IQ Gateway";
+const ENPHASE_PRODUCTION_CONTROL_PATH = "/ivp/ss/dpel";
 const ENLIGHTEN_AUTH_URL =
   "https://enlighten.enphaseenergy.com/login/login.json";
 const ENLIGHTEN_TOKEN_URL = "https://entrez.enphaseenergy.com/tokens";
@@ -20,6 +22,13 @@ class EnphaseTerminalError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "EnphaseTerminalError";
+  }
+}
+
+class EnphaseProductionControlError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "EnphaseProductionControlError";
   }
 }
 
@@ -45,6 +54,17 @@ type EnphaseProductionInfo = {
   currentPowerW: number | null;
 };
 
+type EnphaseProductionControlPayload = Record<string, unknown>;
+
+type EnphaseRequestOptions = {
+  allowAuthentication?: boolean;
+  allowErrorStatus?: boolean;
+  body?: string;
+  headers?: Record<string, string>;
+  method?: "GET" | "POST";
+  serialHint?: string | null;
+};
+
 const enphaseSessionByHost = new Map<string, EnphaseLocalSession>();
 
 export class EnphaseSolarEnergyProviderPlugin {
@@ -52,11 +72,23 @@ export class EnphaseSolarEnergyProviderPlugin {
 
   async getNormalizedInfo(): Promise<NormalizedSolarEnergyProviderInfo> {
     const production = await fetchProductionInfo(this.provider);
+    const productionControlStatus: SolarEnergyProviderProductionControlStatus =
+      await readProductionControlStatus(this.provider).catch(
+        () => "unavailable",
+      );
 
     return {
       currentPowerW: production.currentPowerW,
+      productionControlStatus,
       status: production.currentPowerW === null ? "offline" : "connected",
     };
+  }
+
+  async setProductionEnabled(
+    enabled: boolean,
+  ): Promise<NormalizedSolarEnergyProviderInfo> {
+    await setEnphaseProductionEnabled(this.provider, enabled);
+    return this.getNormalizedInfo();
   }
 }
 
@@ -148,7 +180,9 @@ async function fetchProductionInfo(
   const fallbackText = await fetchEnphaseText(
     provider.ipAddress,
     "/api/v1/production",
-    { serialHint },
+    {
+      serialHint,
+    },
   );
   return parseApiV1ProductionPayload(parseJsonObject(fallbackText));
 }
@@ -156,14 +190,23 @@ async function fetchProductionInfo(
 async function fetchEnphaseText(
   host: string,
   path: string,
-  options: { allowAuthentication?: boolean; serialHint?: string | null } = {},
+  options: EnphaseRequestOptions = {},
 ): Promise<string> {
+  const response = await fetchEnphaseResponse(host, path, options);
+  return response.text();
+}
+
+async function fetchEnphaseResponse(
+  host: string,
+  path: string,
+  options: EnphaseRequestOptions = {},
+): Promise<Response> {
   const schemes: Array<"https" | "http"> = ["https", "http"];
   let lastError: unknown = null;
 
   for (const scheme of schemes) {
     try {
-      return await fetchEnphaseTextForScheme(host, path, scheme, options);
+      return await fetchEnphaseResponseForScheme(host, path, scheme, options);
     } catch (error) {
       if (isEnphaseTerminalError(error)) {
         throw error;
@@ -178,25 +221,30 @@ async function fetchEnphaseText(
     : new Error(`Enphase request failed for ${host}${path}`);
 }
 
-async function fetchEnphaseTextForScheme(
+async function fetchEnphaseResponseForScheme(
   host: string,
   path: string,
   scheme: "https" | "http",
-  options: { allowAuthentication?: boolean; serialHint?: string | null },
-): Promise<string> {
+  options: EnphaseRequestOptions,
+): Promise<Response> {
   const url = buildEnphaseLocalUrl(host, path, scheme);
+  const method = options.method ?? "GET";
   const initialResponse = await fetchWithAction(
     url,
     {
-      headers: { accept: "application/json, text/xml;q=0.9, */*;q=0.8" },
-      method: "GET",
+      body: options.body,
+      headers: buildEnphaseRequestHeaders(options.headers),
+      method,
       ...buildEnphaseTlsOptions(scheme),
     },
     "Enphase local request",
   );
 
-  if (initialResponse.ok) {
-    return initialResponse.text();
+  if (
+    initialResponse.ok ||
+    (options.allowErrorStatus && initialResponse.status !== 401)
+  ) {
+    return initialResponse;
   }
 
   if (initialResponse.status !== 401 || options.allowAuthentication === false) {
@@ -222,14 +270,15 @@ async function fetchEnphaseTextForScheme(
   const authenticatedResponse = await fetchWithAction(
     url,
     {
-      headers: buildAuthenticatedLocalHeaders(session),
-      method: "GET",
+      body: options.body,
+      headers: buildAuthenticatedLocalHeaders(session, options.headers),
+      method,
       ...buildEnphaseTlsOptions(scheme),
     },
     "Enphase local request",
   );
 
-  if (!authenticatedResponse.ok) {
+  if (!authenticatedResponse.ok && !options.allowErrorStatus) {
     if (authenticatedResponse.status === 401) {
       enphaseSessionByHost.delete(host);
     }
@@ -239,7 +288,7 @@ async function fetchEnphaseTextForScheme(
     );
   }
 
-  return authenticatedResponse.text();
+  return authenticatedResponse;
 }
 
 async function getAuthenticatedEnphaseSession(
@@ -379,12 +428,337 @@ async function createLocalEnphaseSession(
 
 function buildAuthenticatedLocalHeaders(
   session: EnphaseLocalSession,
+  headers?: Record<string, string>,
 ): Record<string, string> {
   return {
-    accept: "application/json, text/xml;q=0.9, */*;q=0.8",
+    ...buildEnphaseRequestHeaders(headers),
     Authorization: `Bearer ${session.token}`,
     ...(session.cookieHeader ? { Cookie: session.cookieHeader } : {}),
   };
+}
+
+function buildEnphaseRequestHeaders(
+  headers?: Record<string, string>,
+): Record<string, string> {
+  return {
+    accept: "application/json, text/xml;q=0.9, */*;q=0.8",
+    ...(headers ?? {}),
+  };
+}
+
+async function readProductionControlStatus(
+  provider: SolarEnergyProviderRecord,
+): Promise<SolarEnergyProviderProductionControlStatus> {
+  const payload = await readEnphaseProductionControlPayload(provider);
+  return parseProductionControlStatus(payload, provider);
+}
+
+async function readEnphaseProductionControlPayload(
+  provider: SolarEnergyProviderRecord,
+): Promise<EnphaseProductionControlPayload> {
+  if (isVerboseEnphaseProductionControlLoggingEnabled()) {
+    console.log(
+      `Polling Enphase production control via GET https://${provider.ipAddress}${ENPHASE_PRODUCTION_CONTROL_PATH} for provider ${provider.id}`,
+    );
+  }
+  const response = await fetchEnphaseResponse(
+    provider.ipAddress,
+    ENPHASE_PRODUCTION_CONTROL_PATH,
+    {
+      allowErrorStatus: true,
+      serialHint: provider.serialNumber,
+    },
+  ).catch((error: unknown) => {
+    throw normalizeProductionControlSetupError(error, provider);
+  });
+
+  if (response.status === 404) {
+    throw new EnphaseProductionControlError(
+      `Enphase gateway at ${provider.ipAddress} does not expose the production control endpoint.`,
+    );
+  }
+
+  if (response.status === 401) {
+    throw new EnphaseProductionControlError(
+      buildProductionControlAccessErrorMessage(provider, "read"),
+    );
+  }
+
+  if (response.status === 403) {
+    throw new EnphaseProductionControlError(
+      `The current Enphase account does not have permission to read production control for provider ${provider.id}.`,
+    );
+  }
+
+  if (!response.ok) {
+    throw new EnphaseProductionControlError(
+      `Enphase gateway rejected the production control status read with HTTP ${response.status} for provider ${provider.id}.`,
+    );
+  }
+
+  const responseText = await response.text();
+  if (isVerboseEnphaseProductionControlLoggingEnabled()) {
+    console.log(
+      `Enphase production control payload for provider ${provider.id} at ${provider.ipAddress}: ${responseText}`,
+    );
+  }
+  const payload = parseJsonObject(responseText);
+
+  if (!payload) {
+    throw new EnphaseProductionControlError(
+      `Enphase gateway returned an unreadable production control payload for provider ${provider.id}. EMSD can still read production telemetry, but this gateway's production-control response format is not yet supported.`,
+    );
+  }
+
+  return payload;
+}
+
+function parseProductionControlStatus(
+  payload: EnphaseProductionControlPayload,
+  provider: SolarEnergyProviderRecord,
+): SolarEnergyProviderProductionControlStatus {
+  const booleanState = findControlBoolean(payload);
+
+  if (booleanState !== null) {
+    return booleanState ? "enabled" : "disabled";
+  }
+
+  const stringState = findControlString(payload);
+
+  if (stringState !== null) {
+    return stringState;
+  }
+
+  throw new EnphaseProductionControlError(
+    `Enphase gateway did not report a recognized production control state for provider ${provider.id}. EMSD can still read production telemetry, but this gateway's production-control payload shape is not yet supported.`,
+  );
+}
+
+async function setEnphaseProductionEnabled(
+  provider: SolarEnergyProviderRecord,
+  enabled: boolean,
+): Promise<void> {
+  const payload = await readEnphaseProductionControlPayload(provider);
+  const nextPayload = buildProductionControlUpdatePayload(
+    payload,
+    enabled,
+    provider,
+  );
+  console.log(
+    `Posting Enphase production control via POST https://${provider.ipAddress}${ENPHASE_PRODUCTION_CONTROL_PATH} for provider ${provider.id}: targetState=${formatProductionControlState(enabled)} payload=${JSON.stringify(nextPayload)}`,
+  );
+  const response = await fetchEnphaseResponse(
+    provider.ipAddress,
+    ENPHASE_PRODUCTION_CONTROL_PATH,
+    {
+      allowErrorStatus: true,
+      body: JSON.stringify(nextPayload),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+      serialHint: provider.serialNumber,
+    },
+  ).catch((error: unknown) => {
+    throw normalizeProductionControlSetupError(error, provider);
+  });
+
+  if (response.status === 404) {
+    throw new EnphaseProductionControlError(
+      `Enphase gateway at ${provider.ipAddress} does not expose the production control endpoint.`,
+    );
+  }
+
+  if (response.status === 401) {
+    throw new EnphaseProductionControlError(
+      buildProductionControlAccessErrorMessage(provider, "change"),
+    );
+  }
+
+  if (response.status === 403) {
+    throw new EnphaseProductionControlError(
+      `The current Enphase account does not have permission to change production control for provider ${provider.id}.`,
+    );
+  }
+
+  if (!response.ok) {
+    const responseText = (await response.text()).trim();
+    throw new EnphaseProductionControlError(
+      `Enphase gateway rejected the production control update with HTTP ${response.status} for provider ${provider.id}${responseText ? `: ${responseText}` : "."}`,
+    );
+  }
+}
+
+function buildProductionControlUpdatePayload(
+  payload: EnphaseProductionControlPayload,
+  enabled: boolean,
+  provider: SolarEnergyProviderRecord,
+): EnphaseProductionControlPayload {
+  const cloned = JSON.parse(
+    JSON.stringify(payload),
+  ) as EnphaseProductionControlPayload;
+
+  if (applyControlBooleanUpdate(cloned, enabled)) {
+    return cloned;
+  }
+
+  if (applyControlStringUpdate(cloned, enabled)) {
+    return cloned;
+  }
+
+  throw new EnphaseProductionControlError(
+    `Enphase gateway did not report a recognized top-level production control field for provider ${provider.id}. EMSD will not guess how to write this payload shape.`,
+  );
+}
+
+function findControlBoolean(value: unknown): boolean | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  for (const [key, entry] of Object.entries(value)) {
+    const normalizedKey = key.toLowerCase();
+
+    if (isEnabledKey(normalizedKey) && typeof entry === "boolean") {
+      return entry;
+    }
+
+    if (isDisabledKey(normalizedKey) && typeof entry === "boolean") {
+      return !entry;
+    }
+  }
+
+  return null;
+}
+
+function findControlString(
+  value: unknown,
+): SolarEnergyProviderProductionControlStatus | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  for (const [key, entry] of Object.entries(value)) {
+    const normalizedKey = key.toLowerCase();
+
+    if (
+      isEnabledKey(normalizedKey) ||
+      isDisabledKey(normalizedKey) ||
+      normalizedKey === "status" ||
+      normalizedKey === "state"
+    ) {
+      const normalizedValue = normalizeControlStateString(entry);
+
+      if (normalizedValue !== null) {
+        return normalizedValue;
+      }
+    }
+  }
+
+  return null;
+}
+
+function applyControlBooleanUpdate(value: unknown, enabled: boolean): boolean {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  let changed = false;
+
+  for (const [key, entry] of Object.entries(value)) {
+    const normalizedKey = key.toLowerCase();
+
+    if (isEnabledKey(normalizedKey) && typeof entry === "boolean") {
+      (value as Record<string, unknown>)[key] = enabled;
+      changed = true;
+      continue;
+    }
+
+    if (isDisabledKey(normalizedKey) && typeof entry === "boolean") {
+      (value as Record<string, unknown>)[key] = !enabled;
+      changed = true;
+      continue;
+    }
+  }
+
+  return changed;
+}
+
+function applyControlStringUpdate(value: unknown, enabled: boolean): boolean {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  let changed = false;
+
+  for (const [key, entry] of Object.entries(value)) {
+    const normalizedKey = key.toLowerCase();
+
+    if (
+      (isEnabledKey(normalizedKey) ||
+        isDisabledKey(normalizedKey) ||
+        normalizedKey === "status" ||
+        normalizedKey === "state") &&
+      typeof entry === "string" &&
+      normalizeControlStateString(entry) !== null
+    ) {
+      (value as Record<string, unknown>)[key] = enabled
+        ? "enabled"
+        : "disabled";
+      changed = true;
+      continue;
+    }
+  }
+
+  return changed;
+}
+
+function normalizeControlStateString(
+  value: unknown,
+): SolarEnergyProviderProductionControlStatus | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalizedValue = value.trim().toLowerCase();
+
+  if (["enabled", "enable", "on", "true"].includes(normalizedValue)) {
+    return "enabled";
+  }
+
+  if (["disabled", "disable", "off", "false"].includes(normalizedValue)) {
+    return "disabled";
+  }
+
+  return null;
+}
+
+function formatProductionControlState(enabled: boolean): "enabled" | "disabled" {
+  return enabled ? "enabled" : "disabled";
+}
+
+function isVerboseEnphaseProductionControlLoggingEnabled(): boolean {
+  return process.env.EMSD_VERBOSE === "1";
+}
+
+function isEnabledKey(key: string): boolean {
+  return [
+    "enabled",
+    "enable",
+    "productionenabled",
+    "production_enabled",
+    "enableproduction",
+    "enable_production",
+  ].includes(key);
+}
+
+function isDisabledKey(key: string): boolean {
+  return [
+    "disabled",
+    "disable",
+    "productiondisabled",
+    "production_disabled",
+    "disableproduction",
+    "disable_production",
+  ].includes(key);
 }
 
 function buildEnphaseLocalUrl(
@@ -479,4 +853,44 @@ function getRequiredEnv(name: string, message: string): string {
   }
 
   return value;
+}
+
+function hasEnphaseOwnerCredentials(): boolean {
+  return (
+    (process.env.ENPHASE_ENLIGHTEN_USERNAME?.trim().length ?? 0) > 0 &&
+    (process.env.ENPHASE_ENLIGHTEN_PASSWORD?.trim().length ?? 0) > 0
+  );
+}
+
+function buildProductionControlAccessErrorMessage(
+  provider: SolarEnergyProviderRecord,
+  action: "read" | "change",
+): string {
+  const actionLabel = action === "read" ? "read" : "change";
+
+  if (!hasEnphaseOwnerCredentials()) {
+    return "Set ENPHASE_ENLIGHTEN_USERNAME and ENPHASE_ENLIGHTEN_PASSWORD to authenticate with the Enphase local gateway before using production control.";
+  }
+
+  return `Enphase production telemetry is reachable for provider ${provider.id}, but the gateway rejected the authenticated request to ${actionLabel} production control. This usually means production control is unsupported on this hardware or firmware, or your Enphase account lacks the extra privileges required for control even though telemetry works.`;
+}
+
+function normalizeProductionControlSetupError(
+  error: unknown,
+  provider: SolarEnergyProviderRecord,
+): Error {
+  if (!(error instanceof Error)) {
+    return new Error(String(error));
+  }
+
+  if (
+    error.message.includes("ENPHASE_ENLIGHTEN_USERNAME") &&
+    error.message.includes("ENPHASE_ENLIGHTEN_PASSWORD")
+  ) {
+    return new EnphaseProductionControlError(
+      `Enphase production telemetry can still work from the daemon for provider ${provider.id}, but this production-control action runs through the EMS bridge process and that process does not currently have ENPHASE_ENLIGHTEN_USERNAME and ENPHASE_ENLIGHTEN_PASSWORD available. Ensure those variables are present for the web/EMS bridge process too, not only for the daemon shell or startup environment.`,
+    );
+  }
+
+  return error;
 }

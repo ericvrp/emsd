@@ -1,20 +1,13 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import {
-  DEFAULT_SOLAR_PREDICTION_SMOOTHING_MODE,
-  applySolarSeriesSmoothing,
-  buildExpectedSiteLoadSeriesForLocalDay,
-  buildHouseLoadHistorySeries,
-  createBatteryStrategyPlanId,
-  deriveBatteryStatusFromPower,
-  fillSiteLoadSeriesForLocalDay,
-  getCurrentLocalDayKey,
   type BatteryManualState,
   type BatteryRecord,
-  type BatteryStrategyPlanItem,
   type BatteryStrategyMode,
+  type BatteryStrategyPlanItem,
   type BatteryStrategyPlanRecord,
   BatteryStrategyTriggerKind,
   type BulkDiscoveryAddResult,
+  DEFAULT_SOLAR_PREDICTION_SMOOTHING_MODE,
   type DashboardSnapshot,
   type DynamicPriceSnapshotRecord,
   type HistoryArchive,
@@ -28,8 +21,15 @@ import {
   type SiteRecord,
   type SolarEnergyProviderRecord,
   type WeatherForecastRecord,
+  applySolarSeriesSmoothing,
+  buildExpectedSiteLoadSeriesForLocalDay,
+  buildHouseLoadHistorySeries,
   buildPredictedSolarGenerationSeries,
+  createBatteryStrategyPlanId,
   createBatteryStrategyRuntimeForPlanApply,
+  deriveBatteryStatusFromPower,
+  fillSiteLoadSeriesForLocalDay,
+  getCurrentLocalDayKey,
   getDaemonLockPath,
   normalizeBatteryStrategyPlan,
   resolveBatteryStrategyFromPlanItem,
@@ -37,6 +37,7 @@ import {
 import {
   deleteWeatherForecast,
   openDaemonDatabase,
+  queueSolarEnergyProviderControlRequest,
   readBatteryPowerSamples,
   readBatteryStrategyHistory,
   readDynamicPriceSamples,
@@ -1430,6 +1431,39 @@ export async function runApiAction(
       }
 
       return getSolarEnergyProviderNormalizedInfo(provider);
+    }
+
+    case "solar-energy-provider-set-production-enabled": {
+      const provider = getSolarEnergyProvider(
+        requireString(input.id, "id"),
+        requireString(input.siteId, "siteId"),
+      );
+
+      if (!provider) {
+        throw new Error(
+          `Managed solar energy provider not found: ${requireString(input.id, "id")}`,
+        );
+      }
+
+      const daemon = readDaemonState();
+
+      if (!daemon.running || daemon.pid === null) {
+        throw new Error("EMSD daemon is not running.");
+      }
+
+      const db = openDaemonDatabase();
+
+      try {
+        return queueSolarEnergyProviderControlRequest(db, {
+          providerId: provider.id,
+          requestedAt: new Date().toISOString(),
+          requestedEnabled: input.enabled === true,
+          siteId: provider.siteId,
+        });
+      } finally {
+        db.close();
+        process.kill(daemon.pid, "SIGUSR1");
+      }
     }
 
     default:

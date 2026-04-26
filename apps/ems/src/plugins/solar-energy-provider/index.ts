@@ -13,6 +13,9 @@ import {
 
 export interface SolarEnergyProviderPlugin {
   getNormalizedInfo(): Promise<NormalizedSolarEnergyProviderInfo>;
+  setProductionEnabled(
+    enabled: boolean,
+  ): Promise<NormalizedSolarEnergyProviderInfo>;
 }
 
 export const solarEnergyProviderDiscoveryPlugins = [
@@ -45,4 +48,13 @@ export async function getSolarEnergyProviderNormalizedInfo(
   provider: SolarEnergyProviderRecord,
 ): Promise<NormalizedSolarEnergyProviderInfo> {
   return createSolarEnergyProviderPlugin(provider).getNormalizedInfo();
+}
+
+export async function setSolarEnergyProviderProductionEnabled(
+  provider: SolarEnergyProviderRecord,
+  enabled: boolean,
+): Promise<NormalizedSolarEnergyProviderInfo> {
+  return createSolarEnergyProviderPlugin(provider).setProductionEnabled(
+    enabled,
+  );
 }

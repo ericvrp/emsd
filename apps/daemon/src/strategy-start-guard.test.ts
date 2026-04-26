@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import {
-  BatteryStrategyTriggerKind,
   type BatteryStrategyPlanItem,
+  BatteryStrategyTriggerKind,
   type ManagedDeviceTelemetryRecord,
 } from "@emsd/core";
 import {
@@ -75,6 +75,7 @@ function createTelemetry(
     kind: "solar-energy-provider",
     capacityWh: null,
     powerW: 100,
+    productionControlStatus: null,
     socPercent: null,
     state: null,
     observedAt: "2026-04-21T00:00:00.000Z",

@@ -1,8 +1,12 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { DashboardSnapshot, HistoryArchive } from "@emsd/core";
+import {
+  type DashboardSnapshot,
+  type HistoryArchive,
+  getDaemonLockPath,
+} from "@emsd/core";
 import {
   BatteryStrategyTriggerKind,
   DEFAULT_SOLAR_PREDICTION_SMOOTHING_MODE,
@@ -12,6 +16,7 @@ import {
 import {
   openDaemonDatabase,
   readBatteryStrategyHistory,
+  readPendingSolarEnergyProviderControlRequests,
   upsertBatteryStrategyHistoryState,
   upsertDynamicPriceSnapshot,
   upsertManagedDeviceTelemetry,
@@ -22,6 +27,7 @@ import {
   SINGLE_BATTERY_LIMIT_ERROR,
   createBattery,
   createSite,
+  createSolarEnergyProvider,
   getBattery,
 } from "./managed-site-store";
 
@@ -91,6 +97,7 @@ test("api snapshot returns managed devices with telemetry", async () => {
       kind: "battery",
       observedAt: "2026-04-09T08:30:00.000Z",
       powerW: -950,
+      productionControlStatus: null,
       siteId: "home",
       socPercent: 62,
       state: "discharging",
@@ -128,6 +135,7 @@ test("api snapshot returns managed devices with telemetry", async () => {
       capacityWh: 9600,
       kind: "battery",
       powerW: -950,
+      productionControlStatus: null,
       socPercent: 62,
       state: null,
     },
@@ -178,6 +186,66 @@ test("battery-set-power-limits persists battery-level charge and discharge caps"
     maximumChargePowerW: 1200,
     maximumDischargePowerW: 1800,
   });
+});
+
+test("solar-energy-provider-set-production-enabled queues a daemon request", async () => {
+  createTempDatabase();
+  const originalKill = process.kill;
+
+  createSite({
+    id: "home",
+    location: "52.367600, 4.904100",
+    name: "Home",
+  });
+  createSolarEnergyProvider(
+    {
+      connected: true,
+      enabled: true,
+      id: "solar-1",
+      ipAddress: "192.168.1.40",
+      name: "Enphase IQ Gateway",
+      plugin: "enphase-local",
+      serialNumber: "123456789012",
+    },
+    "home",
+  );
+
+  writeFileSync(getDaemonLockPath(), `${process.pid}\n`, "utf8");
+  process.kill = (() => true) as typeof process.kill;
+
+  try {
+    const queued = await runApiAction(
+      "solar-energy-provider-set-production-enabled",
+      {
+        enabled: true,
+        id: "solar-1",
+        siteId: "home",
+      },
+    );
+    const db = openDaemonDatabase();
+
+    try {
+      expect(queued).toMatchObject({
+        providerId: "solar-1",
+        requestedEnabled: true,
+        siteId: "home",
+        status: "pending",
+      });
+      expect(readPendingSolarEnergyProviderControlRequests(db)).toMatchObject([
+        {
+          providerId: "solar-1",
+          requestedEnabled: true,
+          siteId: "home",
+          status: "pending",
+        },
+      ]);
+    } finally {
+      db.close();
+    }
+  } finally {
+    process.kill = originalKill;
+    rmSync(getDaemonLockPath(), { force: true });
+  }
 });
 
 test("only one battery can be created for a site", () => {
@@ -287,6 +355,7 @@ test("api history archive returns stored battery, price, and forecast data", asy
       kind: "battery",
       observedAt: "2026-04-09T08:30:00.000Z",
       powerW: -950,
+      productionControlStatus: null,
       siteId: "home",
       socPercent: 62,
       state: "discharging",
@@ -298,6 +367,7 @@ test("api history archive returns stored battery, price, and forecast data", asy
       kind: "meter",
       observedAt: "2026-04-09T08:30:00.000Z",
       powerW: 420,
+      productionControlStatus: null,
       siteId: "home",
       socPercent: null,
       state: null,
@@ -309,6 +379,7 @@ test("api history archive returns stored battery, price, and forecast data", asy
       kind: "solar-energy-provider",
       observedAt: "2026-04-09T08:30:00.000Z",
       powerW: 1800,
+      productionControlStatus: "disabled",
       siteId: "home",
       socPercent: null,
       state: "connected",
@@ -784,6 +855,7 @@ test("history-get-archive applies default prediction smoothing server-side", asy
       kind: "solar-energy-provider",
       observedAt: "2026-04-08T10:00:00.000Z",
       powerW: 100,
+      productionControlStatus: "enabled",
       siteId: "home",
       socPercent: null,
       state: "connected",
@@ -794,6 +866,7 @@ test("history-get-archive applies default prediction smoothing server-side", asy
       kind: "solar-energy-provider",
       observedAt: "2026-04-08T10:15:00.000Z",
       powerW: 300,
+      productionControlStatus: "enabled",
       siteId: "home",
       socPercent: null,
       state: "connected",
@@ -804,6 +877,7 @@ test("history-get-archive applies default prediction smoothing server-side", asy
       kind: "solar-energy-provider",
       observedAt: "2026-04-08T10:30:00.000Z",
       powerW: 200,
+      productionControlStatus: "enabled",
       siteId: "home",
       socPercent: null,
       state: "connected",

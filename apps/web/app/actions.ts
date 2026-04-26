@@ -36,6 +36,7 @@ import {
   setHouseStrategy,
   setHouseStrategyPlan,
   setMeterEnabled,
+  setSolarEnergyProviderProductionEnabled,
   updateDynamicPriceSource,
   updateDynamicPriceSourceExportDeduction,
   updateSite,
@@ -208,59 +209,83 @@ async function runAction(
 }
 
 export async function createSiteAction(formData: FormData): Promise<void> {
-  return runAction(async () => {
-    const name = stringValue(formData, "name");
-    const snapshot = await getDashboardSnapshot();
+  const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
 
-    if (snapshot.sites.length > 0) {
-      throw new Error("A default site is already configured.");
-    }
+  return runAction(
+    async () => {
+      const name = stringValue(formData, "name");
+      const snapshot = await getDashboardSnapshot();
 
-    const siteId = buildSiteId(
-      name,
-      snapshot.sites.map((site) => site.id),
-    );
+      if (snapshot.sites.length > 0) {
+        throw new Error("A default site is already configured.");
+      }
 
-    await createSite({
-      id: siteId,
-      location: stringValue(formData, "location"),
-      name,
-    });
-    await ensureDefaultWeatherForecastSource(siteId);
-    await refreshWeatherForecast({ siteId });
-    await ensureDefaultDynamicPriceSource(siteId);
-    await refreshDynamicPriceSnapshot({ siteId }).catch(() => null);
-    return { notice: `Created site ${name}.`, tab: "discover" };
-  }, "site");
+      const siteId = buildSiteId(
+        name,
+        snapshot.sites.map((site) => site.id),
+      );
+
+      await createSite({
+        id: siteId,
+        location: stringValue(formData, "location"),
+        name,
+      });
+      await ensureDefaultWeatherForecastSource(siteId);
+      await refreshWeatherForecast({ siteId });
+      await ensureDefaultDynamicPriceSource(siteId);
+      await refreshDynamicPriceSnapshot({ siteId }).catch(() => null);
+      return {
+        notice: `Created site ${name}.`,
+        path: returnPath,
+        tab: "discover",
+      };
+    },
+    "site",
+    returnPath,
+  );
 }
 
 export async function updateSiteAction(formData: FormData): Promise<void> {
   const siteId = stringValue(formData, "siteId");
+  const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
 
-  return runAction(async () => {
-    const name = stringValue(formData, "name");
-    await updateSite({
-      id: siteId,
-      location: stringValue(formData, "location"),
-      name,
-    });
-    await ensureDefaultWeatherForecastSource(siteId);
-    await ensureDefaultDynamicPriceSource(siteId);
+  return runAction(
+    async () => {
+      const name = stringValue(formData, "name");
+      await updateSite({
+        id: siteId,
+        location: stringValue(formData, "location"),
+        name,
+      });
+      await ensureDefaultWeatherForecastSource(siteId);
+      await ensureDefaultDynamicPriceSource(siteId);
 
-    await refreshWeatherForecast({ siteId });
-    await refreshDynamicPriceSnapshot({ siteId }).catch(() => null);
-    return { notice: `Updated site ${name}.`, tab: "site" };
-  }, "site");
+      await refreshWeatherForecast({ siteId });
+      await refreshDynamicPriceSnapshot({ siteId }).catch(() => null);
+      return { notice: `Updated site ${name}.`, path: returnPath, tab: "site" };
+    },
+    "site",
+    returnPath,
+  );
 }
 
 export async function deleteSiteAction(formData: FormData): Promise<void> {
   const siteId = stringValue(formData, "siteId");
+  const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
 
-  return runAction(async () => {
-    const siteName = stringValue(formData, "siteName");
-    await deleteSite({ id: siteId });
-    return { notice: `Deleted site ${siteName}.`, tab: "site" };
-  }, "site");
+  return runAction(
+    async () => {
+      const siteName = stringValue(formData, "siteName");
+      await deleteSite({ id: siteId });
+      return {
+        notice: `Deleted site ${siteName}.`,
+        path: returnPath,
+        tab: "site",
+      };
+    },
+    "site",
+    returnPath,
+  );
 }
 
 export async function createBatteryFromDiscoveryAction(
@@ -318,12 +343,21 @@ export async function setBatteryEnabledAction(
 
 export async function deleteBatteryAction(formData: FormData): Promise<void> {
   const siteId = stringValue(formData, "siteId");
+  const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
 
-  return runAction(async () => {
-    const batteryId = stringValue(formData, "batteryId");
-    await deleteBattery({ id: batteryId, siteId });
-    return { notice: `Deleted battery ${batteryId}.`, tab: "devices" };
-  }, "devices");
+  return runAction(
+    async () => {
+      const batteryId = stringValue(formData, "batteryId");
+      await deleteBattery({ id: batteryId, siteId });
+      return {
+        notice: `Deleted battery ${batteryId}.`,
+        path: returnPath,
+        tab: "devices",
+      };
+    },
+    "devices",
+    returnPath,
+  );
 }
 
 export async function setBatteryMinimumDischargePercentAction(
@@ -382,38 +416,44 @@ export async function updateBatterySettingsAction(
   formData: FormData,
 ): Promise<void> {
   const siteId = stringValue(formData, "siteId");
+  const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
 
-  return runAction(async () => {
-    const batteryId = stringValue(formData, "batteryId");
-    const batteryName =
-      optionalStringValue(formData, "batteryName") ?? batteryId;
-    const minimumDischargePercent = Number(
-      stringValue(formData, "minimumDischargePercent"),
-    );
-    const maximumChargePowerW = Number(
-      stringValue(formData, "maximumChargePowerW"),
-    );
-    const maximumDischargePowerW = Number(
-      stringValue(formData, "maximumDischargePowerW"),
-    );
+  return runAction(
+    async () => {
+      const batteryId = stringValue(formData, "batteryId");
+      const batteryName =
+        optionalStringValue(formData, "batteryName") ?? batteryId;
+      const minimumDischargePercent = Number(
+        stringValue(formData, "minimumDischargePercent"),
+      );
+      const maximumChargePowerW = Number(
+        stringValue(formData, "maximumChargePowerW"),
+      );
+      const maximumDischargePowerW = Number(
+        stringValue(formData, "maximumDischargePowerW"),
+      );
 
-    await setBatteryPowerLimits({
-      id: batteryId,
-      maximumChargePowerW,
-      maximumDischargePowerW,
-      siteId,
-    });
-    await setBatteryMinimumDischargePercent({
-      id: batteryId,
-      minimumDischargePercent,
-      siteId,
-    });
+      await setBatteryPowerLimits({
+        id: batteryId,
+        maximumChargePowerW,
+        maximumDischargePowerW,
+        siteId,
+      });
+      await setBatteryMinimumDischargePercent({
+        id: batteryId,
+        minimumDischargePercent,
+        siteId,
+      });
 
-    return {
-      notice: `Updated settings for ${batteryName}.`,
-      tab: "devices",
-    };
-  }, "devices");
+      return {
+        notice: `Updated settings for ${batteryName}.`,
+        path: returnPath,
+        tab: "devices",
+      };
+    },
+    "devices",
+    returnPath,
+  );
 }
 
 export async function createMeterFromDiscoveryAction(
@@ -465,156 +505,253 @@ export async function setMeterEnabledAction(formData: FormData): Promise<void> {
 
 export async function deleteMeterAction(formData: FormData): Promise<void> {
   const siteId = stringValue(formData, "siteId");
+  const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
 
-  return runAction(async () => {
-    const meterId = stringValue(formData, "meterId");
-    await deleteMeter({ id: meterId, siteId });
-    return { notice: `Deleted meter ${meterId}.`, tab: "devices" };
-  }, "devices");
+  return runAction(
+    async () => {
+      const meterId = stringValue(formData, "meterId");
+      await deleteMeter({ id: meterId, siteId });
+      return {
+        notice: `Deleted meter ${meterId}.`,
+        path: returnPath,
+        tab: "devices",
+      };
+    },
+    "devices",
+    returnPath,
+  );
 }
 
 export async function deleteSolarEnergyProviderAction(
   formData: FormData,
 ): Promise<void> {
   const siteId = stringValue(formData, "siteId");
+  const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
 
-  return runAction(async () => {
-    const providerId = stringValue(formData, "solarEnergyProviderId");
-    await deleteSolarEnergyProvider({ id: providerId, siteId });
-    return {
-      notice: `Deleted solar energy provider ${providerId}.`,
-      tab: "devices",
-    };
-  }, "devices");
+  return runAction(
+    async () => {
+      const providerId = stringValue(formData, "solarEnergyProviderId");
+      await deleteSolarEnergyProvider({ id: providerId, siteId });
+      return {
+        notice: `Deleted solar energy provider ${providerId}.`,
+        path: returnPath,
+        tab: "devices",
+      };
+    },
+    "devices",
+    returnPath,
+  );
+}
+
+export async function setSolarEnergyProviderProductionEnabledAction(
+  formData: FormData,
+): Promise<void> {
+  const siteId = stringValue(formData, "siteId");
+  const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
+
+  return runAction(
+    async () => {
+      const providerId = stringValue(formData, "solarEnergyProviderId");
+      const providerName =
+        optionalStringValue(formData, "solarEnergyProviderName") ?? providerId;
+      const enabled =
+        optionalStringValue(formData, "productionControlStatus") === "enabled";
+
+      await setSolarEnergyProviderProductionEnabled({
+        enabled,
+        id: providerId,
+        siteId,
+      });
+
+      return {
+        notice: `Saved production control request for ${providerName}. This may take up to 30 minutes depending on the provider.`,
+        path: returnPath,
+        tab: "devices",
+      };
+    },
+    "devices",
+    returnPath,
+  );
 }
 
 export async function createWeatherForecastSourceAction(
   formData: FormData,
 ): Promise<void> {
   const siteId = stringValue(formData, "siteId");
+  const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
 
-  return runAction(async () => {
-    const sourceId = stringValue(formData, "sourceId");
-    await createWeatherForecastSource({
-      id: sourceId,
-      name: stringValue(formData, "name"),
-      siteId,
-      provider: "open-meteo",
-      surface: "open-meteo-shortwave-radiation",
-    });
-    await refreshWeatherForecast({ siteId });
-    return {
-      notice: `Added solar forecast source ${sourceId}.`,
-      tab: "forecast",
-    };
-  }, "forecast");
+  return runAction(
+    async () => {
+      const sourceId = stringValue(formData, "sourceId");
+      await createWeatherForecastSource({
+        id: sourceId,
+        name: stringValue(formData, "name"),
+        siteId,
+        provider: "open-meteo",
+        surface: "open-meteo-shortwave-radiation",
+      });
+      await refreshWeatherForecast({ siteId });
+      return {
+        notice: `Added solar forecast source ${sourceId}.`,
+        path: returnPath,
+        tab: "forecast",
+      };
+    },
+    "forecast",
+    returnPath,
+  );
 }
 
 export async function updateWeatherForecastSourceAction(
   formData: FormData,
 ): Promise<void> {
   const siteId = stringValue(formData, "siteId");
+  const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
 
-  return runAction(async () => {
-    const sourceId = stringValue(formData, "sourceId");
-    await updateWeatherForecastSource({
-      id: sourceId,
-      name: stringValue(formData, "name"),
-      siteId,
-      provider: "open-meteo",
-      surface: "open-meteo-shortwave-radiation",
-    });
-    await refreshWeatherForecast({ siteId });
-    return {
-      notice: `Updated solar forecast source ${sourceId}.`,
-      tab: "forecast",
-    };
-  }, "forecast");
+  return runAction(
+    async () => {
+      const sourceId = stringValue(formData, "sourceId");
+      await updateWeatherForecastSource({
+        id: sourceId,
+        name: stringValue(formData, "name"),
+        siteId,
+        provider: "open-meteo",
+        surface: "open-meteo-shortwave-radiation",
+      });
+      await refreshWeatherForecast({ siteId });
+      return {
+        notice: `Updated solar forecast source ${sourceId}.`,
+        path: returnPath,
+        tab: "forecast",
+      };
+    },
+    "forecast",
+    returnPath,
+  );
 }
 
 export async function deleteWeatherForecastSourceAction(
   formData: FormData,
 ): Promise<void> {
   const siteId = stringValue(formData, "siteId");
+  const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
 
-  return runAction(async () => {
-    const sourceId = stringValue(formData, "sourceId");
-    await deleteWeatherForecastSource({ id: sourceId, siteId });
-    return {
-      notice: `Deleted solar forecast source ${sourceId}.`,
-      tab: "forecast",
-    };
-  }, "forecast");
+  return runAction(
+    async () => {
+      const sourceId = stringValue(formData, "sourceId");
+      await deleteWeatherForecastSource({ id: sourceId, siteId });
+      return {
+        notice: `Deleted solar forecast source ${sourceId}.`,
+        path: returnPath,
+        tab: "forecast",
+      };
+    },
+    "forecast",
+    returnPath,
+  );
 }
 
 export async function createDynamicPriceSourceAction(
   formData: FormData,
 ): Promise<void> {
   const siteId = stringValue(formData, "siteId");
+  const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
 
-  return runAction(async () => {
-    const sourceId = stringValue(formData, "sourceId");
-    await createDynamicPriceSource({
-      id: sourceId,
-      name: stringValue(formData, "name"),
-      provider: "tibber",
-      siteId,
-    });
-    await refreshDynamicPriceSnapshot({ siteId });
-    return { notice: `Added price source ${sourceId}.`, tab: "pricing" };
-  }, "pricing");
+  return runAction(
+    async () => {
+      const sourceId = stringValue(formData, "sourceId");
+      await createDynamicPriceSource({
+        id: sourceId,
+        name: stringValue(formData, "name"),
+        provider: "tibber",
+        siteId,
+      });
+      await refreshDynamicPriceSnapshot({ siteId });
+      return {
+        notice: `Added price source ${sourceId}.`,
+        path: returnPath,
+        tab: "pricing",
+      };
+    },
+    "pricing",
+    returnPath,
+  );
 }
 
 export async function updateDynamicPriceSourceAction(
   formData: FormData,
 ): Promise<void> {
   const siteId = stringValue(formData, "siteId");
+  const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
 
-  return runAction(async () => {
-    const sourceId = stringValue(formData, "sourceId");
-    await updateDynamicPriceSource({
-      id: sourceId,
-      name: stringValue(formData, "name"),
-      provider: "tibber",
-      siteId,
-    });
-    await refreshDynamicPriceSnapshot({ siteId });
-    return { notice: `Updated price source ${sourceId}.`, tab: "pricing" };
-  }, "pricing");
+  return runAction(
+    async () => {
+      const sourceId = stringValue(formData, "sourceId");
+      await updateDynamicPriceSource({
+        id: sourceId,
+        name: stringValue(formData, "name"),
+        provider: "tibber",
+        siteId,
+      });
+      await refreshDynamicPriceSnapshot({ siteId });
+      return {
+        notice: `Updated price source ${sourceId}.`,
+        path: returnPath,
+        tab: "pricing",
+      };
+    },
+    "pricing",
+    returnPath,
+  );
 }
 
 export async function deleteDynamicPriceSourceAction(
   formData: FormData,
 ): Promise<void> {
   const siteId = stringValue(formData, "siteId");
+  const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
 
-  return runAction(async () => {
-    const sourceId = stringValue(formData, "sourceId");
-    await deleteDynamicPriceSource({ id: sourceId, siteId });
-    return { notice: `Deleted price source ${sourceId}.`, tab: "pricing" };
-  }, "pricing");
+  return runAction(
+    async () => {
+      const sourceId = stringValue(formData, "sourceId");
+      await deleteDynamicPriceSource({ id: sourceId, siteId });
+      return {
+        notice: `Deleted price source ${sourceId}.`,
+        path: returnPath,
+        tab: "pricing",
+      };
+    },
+    "pricing",
+    returnPath,
+  );
 }
 
 export async function updateDynamicPriceSourceExportDeductionAction(
   formData: FormData,
 ): Promise<void> {
   const siteId = stringValue(formData, "siteId");
+  const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
 
-  return runAction(async () => {
-    const sourceId = stringValue(formData, "sourceId");
-    const name = stringValue(formData, "name");
-    const exportDeduction = Number(stringValue(formData, "exportDeduction"));
-    await updateDynamicPriceSourceExportDeduction({
-      exportDeduction,
-      id: sourceId,
-      name,
-      siteId,
-    });
-    return {
-      notice: `Updated export deduction for price source ${sourceId}.`,
-      tab: "price-provider",
-    };
-  }, "price-provider");
+  return runAction(
+    async () => {
+      const sourceId = stringValue(formData, "sourceId");
+      const name = stringValue(formData, "name");
+      const exportDeduction = Number(stringValue(formData, "exportDeduction"));
+      await updateDynamicPriceSourceExportDeduction({
+        exportDeduction,
+        id: sourceId,
+        name,
+        siteId,
+      });
+      return {
+        notice: `Updated export deduction for price source ${sourceId}.`,
+        path: returnPath,
+        tab: "price-provider",
+      };
+    },
+    "price-provider",
+    returnPath,
+  );
 }
 
 export async function setHouseStrategyAction(

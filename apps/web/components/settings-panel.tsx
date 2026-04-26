@@ -4,6 +4,7 @@ import type {
   DynamicPriceSourceRecord,
   ManagedDeviceStatusRecord,
   SiteRecord,
+  SolarEnergyProviderProductionControlStatus,
   WeatherForecastSourceRecord,
 } from "@emsd/core/client";
 import {
@@ -17,6 +18,7 @@ import {
   Trash2,
   Zap,
 } from "lucide-react";
+import { usePathname, useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -30,6 +32,7 @@ import {
   deleteSiteAction,
   deleteSolarEnergyProviderAction,
   deleteWeatherForecastSourceAction,
+  setSolarEnergyProviderProductionEnabledAction,
   updateBatterySettingsAction,
   updateDynamicPriceSourceAction,
   updateDynamicPriceSourceExportDeductionAction,
@@ -65,6 +68,19 @@ function formatCapacity(capacityWh: number | null | undefined): string {
   return `${(capacityWh / 1000).toFixed(1)} kWh`;
 }
 
+function formatProductionControlStatus(
+  status: SolarEnergyProviderProductionControlStatus | null | undefined,
+): string {
+  switch (status) {
+    case "enabled":
+      return "Enabled";
+    case "disabled":
+      return "Disabled";
+    default:
+      return "Unavailable";
+  }
+}
+
 const primaryButtonClass = UI_STYLES.buttonPrimary;
 const secondaryButtonClass = UI_STYLES.buttonSecondary;
 const dangerButtonClass = UI_STYLES.buttonDanger;
@@ -74,8 +90,11 @@ export function SettingsPanel({
 }: {
   currentSite: SiteSnapshot | null;
 }) {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const hasSite = currentSite !== null;
   const hasDevices = (currentSite?.devices.length ?? 0) > 0;
+  const returnPath = buildReturnPath(pathname, searchParams);
   const [activeTab, setActiveTab] = useState<SettingsTab>(
     resolveTab({ hasDevices, hasSite }),
   );
@@ -143,21 +162,33 @@ export function SettingsPanel({
           currentSite ? (
             <section className="grid gap-4 xl:grid-cols-3">
               <ResourceSection title="Batteries">
-                <DeviceList kind="battery" site={currentSite} />
+                <DeviceList
+                  kind="battery"
+                  returnPath={returnPath}
+                  site={currentSite}
+                />
               </ResourceSection>
               <ResourceSection title="Solar Providers">
-                <DeviceList kind="solar-energy-provider" site={currentSite} />
+                <DeviceList
+                  kind="solar-energy-provider"
+                  returnPath={returnPath}
+                  site={currentSite}
+                />
               </ResourceSection>
               <ResourceSection title="Meters">
-                <DeviceList kind="meter" site={currentSite} />
+                <DeviceList
+                  kind="meter"
+                  returnPath={returnPath}
+                  site={currentSite}
+                />
               </ResourceSection>
             </section>
           ) : (
-            <SiteSetupPanel embedded />
+            <SiteSetupPanel embedded returnPath={returnPath} />
           )
         ) : null}
         {activeTab === "site" ? (
-          <SitePanel embedded site={currentSite} />
+          <SitePanel embedded returnPath={returnPath} site={currentSite} />
         ) : null}
 
         {activeTab === "discover" ? (
@@ -183,21 +214,21 @@ export function SettingsPanel({
               />
             </section>
           ) : (
-            <SiteSetupPanel embedded />
+            <SiteSetupPanel embedded returnPath={returnPath} />
           )
         ) : null}
         {activeTab === "price-provider" ? (
           currentSite ? (
-            <PriceProviderPanel site={currentSite} />
+            <PriceProviderPanel returnPath={returnPath} site={currentSite} />
           ) : (
-            <SiteSetupPanel embedded />
+            <SiteSetupPanel embedded returnPath={returnPath} />
           )
         ) : null}
         {activeTab === "solar-forecast-provider" ? (
           currentSite ? (
             <SolarForecastProviderPanel site={currentSite} />
           ) : (
-            <SiteSetupPanel embedded />
+            <SiteSetupPanel embedded returnPath={returnPath} />
           )
         ) : null}
       </CardContent>
@@ -224,7 +255,13 @@ function formatGpsCoordinate(latitude: number, longitude: number): string {
   return `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
 }
 
-export function SiteSetupPanel({ embedded = false }: { embedded?: boolean }) {
+export function SiteSetupPanel({
+  embedded = false,
+  returnPath,
+}: {
+  embedded?: boolean;
+  returnPath?: string;
+}) {
   return (
     <section
       className={cn(
@@ -251,6 +288,7 @@ export function SiteSetupPanel({ embedded = false }: { embedded?: boolean }) {
         action={createSiteAction}
         className="space-y-4 rounded-[1.4rem] border border-white/10 bg-white/5 p-4"
       >
+        <input type="hidden" name="returnPath" value={returnPath ?? "/"} />
         <label className="block space-y-2">
           <span className="text-sm font-medium text-slate-300">
             Display name
@@ -275,12 +313,14 @@ export function SiteSetupPanel({ embedded = false }: { embedded?: boolean }) {
 function SitePanel({
   site,
   embedded = false,
+  returnPath,
 }: {
   site: SiteSnapshot | null;
   embedded?: boolean;
+  returnPath: string;
 }) {
   if (!site) {
-    return <SiteSetupPanel embedded={embedded} />;
+    return <SiteSetupPanel embedded={embedded} returnPath={returnPath} />;
   }
 
   const batteries = site.devices.filter((device) => device.kind === "battery");
@@ -328,6 +368,7 @@ function SitePanel({
           className="space-y-4 rounded-[1.4rem] border border-white/10 bg-white/5 p-4"
           id={`site-update-${site.id}`}
         >
+          <input type="hidden" name="returnPath" value={returnPath} />
           <input type="hidden" name="siteId" value={site.id} />
           <label className="block space-y-2">
             <span className="text-sm font-medium text-slate-300">
@@ -360,6 +401,7 @@ function SitePanel({
                 : `This deletes ${site.name} and the stored telemetry, forecast, and price history for this site. This cannot be undone.`
             }
             hiddenFields={[
+              { name: "returnPath", value: returnPath },
               { name: "siteId", value: site.id },
               { name: "siteName", value: site.name },
             ]}
@@ -634,9 +676,11 @@ function ResourceSection({
 }
 
 function DeviceList({
+  returnPath,
   site,
   kind,
 }: {
+  returnPath: string;
   site: SiteSnapshot;
   kind: "battery" | "meter" | "solar-energy-provider";
 }) {
@@ -701,12 +745,21 @@ function DeviceList({
                     : "Unavailable"
                 }
               />
+              {kind === "solar-energy-provider" ? (
+                <MetaItem
+                  label="Production control"
+                  value={formatProductionControlStatus(
+                    device.telemetry?.productionControlStatus,
+                  )}
+                />
+              ) : null}
               {kind === "battery" ? (
                 <form
                   action={updateBatterySettingsAction}
                   className="rounded-2xl border border-white/8 bg-slate-950/55 px-3 py-2"
                   id={`battery-settings-${device.id}`}
                 >
+                  <input type="hidden" name="returnPath" value={returnPath} />
                   <input type="hidden" name="siteId" value={site.id} />
                   <input type="hidden" name="batteryId" value={device.id} />
                   <input type="hidden" name="batteryName" value={device.name} />
@@ -765,12 +818,95 @@ function DeviceList({
                   </div>
                 </form>
               ) : null}
+              {kind === "solar-energy-provider" ? (
+                <form
+                  action={setSolarEnergyProviderProductionEnabledAction}
+                  className="rounded-2xl border border-white/8 bg-slate-950/55 px-3 py-3 sm:col-span-2"
+                  id={`solar-provider-settings-${device.id}`}
+                >
+                  <input type="hidden" name="returnPath" value={returnPath} />
+                  <input type="hidden" name="siteId" value={site.id} />
+                  <input
+                    type="hidden"
+                    name="solarEnergyProviderId"
+                    value={device.id}
+                  />
+                  <input
+                    type="hidden"
+                    name="solarEnergyProviderName"
+                    value={device.name}
+                  />
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        Solar production
+                      </p>
+                      <p className="mt-1 text-sm text-slate-100">
+                        Provider-reported state:{" "}
+                        {formatProductionControlStatus(
+                          device.telemetry?.productionControlStatus,
+                        )}
+                      </p>
+                      {device.telemetry?.productionControlStatus ===
+                        "unavailable" ||
+                      device.telemetry?.productionControlStatus === null ||
+                      device.telemetry?.productionControlStatus ===
+                        undefined ? (
+                        <p className="mt-1 text-xs leading-5 text-slate-400">
+                          Not supported by this provider or the current account.
+                        </p>
+                      ) : null}
+                    </div>
+                    <label className="block space-y-2">
+                      <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        Desired state
+                      </span>
+                      <select
+                        className="w-full rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-cyan-400/50 disabled:cursor-not-allowed disabled:opacity-60"
+                        defaultValue={
+                          device.telemetry?.productionControlStatus ===
+                          "disabled"
+                            ? "disabled"
+                            : "enabled"
+                        }
+                        disabled={
+                          device.telemetry?.productionControlStatus ===
+                            "unavailable" ||
+                          device.telemetry?.productionControlStatus === null ||
+                          device.telemetry?.productionControlStatus ===
+                            undefined
+                        }
+                        name="productionControlStatus"
+                      >
+                        <option value="enabled">Enabled</option>
+                        <option value="disabled">Disabled</option>
+                      </select>
+                    </label>
+                  </div>
+                </form>
+              ) : null}
             </dl>
             <div className="mt-auto pt-4 flex flex-wrap gap-2">
               {kind === "battery" ? (
                 <Button
                   className={secondaryButtonClass}
                   form={`battery-settings-${device.id}`}
+                  type="submit"
+                >
+                  <Save size={14} />
+                  Save
+                </Button>
+              ) : null}
+              {kind === "solar-energy-provider" ? (
+                <Button
+                  className={secondaryButtonClass}
+                  disabled={
+                    device.telemetry?.productionControlStatus ===
+                      "unavailable" ||
+                    device.telemetry?.productionControlStatus === null ||
+                    device.telemetry?.productionControlStatus === undefined
+                  }
+                  form={`solar-provider-settings-${device.id}`}
                   type="submit"
                 >
                   <Save size={14} />
@@ -794,6 +930,7 @@ function DeviceList({
                 }
                 description={`This deletes ${device.name}. This cannot be undone.`}
                 hiddenFields={[
+                  { name: "returnPath", value: returnPath },
                   { name: "siteId", value: site.id },
                   {
                     name:
@@ -987,7 +1124,13 @@ function SourceList({
   );
 }
 
-function PriceProviderPanel({ site }: { site: SiteSnapshot }) {
+function PriceProviderPanel({
+  site,
+  returnPath,
+}: {
+  site: SiteSnapshot;
+  returnPath: string;
+}) {
   return (
     <section className="space-y-5">
       <div>
@@ -1028,6 +1171,7 @@ function PriceProviderPanel({ site }: { site: SiteSnapshot }) {
                 action={updateDynamicPriceSourceExportDeductionAction}
                 className="mt-4 space-y-3"
               >
+                <input type="hidden" name="returnPath" value={returnPath} />
                 <input type="hidden" name="siteId" value={site.id} />
                 <input type="hidden" name="sourceId" value={source.id} />
                 <input type="hidden" name="name" value={source.name} />
@@ -1131,3 +1275,12 @@ export type SiteSnapshot = SiteRecord & {
   weatherSources: WeatherForecastSourceRecord[];
   dynamicPriceSources: DynamicPriceSourceRecord[];
 };
+
+function buildReturnPath(
+  pathname: string,
+  searchParams: ReturnType<typeof useSearchParams>,
+): string {
+  const search = searchParams.toString();
+
+  return search ? `${pathname}?${search}` : pathname;
+}

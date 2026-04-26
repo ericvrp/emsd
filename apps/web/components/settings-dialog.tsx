@@ -1,10 +1,13 @@
 "use client";
 
 import { Settings, X } from "lucide-react";
+import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { Button } from "./ui/button";
 import { DialogPortal } from "./ui/dialog-portal";
+
+const SETTINGS_REFRESH_INTERVAL_MS = 5_000;
 
 export function SettingsDialog({
   children,
@@ -14,6 +17,7 @@ export function SettingsDialog({
   defaultOpen?: boolean;
 }) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
+  const router = useRouter();
 
   useEffect(() => {
     if (!isOpen) {
@@ -32,6 +36,22 @@ export function SettingsDialog({
       document.removeEventListener("keydown", handleEscape);
     };
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        router.refresh();
+      }
+    }, SETTINGS_REFRESH_INTERVAL_MS);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [isOpen, router]);
 
   function openDialog() {
     setIsOpen(true);

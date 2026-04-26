@@ -33,6 +33,7 @@ export type {
   BatteryRecord,
   MeterRecord,
   SolarEnergyProviderRecord,
+  SolarEnergyProviderProductionControlStatus,
   ManagedDeviceKind,
   ManagedDeviceState,
   ManagedDeviceRecord,

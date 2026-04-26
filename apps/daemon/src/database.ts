@@ -89,6 +89,7 @@ interface DeviceTelemetryRow {
   kind: ManagedDeviceTelemetryRecord["kind"];
   capacity_wh: number | null;
   power_w: number | null;
+  production_control_status: ManagedDeviceTelemetryRecord["productionControlStatus"];
   soc_percent: number | null;
   gas_m3: number | null;
   state: ManagedDeviceTelemetryRecord["state"];
@@ -183,6 +184,28 @@ interface SolarEnergyProviderSampleRow {
   observed_at: string;
   power_w: number | null;
   sample_count: number;
+}
+
+interface SolarEnergyProviderControlRequestRow {
+  id: number;
+  site_id: string;
+  provider_id: string;
+  requested_enabled: number;
+  status: "pending" | "running" | "completed" | "failed";
+  message: string | null;
+  requested_at: string;
+  updated_at: string;
+}
+
+export interface SolarEnergyProviderControlRequestRecord {
+  id: number;
+  siteId: string;
+  providerId: string;
+  requestedEnabled: boolean;
+  status: "pending" | "running" | "completed" | "failed";
+  message: string | null;
+  requestedAt: string;
+  updatedAt: string;
 }
 
 const SAMPLE_PERIOD_MINUTES = 15;
@@ -299,6 +322,7 @@ export function openDaemonDatabase(databasePath = getDatabasePath()): Database {
       kind TEXT NOT NULL,
       capacity_wh REAL,
       power_w REAL,
+      production_control_status TEXT,
       soc_percent REAL,
       gas_m3 REAL,
       state TEXT,
@@ -428,6 +452,23 @@ export function openDaemonDatabase(databasePath = getDatabasePath()): Database {
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_solar_energy_provider_samples_site_period
     ON solar_energy_provider_samples (site_id, period_start);
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS solar_energy_provider_control_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      site_id TEXT NOT NULL,
+      provider_id TEXT NOT NULL,
+      requested_enabled INTEGER NOT NULL,
+      status TEXT NOT NULL,
+      message TEXT,
+      requested_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY(site_id) REFERENCES sites(id)
+    );
+  `);
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_solar_energy_provider_control_requests_status_requested
+    ON solar_energy_provider_control_requests (status, requested_at, id);
   `);
 
   return db;
@@ -892,6 +933,12 @@ function ensureManagedDeviceTelemetryColumns(db: Database): void {
   if (!columns.includes("capacity_wh")) {
     db.exec("ALTER TABLE device_telemetry ADD COLUMN capacity_wh REAL;");
   }
+
+  if (!columns.includes("production_control_status")) {
+    db.exec(
+      "ALTER TABLE device_telemetry ADD COLUMN production_control_status TEXT;",
+    );
+  }
 }
 
 export function readBatteries(db: Database): BatteryRecord[] {
@@ -1194,6 +1241,7 @@ export function readManagedDeviceTelemetry(
           kind,
           capacity_wh,
           power_w,
+          production_control_status,
           soc_percent,
           state,
           observed_at
@@ -1209,6 +1257,7 @@ export function readManagedDeviceTelemetry(
     kind: row.kind,
     capacityWh: row.capacity_wh,
     powerW: row.power_w,
+    productionControlStatus: row.production_control_status,
     socPercent: row.soc_percent,
     state: row.state,
     observedAt: row.observed_at,
@@ -1454,6 +1503,105 @@ export function readSolarEnergyProviderSamples(
   }));
 }
 
+export function readPendingSolarEnergyProviderControlRequests(
+  db: Database,
+): SolarEnergyProviderControlRequestRecord[] {
+  const rows = db
+    .query<SolarEnergyProviderControlRequestRow, []>(
+      `
+        SELECT
+          id,
+          site_id,
+          provider_id,
+          requested_enabled,
+          status,
+          message,
+          requested_at,
+          updated_at
+        FROM solar_energy_provider_control_requests
+        WHERE status = 'pending'
+        ORDER BY requested_at ASC, id ASC
+      `,
+    )
+    .all();
+
+  return rows.map(mapSolarEnergyProviderControlRequestRow);
+}
+
+export function queueSolarEnergyProviderControlRequest(
+  db: Database,
+  input: {
+    providerId: string;
+    requestedAt: string;
+    requestedEnabled: boolean;
+    siteId: string;
+  },
+): SolarEnergyProviderControlRequestRecord {
+  const result = db
+    .query(
+      `
+        INSERT INTO solar_energy_provider_control_requests (
+          site_id,
+          provider_id,
+          requested_enabled,
+          status,
+          message,
+          requested_at,
+          updated_at
+        ) VALUES (?1, ?2, ?3, 'pending', NULL, ?4, ?4)
+        RETURNING
+          id,
+          site_id,
+          provider_id,
+          requested_enabled,
+          status,
+          message,
+          requested_at,
+          updated_at
+      `,
+    )
+    .get(
+      input.siteId,
+      input.providerId,
+      input.requestedEnabled ? 1 : 0,
+      input.requestedAt,
+    ) as SolarEnergyProviderControlRequestRow;
+
+  return mapSolarEnergyProviderControlRequestRow(result);
+}
+
+export function markSolarEnergyProviderControlRequestRunning(
+  db: Database,
+  requestId: number,
+  updatedAt: string,
+): void {
+  db.query(
+    `
+      UPDATE solar_energy_provider_control_requests
+      SET status = 'running', message = NULL, updated_at = ?2
+      WHERE id = ?1
+    `,
+  ).run(requestId, updatedAt);
+}
+
+export function completeSolarEnergyProviderControlRequest(
+  db: Database,
+  input: {
+    message?: string | null;
+    requestId: number;
+    status: "completed" | "failed";
+    updatedAt: string;
+  },
+): void {
+  db.query(
+    `
+      UPDATE solar_energy_provider_control_requests
+      SET status = ?2, message = ?3, updated_at = ?4
+      WHERE id = ?1
+    `,
+  ).run(input.requestId, input.status, input.message ?? null, input.updatedAt);
+}
+
 export function upsertManagedDeviceTelemetry(
   db: Database,
   telemetry: ManagedDeviceTelemetryRecord,
@@ -1468,15 +1616,17 @@ export function upsertManagedDeviceTelemetry(
         kind,
         capacity_wh,
         power_w,
+        production_control_status,
         soc_percent,
         state,
         observed_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(device_id) DO UPDATE SET
         site_id = excluded.site_id,
         kind = excluded.kind,
         capacity_wh = excluded.capacity_wh,
         power_w = excluded.power_w,
+        production_control_status = excluded.production_control_status,
         soc_percent = excluded.soc_percent,
         state = excluded.state,
         observed_at = excluded.observed_at
@@ -1487,6 +1637,7 @@ export function upsertManagedDeviceTelemetry(
     telemetry.kind,
     telemetry.capacityWh,
     telemetry.powerW,
+    telemetry.productionControlStatus,
     telemetry.socPercent,
     normalizedState,
     telemetry.observedAt,
@@ -1588,6 +1739,21 @@ function getPeriodStartFromPeriodEnd(
   }
 
   return new Date(periodEndMs - periodMinutes * 60 * 1_000).toISOString();
+}
+
+function mapSolarEnergyProviderControlRequestRow(
+  row: SolarEnergyProviderControlRequestRow,
+): SolarEnergyProviderControlRequestRecord {
+  return {
+    id: row.id,
+    siteId: row.site_id,
+    providerId: row.provider_id,
+    requestedEnabled: row.requested_enabled === 1,
+    status: row.status,
+    message: row.message,
+    requestedAt: row.requested_at,
+    updatedAt: row.updated_at,
+  };
 }
 
 function getBucketPeriodStart(timestamp: string): string {

@@ -298,9 +298,7 @@ export function WeatherForecastSection({
               Current generating
             </p>
             <p className="mt-2 text-2xl font-semibold text-white sm:text-3xl">
-              {currentGeneratedPower === null
-                ? "Unavailable"
-                : formatAbsolutePowerValue(currentGeneratedPower)}
+              {getCurrentSolarGenerationDisplay(site, currentGeneratedPower)}
             </p>
           </div>
         </div>
@@ -670,6 +668,25 @@ function getCurrentSolarPower(site: SiteSnapshot): number | null {
 
       return total === null ? powerW : total + powerW;
     }, null);
+}
+
+function getCurrentSolarGenerationDisplay(
+  site: SiteSnapshot,
+  currentGeneratedPower: number | null,
+): string {
+  const hasDisabledProvider = site.devices.some(
+    (device) =>
+      device.kind === "solar-energy-provider" &&
+      device.telemetry?.productionControlStatus === "disabled",
+  );
+
+  if (hasDisabledProvider) {
+    return "Disabled";
+  }
+
+  return currentGeneratedPower === null
+    ? "Unavailable"
+    : formatAbsolutePowerValue(currentGeneratedPower);
 }
 
 function formatAccuracyPercentage(value: number | null): string | null {
