@@ -21,10 +21,9 @@ This file is a plan only. No implementation is included.
 - Local telemetry is already supported and uses the gateway over LAN.
 - Enphase cloud API v4 is clearly split into Monitoring and Commissioning APIs, but the public docs we checked do not give us a ready-made, low-risk production enable/disable endpoint to use directly in EMSD.
 - The Enlighten Manager UI exposes `Enable Power Production` / `Disable Power Production`, but web UI automation should not be the EMSD path.
-- Community references strongly suggest a usable local control surface exists on some gateways through installer-oriented functionality:
-  - a production switch is exposed by the `home_assistant_enphase_envoy_installer` integration
-  - the same integration exposes DPEL enable/disable and limit controls
-  - community examples point to local authenticated `POST https://<gateway>/ivp/ss/dpel`
+- Community references point to a likely local control surface on some gateways, including examples around authenticated `POST https://<gateway>/ivp/ss/dpel`.
+- The `home_assistant_enphase_envoy_installer` integration is not primary evidence for EMSD implementation, because it is Home Assistant specific and we have not yet confirmed whether its production switch uses the local Envoy API, cloud APIs, or both.
+- That integration is only a fallback research source if direct local Enphase investigation in EMSD cannot establish the required endpoint and request flow.
 - This makes Enphase the best first candidate for real provider-backed production control.
 - Important caveats:
   - support appears hardware / firmware / metering dependent
@@ -39,15 +38,7 @@ This file is a plan only. No implementation is included.
 - The community `solaredge-local` reference we checked still describes the explored endpoints as GET-based and does not provide verified write semantics for standby or power control.
 - Because of that, we do not currently have enough evidence for a safe EMSD implementation of write control.
 - We also do not have a trustworthy explicit local field yet that means "production intentionally disabled by user" rather than night mode, idle, pairing, or another temporary operating mode.
-- Recommendation: surface SolarEdge production control as `unavailable` until we capture an explicit provider-backed state field and a verified local write flow.
-
-### Sonnen
-
-- Sonnen is not currently an EMSD solar energy provider plugin.
-- We do already have local sonnenBatterie reference material at `docs/reference/batteries/sonnenbatterie/openapi.json`.
-- That API clearly exposes inverter and PV telemetry, for example `/api/v2/inverter` with `ppv`.
-- The checked OpenAPI does not show an explicit solar production enable/disable endpoint.
-- Recommendation: document sonnen as research-only for now, add solar-provider-specific reference notes, and treat production control as `unavailable` unless further vendor docs prove a local control endpoint.
+- Recommendation: keep SolarEdge production control at `unavailable` and do not spend further implementation time on SolarEdge for this feature.
 
 ## Recommended Product Behavior
 
@@ -138,26 +129,17 @@ Plan:
 Specific Enphase research tasks to complete before coding:
 
 - Verify the exact request and response shape for `ivp/ss/dpel` on your hardware and firmware.
-- Verify whether the switch exposed by the Home Assistant installer integration is implemented through DPEL, another local endpoint, or both.
 - Verify whether homeowner credentials are enough for local control on your system, or whether installer/developer privileges are required.
 - Verify what the provider returns when production is disabled at night versus disabled by configuration, so we do not collapse those states.
+- Only if direct local investigation stalls, inspect whether the Home Assistant installer integration uses DPEL, another local endpoint, or a cloud path.
 
 ### SolarEdge plugin plan
 
 - Keep current telemetry support.
-- Add a read-only investigation branch first:
-  - inspect whether `status`, `maintenance/standby`, or `power_control` yields an explicit persisted disabled/enabled indicator
-  - confirm that the field is not merely current operating mode
-- Until a verified explicit state and write path exist, return `productionControlStatus: "unavailable"`.
+- Return `productionControlStatus: "unavailable"`.
 - Do not infer `disabled` from `STANDBY`, `IDLE`, or `NIGHT_MODE`.
-- Do not add a write implementation until we have device-backed proof of the endpoint behavior.
-
-### Sonnen documentation-only plan
-
-- Add a solar-provider reference note summarizing:
-  - local PV telemetry exists
-  - no explicit PV enable/disable endpoint has been confirmed from the checked local API material
-  - expected EMSD result is `unavailable` unless later vendor docs prove otherwise
+- Do not add a write implementation.
+- Do not spend further time investigating SolarEdge control for this feature.
 
 ## 4. EMS API Surface
 
@@ -224,7 +206,6 @@ Files to update later:
 
 - `docs/reference/solar-energy-provider/enphase.md`
 - `docs/reference/solar-energy-provider/solaredge.md`
-- `docs/reference/solar-energy-provider/sonnen.md` (new)
 - `docs/plugins/solar-energy-provider/README.md`
 - `docs/README.md`
 
@@ -236,23 +217,16 @@ Files to update later:
   - cloud API v4 Monitoring / Commissioning separation
   - Enlighten Manager UI capabilities that we are not automating
 - Add a section for production control research:
-  - installer-production switch exists in practice
   - DPEL local endpoint is a likely implementation target
   - homeowner vs installer privilege differences must be validated on real hardware
   - regular account vs developer / partner account affects cloud capability, but local token bootstrap may still use owner credentials
+-  - the Home Assistant installer integration is only a fallback research lead if direct local verification is insufficient
 - Add the article and developer portal links as sources.
 
 ### SolarEdge doc updates to include
 
 - Clarify that EMSD currently relies on read-only local telemetry.
-- Call out that standby / power-control endpoint names are visible, but write semantics remain unverified for EMSD use.
-- Mark production control as not yet implementable with confidence.
-
-### Sonnen doc updates to include
-
-- Document local inverter and PV telemetry endpoints relevant to a future solar-provider plugin.
-- Document the absence of a confirmed local PV enable/disable endpoint from the checked OpenAPI.
-- Mark production control status as expected `unavailable` pending more vendor documentation.
+- Mark production control as `unavailable` for EMSD and out of scope for further work in this feature.
 
 ## Validation Plan
 
@@ -271,7 +245,7 @@ Plan:
   - control state read returns `disabled`
   - unsupported / forbidden / missing-endpoint returns `unavailable`
   - control write uses the expected endpoint and request shape
-- Add SolarEdge tests that explicitly keep the provider at `unavailable` until a verified state source exists.
+- Add SolarEdge tests that explicitly keep the provider at `unavailable`.
 - Add daemon database migration tests for the new persisted status field.
 
 ### Real-device verification
@@ -296,14 +270,8 @@ Important note:
 
 #### SolarEdge
 
-- Only perform real-device implementation once hardware is available.
-- First verify whether the local API still exists on the target firmware.
-- Then verify whether there is a stable explicit state field and a safe write endpoint.
-
-#### Sonnen
-
-- No local hardware is available right now.
-- Restrict sonnen work to reference documentation unless hardware or better vendor docs become available.
+- No real-device implementation work is planned for this feature.
+- Keep the provider status fixed at `unavailable`.
 
 ## Recommended Delivery Order
 
@@ -312,18 +280,16 @@ Important note:
 3. Implement Enphase toggle action.
 4. Add Settings UI button wired to the new action.
 5. Keep SolarEdge at `unavailable` with explicit messaging.
-6. Add reference doc updates, including new sonnen notes.
+6. Add reference doc updates.
 
 ## Open Questions To Resolve During Implementation
 
 1. What is the exact Enphase local endpoint and payload that maps best to a simple enable/disable toggle on your gateway?
 2. Does your current Enphase account in `.env` have enough rights for local control, or only for telemetry auth bootstrap?
 3. When Enphase production is disabled, what exact provider field proves that it is intentionally disabled rather than naturally idle?
-4. Does SolarEdge expose an explicit persisted standby / active setting anywhere in the local protobuf payloads, or only transient mode values?
-5. If Enphase disable is implemented through DPEL limit settings, do we need to preserve and restore the previous provider-side configuration when re-enabling?
+4. If Enphase disable is implemented through DPEL limit settings, do we need to preserve and restore the previous provider-side configuration when re-enabling?
 
 ## Decision Summary
 
 - Enphase: proceed toward implementation later using a local-first control path, with runtime fallback to `unavailable` when the gateway/account does not support it.
-- SolarEdge: keep `unavailable` for now until we have verified state and write semantics.
-- Sonnen: documentation-only for now; no confirmed local production control endpoint found.
+- SolarEdge: keep `unavailable` and do not spend further time on this provider for the feature.
