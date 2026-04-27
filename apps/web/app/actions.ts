@@ -45,6 +45,7 @@ import {
 import {
   generateLocalApiToken,
   hasConfiguredToken,
+  isEnvConfiguredToken,
   revokeLocalApiToken,
 } from "../lib/local-api-auth";
 
@@ -940,12 +941,16 @@ export async function revokeLocalApiTokenAction(): Promise<{
 
 export async function getLocalApiTokenStatusAction(): Promise<{
   configured: boolean;
+  envConfigured: boolean;
 }> {
   const session = await getServerSession(authOptions);
 
   if (!session) {
-    return { configured: false };
+    return { configured: false, envConfigured: false };
   }
 
-  return { configured: hasConfiguredToken() };
+  return {
+    configured: hasConfiguredToken(),
+    envConfigured: isEnvConfiguredToken(),
+  };
 }

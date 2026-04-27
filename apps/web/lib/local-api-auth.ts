@@ -58,6 +58,10 @@ export function generateLocalApiToken(): string {
   return token;
 }
 
+export function isEnvConfiguredToken(): boolean {
+  return Boolean(process.env.EMSD_LOCAL_API_TOKEN?.trim());
+}
+
 export function hasConfiguredToken(): boolean {
   if (process.env.EMSD_LOCAL_API_TOKEN?.trim()) {
     return true;

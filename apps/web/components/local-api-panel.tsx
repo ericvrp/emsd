@@ -3,6 +3,7 @@
 import {
   Copy,
   Eye,
+  EyeOff,
   FileCode,
   Globe,
   Key,
@@ -132,8 +133,10 @@ interface EntityOption {
 
 export function LocalApiPanel() {
   const [tokenConfigured, setTokenConfigured] = useState<boolean | null>(null);
+  const [envConfigured, setEnvConfigured] = useState(false);
   const [generatedToken, setGeneratedToken] = useState<string | null>(null);
   const [manualToken, setManualToken] = useState("");
+  const [showToken, setShowToken] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const [host, setHost] = useState(() =>
@@ -172,8 +175,10 @@ export function LocalApiPanel() {
     try {
       const result = await getLocalApiTokenStatusAction();
       setTokenConfigured(result.configured);
+      setEnvConfigured(result.envConfigured);
     } catch {
       setTokenConfigured(false);
+      setEnvConfigured(false);
     }
   }
 
@@ -488,9 +493,11 @@ ${binaryLines.trimEnd() || "      []"}
           Bearer Token
         </h3>
         <p className="mt-1 text-sm text-slate-400">
-          {tokenConfigured
-            ? "A local API token is configured. Generate a new one to rotate, or enter a token manually below."
-            : "No local API token configured yet. Generate one, or enter one manually below."}
+          {envConfigured
+            ? "The local API token is set via the EMSD_LOCAL_API_TOKEN environment variable. Enter the same token below to preview the API response."
+            : tokenConfigured
+              ? "A local API token is configured. Generate a new one to rotate, or enter a token manually below."
+              : "No local API token configured yet. Generate one, or enter one manually below."}
         </p>
 
         <div className="mt-3">
@@ -501,21 +508,32 @@ ${binaryLines.trimEnd() || "      []"}
             Enter token manually
           </label>
           <div className="mt-1 flex gap-2">
-            <input
-              className="flex h-11 w-full rounded-xl border border-white/10 bg-slate-950/80 px-3 py-2 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-cyan-400/50"
-              id="la-manual-token"
-              onChange={(e) => {
-                setManualToken(e.target.value);
-                setGeneratedToken(null);
-              }}
-              placeholder="Paste a bearer token here..."
-              type="password"
-              value={manualToken}
-            />
+            <div className="relative flex h-11 w-full rounded-xl border border-white/10 bg-slate-950/80 transition focus-within:border-cyan-400/50">
+              <input
+                className="h-full w-full rounded-xl bg-transparent px-3 py-2 pr-10 text-sm text-slate-100 outline-none placeholder:text-slate-500"
+                id="la-manual-token"
+                onChange={(e) => {
+                  setManualToken(e.target.value);
+                  setGeneratedToken(null);
+                }}
+                placeholder="Paste a bearer token here..."
+                type={showToken ? "text" : "password"}
+                value={manualToken}
+              />
+              <button
+                aria-label={showToken ? "Hide token" : "Show token"}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
+                onClick={() => setShowToken((prev) => !prev)}
+                type="button"
+              >
+                {showToken ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
           </div>
           <p className="mt-1 text-xs text-slate-500">
-            Enter a token to preview the API response, or generate one below.
-            The token is only stored in this browser tab.
+            {envConfigured
+              ? "Enter the EMSD_LOCAL_API_TOKEN value to preview the API response. The token is only stored in this browser tab."
+              : "Enter a token to preview the API response, or generate one below. The token is only stored in this browser tab."}
           </p>
         </div>
 
@@ -546,26 +564,28 @@ ${binaryLines.trimEnd() || "      []"}
           </div>
         )}
 
-        <div className="mt-4 flex flex-wrap gap-2">
-          <Button
-            disabled={loading}
-            onClick={handleGenerateToken}
-            variant="default"
-          >
-            <RefreshCw size={14} />
-            {tokenConfigured ? "Generate new token" : "Generate token"}
-          </Button>
-          {tokenConfigured && (
+        {!envConfigured && (
+          <div className="mt-4 flex flex-wrap gap-2">
             <Button
               disabled={loading}
-              onClick={handleRevokeToken}
-              variant="danger"
+              onClick={handleGenerateToken}
+              variant="default"
             >
-              <Trash2 size={14} />
-              Revoke
+              <RefreshCw size={14} />
+              {tokenConfigured ? "Generate new token" : "Generate token"}
             </Button>
-          )}
-        </div>
+            {tokenConfigured && (
+              <Button
+                disabled={loading}
+                onClick={handleRevokeToken}
+                variant="danger"
+              >
+                <Trash2 size={14} />
+                Revoke
+              </Button>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="rounded-[1.4rem] border border-white/10 bg-white/5 p-5 ring-1 ring-cyan-300/5">
