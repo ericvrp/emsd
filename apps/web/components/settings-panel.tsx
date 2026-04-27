@@ -8,6 +8,7 @@ import type {
   WeatherForecastSourceRecord,
 } from "@emsd/core/client";
 import {
+  Globe,
   HardDrive,
   Home,
   LocateFixed,
@@ -42,6 +43,7 @@ import {
 import { UI_COLORS, UI_STYLES } from "../lib/ui-colors";
 import { cn } from "../lib/utils";
 import { DiscoveryPanel } from "./discovery-panel";
+import { LocalApiPanel } from "./local-api-panel";
 import { MeasuredChartContainer } from "./measured-chart-container";
 import { SectionSummaryCard } from "./section-summary-card";
 import { SubmitButton } from "./submit-button";
@@ -54,7 +56,8 @@ type SettingsTab =
   | "site"
   | "discover"
   | "price-provider"
-  | "solar-forecast-provider";
+  | "solar-forecast-provider"
+  | "local-api";
 
 function formatManagedDeviceState(state: string): string {
   return state.replace(/-/g, " ");
@@ -110,9 +113,11 @@ export function SettingsPanel({
               "devices",
               "price-provider",
               "solar-forecast-provider",
+              "local-api",
             ] as SettingsTab[]
           ).map((tab) => {
-            const isDisabled = !hasSite && tab !== "site";
+            const isDisabled =
+              !hasSite && tab !== "site" && tab !== "local-api";
 
             return (
               <button
@@ -137,6 +142,8 @@ export function SettingsPanel({
                   <ScanSearch size={15} />
                 ) : tab === "price-provider" ? (
                   <Zap size={15} />
+                ) : tab === "local-api" ? (
+                  <Globe size={15} />
                 ) : (
                   <Sun size={15} />
                 )}
@@ -149,7 +156,9 @@ export function SettingsPanel({
                         ? "Discover"
                         : tab === "price-provider"
                           ? "Price provider"
-                          : "Solar forecast"}
+                          : tab === "local-api"
+                            ? "Local API"
+                            : "Solar forecast"}
                 </span>
               </button>
             );
@@ -231,6 +240,7 @@ export function SettingsPanel({
             <SiteSetupPanel embedded returnPath={returnPath} />
           )
         ) : null}
+        {activeTab === "local-api" ? <LocalApiPanel /> : null}
       </CardContent>
     </Card>
   );

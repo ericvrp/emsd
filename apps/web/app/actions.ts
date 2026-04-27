@@ -42,6 +42,11 @@ import {
   updateSite,
   updateWeatherForecastSource,
 } from "../lib/ems-bridge";
+import {
+  generateLocalApiToken,
+  hasConfiguredToken,
+  revokeLocalApiToken,
+} from "../lib/local-api-auth";
 
 async function requireSession(): Promise<void> {
   const session = await getServerSession(authOptions);
@@ -890,4 +895,57 @@ export async function setHouseStrategyPlanAction(
     null,
     optionalStringValue(formData, "returnPath") ?? "/",
   );
+}
+
+export async function createLocalApiTokenAction(): Promise<{
+  token?: string;
+  error?: string;
+}> {
+  const session = await getServerSession(authOptions);
+
+  if (!session) {
+    return { error: "Unauthorized" };
+  }
+
+  try {
+    const token = generateLocalApiToken();
+    return { token };
+  } catch (error) {
+    return {
+      error:
+        error instanceof Error ? error.message : "Failed to generate token",
+    };
+  }
+}
+
+export async function revokeLocalApiTokenAction(): Promise<{
+  ok?: boolean;
+  error?: string;
+}> {
+  const session = await getServerSession(authOptions);
+
+  if (!session) {
+    return { error: "Unauthorized" };
+  }
+
+  try {
+    revokeLocalApiToken();
+    return { ok: true };
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "Failed to revoke token",
+    };
+  }
+}
+
+export async function getLocalApiTokenStatusAction(): Promise<{
+  configured: boolean;
+}> {
+  const session = await getServerSession(authOptions);
+
+  if (!session) {
+    return { configured: false };
+  }
+
+  return { configured: hasConfiguredToken() };
 }

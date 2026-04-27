@@ -1,12 +1,64 @@
 # Local API Plan
 
+## Implementation Status: Implemented
+
+The v1 route, auth helper, payload serializer, and UI are implemented.
+
 ## Goal
 
 Add a Next.js-owned local API that Home Assistant can consume with its built-in REST support, without requiring a custom Home Assistant integration, plugin, or extension.
 
 The first version should expose a single read-only route that returns JSON for the current household situation in a machine-friendly format. The immediate use case is Home Assistant automation around dynamic prices, including reacting when the current import price is negative.
 
-This file is a plan only. No implementation is included.
+## Implementation Summary
+
+### Files created
+
+| File | Purpose |
+|------|---------|
+| `apps/web/lib/local-api-auth.ts` | Bearer token validation, generation, and revocation |
+| `apps/web/lib/local-current.ts` | Payload serializer (types + builder function) |
+| `apps/web/app/api/local/v1/current/route.ts` | Versioned GET route |
+| `apps/web/components/local-api-panel.tsx` | UI for token management and YAML generation |
+
+### Files modified
+
+| File | Change |
+|------|--------|
+| `apps/web/app/actions.ts` | Added `createLocalApiTokenAction`, `revokeLocalApiTokenAction`, `getLocalApiTokenStatusAction` server actions |
+| `apps/web/components/settings-panel.tsx` | Added `"local-api"` tab with `LocalApiPanel` component |
+| `apps/web/.env.example` | Added `EMSD_LOCAL_API_TOKEN` env var |
+
+### Token storage and security
+
+The local API supports two auth mechanisms in priority order:
+
+1. **`EMSD_LOCAL_API_TOKEN` environment variable** — plain-text comparison. When set, every incoming bearer token is compared directly against this env var value using timing-safe comparison. Simple and works well when the token is set once at deploy time.
+
+2. **Hash file at `var/local-api-token.hash`** — used for UI-generated tokens. When no `EMSD_LOCAL_API_TOKEN` env var is set, the system falls back to the hash file.
+
+How the hash-file path works:
+
+- `crypto.randomBytes(32).toString("hex")` generates a 64-character hex token (256 bits of entropy)
+- `SHA-256(token)` produces the hash
+- Only the hash is written to `var/local-api-token.hash` — the plaintext token is never stored on disk
+- The token is displayed once in the UI and then the plaintext is discarded
+- On each API request, the incoming token is hashed (`SHA-256(token)`) and compared to the stored hash using timing-safe comparison
+- Token revocation simply writes an empty string to the hash file
+
+Why this is safe if the hash file is stolen:
+
+- SHA-256 is one-way. An attacker cannot reverse the hash to recover the original token.
+- The generated tokens have 256 bits of entropy (64 hex characters from `crypto.randomBytes(32)`). Brute-forcing 2^256 possibilities is computationally infeasible even with dedicated hardware.
+- The `var/` directory is already listed in `.gitignore` and is not served by the web app.
+- The file stores only the hash — even full filesystem read access does not reveal usable credentials.
+
+Comparing the two approaches:
+
+| Mechanism | Plaintext stored? | Revocable? | Best for |
+|-----------|-------------------|------------|----------|
+| `EMSD_LOCAL_API_TOKEN` env var | Yes (in env/proc) | Requires restart | Quick deploy, Docker, env-based config |
+| Hash file | No (only SHA-256 hash) | Yes (UI button) | Interactive setup, zero-knowledge storage |
 
 ## Current Codebase Baseline
 
@@ -122,11 +174,11 @@ Recommended behavior:
 
 Recommended user preferences for the generated YAML:
 
-- base URL or host name for EMSD
-- whether to use `configuration.yaml` directly or a package file such as `packages/emsd.yaml`
+- base URL or host name for the EMS web app (auto-detected from `window.location.host`)
+- whether to use `configuration.yaml` directly or a package file such as `packages/ems.yaml`
 - scan interval
 - which recommended entities to include
-- optional entity name prefix if the user wants multiple EMSD instances later
+- optional entity name prefix if the user wants multiple instances later
 
 This should be treated as part of the intended onboarding experience for the local API, not just a future convenience.
 
@@ -151,7 +203,7 @@ Recommended top-level shape:
 
 ```json
 {
-  "schema": "emsd.local.current.v1",
+  "schema": "ems.local.current.v1",
   "generatedAt": "2026-04-27T10:15:00.000Z",
   "daemon": {
     "running": true,
@@ -298,7 +350,7 @@ This keeps the existing repo architecture intact:
 
 ## Planned Code Areas
 
-### 1. New local API route
+### 1. New local API route (implemented)
 
 Files:
 
@@ -311,12 +363,11 @@ Plan:
 - Return JSON only.
 - Use dedicated local API auth instead of the UI session check.
 
-### 2. Local API auth helper
+### 2. Local API auth helper (implemented)
 
 Files:
 
-- `apps/web/auth.ts`
-- or a small new helper such as `apps/web/lib/local-api-auth.ts`
+- `apps/web/lib/local-api-auth.ts`
 
 Plan:
 
@@ -324,12 +375,11 @@ Plan:
 - Keep the validation path narrow so it only applies to the local API route family.
 - Avoid mixing bearer-token logic into the human login flow more than necessary.
 
-### 3. Payload shaping helper
+### 3. Payload shaping helper (implemented)
 
 Files:
 
-- `apps/web/lib/ems-bridge.ts`
-- or a small new helper such as `apps/web/lib/local-current.ts`
+- `apps/web/lib/local-current.ts`
 
 Plan:
 
@@ -339,11 +389,13 @@ Plan:
 - Add a small serializer that converts those results into the stable Home Assistant JSON contract.
 - Keep this serializer intentionally separate from the UI page loaders so UI component needs do not leak into the external API shape.
 
-### 4. UI-assisted token and YAML setup
+### 4. UI-assisted token and YAML setup (implemented)
 
 Files:
 
-- likely web settings components and supporting server-side helpers
+- `apps/web/components/local-api-panel.tsx`
+- `apps/web/app/actions.ts` (token actions)
+- `apps/web/components/settings-panel.tsx` (tab integration)
 
 Plan:
 
@@ -406,14 +458,14 @@ Assuming Home Assistant is already running and can reach the EMSD web app over t
 1. Create the local API bearer token from EMSD.
 2. Open the Home Assistant configuration directory.
 3. Add the token to `secrets.yaml`.
-4. Paste the YAML generated by EMSD into `configuration.yaml`, or better, into a dedicated package file such as `packages/emsd.yaml`.
+4. Paste the YAML generated by EMSD into `configuration.yaml`, or better, into a dedicated package file such as `packages/ems.yaml`.
 5. Restart Home Assistant.
 6. Confirm the new entities appear under Developer Tools and can be used in automations.
 
 ### Recommended `secrets.yaml` entry
 
 ```yaml
-emsd_local_api_token: "Bearer YOUR_TOKEN_HERE"
+ems_local_api_token: "Bearer YOUR_TOKEN_HERE"
 ```
 
 ### Recommended package-based setup
@@ -427,58 +479,58 @@ homeassistant:
   packages: !include_dir_named packages
 ```
 
-Then create `packages/emsd.yaml` with the EMSD configuration.
+Then create `packages/ems.yaml` with the EMSD configuration.
 
 This keeps the Home Assistant side to one small file instead of scattering settings across multiple YAML files.
 
-### Recommended `packages/emsd.yaml` example
+### Recommended `packages/ems.yaml` example
 
 ```yaml
 rest:
-  - resource: http://emsd.local:3000/api/local/v1/current
+  - resource: http://localhost:3300/api/local/v1/current
     scan_interval: 30
     timeout: 10
     headers:
-      Authorization: !secret emsd_local_api_token
+      Authorization: !secret ems_local_api_token
     sensor:
-      - name: "EMSD Price Now"
-        unique_id: emsd_price_now
+      - name: "EMS Price Now"
+        unique_id: ems_price_now
         value_template: "{{ value_json.summary.currentImportPrice }}"
         unit_of_measurement: "EUR/kWh"
-      - name: "EMSD Battery SOC"
-        unique_id: emsd_battery_soc
+      - name: "EMS Battery SOC"
+        unique_id: ems_battery_soc
         value_template: "{{ value_json.summary.totalBatterySocPercent }}"
         device_class: battery
         unit_of_measurement: "%"
-      - name: "EMSD Solar Forecast Now"
-        unique_id: emsd_solar_forecast_now
+      - name: "EMS Solar Forecast Now"
+        unique_id: ems_solar_forecast_now
         value_template: "{{ value_json.summary.currentForecastSolarPowerW }}"
         device_class: power
         state_class: measurement
         unit_of_measurement: "W"
-      - name: "EMSD Solar Power Now"
-        unique_id: emsd_solar_power_now
+      - name: "EMS Solar Power Now"
+        unique_id: ems_solar_power_now
         value_template: "{{ value_json.summary.totalSolarPowerW }}"
         device_class: power
         state_class: measurement
         unit_of_measurement: "W"
     binary_sensor:
-      - name: "EMSD Negative Price Now"
-        unique_id: emsd_negative_price_now
+      - name: "EMS Negative Price Now"
+        unique_id: ems_negative_price_now
         value_template: "{{ value_json.summary.currentImportPriceIsNegative }}"
 ```
 
-This is the kind of configuration EMSD should optimize for.
+This is the kind of configuration the UI YAML generator produces.
 
 ### Resulting Home Assistant entities
 
 With a setup like the example above, the user should end up with normal Home Assistant entities such as:
 
-- `sensor.emsd_price_now`
-- `sensor.emsd_battery_soc`
-- `sensor.emsd_solar_forecast_now`
-- `sensor.emsd_solar_power_now`
-- `binary_sensor.emsd_negative_price_now`
+- `sensor.ems_price_now`
+- `sensor.ems_battery_soc`
+- `sensor.ems_solar_forecast_now`
+- `sensor.ems_solar_power_now`
+- `binary_sensor.ems_negative_price_now`
 
 Those entities can then be used directly in:
 
@@ -490,7 +542,7 @@ Those entities can then be used directly in:
 
 ### Example automation use case
 
-Once the entities exist, a Home Assistant automation can react to `binary_sensor.emsd_negative_price_now` turning on, then decide whether to start selected household loads.
+Once the entities exist, a Home Assistant automation can react to `binary_sensor.ems_negative_price_now` turning on, then decide whether to start selected household loads.
 
 That is exactly the class of workflow this API should unlock first.
 
@@ -521,19 +573,19 @@ This is the kind of setup the route should make possible with built-in Home Assi
 
 ```yaml
 rest:
-  - resource: http://emsd.local:3000/api/local/v1/current
+  - resource: http://localhost:3300/api/local/v1/current
     scan_interval: 30
     headers:
-      Authorization: !secret emsd_local_api_token
+      Authorization: !secret ems_local_api_token
     sensor:
-      - name: "EMSD Price Now"
+      - name: "EMS Price Now"
         value_template: "{{ value_json.summary.currentImportPrice }}"
-      - name: "EMSD Battery SOC"
+      - name: "EMS Battery SOC"
         value_template: "{{ value_json.summary.totalBatterySocPercent }}"
-      - name: "EMSD Solar Forecast Now"
+      - name: "EMS Solar Forecast Now"
         value_template: "{{ value_json.summary.currentForecastSolarPowerW }}"
     binary_sensor:
-      - name: "EMSD Negative Price Now"
+      - name: "EMS Negative Price Now"
         value_template: "{{ value_json.summary.currentImportPriceIsNegative }}"
 ```
 
