@@ -23,5 +23,16 @@ export async function GET(request: Request) {
     );
   }
 
-  return NextResponse.json(await buildLocalApiCurrent());
+  const url = new URL(request.url);
+  const excludeParam = url.searchParams.get("exclude");
+  const exclude = excludeParam
+    ? new Set(
+        excludeParam
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean),
+      )
+    : undefined;
+
+  return NextResponse.json(await buildLocalApiCurrent(exclude));
 }

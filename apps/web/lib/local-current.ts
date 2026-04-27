@@ -16,19 +16,16 @@ import {
 export interface LocalApiCurrentResponse {
   schema: "ems.local.current.v1";
   generatedAt: string;
-  daemon: {
-    running: boolean;
-    pid: number | null;
-  };
-  site: {
+  daemonRunning?: boolean;
+  site?: {
     id: string;
     name: string;
     location: string;
   } | null;
   summary: LocalApiSummary;
-  pricing: LocalApiPricing;
-  solarForecast: LocalApiSolarForecast;
-  devices: LocalApiDevices;
+  pricing?: LocalApiPricing;
+  solarForecast?: LocalApiSolarForecast;
+  devices?: LocalApiDevices;
 }
 
 export interface LocalApiSummary {
@@ -36,25 +33,16 @@ export interface LocalApiSummary {
   currentImportPriceCurrency: string | null;
   currentImportPriceStartsAt: string | null;
   currentImportPriceIsNegative: boolean;
-  nextImportPrice: number | null;
   currentForecastSolarPowerW: number | null;
-  nextForecastSolarPowerW: number | null;
   totalBatterySocPercent: number | null;
   totalBatteryPowerW: number | null;
+  batteryStrategySummary: string | null;
   totalSolarPowerW: number | null;
   totalMeterPowerW: number | null;
-  batteryCount: number;
-  meterCount: number;
-  solarEnergyProviderCount: number;
 }
 
 export interface LocalApiPricing {
   current: {
-    startsAt: string;
-    importPrice: number;
-    currency: string;
-  } | null;
-  next: {
     startsAt: string;
     importPrice: number;
     currency: string;
@@ -72,11 +60,6 @@ export interface LocalApiSolarForecast {
   provider: string | null;
   providerLabel: string | null;
   current: {
-    period: string;
-    periodEnd: string;
-    value: number;
-  } | null;
-  next: {
     period: string;
     periodEnd: string;
     value: number;
@@ -178,7 +161,7 @@ function computePricing(
   now: Date,
 ): LocalApiPricing {
   if (!snapshot || snapshot.points.length === 0) {
-    return { current: null, next: null, upcoming: [] };
+    return { current: null, upcoming: [] };
   }
 
   const sortedPoints = [...snapshot.points].sort(
@@ -207,30 +190,40 @@ function computePricing(
     }
   }
 
-  let next: {
-    startsAt: string;
-    importPrice: number;
-    currency: string;
-  } | null = null;
-
-  if (currentIndex + 1 < sortedPoints.length) {
-    const point = sortedPoints[currentIndex + 1];
-    if (point) {
-      next = {
-        startsAt: point.startsAt,
-        importPrice: point.importPrice,
-        currency: point.currency,
-      };
-    }
-  }
-
   const upcoming = sortedPoints.slice(currentIndex + 1).map((point) => ({
     startsAt: point.startsAt,
     importPrice: point.importPrice,
     currency: point.currency,
   }));
 
-  return { current, next, upcoming };
+  return { current, upcoming };
+}
+
+interface ForecastPoint {
+  period: string;
+  periodEnd: string;
+  value: number;
+}
+
+function findUpcomingIndex(
+  sortedPoints: Array<{ periodEnd: string }>,
+  now: Date,
+): number {
+  const nowTime = now.getTime();
+
+  for (let i = 0; i < sortedPoints.length; i++) {
+    const point = sortedPoints[i];
+
+    if (!point) {
+      continue;
+    }
+
+    if (new Date(point.periodEnd).getTime() > nowTime) {
+      return i;
+    }
+  }
+
+  return sortedPoints.length;
 }
 
 function computeSolarForecast(
@@ -244,7 +237,6 @@ function computeSolarForecast(
       provider: null,
       providerLabel: null,
       current: null,
-      next: null,
       upcoming: [],
     };
   }
@@ -255,46 +247,51 @@ function computeSolarForecast(
 
   const currentIndex = selectCurrentForecastPoint(sortedPoints, now);
 
-  let currentPoint: {
-    period: string;
-    periodEnd: string;
-    value: number;
-  } | null = null;
+  let currentPoint: ForecastPoint | null = null;
+
+  let resolvedCurrentIndex = -1;
 
   if (currentIndex >= 0 && currentIndex < sortedPoints.length) {
     const point = sortedPoints[currentIndex];
-    if (point && point.value !== null && point.value !== undefined) {
+
+    if (point) {
       currentPoint = {
         period: point.period,
         periodEnd: point.periodEnd,
-        value: point.value,
+        value: point.value ?? 0,
       };
+      resolvedCurrentIndex = currentIndex;
     }
   }
 
-  let nextPoint: {
-    period: string;
-    periodEnd: string;
-    value: number;
-  } | null = null;
+  if (!currentPoint) {
+    const firstUpcoming = findUpcomingIndex(sortedPoints, now);
 
-  for (let i = currentIndex + 1; i < sortedPoints.length; i++) {
-    const point = sortedPoints[i];
-    if (point && point.value !== null && point.value !== undefined) {
-      nextPoint = {
-        period: point.period,
-        periodEnd: point.periodEnd,
-        value: point.value,
-      };
-      break;
+    if (firstUpcoming < sortedPoints.length) {
+      const point = sortedPoints[firstUpcoming];
+
+      if (point) {
+        currentPoint = {
+          period: point.period,
+          periodEnd: point.periodEnd,
+          value: point.value ?? 0,
+        };
+        resolvedCurrentIndex = firstUpcoming;
+      }
     }
   }
 
-  const upcoming = sortedPoints.slice(currentIndex + 1).map((point) => ({
-    period: point.period,
-    periodEnd: point.periodEnd,
-    value: point.value,
-  }));
+  const upcomingStart =
+    resolvedCurrentIndex >= 0
+      ? resolvedCurrentIndex + 1
+      : findUpcomingIndex(sortedPoints, now);
+  const upcoming = sortedPoints
+    .slice(upcomingStart)
+    .map((point) => ({
+      period: point.period,
+      periodEnd: point.periodEnd,
+      value: point.value,
+    }));
 
   return {
     generatedAt: forecast.generatedAt,
@@ -302,7 +299,6 @@ function computeSolarForecast(
     provider: forecast.provider,
     providerLabel: forecast.providerLabel,
     current: currentPoint,
-    next: nextPoint,
     upcoming,
   };
 }
@@ -395,16 +391,23 @@ function mapSolarDevice(
   };
 }
 
-export async function buildLocalApiCurrent(): Promise<LocalApiCurrentResponse> {
+export async function buildLocalApiCurrent(
+  exclude?: Set<string>,
+): Promise<Partial<LocalApiCurrentResponse>> {
   const now = new Date();
   const snapshot = await getLiveStatus();
   const site = snapshot.sites[0] ?? null;
+
+  const needPricing =
+    !exclude ||
+    !(exclude.has("ems_price_now") && exclude.has("ems_negative_price_now"));
+  const needForecast = !exclude || !exclude.has("ems_solar_forecast");
 
   let dynamicPriceSnapshot: DynamicPriceSnapshotRecord | null = null;
   let forecast: WeatherForecastRecord | null = null;
 
   if (site) {
-    if (site.dynamicPriceSources.length > 0) {
+    if (needPricing && site.dynamicPriceSources.length > 0) {
       try {
         dynamicPriceSnapshot = await getDynamicPriceSnapshot({
           siteId: site.id,
@@ -414,7 +417,7 @@ export async function buildLocalApiCurrent(): Promise<LocalApiCurrentResponse> {
       }
     }
 
-    if (site.weatherSources.length > 0) {
+    if (needForecast && site.weatherSources.length > 0) {
       try {
         forecast = await getWeatherForecast({
           hours: 24,
@@ -435,51 +438,81 @@ export async function buildLocalApiCurrent(): Promise<LocalApiCurrentResponse> {
     ? site.devices.filter((d) => d.kind === "solar-energy-provider")
     : [];
 
-  const pricing = computePricing(dynamicPriceSnapshot, now);
-  const solarForecast = computeSolarForecast(forecast, now);
+  const pricing: LocalApiPricing | null = needPricing
+    ? computePricing(dynamicPriceSnapshot, now)
+    : null;
+  const solarForecast: LocalApiSolarForecast | null = needForecast
+    ? computeSolarForecast(forecast, now)
+    : null;
 
   let currentImportPriceIsNegative = false;
 
-  if (pricing.current && pricing.current.importPrice < 0) {
+  if (pricing && pricing.current && pricing.current.importPrice < 0) {
     currentImportPriceIsNegative = true;
   }
 
-  return {
+  const needBasic = !exclude || !exclude.has("ems_basic");
+  const needBatteryInfo = !exclude || !exclude.has("ems_battery_info");
+  const needSolarPower = !exclude || !exclude.has("ems_solar_power");
+  const needMeterPower = !exclude || !exclude.has("ems_meter_power");
+
+  const response: Record<string, unknown> = {
     schema: "ems.local.current.v1",
     generatedAt: snapshot.generatedAt,
-    daemon: {
-      running: snapshot.daemon.running,
-      pid: snapshot.daemon.pid,
-    },
-    site: site
+    summary: {},
+  };
+
+  if (needBasic) {
+    response.daemonRunning = snapshot.daemon.running;
+    response.site = site
       ? {
           id: site.id,
           name: site.name,
           location: site.location,
         }
-      : null,
-    summary: {
-      currentImportPrice: pricing.current?.importPrice ?? null,
-      currentImportPriceCurrency: pricing.current?.currency ?? null,
-      currentImportPriceStartsAt: pricing.current?.startsAt ?? null,
-      currentImportPriceIsNegative,
-      nextImportPrice: pricing.next?.importPrice ?? null,
-      currentForecastSolarPowerW: solarForecast.current?.value ?? null,
-      nextForecastSolarPowerW: solarForecast.next?.value ?? null,
-      totalBatterySocPercent: computeAggregateSocPercent(batteries),
-      totalBatteryPowerW: computeAggregatePowerW(batteries),
-      totalSolarPowerW: computeAggregatePowerW(solarProviders),
-      totalMeterPowerW: computeAggregatePowerW(meters),
-      batteryCount: batteries.length,
-      meterCount: meters.length,
-      solarEnergyProviderCount: solarProviders.length,
-    },
-    pricing,
-    solarForecast,
-    devices: {
+      : null;
+    response.devices = {
       batteries: batteries.map(mapBatteryDevice),
       meters: meters.map(mapMeterDevice),
       solarEnergyProviders: solarProviders.map(mapSolarDevice),
-    },
-  };
+    };
+  }
+
+  const summary = response.summary as Record<string, unknown>;
+
+  if (!exclude || !exclude.has("ems_price_now")) {
+    summary.currentImportPrice = pricing?.current?.importPrice ?? null;
+    summary.currentImportPriceCurrency = pricing?.current?.currency ?? null;
+    summary.currentImportPriceStartsAt = pricing?.current?.startsAt ?? null;
+  }
+
+  if (!exclude || !exclude.has("ems_negative_price_now")) {
+    summary.currentImportPriceIsNegative = currentImportPriceIsNegative;
+  }
+
+  if (needBatteryInfo) {
+    summary.totalBatterySocPercent = computeAggregateSocPercent(batteries);
+    summary.totalBatteryPowerW = computeAggregatePowerW(batteries);
+    summary.batteryStrategySummary =
+      batteries[0]?.batteryStrategySummary ?? null;
+  }
+
+  if (needSolarPower) {
+    summary.totalSolarPowerW = computeAggregatePowerW(solarProviders);
+  }
+
+  if (needMeterPower) {
+    summary.totalMeterPowerW = computeAggregatePowerW(meters);
+  }
+
+  if (!exclude || !exclude.has("ems_solar_forecast")) {
+    summary.currentForecastSolarPowerW = solarForecast?.current?.value ?? null;
+    response.solarForecast = solarForecast;
+  }
+
+  if (!exclude || !exclude.has("ems_price_now")) {
+    response.pricing = pricing;
+  }
+
+  return response as unknown as Partial<LocalApiCurrentResponse>;
 }
