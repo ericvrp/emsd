@@ -19,6 +19,7 @@ import { BatteryStrategyForm } from "./battery-strategy-form";
 import { BatteryStrategyPlanForm } from "./battery-strategy-plan-form";
 import { Button } from "./ui/button";
 import { DialogPortal } from "./ui/dialog-portal";
+import { type SiteCurrentResponse, useLiveJsonSWR } from "./use-live-json-swr";
 
 const STRATEGY_REFRESH_INTERVAL_MS = 5_000;
 
@@ -68,8 +69,13 @@ export function HouseStrategyDialog({
     manualModeActive ? "manual" : "strategy",
   );
   const returnPath = buildReturnPath(pathname, searchParams);
-  const [liveStrategySummary, setLiveStrategySummary] = useState(
-    firstBattery?.batteryStrategySummary ?? "Default strategy",
+  const { data: currentData } = useLiveJsonSWR<SiteCurrentResponse>(
+    `/api/site/current?siteId=${encodeURIComponent(siteId)}`,
+    {
+      failureMessage:
+        "Strategy updates are retrying. Showing last available data.",
+      refreshIntervalMs: STRATEGY_REFRESH_INTERVAL_MS,
+    },
   );
 
   useEffect(() => {
@@ -96,82 +102,6 @@ export function HouseStrategyDialog({
     }
   }, [isOpen, manualModeActive]);
 
-  useEffect(() => {
-    setLiveStrategySummary(
-      firstBattery?.batteryStrategySummary ?? "Default strategy",
-    );
-  }, [firstBattery?.batteryStrategySummary]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function refreshStrategySummary() {
-      if (document.visibilityState !== "visible") {
-        return;
-      }
-
-      try {
-        const response = await fetch(
-          `/api/site/current?siteId=${encodeURIComponent(siteId)}`,
-          {
-            cache: "no-store",
-          },
-        );
-
-        if (response.status === 401) {
-          window.location.href = "/login";
-          return;
-        }
-
-        if (!response.ok) {
-          throw new Error(
-            `Strategy current request failed: ${response.status}`,
-          );
-        }
-
-        const payload = (await response.json()) as {
-          currentStrategySummary?: string | null;
-        };
-
-        if (cancelled) {
-          return;
-        }
-
-        setLiveStrategySummary(
-          payload.currentStrategySummary ??
-            firstBattery?.batteryStrategySummary ??
-            "Default strategy",
-        );
-      } catch {
-        if (!cancelled) {
-          setLiveStrategySummary(
-            firstBattery?.batteryStrategySummary ?? "Default strategy",
-          );
-        }
-      }
-    }
-
-    void refreshStrategySummary();
-
-    function handleVisibilityChange() {
-      if (document.visibilityState === "visible") {
-        void refreshStrategySummary();
-      }
-    }
-
-    const interval = window.setInterval(() => {
-      void refreshStrategySummary();
-    }, STRATEGY_REFRESH_INTERVAL_MS);
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, [firstBattery?.batteryStrategySummary, siteId]);
-
   const strategy = firstBattery?.batteryStrategy ?? {
     strategyMode: "self-consumption",
     manualPowerW: null,
@@ -187,6 +117,10 @@ export function HouseStrategyDialog({
   const maximumDischargePowerW = firstBattery?.maximumDischargePowerW ?? 800;
   const currentSocPercent = firstBattery?.telemetry?.socPercent ?? null;
   const capacityWh = firstBattery?.telemetry?.capacityWh ?? null;
+  const liveStrategySummary =
+    currentData?.currentStrategySummary ??
+    firstBattery?.batteryStrategySummary ??
+    "Default strategy";
   const buttonLabel = liveStrategySummary ?? "Default strategy";
 
   return (

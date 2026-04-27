@@ -1,24 +1,36 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useEffect } from "react";
-import { logBrowserIntervalHeartbeat } from "../lib/browser-heartbeat";
+import { PageRefreshButton } from "./page-refresh-button";
+import { RefreshWarning } from "./refresh-warning";
+import {
+  type DashboardStateResponse,
+  useLiveJsonSWR,
+} from "./use-live-json-swr";
 
 const RETRY_INTERVAL_MS = 2000;
 
 export function OfflineAutoRetry() {
-  const router = useRouter();
+  const { data, refreshError } = useLiveJsonSWR<DashboardStateResponse>(
+    "/api/dashboard/state",
+    {
+      failureMessage:
+        "Unable to recheck daemon status right now. Retrying automatically.",
+      refreshIntervalMs: RETRY_INTERVAL_MS,
+    },
+  );
 
   useEffect(() => {
-    const interval = window.setInterval(() => {
-      logBrowserIntervalHeartbeat("retry offline");
-      router.refresh();
-    }, RETRY_INTERVAL_MS);
+    if (data?.daemonRunning) {
+      window.location.reload();
+    }
+  }, [data?.daemonRunning]);
 
-    return () => {
-      window.clearInterval(interval);
-    };
-  }, [router]);
-
-  return null;
+  return refreshError ? (
+    <RefreshWarning
+      action={<PageRefreshButton />}
+      className="mb-6 w-full"
+      message={refreshError}
+    />
+  ) : null;
 }

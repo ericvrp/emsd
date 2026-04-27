@@ -27,7 +27,6 @@ export default async function PricesPage({
     currentSite,
     dynamicPriceSnapshot,
     dynamicPriceSnapshotError,
-    generatedAt,
   } = dashboardData;
   const requestedDay = getSearchParamValue(
     dashboardData.resolvedSearchParams.day,
@@ -40,7 +39,7 @@ export default async function PricesPage({
     : null;
 
   return (
-    <DashboardPageFrame currentSite={currentSite} generatedAt={generatedAt}>
+    <DashboardPageFrame currentSite={currentSite}>
       {currentSite && historyArchive && priceMarkers ? (
         <PricingSection
           archive={historyArchive}

@@ -12,7 +12,7 @@ import {
   buildSolarPredictionAccuracySummary,
   formatSolarPredictionSmoothingMode,
 } from "@emsd/core/client";
-import { type ReactNode, useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import {
   CartesianGrid,
   Line,
@@ -22,7 +22,6 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { logBrowserIntervalHeartbeat } from "../lib/browser-heartbeat";
 import {
   formatAbsolutePowerValue,
   formatPowerValue,
@@ -52,12 +51,18 @@ import {
   formatTooltipTimestamp,
 } from "./history/utils";
 import { MeasuredChartContainer } from "./measured-chart-container";
+import { PageRefreshButton } from "./page-refresh-button";
 import { RefreshWarning } from "./refresh-warning";
 import type { SiteSnapshot } from "./settings-panel";
 import {
   TopLevelDaySelect,
   useTopLevelDaySelection,
 } from "./top-level-day-select";
+import {
+  type SolarCurrentResponse,
+  type SolarGraphResponse,
+  useLiveJsonSWR,
+} from "./use-live-json-swr";
 
 const LIVE_SOLAR_REFRESH_INTERVAL_MS = 5_000;
 const GRAPH_REFRESH_INTERVAL_MS = 60 * 1_000;
@@ -78,15 +83,30 @@ export function WeatherForecastSection({
   requestedDay: string | null;
   source: WeatherForecastSourceRecord | null;
 }) {
-  const [archive, setArchive] = useState(initialArchive);
-  const [forecast, setForecast] = useState(initialForecast);
-  const [error, setError] = useState(initialError);
-  const [graphRefreshError, setGraphRefreshError] = useState<string | null>(
-    null,
+  const params = new URLSearchParams({ siteId: site.id });
+  const { data: graphData, refreshError: graphRefreshError } = useLiveJsonSWR<SolarGraphResponse>(
+    `/api/solar/graph?${params.toString()}`,
+    {
+      failureMessage:
+        "Solar graph updates are retrying. Showing last available data.",
+      refreshIntervalMs: GRAPH_REFRESH_INTERVAL_MS,
+      retryIntervalMs: LIVE_SOLAR_REFRESH_INTERVAL_MS,
+    },
   );
-  const [currentRefreshError, setCurrentRefreshError] = useState<string | null>(
-    null,
+  const {
+    data: currentData,
+    refreshError: currentRefreshError,
+  } = useLiveJsonSWR<SolarCurrentResponse>(
+    `/api/solar/current?siteId=${encodeURIComponent(site.id)}`,
+    {
+      failureMessage:
+        "Solar current updates are retrying. Showing last available data.",
+      refreshIntervalMs: LIVE_SOLAR_REFRESH_INTERVAL_MS,
+    },
   );
+  const archive = graphData?.archive ?? initialArchive;
+  const forecast = graphData?.forecast ?? initialForecast;
+  const error = graphData?.forecastError ?? initialError;
   const daySelection = useTopLevelDaySelection({ archive, requestedDay });
   const selectedDayForecastSeries = fillSingleValueDay(
     archive.solarForecastSamples.map((sample) => ({
@@ -124,158 +144,12 @@ export function WeatherForecastSection({
     new Date().toISOString(),
   );
   const liveCurrentGeneratedPower = getCurrentSolarPower(site);
-  const [currentGeneratedPower, setCurrentGeneratedPower] = useState<
-    number | null
-  >(liveCurrentGeneratedPower ?? archiveCurrentGeneratedPower);
-
-  useEffect(() => {
-    setArchive(initialArchive);
-    setForecast(initialForecast);
-    setError(initialError);
-  }, [initialArchive, initialError, initialForecast]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function refreshGraph() {
-      if (document.visibilityState !== "visible") {
-        return;
-      }
-
-      try {
-        const params = new URLSearchParams({ siteId: site.id });
-        const response = await fetch(`/api/solar/graph?${params.toString()}`, {
-          cache: "no-store",
-        });
-
-        if (response.status === 401) {
-          window.location.href = "/login";
-          return;
-        }
-
-        if (!response.ok) {
-          throw new Error(`Solar graph request failed: ${response.status}`);
-        }
-
-        const payload = (await response.json()) as {
-          archive: HistoryArchive;
-          forecast: WeatherForecastRecord | null;
-          forecastError: string | null;
-        };
-
-        if (!cancelled) {
-          setGraphRefreshError(null);
-          setArchive(payload.archive);
-          setForecast(payload.forecast);
-          setError(payload.forecastError);
-        }
-      } catch {
-        if (!cancelled) {
-          setGraphRefreshError(
-            "Solar graph updates paused. Showing last available data.",
-          );
-        }
-      }
-    }
-
-    void refreshGraph();
-
-    function handleVisibilityChange() {
-      if (document.visibilityState === "visible") {
-        void refreshGraph();
-      }
-    }
-
-    const interval = window.setInterval(() => {
-      logBrowserIntervalHeartbeat("refresh graph");
-      void refreshGraph();
-    }, GRAPH_REFRESH_INTERVAL_MS);
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, [site.id]);
-
-  useEffect(() => {
-    setCurrentGeneratedPower(
-      liveCurrentGeneratedPower ?? archiveCurrentGeneratedPower,
-    );
-  }, [archiveCurrentGeneratedPower, liveCurrentGeneratedPower]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function refreshCurrentGeneratedPower() {
-      if (document.visibilityState !== "visible") {
-        return;
-      }
-
-      try {
-        const response = await fetch(
-          `/api/solar/current?siteId=${encodeURIComponent(site.id)}`,
-          {
-            cache: "no-store",
-          },
-        );
-
-        if (response.status === 401) {
-          window.location.href = "/login";
-          return;
-        }
-
-        if (!response.ok) {
-          throw new Error(`Solar current request failed: ${response.status}`);
-        }
-
-        const payload = (await response.json()) as {
-          currentGeneratedPower?: number | null;
-        };
-
-        if (cancelled) {
-          return;
-        }
-
-        setCurrentRefreshError(null);
-        setCurrentGeneratedPower(
-          typeof payload.currentGeneratedPower === "number"
-            ? payload.currentGeneratedPower
-            : archiveCurrentGeneratedPower,
-        );
-      } catch {
-        if (!cancelled) {
-          setCurrentRefreshError(
-            "Solar current updates paused. Showing last available data.",
-          );
-          setCurrentGeneratedPower(archiveCurrentGeneratedPower);
-        }
-      }
-    }
-
-    void refreshCurrentGeneratedPower();
-
-    function handleVisibilityChange() {
-      if (document.visibilityState === "visible") {
-        void refreshCurrentGeneratedPower();
-      }
-    }
-
-    const interval = window.setInterval(() => {
-      logBrowserIntervalHeartbeat("refresh current");
-      void refreshCurrentGeneratedPower();
-    }, LIVE_SOLAR_REFRESH_INTERVAL_MS);
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, [archiveCurrentGeneratedPower, site.id]);
+  const refreshError = graphRefreshError ?? currentRefreshError;
+  const currentGeneratedPower = currentData
+    ? (typeof currentData.currentGeneratedPower === "number"
+        ? currentData.currentGeneratedPower
+        : null)
+    : (liveCurrentGeneratedPower ?? archiveCurrentGeneratedPower);
 
   return (
     <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
@@ -304,6 +178,14 @@ export function WeatherForecastSection({
         </div>
       </div>
 
+      {refreshError ? (
+        <RefreshWarning
+          action={<PageRefreshButton />}
+          className="mt-5"
+          message={refreshError}
+        />
+      ) : null}
+
       {site.location.trim().length === 0 ? (
         <p className="mt-4 rounded-[1.25rem] border border-amber-400/20 bg-amber-500/10 p-4 text-sm text-amber-100">
           Add a GPS location on the Site tab to load a solar forecast.
@@ -318,12 +200,6 @@ export function WeatherForecastSection({
         </p>
       ) : (
         <div className="mt-5 space-y-4 rounded-[1.4rem] border border-white/10 bg-white/5 p-4">
-          {graphRefreshError ? (
-            <RefreshWarning message={graphRefreshError} />
-          ) : null}
-          {currentRefreshError ? (
-            <RefreshWarning message={currentRefreshError} />
-          ) : null}
           <ForecastPredictionChart
             emptyMessage={
               forecast === null

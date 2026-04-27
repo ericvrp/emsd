@@ -22,8 +22,7 @@ export default async function SolarPage({
     return <DaemonOfflineState />;
   }
 
-  const { currentSite, generatedAt, weatherForecast, weatherForecastError } =
-    dashboardData;
+  const { currentSite, weatherForecast, weatherForecastError } = dashboardData;
   const requestedDay = getSearchParamValue(
     dashboardData.resolvedSearchParams.day,
   );
@@ -32,7 +31,7 @@ export default async function SolarPage({
     : null;
 
   return (
-    <DashboardPageFrame currentSite={currentSite} generatedAt={generatedAt}>
+    <DashboardPageFrame currentSite={currentSite}>
       {currentSite && historyArchive ? (
         <WeatherForecastSection
           archive={historyArchive}

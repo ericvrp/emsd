@@ -5,8 +5,7 @@ import type {
   DynamicPriceSnapshotRecord,
   HistoryArchive,
 } from "@emsd/core/client";
-import { useEffect, useState } from "react";
-import { logBrowserIntervalHeartbeat } from "../lib/browser-heartbeat";
+import { useState } from "react";
 import { UI_COLORS } from "../lib/ui-colors";
 import {
   SingleValueHistoryChart,
@@ -14,6 +13,7 @@ import {
   splitSingleValueSeriesByTime,
 } from "./history";
 import { formatTooltipTimestamp } from "./history/utils";
+import { PageRefreshButton } from "./page-refresh-button";
 import { RefreshWarning } from "./refresh-warning";
 import { SectionSummaryCard } from "./section-summary-card";
 import type { SiteSnapshot } from "./settings-panel";
@@ -21,8 +21,10 @@ import {
   TopLevelDaySelect,
   useTopLevelDaySelection,
 } from "./top-level-day-select";
+import { type PricesGraphResponse, useLiveJsonSWR } from "./use-live-json-swr";
 
 const GRAPH_REFRESH_INTERVAL_MS = 15 * 60 * 1_000;
+const GRAPH_RETRY_INTERVAL_MS = 5_000;
 
 export function PricingSection({
   archive: initialArchive,
@@ -41,19 +43,23 @@ export function PricingSection({
   lowestMarkerPeriodStarts: string[];
   requestedDay: string | null;
 }) {
-  const [archive, setArchive] = useState(initialArchive);
-  const [snapshot, setSnapshot] = useState(initialSnapshot);
-  const [error, setError] = useState(initialError);
-  const [highestMarkerPeriodStarts, setHighestMarkerPeriodStarts] = useState(
-    initialHighestMarkerPeriodStarts,
-  );
-  const [lowestMarkerPeriodStarts, setLowestMarkerPeriodStarts] = useState(
-    initialLowestMarkerPeriodStarts,
-  );
-  const [graphRefreshError, setGraphRefreshError] = useState<string | null>(
-    null,
-  );
   const [showExportPrice, setShowExportPrice] = useState(false);
+  const { data: graphData, refreshError: graphRefreshError } = useLiveJsonSWR<PricesGraphResponse>(
+    `/api/prices/graph?siteId=${encodeURIComponent(site.id)}`,
+    {
+      failureMessage:
+        "Price graph updates are retrying. Showing last available data.",
+      refreshIntervalMs: GRAPH_REFRESH_INTERVAL_MS,
+      retryIntervalMs: GRAPH_RETRY_INTERVAL_MS,
+    },
+  );
+  const archive = graphData?.archive ?? initialArchive;
+  const snapshot = graphData?.dynamicPriceSnapshot ?? initialSnapshot;
+  const error = graphData?.dynamicPriceSnapshotError ?? initialError;
+  const highestMarkerPeriodStarts =
+    graphData?.highestMarkerPeriodStarts ?? initialHighestMarkerPeriodStarts;
+  const lowestMarkerPeriodStarts =
+    graphData?.lowestMarkerPeriodStarts ?? initialLowestMarkerPeriodStarts;
   const daySelection = useTopLevelDaySelection({ archive, requestedDay });
   const selectedDayPricePoints = fillSingleValueDay(
     archive.dynamicPriceSamples.map((sample) => ({
@@ -75,90 +81,6 @@ export function PricingSection({
       ? "Dynamic price data is not available yet."
       : "No price data for this day.";
   const priceAxisDomain = buildPriceAxisDomain(selectedDayPricePoints);
-
-  useEffect(() => {
-    setArchive(initialArchive);
-    setSnapshot(initialSnapshot);
-    setError(initialError);
-    setHighestMarkerPeriodStarts(initialHighestMarkerPeriodStarts);
-    setLowestMarkerPeriodStarts(initialLowestMarkerPeriodStarts);
-  }, [
-    initialArchive,
-    initialError,
-    initialHighestMarkerPeriodStarts,
-    initialLowestMarkerPeriodStarts,
-    initialSnapshot,
-  ]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function refreshGraph() {
-      if (document.visibilityState !== "visible") {
-        return;
-      }
-
-      try {
-        const response = await fetch(
-          `/api/prices/graph?siteId=${encodeURIComponent(site.id)}`,
-          { cache: "no-store" },
-        );
-
-        if (response.status === 401) {
-          window.location.href = "/login";
-          return;
-        }
-
-        if (!response.ok) {
-          throw new Error(`Prices graph request failed: ${response.status}`);
-        }
-
-        const payload = (await response.json()) as {
-          archive: HistoryArchive;
-          dynamicPriceSnapshot: DynamicPriceSnapshotRecord | null;
-          dynamicPriceSnapshotError: string | null;
-          highestMarkerPeriodStarts: string[];
-          lowestMarkerPeriodStarts: string[];
-        };
-
-        if (!cancelled) {
-          setGraphRefreshError(null);
-          setArchive(payload.archive);
-          setSnapshot(payload.dynamicPriceSnapshot);
-          setError(payload.dynamicPriceSnapshotError);
-          setHighestMarkerPeriodStarts(payload.highestMarkerPeriodStarts);
-          setLowestMarkerPeriodStarts(payload.lowestMarkerPeriodStarts);
-        }
-      } catch {
-        if (!cancelled) {
-          setGraphRefreshError(
-            "Price graph updates paused. Showing last available data.",
-          );
-        }
-      }
-    }
-
-    void refreshGraph();
-
-    function handleVisibilityChange() {
-      if (document.visibilityState === "visible") {
-        void refreshGraph();
-      }
-    }
-
-    const interval = window.setInterval(() => {
-      logBrowserIntervalHeartbeat("refresh graph");
-      void refreshGraph();
-    }, GRAPH_REFRESH_INTERVAL_MS);
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, [site.id]);
 
   return (
     <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
@@ -202,15 +124,20 @@ export function PricingSection({
         </SectionSummaryCard>
       </div>
 
+      {graphRefreshError ? (
+        <RefreshWarning
+          action={<PageRefreshButton />}
+          className="mt-5"
+          message={graphRefreshError}
+        />
+      ) : null}
+
       {error ? (
         <p className="mt-4 rounded-[1.25rem] border border-amber-400/20 bg-amber-500/10 p-4 text-sm text-amber-100">
           {error}
         </p>
       ) : (
         <div className="mt-5 space-y-4 rounded-[1.4rem] border border-white/10 bg-white/5 p-4">
-          {graphRefreshError ? (
-            <RefreshWarning message={graphRefreshError} />
-          ) : null}
           <SingleValueHistoryChart
             accentColor={UI_COLORS.price}
             emptyMessage={emptyMessage}

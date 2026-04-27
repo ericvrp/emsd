@@ -23,7 +23,7 @@ export async function StatusScreen({
     return <DaemonOfflineState />;
   }
 
-  const { currentSite, generatedAt } = dashboardData;
+  const { currentSite } = dashboardData;
   const requestedDay = getSearchParamValue(
     dashboardData.resolvedSearchParams.day,
   );
@@ -65,7 +65,7 @@ export async function StatusScreen({
   }
 
   return (
-    <DashboardPageFrame currentSite={currentSite} generatedAt={generatedAt}>
+    <DashboardPageFrame currentSite={currentSite}>
       {currentSite === null ? (
         <Card className="border-white/12 bg-slate-950/70">
           <CardContent className="px-6 py-10 text-center sm:px-8 sm:py-12">

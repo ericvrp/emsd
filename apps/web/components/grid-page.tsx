@@ -2,7 +2,6 @@
 
 import type { HistoryArchive } from "@emsd/core/client";
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
 import {
   CartesianGrid,
   Line,
@@ -12,7 +11,6 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { logBrowserIntervalHeartbeat } from "../lib/browser-heartbeat";
 import {
   formatAbsolutePowerValue,
   formatShortPowerValue,
@@ -37,12 +35,17 @@ import {
 } from "./history";
 import { HistoryTooltip } from "./history/tooltips";
 import { MeasuredChartContainer } from "./measured-chart-container";
+import { PageRefreshButton } from "./page-refresh-button";
 import { RefreshWarning } from "./refresh-warning";
 import { SectionSummaryCard } from "./section-summary-card";
 import {
   TopLevelDaySelect,
   useTopLevelDaySelection,
 } from "./top-level-day-select";
+import {
+  type SiteCurrentResponse,
+  useLiveJsonSWR,
+} from "./use-live-json-swr";
 
 type GridPageProps = {
   archive: HistoryArchive;
@@ -60,7 +63,30 @@ export function GridPage({
   siteId,
   siteName,
 }: GridPageProps) {
-  const [archive, setArchive] = useState(initialArchive);
+  const requestedDayParam = requestedDay
+    ? `&day=${encodeURIComponent(requestedDay)}`
+    : "";
+  const { data: archiveData, refreshError: graphRefreshError } = useLiveJsonSWR<HistoryArchive>(
+    `/api/history/archive?siteId=${encodeURIComponent(siteId)}${requestedDayParam}`,
+    {
+      failureMessage:
+        "Grid graph updates are retrying. Showing last available data.",
+      refreshIntervalMs: GRAPH_REFRESH_INTERVAL_MS,
+      retryIntervalMs: LIVE_CURRENT_REFRESH_INTERVAL_MS,
+    },
+  );
+  const {
+    data: currentData,
+    refreshError: currentRefreshError,
+  } = useLiveJsonSWR<SiteCurrentResponse>(
+    `/api/site/current?siteId=${encodeURIComponent(siteId)}`,
+    {
+      failureMessage:
+        "Grid current updates are retrying. Showing last available data.",
+      refreshIntervalMs: LIVE_CURRENT_REFRESH_INTERVAL_MS,
+    },
+  );
+  const archive = archiveData ?? initialArchive;
   const daySelection = useTopLevelDaySelection({ archive, requestedDay });
   const gridSeries = invertSingleValueSeries(
     aggregatePowerSamples(archive.p1MeterSamples),
@@ -76,150 +102,10 @@ export function GridPage({
     gridSeries,
     new Date().toISOString(),
   );
-  const [currentGridPower, setCurrentGridPower] = useState<number | null>(
-    archiveCurrentGridPower,
-  );
-  const [graphRefreshError, setGraphRefreshError] = useState<string | null>(
-    null,
-  );
-  const [currentRefreshError, setCurrentRefreshError] = useState<string | null>(
-    null,
-  );
-
-  useEffect(() => {
-    setCurrentGridPower(archiveCurrentGridPower);
-  }, [archiveCurrentGridPower]);
-
-  useEffect(() => {
-    setArchive(initialArchive);
-  }, [initialArchive]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function refreshGraph() {
-      if (document.visibilityState !== "visible") {
-        return;
-      }
-
-      try {
-        const response = await fetch(
-          `/api/history/archive?siteId=${encodeURIComponent(siteId)}&day=${encodeURIComponent(daySelection.selectedDay)}`,
-          { cache: "no-store" },
-        );
-
-        if (response.status === 401) {
-          window.location.href = "/login";
-          return;
-        }
-
-        if (!response.ok) {
-          throw new Error(`Grid graph request failed: ${response.status}`);
-        }
-
-        const payload = (await response.json()) as HistoryArchive;
-
-        if (!cancelled) {
-          setGraphRefreshError(null);
-          setArchive(payload);
-        }
-      } catch {
-        if (!cancelled) {
-          setGraphRefreshError(
-            "Grid graph updates paused. Showing last available data.",
-          );
-        }
-      }
-    }
-
-    void refreshGraph();
-
-    function handleVisibilityChange() {
-      if (document.visibilityState === "visible") {
-        void refreshGraph();
-      }
-    }
-
-    const interval = window.setInterval(() => {
-      logBrowserIntervalHeartbeat("refresh graph");
-      void refreshGraph();
-    }, GRAPH_REFRESH_INTERVAL_MS);
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, [daySelection.selectedDay, siteId]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function refreshCurrentGrid() {
-      if (document.visibilityState !== "visible") {
-        return;
-      }
-
-      try {
-        const response = await fetch(
-          `/api/site/current?siteId=${encodeURIComponent(siteId)}`,
-          { cache: "no-store" },
-        );
-
-        if (response.status === 401) {
-          window.location.href = "/login";
-          return;
-        }
-
-        if (!response.ok) {
-          throw new Error(`Grid current request failed: ${response.status}`);
-        }
-
-        const payload = (await response.json()) as {
-          currentGridPowerW?: number | null;
-        };
-
-        if (cancelled) {
-          return;
-        }
-
-        setCurrentRefreshError(null);
-        setCurrentGridPower(
-          payload.currentGridPowerW ?? archiveCurrentGridPower,
-        );
-      } catch {
-        if (!cancelled) {
-          setCurrentRefreshError(
-            "Grid current updates paused. Showing last available data.",
-          );
-          setCurrentGridPower(archiveCurrentGridPower);
-        }
-      }
-    }
-
-    void refreshCurrentGrid();
-
-    function handleVisibilityChange() {
-      if (document.visibilityState === "visible") {
-        void refreshCurrentGrid();
-      }
-    }
-
-    const interval = window.setInterval(() => {
-      logBrowserIntervalHeartbeat("refresh current");
-      void refreshCurrentGrid();
-    }, LIVE_CURRENT_REFRESH_INTERVAL_MS);
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, [archiveCurrentGridPower, siteId]);
+  const refreshError = graphRefreshError ?? currentRefreshError;
+  const currentGridPower = currentData
+    ? (currentData.currentGridPowerW ?? null)
+    : archiveCurrentGridPower;
 
   return (
     <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
@@ -243,13 +129,15 @@ export function GridPage({
         </SectionSummaryCard>
       </div>
 
+      {refreshError ? (
+        <RefreshWarning
+          action={<PageRefreshButton />}
+          className="mt-5"
+          message={refreshError}
+        />
+      ) : null}
+
       <div className="mt-5 space-y-4 rounded-[1.4rem] border border-white/10 bg-white/5 p-4">
-        {graphRefreshError ? (
-          <RefreshWarning message={graphRefreshError} />
-        ) : null}
-        {currentRefreshError ? (
-          <RefreshWarning message={currentRefreshError} />
-        ) : null}
         <GridOverviewChart
           actualSiteLoadPoints={splitSingleValueSeriesByTime(
             selectedDaySiteLoadSeries,

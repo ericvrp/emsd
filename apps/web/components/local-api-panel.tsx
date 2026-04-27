@@ -350,19 +350,31 @@ export function LocalApiPanel() {
 
     handleFetchApi(true);
 
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        void handleFetchApi(true);
+      }
+    }
+
     if (intervalRef.current !== null) {
       clearInterval(intervalRef.current);
     }
 
     intervalRef.current = setInterval(() => {
-      handleFetchApi(true);
+      if (document.visibilityState === "visible") {
+        void handleFetchApi(true);
+      }
     }, Math.max(scanInterval, 5) * 1000);
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       if (intervalRef.current !== null) {
         clearInterval(intervalRef.current);
         intervalRef.current = null;
       }
+
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [outputTab, activeToken, host, scanInterval, selectedEntities]);
 

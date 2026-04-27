@@ -38,10 +38,7 @@ export default async function GridRoute({
     : null;
 
   return (
-    <DashboardPageFrame
-      currentSite={currentSite}
-      generatedAt={snapshot.generatedAt}
-    >
+    <DashboardPageFrame currentSite={currentSite}>
       {currentSite && historyArchive ? (
         <GridPage
           archive={historyArchive}

@@ -8,13 +8,11 @@ import { ToastOnSearchParams } from "./toast-on-search-params";
 type DashboardPageFrameProps = {
   children: ReactNode;
   currentSite: Parameters<typeof SettingsPanel>[0]["currentSite"];
-  generatedAt: string;
 };
 
 export function DashboardPageFrame({
   children,
   currentSite,
-  generatedAt,
 }: DashboardPageFrameProps) {
   const batteries =
     currentSite?.devices
@@ -40,9 +38,6 @@ export function DashboardPageFrame({
     <>
       <ToastOnSearchParams />
       <AppShell
-        batteryCount={batteries.length}
-        currentSiteId={currentSite?.id ?? null}
-        generatedAt={generatedAt}
         headerActions={
           <>
             {batteries.length > 0 && currentSite ? (

@@ -2,16 +2,20 @@
 
 import { deriveBatteryStatusFromPower } from "@emsd/core/client";
 import type { HistoryArchive } from "@emsd/core/client";
-import { type ReactNode, useEffect, useState } from "react";
-import { logBrowserIntervalHeartbeat } from "../lib/browser-heartbeat";
+import type { ReactNode } from "react";
 import { formatAbsolutePowerValue } from "../lib/power-format";
 import { BatteryHistoryChart, buildBatteryHistoryPoints } from "./history";
+import { PageRefreshButton } from "./page-refresh-button";
 import { RefreshWarning } from "./refresh-warning";
 import { SectionSummaryCard } from "./section-summary-card";
 import {
   TopLevelDaySelect,
   useTopLevelDaySelection,
 } from "./top-level-day-select";
+import {
+  type SiteCurrentResponse,
+  useLiveJsonSWR,
+} from "./use-live-json-swr";
 
 const LIVE_CURRENT_REFRESH_INTERVAL_MS = 5_000;
 const GRAPH_REFRESH_INTERVAL_MS = 60 * 1_000;
@@ -35,161 +39,40 @@ export function HomeBatteryHistorySection({
   siteId,
   siteName,
 }: HomeBatteryHistorySectionProps) {
-  const [archive, setArchive] = useState(initialArchive);
+  const { data: archiveData, refreshError: graphRefreshError } = useLiveJsonSWR<HistoryArchive>(
+    `/api/history/archive?siteId=${encodeURIComponent(siteId)}`,
+    {
+      failureMessage:
+        "Battery graph updates are retrying. Showing last available data.",
+      refreshIntervalMs: GRAPH_REFRESH_INTERVAL_MS,
+      retryIntervalMs: LIVE_CURRENT_REFRESH_INTERVAL_MS,
+    },
+  );
+  const {
+    data: currentData,
+    refreshError: currentRefreshError,
+  } = useLiveJsonSWR<SiteCurrentResponse>(
+    `/api/site/current?siteId=${encodeURIComponent(siteId)}`,
+    {
+      failureMessage:
+        "Battery current updates are retrying. Showing last available data.",
+      refreshIntervalMs: LIVE_CURRENT_REFRESH_INTERVAL_MS,
+    },
+  );
+  const archive = archiveData ?? initialArchive;
   const daySelection = useTopLevelDaySelection({ archive, requestedDay });
   const batteryHistoryPoints = buildBatteryHistoryPoints(
     archive.batteryPowerSamples,
     archive.batteryStrategyHistory,
     daySelection.selectedDay,
   );
-  const [liveCurrentChargePercent, setLiveCurrentChargePercent] =
-    useState(currentChargePercent);
-  const [liveCurrentPowerW, setLiveCurrentPowerW] = useState(currentPowerW);
-  const [graphRefreshError, setGraphRefreshError] = useState<string | null>(
-    null,
-  );
-  const [currentRefreshError, setCurrentRefreshError] = useState<string | null>(
-    null,
-  );
-
-  useEffect(() => {
-    setLiveCurrentChargePercent(currentChargePercent);
-    setLiveCurrentPowerW(currentPowerW);
-  }, [currentChargePercent, currentPowerW]);
-
-  useEffect(() => {
-    setArchive(initialArchive);
-  }, [initialArchive]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function refreshGraph() {
-      if (document.visibilityState !== "visible") {
-        return;
-      }
-
-      try {
-        const response = await fetch(
-          `/api/history/archive?siteId=${encodeURIComponent(siteId)}`,
-          { cache: "no-store" },
-        );
-
-        if (response.status === 401) {
-          window.location.href = "/login";
-          return;
-        }
-
-        if (!response.ok) {
-          throw new Error(`Battery graph request failed: ${response.status}`);
-        }
-
-        const payload = (await response.json()) as HistoryArchive;
-
-        if (!cancelled) {
-          setGraphRefreshError(null);
-          setArchive(payload);
-        }
-      } catch {
-        if (!cancelled) {
-          setGraphRefreshError(
-            "Battery graph updates paused. Showing last available data.",
-          );
-        }
-      }
-    }
-
-    void refreshGraph();
-
-    function handleVisibilityChange() {
-      if (document.visibilityState === "visible") {
-        void refreshGraph();
-      }
-    }
-
-    const interval = window.setInterval(() => {
-      logBrowserIntervalHeartbeat("refresh graph");
-      void refreshGraph();
-    }, GRAPH_REFRESH_INTERVAL_MS);
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, [siteId]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function refreshCurrentBattery() {
-      if (document.visibilityState !== "visible") {
-        return;
-      }
-
-      try {
-        const response = await fetch(
-          `/api/site/current?siteId=${encodeURIComponent(siteId)}`,
-          { cache: "no-store" },
-        );
-
-        if (response.status === 401) {
-          window.location.href = "/login";
-          return;
-        }
-
-        if (!response.ok) {
-          throw new Error(`Battery current request failed: ${response.status}`);
-        }
-
-        const payload = (await response.json()) as {
-          currentBatteryChargePercent?: number | null;
-          currentBatteryPowerW?: number | null;
-        };
-
-        if (cancelled) {
-          return;
-        }
-
-        setCurrentRefreshError(null);
-        setLiveCurrentChargePercent(
-          payload.currentBatteryChargePercent ?? null,
-        );
-        setLiveCurrentPowerW(payload.currentBatteryPowerW ?? null);
-      } catch {
-        if (!cancelled) {
-          setCurrentRefreshError(
-            "Battery current updates paused. Showing last available data.",
-          );
-          setLiveCurrentChargePercent(currentChargePercent);
-          setLiveCurrentPowerW(currentPowerW);
-        }
-      }
-    }
-
-    void refreshCurrentBattery();
-
-    function handleVisibilityChange() {
-      if (document.visibilityState === "visible") {
-        void refreshCurrentBattery();
-      }
-    }
-
-    const interval = window.setInterval(() => {
-      logBrowserIntervalHeartbeat("refresh current");
-      void refreshCurrentBattery();
-    }, LIVE_CURRENT_REFRESH_INTERVAL_MS);
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, [currentChargePercent, currentPowerW, siteId]);
+  const refreshError = graphRefreshError ?? currentRefreshError;
+  const liveCurrentChargePercent = currentData
+    ? (currentData.currentBatteryChargePercent ?? null)
+    : currentChargePercent;
+  const liveCurrentPowerW = currentData
+    ? (currentData.currentBatteryPowerW ?? null)
+    : currentPowerW;
 
   return (
     <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
@@ -214,13 +97,15 @@ export function HomeBatteryHistorySection({
         </SectionSummaryCard>
       </div>
 
+      {refreshError ? (
+        <RefreshWarning
+          action={<PageRefreshButton />}
+          className="mt-5"
+          message={refreshError}
+        />
+      ) : null}
+
       <div className="mt-5 space-y-4 rounded-[1.4rem] border border-white/10 bg-white/5 pb-4 pl-6 pr-4 pt-4">
-        {graphRefreshError ? (
-          <RefreshWarning message={graphRefreshError} />
-        ) : null}
-        {currentRefreshError ? (
-          <RefreshWarning message={currentRefreshError} />
-        ) : null}
         <BatteryHistoryChart
           emptyMessage="No battery samples for this day."
           headerAccessory={<TopLevelDaySelect daySelection={daySelection} />}
