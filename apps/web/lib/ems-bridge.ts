@@ -319,6 +319,10 @@ export function refreshWeatherForecast(input: { siteId: string }) {
   return runBridge<WeatherForecastRecord>("weather-refresh-forecast", input);
 }
 
+export function requestWeatherForecastRefresh(input: { siteId: string }) {
+  return runBridge<{ requested: boolean }>("weather-request-refresh", input);
+}
+
 export function createDynamicPriceSource(input: {
   id: string;
   name: string;
@@ -359,6 +363,10 @@ export function getDynamicPriceSnapshot(input: { siteId: string }) {
 
 export function refreshDynamicPriceSnapshot(input: { siteId: string }) {
   return runBridge<DynamicPriceSnapshotRecord>("price-refresh-snapshot", input);
+}
+
+export function requestDynamicPriceSnapshotRefresh(input: { siteId: string }) {
+  return runBridge<{ requested: boolean }>("price-request-refresh", input);
 }
 
 export function getHistoryArchive(input: {

@@ -23,12 +23,14 @@ import {
   Trash2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import type { ActionResult } from "../app/actions";
 import { setHouseStrategyPlanAction } from "../app/actions";
 import {
   applyStrategyAction,
   type StrategyAction,
 } from "./battery-strategy-plan-logic";
 import { SubmitButton } from "./submit-button";
+import { useFormActionToast } from "./use-form-action-toast";
 import { DialogPortal } from "./ui/dialog-portal";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -42,10 +44,11 @@ import {
 } from "./ui/select";
 
 interface BatteryStrategyPlanFormProps {
-  action?: typeof setHouseStrategyPlanAction;
+  action?: (formData: FormData) => Promise<ActionResult>;
   batteryId: string;
   batteryName?: string;
   minimumDischargePercent: number;
+  onSuccess?: () => void;
   returnPath?: string;
   siteId: string;
   strategyPlan: BatteryStrategyPlanRecord;
@@ -57,6 +60,7 @@ export function BatteryStrategyPlanForm({
   batteryId,
   batteryName,
   minimumDischargePercent,
+  onSuccess,
   returnPath,
   siteId,
   strategyPlan,
@@ -66,6 +70,11 @@ export function BatteryStrategyPlanForm({
   const [pendingDeleteItemId, setPendingDeleteItemId] = useState<string | null>(
     null,
   );
+  const submitAction = useFormActionToast(action, {
+    onSuccess: () => {
+      onSuccess?.();
+    },
+  });
 
   useEffect(() => {
     if (pendingDeleteItemId === null) {
@@ -142,7 +151,10 @@ export function BatteryStrategyPlanForm({
   }
 
   return (
-    <form action={action} className="space-y-4">
+    <form
+      action={submitAction}
+      className="space-y-4"
+    >
       <input type="hidden" name="siteId" value={siteId} />
       <input type="hidden" name="batteryId" value={batteryId} />
       {batteryName ? (
@@ -517,10 +529,12 @@ export function BatteryStrategyPlanForm({
           <Plus size={14} />
           Add item
         </Button>
-        <SubmitButton>
-          <Save size={14} />
-          {submitLabel}
-        </SubmitButton>
+        <div className="flex items-center gap-3">
+          <SubmitButton showPendingText={false}>
+            <Save size={14} />
+            {submitLabel}
+          </SubmitButton>
+        </div>
       </div>
 
       {pendingDeleteItemId ? (

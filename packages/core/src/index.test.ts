@@ -1,9 +1,11 @@
 import { afterEach, expect, test } from "bun:test";
 import {
+  acknowledgePendingBatteryStrategyPlan,
   BatteryStrategyTriggerKind,
   MAX_SOLAR_PREDICTION_PRECEDING_DAYS,
   SOLAR_PREDICTION_MATCH_TOLERANCE_MS,
   buildPredictedSolarGenerationSeries,
+  createBatteryStrategyRuntime,
   createBatteryStrategyRuntimeForPlanApply,
   discoverReportJsonSchema,
   getDatabasePath,
@@ -148,6 +150,30 @@ test("createBatteryStrategyRuntimeForPlanApply keeps same-time items pending", (
   );
 
   expect(runtime.lastTriggeredAtByItemId).toEqual({});
+});
+
+test("acknowledgePendingBatteryStrategyPlan only clears pending saves", () => {
+  const now = new Date("2026-04-09T15:00:00.000Z");
+
+  expect(
+    acknowledgePendingBatteryStrategyPlan(
+      {
+        ...createBatteryStrategyRuntime(),
+        pendingPlanSavedAt: "2026-04-09T14:55:00.000Z",
+      },
+      now,
+    ),
+  ).toMatchObject({
+    lastPlanAcknowledgedAt: now.toISOString(),
+    pendingPlanSavedAt: null,
+  });
+
+  expect(
+    acknowledgePendingBatteryStrategyPlan(createBatteryStrategyRuntime(), now),
+  ).toMatchObject({
+    lastPlanAcknowledgedAt: null,
+    pendingPlanSavedAt: null,
+  });
 });
 
 test("normalizeBatteryStrategyPlan defaults idle percentage targets to minimum discharge", () => {

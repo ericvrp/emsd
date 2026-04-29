@@ -17,6 +17,7 @@ import {
   openDaemonDatabase,
   readBatteryStrategyHistory,
   readPendingSolarEnergyProviderControlRequests,
+  updateBatteryStrategyRuntime,
   upsertBatteryStrategyHistoryState,
   upsertDynamicPriceSnapshot,
   upsertManagedDeviceTelemetry,
@@ -1007,10 +1008,11 @@ test("house-strategy-plan-set applies the fallback and skips earlier same-day it
 
   const updated = getBattery("battery-1", "home", databasePath);
 
-  expect(fetchCalls).toHaveLength(1);
+  expect(fetchCalls).toHaveLength(0);
   expect(updated).not.toBeNull();
   expect(updated?.strategyMode).toBe("self-consumption");
   expect(updated?.manualModeActive).toBe(false);
+  expect(updated?.strategyRuntime.pendingPlanSavedAt).not.toBeNull();
   expect(
     Object.keys(updated?.strategyRuntime.lastTriggeredAtByItemId ?? {}),
   ).toEqual(["morning"]);
@@ -1031,6 +1033,74 @@ test("house-strategy-plan-set applies the fallback and skips earlier same-day it
   } finally {
     db.close();
   }
+});
+
+test("house-strategy-plan-set does not mark unchanged plans as pending", async () => {
+  const databasePath = createTempDatabase();
+
+  createSite(
+    {
+      id: "home",
+      location: "52.367600, 4.904100",
+      name: "Home",
+    },
+    databasePath,
+  );
+  createBattery(
+    {
+      connected: true,
+      enabled: true,
+      id: "battery-1",
+      ipAddress: "192.168.1.10",
+      minimumDischargePercent: 10,
+      model: "indevolt-battery",
+      name: "Battery",
+      plugin: "indevolt-battery",
+      status: "idle",
+    },
+    "home",
+    databasePath,
+  );
+
+  const before = getBattery("battery-1", "home", databasePath);
+
+  expect(before).not.toBeNull();
+
+  await runApiAction("house-strategy-plan-set", {
+    siteId: "home",
+    strategyPlan: before?.strategyPlan ?? [],
+  });
+
+  const updated = getBattery("battery-1", "home", databasePath);
+
+  expect(updated).not.toBeNull();
+  expect(updated?.strategyRuntime.pendingPlanSavedAt).not.toBeNull();
+
+  const db = openDaemonDatabase(databasePath);
+
+  try {
+    updateBatteryStrategyRuntime(db, {
+      batteryId: "battery-1",
+      siteId: "home",
+      strategyRuntime: {
+        ...updated!.strategyRuntime,
+        lastPlanAcknowledgedAt: new Date().toISOString(),
+        pendingPlanSavedAt: null,
+      },
+    });
+  } finally {
+    db.close();
+  }
+
+  await runApiAction("house-strategy-plan-set", {
+    siteId: "home",
+    strategyPlan: updated?.strategyPlan ?? [],
+  });
+
+  const savedAgain = getBattery("battery-1", "home", databasePath);
+
+  expect(savedAgain).not.toBeNull();
+  expect(savedAgain?.strategyRuntime.pendingPlanSavedAt).toBeNull();
 });
 
 test("house-strategy-plan-set accepts low and high price triggers", async () => {

@@ -45,17 +45,6 @@ interface HouseStrategyDialogProps {
   siteId: string;
 }
 
-function getModeIcon(
-  manualModeActive: boolean,
-): ComponentType<{ className?: string }> {
-  return manualModeActive ? Hand : CalendarClock;
-}
-
-function ModeIcon({ manualModeActive }: { manualModeActive: boolean }) {
-  const Icon = getModeIcon(manualModeActive);
-  return <Icon className="h-4 w-4" />;
-}
-
 export function HouseStrategyDialog({
   batteries,
   siteId,
@@ -131,7 +120,11 @@ export function HouseStrategyDialog({
         type="button"
         variant="ghost"
       >
-        <ModeIcon manualModeActive={manualModeActive} />
+        {manualModeActive ? (
+          <Hand className="h-4 w-4" />
+        ) : (
+          <CalendarClock className="h-4 w-4" />
+        )}
         <span className="hidden md:inline">{buttonLabel}</span>
       </Button>
 
@@ -204,6 +197,7 @@ export function HouseStrategyDialog({
                           maximumDischargePowerW={maximumDischargePowerW}
                           showContextSummary={false}
                           minimumDischargePercent={minimumDischargePercent}
+                          onSuccess={() => setIsOpen(false)}
                           returnPath={returnPath}
                           siteId={siteId}
                           strategy={strategy}
@@ -215,6 +209,7 @@ export function HouseStrategyDialog({
                           batteryId="house"
                           batteryName="All batteries"
                           minimumDischargePercent={minimumDischargePercent}
+                          onSuccess={() => setIsOpen(false)}
                           returnPath={returnPath}
                           siteId={siteId}
                           strategyPlan={strategyPlan}
@@ -263,7 +258,12 @@ function buildReturnPath(
   pathname: string,
   searchParams: ReturnType<typeof useSearchParams>,
 ): string {
-  const search = searchParams.toString();
+  const params = new URLSearchParams(searchParams.toString());
+
+  params.delete("notice");
+  params.delete("tone");
+
+  const search = params.toString();
 
   return search ? `${pathname}?${search}` : pathname;
 }

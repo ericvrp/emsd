@@ -47,6 +47,7 @@ import { LocalApiPanel } from "./local-api-panel";
 import { MeasuredChartContainer } from "./measured-chart-container";
 import { SectionSummaryCard } from "./section-summary-card";
 import { SubmitButton } from "./submit-button";
+import { useFormActionToast } from "./use-form-action-toast";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader } from "./ui/card";
 import { DialogPortal } from "./ui/dialog-portal";
@@ -272,6 +273,8 @@ export function SiteSetupPanel({
   embedded?: boolean;
   returnPath?: string;
 }) {
+  const createSiteFormAction = useFormActionToast(createSiteAction);
+
   return (
     <section
       className={cn(
@@ -295,7 +298,7 @@ export function SiteSetupPanel({
         </p>
       </div>
       <form
-        action={createSiteAction}
+        action={createSiteFormAction}
         className="space-y-4 rounded-[1.4rem] border border-white/10 bg-white/5 p-4"
       >
         <input type="hidden" name="returnPath" value={returnPath ?? "/"} />
@@ -329,6 +332,9 @@ function SitePanel({
   embedded?: boolean;
   returnPath: string;
 }) {
+  const updateSiteFormAction = useFormActionToast(updateSiteAction);
+  const deleteSiteFormAction = useFormActionToast(deleteSiteAction);
+
   if (!site) {
     return <SiteSetupPanel embedded={embedded} returnPath={returnPath} />;
   }
@@ -374,7 +380,7 @@ function SitePanel({
       )}
       <div className={embedded ? "space-y-4" : "space-y-4"}>
         <form
-          action={updateSiteAction}
+          action={updateSiteFormAction}
           className="space-y-4 rounded-[1.4rem] border border-white/10 bg-white/5 p-4"
           id={`site-update-${site.id}`}
         >
@@ -403,7 +409,7 @@ function SitePanel({
             Save site
           </Button>
           <DestructiveConfirmButton
-            action={deleteSiteAction}
+            action={deleteSiteFormAction}
             confirmLabel="Delete site"
             description={
               deletionWarning.length > 0
@@ -586,7 +592,7 @@ function DestructiveConfirmButton({
   title,
   triggerClassName,
 }: {
-  action: (formData: FormData) => void | Promise<void>;
+  action: (formData: FormData) => Promise<void>;
   children: ReactNode;
   confirmLabel: string;
   description: string;
@@ -595,6 +601,10 @@ function DestructiveConfirmButton({
   triggerClassName: string;
 }) {
   const [isOpen, setIsOpen] = useState(false);
+  const formAction = async (formData: FormData) => {
+    await action(formData);
+    setIsOpen(false);
+  };
 
   useEffect(() => {
     if (!isOpen) {
@@ -646,7 +656,7 @@ function DestructiveConfirmButton({
                   >
                     Cancel
                   </Button>
-                  <form action={action}>
+                  <form action={formAction}>
                     {hiddenFields.map((field) => (
                       <input
                         key={field.name}
@@ -694,6 +704,18 @@ function DeviceList({
   site: SiteSnapshot;
   kind: "battery" | "meter" | "solar-energy-provider";
 }) {
+  const updateBatterySettingsFormAction = useFormActionToast(
+    updateBatterySettingsAction,
+  );
+  const setSolarProductionFormAction = useFormActionToast(
+    setSolarEnergyProviderProductionEnabledAction,
+  );
+  const deleteBatteryFormAction = useFormActionToast(deleteBatteryAction);
+  const deleteMeterFormAction = useFormActionToast(deleteMeterAction);
+  const deleteSolarProviderFormAction = useFormActionToast(
+    deleteSolarEnergyProviderAction,
+  );
+
   const devices = site.devices.filter((device) => device.kind === kind);
 
   if (devices.length === 0) {
@@ -764,8 +786,8 @@ function DeviceList({
                 />
               ) : null}
               {kind === "battery" ? (
-                <form
-                  action={updateBatterySettingsAction}
+                  <form
+                    action={updateBatterySettingsFormAction}
                   className="rounded-2xl border border-white/8 bg-slate-950/55 px-3 py-2"
                   id={`battery-settings-${device.id}`}
                 >
@@ -829,8 +851,8 @@ function DeviceList({
                 </form>
               ) : null}
               {kind === "solar-energy-provider" ? (
-                <form
-                  action={setSolarEnergyProviderProductionEnabledAction}
+                  <form
+                    action={setSolarProductionFormAction}
                   className="rounded-2xl border border-white/8 bg-slate-950/55 px-3 py-3 sm:col-span-2"
                   id={`solar-provider-settings-${device.id}`}
                 >
@@ -926,10 +948,10 @@ function DeviceList({
               <DestructiveConfirmButton
                 action={
                   kind === "battery"
-                    ? deleteBatteryAction
+                    ? deleteBatteryFormAction
                     : kind === "meter"
-                      ? deleteMeterAction
-                      : deleteSolarEnergyProviderAction
+                      ? deleteMeterFormAction
+                      : deleteSolarProviderFormAction
                 }
                 confirmLabel={
                   kind === "battery"
@@ -977,13 +999,32 @@ function SourceList({
   titleLabel: string;
   records: WeatherForecastSourceRecord[] | DynamicPriceSourceRecord[];
 }) {
+  const createWeatherSourceFormAction = useFormActionToast(
+    createWeatherForecastSourceAction,
+  );
+  const createPriceSourceFormAction = useFormActionToast(
+    createDynamicPriceSourceAction,
+  );
+  const updateWeatherSourceFormAction = useFormActionToast(
+    updateWeatherForecastSourceAction,
+  );
+  const updatePriceSourceFormAction = useFormActionToast(
+    updateDynamicPriceSourceAction,
+  );
+  const deleteWeatherSourceFormAction = useFormActionToast(
+    deleteWeatherForecastSourceAction,
+  );
+  const deletePriceSourceFormAction = useFormActionToast(
+    deleteDynamicPriceSourceAction,
+  );
+
   return (
     <>
       <form
         action={
           kind === "weather"
-            ? createWeatherForecastSourceAction
-            : createDynamicPriceSourceAction
+            ? createWeatherSourceFormAction
+            : createPriceSourceFormAction
         }
         className="space-y-4 rounded-[1.4rem] border border-white/10 bg-white/5 p-4"
       >
@@ -1066,8 +1107,8 @@ function SourceList({
               <form
                 action={
                   kind === "weather"
-                    ? updateWeatherForecastSourceAction
-                    : updateDynamicPriceSourceAction
+                    ? updateWeatherSourceFormAction
+                    : updatePriceSourceFormAction
                 }
                 className="mt-4 space-y-3"
               >
@@ -1088,7 +1129,11 @@ function SourceList({
                   />
                 </label>
                 <div className="flex flex-wrap gap-2">
-                  <SubmitButton className={secondaryButtonClass}>
+                  <SubmitButton
+                    className={secondaryButtonClass}
+                    showPendingText={false}
+                  >
+                    <Save size={14} />
                     Save
                   </SubmitButton>
                 </div>
@@ -1097,8 +1142,8 @@ function SourceList({
                 <DestructiveConfirmButton
                   action={
                     kind === "weather"
-                      ? deleteWeatherForecastSourceAction
-                      : deleteDynamicPriceSourceAction
+                      ? deleteWeatherSourceFormAction
+                      : deletePriceSourceFormAction
                   }
                   confirmLabel={
                     kind === "weather"
@@ -1141,6 +1186,10 @@ function PriceProviderPanel({
   site: SiteSnapshot;
   returnPath: string;
 }) {
+  const updateExportDeductionFormAction = useFormActionToast(
+    updateDynamicPriceSourceExportDeductionAction,
+  );
+
   return (
     <section className="space-y-5">
       <div>
@@ -1178,7 +1227,7 @@ function PriceProviderPanel({
                 </p>
               </div>
               <form
-                action={updateDynamicPriceSourceExportDeductionAction}
+                action={updateExportDeductionFormAction}
                 className="mt-4 space-y-3"
               >
                 <input type="hidden" name="returnPath" value={returnPath} />
@@ -1194,10 +1243,12 @@ function PriceProviderPanel({
                     <input
                       className="w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400/50"
                       defaultValue={source.exportDeduction}
+                      inputMode="decimal"
+                      lang="en-US"
                       max={10}
                       min={0}
                       name="exportDeduction"
-                      step={0.01}
+                      step="any"
                       type="number"
                     />
                     <span className="text-sm text-slate-400">
@@ -1206,7 +1257,12 @@ function PriceProviderPanel({
                   </div>
                 </label>
                 <div className="flex flex-wrap gap-2">
-                  <SubmitButton className={secondaryButtonClass}>
+                  <SubmitButton
+                    className={secondaryButtonClass}
+                    showPendingIndicator={false}
+                    showPendingText={false}
+                  >
+                    <Save size={14} />
                     Save
                   </SubmitButton>
                 </div>

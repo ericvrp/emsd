@@ -32,7 +32,6 @@ import {
   getCurrentLocalDayKey,
   getDaemonLockPath,
   normalizeBatteryStrategyPlan,
-  resolveBatteryStrategyFromPlanItem,
 } from "@emsd/core";
 import {
   deleteWeatherForecast,
@@ -363,6 +362,8 @@ function toManagedDeviceRecord(
         batteryManualTargetDurationMinutes: null,
         batteryManualTargetEndTime: null,
         batteryManualModeActive: false,
+        batteryStrategyPlanPending: false,
+        batteryStrategyPlanPendingSince: null,
         maximumChargePowerW: null,
         maximumDischargePowerW: null,
         minimumDischargePercent: null,
@@ -397,6 +398,9 @@ function toManagedDeviceRecord(
       batteryManualTargetEndTime:
         record.strategyRuntime.manualTargetEndTime ?? null,
       batteryManualModeActive: record.manualModeActive,
+      batteryStrategyPlanPending: record.strategyRuntime.pendingPlanSavedAt !== null,
+      batteryStrategyPlanPendingSince:
+        record.strategyRuntime.pendingPlanSavedAt ?? null,
       maximumChargePowerW: record.maximumChargePowerW,
       maximumDischargePowerW: record.maximumDischargePowerW,
       minimumDischargePercent: record.minimumDischargePercent,
@@ -421,6 +425,8 @@ function toManagedDeviceRecord(
     batteryManualTargetDurationMinutes: null,
     batteryManualTargetEndTime: null,
     batteryManualModeActive: false,
+    batteryStrategyPlanPending: false,
+    batteryStrategyPlanPendingSince: null,
     maximumChargePowerW: null,
     maximumDischargePowerW: null,
     minimumDischargePercent: null,
@@ -1029,34 +1035,6 @@ export async function runApiAction(
       });
       db.close();
 
-      for (const battery of batteries) {
-        const normalizedBatteryPlan = normalizeBatteryStrategyPlan({
-          minimumDischargePercent: battery.minimumDischargePercent,
-          strategy: {
-            strategyMode: battery.strategyMode,
-            manualState: battery.manualState,
-            manualPowerW: battery.manualPowerW,
-            manualChargeTargetSoc: battery.manualChargeTargetSoc,
-            manualDischargeTargetSoc: battery.manualDischargeTargetSoc,
-            manualTargetSoc: battery.manualTargetSoc,
-          },
-          value: strategyPlan,
-        });
-
-        const strategy = resolveBatteryStrategyFromPlanItem({
-          item: normalizedBatteryPlan[0],
-          minimumDischargePercent: battery.minimumDischargePercent,
-          maximumChargePowerW: battery.maximumChargePowerW,
-          maximumDischargePowerW: battery.maximumDischargePowerW,
-        });
-
-        try {
-          await createBatteryPlugin(battery).setStrategy(strategy);
-        } catch {
-          // Continue with other batteries even if plugin fails
-        }
-      }
-
       const updated = setHouseStrategyPlan(
         {
           strategyPlan: normalizedPlan,
@@ -1064,6 +1042,12 @@ export async function runApiAction(
         },
         siteId,
       );
+
+      const daemon = readDaemonState();
+
+      if (daemon.running && daemon.pid !== null) {
+        process.kill(daemon.pid, "SIGUSR1");
+      }
 
       return updated.map((record) => toManagedDeviceRecord(record, now));
     }
@@ -1299,6 +1283,36 @@ export async function runApiAction(
       return waitForWeatherForecastRefresh(siteId, previousGeneratedAt);
     }
 
+    case "weather-request-refresh": {
+      const siteId = requireString(input.siteId, "siteId");
+      const db = openDaemonDatabase();
+
+      try {
+        const site = readSites(db).find((entry) => entry.id === siteId);
+
+        if (!site) {
+          throw new Error(`Managed site not found: ${siteId}`);
+        }
+
+        const source =
+          readWeatherForecastSources(db).find(
+            (entry) => entry.siteId === siteId,
+          ) ?? null;
+
+        if (source === null) {
+          deleteWeatherForecast(db, siteId);
+          throw new Error(
+            `No forecast source is configured for site ${siteId}. Select a provider and save to fetch a forecast.`,
+          );
+        }
+      } finally {
+        db.close();
+      }
+
+      requestDaemonRefresh();
+      return { requested: true };
+    }
+
     case "price-create":
       return createDynamicPriceSource(
         {
@@ -1401,6 +1415,35 @@ export async function runApiAction(
 
       requestDaemonRefresh();
       return waitForDynamicPriceRefresh(siteId, previousGeneratedAt);
+    }
+
+    case "price-request-refresh": {
+      const siteId = requireString(input.siteId, "siteId");
+      const db = openDaemonDatabase();
+
+      try {
+        const site = readSites(db).find((entry) => entry.id === siteId);
+
+        if (!site) {
+          throw new Error(`Managed site not found: ${siteId}`);
+        }
+
+        const source =
+          readDynamicPriceSources(db).find(
+            (entry) => entry.siteId === siteId,
+          ) ?? null;
+
+        if (source === null) {
+          throw new Error(
+            `No dynamic price source is configured for site ${siteId}.`,
+          );
+        }
+      } finally {
+        db.close();
+      }
+
+      requestDaemonRefresh();
+      return { requested: true };
     }
 
     case "battery-get-normalized-info": {

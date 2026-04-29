@@ -6,9 +6,11 @@ import type {
 } from "@emsd/core/client";
 import { Save } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import type { ActionResult } from "../app/actions";
 import { setHouseStrategyAction } from "../app/actions";
 import { logBrowserIntervalHeartbeat } from "../lib/browser-heartbeat";
 import { SubmitButton } from "./submit-button";
+import { useFormActionToast } from "./use-form-action-toast";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import {
@@ -20,7 +22,7 @@ import {
 } from "./ui/select";
 
 interface BatteryStrategyFormProps {
-  action?: typeof setHouseStrategyAction;
+  action?: (formData: FormData) => Promise<ActionResult>;
   batteryId: string;
   batteryName?: string;
   capacityWh: number | null;
@@ -39,6 +41,7 @@ interface BatteryStrategyFormProps {
   siteId: string;
   strategy: BatteryStrategyRecord;
   submitLabel?: string;
+  onSuccess?: () => void;
 }
 
 type TargetMethod = "soc" | "duration" | "end-time" | "auto";
@@ -64,6 +67,7 @@ export function BatteryStrategyForm({
   siteId,
   strategy,
   submitLabel = "Apply battery control",
+  onSuccess,
 }: BatteryStrategyFormProps) {
   const [strategyMode, setStrategyMode] = useState(
     manualOnly && strategy.strategyMode === "self-consumption"
@@ -99,6 +103,11 @@ export function BatteryStrategyForm({
     manualTargetEndTime ?? getDefaultEndTimeValue(),
   );
   const [now, setNow] = useState(() => new Date());
+  const submitAction = useFormActionToast(action, {
+    onSuccess: () => {
+      onSuccess?.();
+    },
+  });
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -257,7 +266,12 @@ export function BatteryStrategyForm({
   }, [endTime, estimatedDurationMinutes, now, targetMethod]);
 
   return (
-    <form action={action} className="space-y-4">
+    <form
+      action={async (formData) => {
+        await submitAction(formData);
+      }}
+      className="space-y-4"
+    >
       <input type="hidden" name="siteId" value={siteId} />
       <input type="hidden" name="batteryId" value={batteryId} />
       {batteryName ? (
@@ -591,7 +605,7 @@ export function BatteryStrategyForm({
       )}
 
       <div className="flex flex-wrap items-center justify-end gap-3 pt-2">
-        <SubmitButton>
+        <SubmitButton showPendingText={false}>
           <Save size={14} />
           {submitLabel}
         </SubmitButton>

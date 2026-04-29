@@ -28,8 +28,8 @@ import {
   deleteSolarEnergyProvider,
   deleteWeatherForecastSource,
   getDashboardSnapshot,
-  refreshDynamicPriceSnapshot,
-  refreshWeatherForecast,
+  requestDynamicPriceSnapshotRefresh,
+  requestWeatherForecastRefresh,
   setBatteryEnabled,
   setBatteryMinimumDischargePercent,
   setBatteryPowerLimits,
@@ -48,6 +48,12 @@ import {
   isEnvConfiguredToken,
   revokeLocalApiToken,
 } from "../lib/local-api-auth";
+
+export type ActionResult = {
+  notice: string;
+  ok: boolean;
+  tone: "error" | "success";
+};
 
 async function requireSession(): Promise<void> {
   const session = await getServerSession(authOptions);
@@ -94,6 +100,13 @@ async function ensureDefaultDynamicPriceSource(
     siteId,
   });
   return true;
+}
+
+async function requestBackgroundSiteRefresh(siteId: string): Promise<void> {
+  await Promise.allSettled([
+    requestWeatherForecastRefresh({ siteId }),
+    requestDynamicPriceSnapshotRefresh({ siteId }),
+  ]);
 }
 
 function stringValue(formData: FormData, key: string): string {
@@ -168,37 +181,26 @@ function buildSiteId(name: string, existingSiteIds: string[]): string {
   return `${baseId}-${suffix}`;
 }
 
-function redirectWithNotice(options: {
-  notice: string;
-  path?: string;
-  tone: "success" | "error";
-}): never {
-  const params = new URLSearchParams();
-
-  params.set("notice", options.notice);
-  params.set("tone", options.tone);
-  redirect(`${options.path ?? "/"}?${params.toString()}`);
-}
-
 async function runAction(
-  runner: () => Promise<{ notice: string; path?: string; tab?: string | null }>,
-  fallbackTab: string | null,
-  fallbackPath = "/",
-): Promise<void> {
+  runner: () => Promise<{
+    notice: string;
+    path?: string;
+    tab?: string | null;
+  }>,
+  _fallbackTab: string | null,
+  _fallbackPath = "/",
+): Promise<ActionResult> {
   await requireSession();
 
   try {
     const result = await runner();
     revalidatePath("/");
     revalidatePath("/status");
-    const path = result.path;
-
-    void fallbackTab;
-    redirectWithNotice({
+    return {
       notice: result.notice,
-      ...(path ? { path } : {}),
+      ok: true,
       tone: "success",
-    });
+    };
   } catch (error) {
     if (isRedirectError(error)) {
       throw error;
@@ -206,15 +208,15 @@ async function runAction(
 
     revalidatePath("/");
     revalidatePath("/status");
-    redirectWithNotice({
+    return {
       notice: error instanceof Error ? error.message : String(error),
-      path: fallbackPath,
+      ok: false,
       tone: "error",
-    });
+    };
   }
 }
 
-export async function createSiteAction(formData: FormData): Promise<void> {
+export async function createSiteAction(formData: FormData): Promise<ActionResult> {
   const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
 
   return runAction(
@@ -237,11 +239,10 @@ export async function createSiteAction(formData: FormData): Promise<void> {
         name,
       });
       await ensureDefaultWeatherForecastSource(siteId);
-      await refreshWeatherForecast({ siteId });
       await ensureDefaultDynamicPriceSource(siteId);
-      await refreshDynamicPriceSnapshot({ siteId }).catch(() => null);
+      await requestBackgroundSiteRefresh(siteId);
       return {
-        notice: `Created site ${name}.`,
+        notice: `Created site ${name}. Forecast and price data will refresh shortly.`,
         path: returnPath,
         tab: "discover",
       };
@@ -251,7 +252,7 @@ export async function createSiteAction(formData: FormData): Promise<void> {
   );
 }
 
-export async function updateSiteAction(formData: FormData): Promise<void> {
+export async function updateSiteAction(formData: FormData): Promise<ActionResult> {
   const siteId = stringValue(formData, "siteId");
   const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
 
@@ -265,17 +266,19 @@ export async function updateSiteAction(formData: FormData): Promise<void> {
       });
       await ensureDefaultWeatherForecastSource(siteId);
       await ensureDefaultDynamicPriceSource(siteId);
-
-      await refreshWeatherForecast({ siteId });
-      await refreshDynamicPriceSnapshot({ siteId }).catch(() => null);
-      return { notice: `Updated site ${name}.`, path: returnPath, tab: "site" };
+      await requestBackgroundSiteRefresh(siteId);
+      return {
+        notice: `Updated site ${name}. Forecast and price data will refresh shortly.`,
+        path: returnPath,
+        tab: "site",
+      };
     },
     "site",
     returnPath,
   );
 }
 
-export async function deleteSiteAction(formData: FormData): Promise<void> {
+export async function deleteSiteAction(formData: FormData): Promise<ActionResult> {
   const siteId = stringValue(formData, "siteId");
   const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
 
@@ -296,7 +299,7 @@ export async function deleteSiteAction(formData: FormData): Promise<void> {
 
 export async function createBatteryFromDiscoveryAction(
   formData: FormData,
-): Promise<void> {
+): Promise<ActionResult> {
   const siteId = stringValue(formData, "siteId");
 
   return runAction(async () => {
@@ -311,7 +314,7 @@ export async function createBatteryFromDiscoveryAction(
 
 export async function createAllFromDiscoveryAction(
   formData: FormData,
-): Promise<void> {
+): Promise<ActionResult> {
   return runAction(async () => {
     const devices = readDiscoveredDeviceList(formData, "discoveryDevices");
 
@@ -333,7 +336,7 @@ export async function createAllFromDiscoveryAction(
 
 export async function setBatteryEnabledAction(
   formData: FormData,
-): Promise<void> {
+): Promise<ActionResult> {
   const siteId = stringValue(formData, "siteId");
 
   return runAction(async () => {
@@ -347,7 +350,7 @@ export async function setBatteryEnabledAction(
   }, "devices");
 }
 
-export async function deleteBatteryAction(formData: FormData): Promise<void> {
+export async function deleteBatteryAction(formData: FormData): Promise<ActionResult> {
   const siteId = stringValue(formData, "siteId");
   const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
 
@@ -368,7 +371,7 @@ export async function deleteBatteryAction(formData: FormData): Promise<void> {
 
 export async function setBatteryMinimumDischargePercentAction(
   formData: FormData,
-): Promise<void> {
+): Promise<ActionResult> {
   const siteId = stringValue(formData, "siteId");
 
   return runAction(async () => {
@@ -392,7 +395,7 @@ export async function setBatteryMinimumDischargePercentAction(
 
 export async function setBatteryPowerLimitsAction(
   formData: FormData,
-): Promise<void> {
+): Promise<ActionResult> {
   const siteId = stringValue(formData, "siteId");
 
   return runAction(async () => {
@@ -420,7 +423,7 @@ export async function setBatteryPowerLimitsAction(
 
 export async function updateBatterySettingsAction(
   formData: FormData,
-): Promise<void> {
+): Promise<ActionResult> {
   const siteId = stringValue(formData, "siteId");
   const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
 
@@ -464,7 +467,7 @@ export async function updateBatterySettingsAction(
 
 export async function createMeterFromDiscoveryAction(
   formData: FormData,
-): Promise<void> {
+): Promise<ActionResult> {
   const siteId = stringValue(formData, "siteId");
 
   return runAction(async () => {
@@ -479,7 +482,7 @@ export async function createMeterFromDiscoveryAction(
 
 export async function createSolarEnergyProviderFromDiscoveryAction(
   formData: FormData,
-): Promise<void> {
+): Promise<ActionResult> {
   const siteId = stringValue(formData, "siteId");
 
   return runAction(async () => {
@@ -495,7 +498,7 @@ export async function createSolarEnergyProviderFromDiscoveryAction(
   }, "discover");
 }
 
-export async function setMeterEnabledAction(formData: FormData): Promise<void> {
+export async function setMeterEnabledAction(formData: FormData): Promise<ActionResult> {
   const siteId = stringValue(formData, "siteId");
 
   return runAction(async () => {
@@ -509,7 +512,7 @@ export async function setMeterEnabledAction(formData: FormData): Promise<void> {
   }, "devices");
 }
 
-export async function deleteMeterAction(formData: FormData): Promise<void> {
+export async function deleteMeterAction(formData: FormData): Promise<ActionResult> {
   const siteId = stringValue(formData, "siteId");
   const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
 
@@ -530,7 +533,7 @@ export async function deleteMeterAction(formData: FormData): Promise<void> {
 
 export async function deleteSolarEnergyProviderAction(
   formData: FormData,
-): Promise<void> {
+): Promise<ActionResult> {
   const siteId = stringValue(formData, "siteId");
   const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
 
@@ -551,7 +554,7 @@ export async function deleteSolarEnergyProviderAction(
 
 export async function setSolarEnergyProviderProductionEnabledAction(
   formData: FormData,
-): Promise<void> {
+): Promise<ActionResult> {
   const siteId = stringValue(formData, "siteId");
   const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
 
@@ -582,7 +585,7 @@ export async function setSolarEnergyProviderProductionEnabledAction(
 
 export async function createWeatherForecastSourceAction(
   formData: FormData,
-): Promise<void> {
+): Promise<ActionResult> {
   const siteId = stringValue(formData, "siteId");
   const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
 
@@ -596,9 +599,9 @@ export async function createWeatherForecastSourceAction(
         provider: "open-meteo",
         surface: "open-meteo-shortwave-radiation",
       });
-      await refreshWeatherForecast({ siteId });
+      await requestWeatherForecastRefresh({ siteId });
       return {
-        notice: `Added solar forecast source ${sourceId}.`,
+        notice: `Added solar forecast source ${sourceId}. Data will refresh shortly.`,
         path: returnPath,
         tab: "forecast",
       };
@@ -610,7 +613,7 @@ export async function createWeatherForecastSourceAction(
 
 export async function updateWeatherForecastSourceAction(
   formData: FormData,
-): Promise<void> {
+): Promise<ActionResult> {
   const siteId = stringValue(formData, "siteId");
   const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
 
@@ -624,9 +627,9 @@ export async function updateWeatherForecastSourceAction(
         provider: "open-meteo",
         surface: "open-meteo-shortwave-radiation",
       });
-      await refreshWeatherForecast({ siteId });
+      await requestWeatherForecastRefresh({ siteId });
       return {
-        notice: `Updated solar forecast source ${sourceId}.`,
+        notice: `Updated solar forecast source ${sourceId}. Data will refresh shortly.`,
         path: returnPath,
         tab: "forecast",
       };
@@ -638,7 +641,7 @@ export async function updateWeatherForecastSourceAction(
 
 export async function deleteWeatherForecastSourceAction(
   formData: FormData,
-): Promise<void> {
+): Promise<ActionResult> {
   const siteId = stringValue(formData, "siteId");
   const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
 
@@ -659,7 +662,7 @@ export async function deleteWeatherForecastSourceAction(
 
 export async function createDynamicPriceSourceAction(
   formData: FormData,
-): Promise<void> {
+): Promise<ActionResult> {
   const siteId = stringValue(formData, "siteId");
   const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
 
@@ -672,9 +675,9 @@ export async function createDynamicPriceSourceAction(
         provider: "tibber",
         siteId,
       });
-      await refreshDynamicPriceSnapshot({ siteId });
+      await requestDynamicPriceSnapshotRefresh({ siteId });
       return {
-        notice: `Added price source ${sourceId}.`,
+        notice: `Added price source ${sourceId}. Data will refresh shortly.`,
         path: returnPath,
         tab: "pricing",
       };
@@ -686,7 +689,7 @@ export async function createDynamicPriceSourceAction(
 
 export async function updateDynamicPriceSourceAction(
   formData: FormData,
-): Promise<void> {
+): Promise<ActionResult> {
   const siteId = stringValue(formData, "siteId");
   const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
 
@@ -699,9 +702,9 @@ export async function updateDynamicPriceSourceAction(
         provider: "tibber",
         siteId,
       });
-      await refreshDynamicPriceSnapshot({ siteId });
+      await requestDynamicPriceSnapshotRefresh({ siteId });
       return {
-        notice: `Updated price source ${sourceId}.`,
+        notice: `Updated price source ${sourceId}. Data will refresh shortly.`,
         path: returnPath,
         tab: "pricing",
       };
@@ -713,7 +716,7 @@ export async function updateDynamicPriceSourceAction(
 
 export async function deleteDynamicPriceSourceAction(
   formData: FormData,
-): Promise<void> {
+): Promise<ActionResult> {
   const siteId = stringValue(formData, "siteId");
   const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
 
@@ -734,7 +737,7 @@ export async function deleteDynamicPriceSourceAction(
 
 export async function updateDynamicPriceSourceExportDeductionAction(
   formData: FormData,
-): Promise<void> {
+): Promise<ActionResult> {
   const siteId = stringValue(formData, "siteId");
   const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
 
@@ -762,7 +765,7 @@ export async function updateDynamicPriceSourceExportDeductionAction(
 
 export async function setHouseStrategyAction(
   formData: FormData,
-): Promise<void> {
+): Promise<ActionResult> {
   const siteId = stringValue(formData, "siteId");
 
   return runAction(
@@ -859,7 +862,7 @@ export async function setHouseStrategyAction(
 
 export async function setHouseStrategyPlanAction(
   formData: FormData,
-): Promise<void> {
+): Promise<ActionResult> {
   const siteId = stringValue(formData, "siteId");
 
   return runAction(

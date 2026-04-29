@@ -8,11 +8,15 @@ export function SubmitButton({
   children,
   className,
   disabled,
+  showPendingIndicator = true,
+  showPendingText = true,
   variant,
 }: {
   children: React.ReactNode;
   className?: string;
   disabled?: boolean;
+  showPendingIndicator?: boolean;
+  showPendingText?: boolean;
   variant?: "default" | "ghost" | "danger";
 }) {
   const { pending } = useFormStatus();
@@ -26,8 +30,10 @@ export function SubmitButton({
     >
       {pending ? (
         <>
-          <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin" />
-          Working...
+          {showPendingIndicator ? (
+            <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin" />
+          ) : null}
+          {showPendingText ? "Working..." : children}
         </>
       ) : (
         children

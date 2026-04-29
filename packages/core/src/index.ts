@@ -74,10 +74,12 @@ export interface BatteryStrategyRuntimeRecord {
   activeObservedAt: string | null;
   activeStartSocPercent: number | null;
   lastTriggeredAtByItemId: Record<string, string>;
+  lastPlanAcknowledgedAt?: string | null;
   manualTargetMethod?: BatteryStrategyTargetMethod | null;
   manualTargetDurationMinutes?: number | null;
   manualTargetEndTime?: string | null;
   manualTargetStartedAt?: string | null;
+  pendingPlanSavedAt?: string | null;
 }
 
 export interface BatteryStrategyHistoryRecord {
@@ -338,6 +340,8 @@ export interface ManagedDeviceRecord {
   batteryManualTargetDurationMinutes: number | null;
   batteryManualTargetEndTime: string | null;
   batteryManualModeActive: boolean;
+  batteryStrategyPlanPending: boolean;
+  batteryStrategyPlanPendingSince: string | null;
   maximumChargePowerW: number | null;
   maximumDischargePowerW: number | null;
   minimumDischargePercent: number | null;
@@ -366,10 +370,12 @@ export function createBatteryStrategyRuntime(): BatteryStrategyRuntimeRecord {
     activeObservedAt: null,
     activeStartSocPercent: null,
     lastTriggeredAtByItemId: {},
+    lastPlanAcknowledgedAt: null,
     manualTargetMethod: null,
     manualTargetDurationMinutes: null,
     manualTargetEndTime: null,
     manualTargetStartedAt: null,
+    pendingPlanSavedAt: null,
   };
 }
 
@@ -390,6 +396,23 @@ export function clearActiveBatteryStrategyRuntime(
     manualTargetDurationMinutes: null,
     manualTargetEndTime: null,
     manualTargetStartedAt: null,
+  };
+}
+
+export function acknowledgePendingBatteryStrategyPlan(
+  value: BatteryStrategyRuntimeRecord,
+  now: Date,
+): BatteryStrategyRuntimeRecord {
+  const runtime = normalizeBatteryStrategyRuntime(value);
+
+  if (runtime.pendingPlanSavedAt === null) {
+    return runtime;
+  }
+
+  return {
+    ...runtime,
+    lastPlanAcknowledgedAt: now.toISOString(),
+    pendingPlanSavedAt: null,
   };
 }
 
@@ -419,10 +442,12 @@ export function createBatteryStrategyRuntimeForPlanApply(
     activeObservedAt: null,
     activeStartSocPercent: null,
     lastTriggeredAtByItemId,
+    lastPlanAcknowledgedAt: null,
     manualTargetMethod: null,
     manualTargetDurationMinutes: null,
     manualTargetEndTime: null,
     manualTargetStartedAt: null,
+    pendingPlanSavedAt: null,
   };
 }
 
@@ -829,6 +854,11 @@ function normalizeBatteryStrategyRuntime(
         ? candidate.activeStartSocPercent
         : null,
     lastTriggeredAtByItemId,
+    lastPlanAcknowledgedAt:
+      typeof candidate.lastPlanAcknowledgedAt === "string" &&
+      candidate.lastPlanAcknowledgedAt.length > 0
+        ? candidate.lastPlanAcknowledgedAt
+        : null,
     manualTargetMethod: normalizeTargetMethod(candidate.manualTargetMethod),
     manualTargetDurationMinutes:
       normalizeTargetMethod(candidate.manualTargetMethod) === "duration"
@@ -843,6 +873,11 @@ function normalizeBatteryStrategyRuntime(
       typeof candidate.manualTargetStartedAt === "string" &&
       candidate.manualTargetStartedAt.length > 0
         ? candidate.manualTargetStartedAt
+        : null,
+    pendingPlanSavedAt:
+      typeof candidate.pendingPlanSavedAt === "string" &&
+      candidate.pendingPlanSavedAt.length > 0
+        ? candidate.pendingPlanSavedAt
         : null,
   };
 }

@@ -964,8 +964,17 @@ export function setHouseStrategyPlan(
         manualDischargeTargetSoc: battery.manualDischargeTargetSoc,
         manualTargetSoc: battery.manualTargetSoc,
       };
-      const strategyRuntime =
-        input.strategyRuntime ?? createBatteryStrategyRuntime();
+      const planChanged =
+        JSON.stringify(battery.strategyPlan) !==
+        JSON.stringify(input.strategyPlan);
+      const strategyRuntime = {
+        ...(input.strategyRuntime ?? createBatteryStrategyRuntime()),
+        lastPlanAcknowledgedAt:
+          battery.strategyRuntime.lastPlanAcknowledgedAt ?? null,
+        pendingPlanSavedAt:
+          battery.strategyRuntime.pendingPlanSavedAt ??
+          (planChanged ? observedAt : null),
+      };
 
       db.query(
         `

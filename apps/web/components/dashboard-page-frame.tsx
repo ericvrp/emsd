@@ -3,7 +3,6 @@ import { AppShell } from "./app-shell";
 import { HouseStrategyDialog } from "./house-strategy-dialog";
 import { SettingsDialog } from "./settings-dialog";
 import { SettingsPanel } from "./settings-panel";
-import { ToastOnSearchParams } from "./toast-on-search-params";
 
 type DashboardPageFrameProps = {
   children: ReactNode;
@@ -35,25 +34,19 @@ export function DashboardPageFrame({
       })) ?? [];
 
   return (
-    <>
-      <ToastOnSearchParams />
-      <AppShell
-        headerActions={
-          <>
-            {batteries.length > 0 && currentSite ? (
-              <HouseStrategyDialog
-                batteries={batteries}
-                siteId={currentSite.id}
-              />
-            ) : null}
-            <SettingsDialog>
-              <SettingsPanel currentSite={currentSite} />
-            </SettingsDialog>
-          </>
-        }
-      >
-        {children}
-      </AppShell>
-    </>
+    <AppShell
+      headerActions={
+        <>
+          {batteries.length > 0 && currentSite ? (
+            <HouseStrategyDialog batteries={batteries} siteId={currentSite.id} />
+          ) : null}
+          <SettingsDialog>
+            <SettingsPanel currentSite={currentSite} />
+          </SettingsDialog>
+        </>
+      }
+    >
+      {children}
+    </AppShell>
   );
 }

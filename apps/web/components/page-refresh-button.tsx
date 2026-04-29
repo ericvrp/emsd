@@ -1,12 +1,15 @@
 "use client";
 
 import { RotateCw } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { Button } from "./ui/button";
 
 export function PageRefreshButton() {
+  const router = useRouter();
+
   return (
     <Button
-      onClick={() => window.location.reload()}
+      onClick={() => router.refresh()}
       type="button"
       variant="danger"
     >

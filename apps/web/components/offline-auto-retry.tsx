@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { PageRefreshButton } from "./page-refresh-button";
 import { RefreshWarning } from "./refresh-warning";
@@ -11,6 +12,7 @@ import {
 const RETRY_INTERVAL_MS = 2000;
 
 export function OfflineAutoRetry() {
+  const router = useRouter();
   const { data, refreshError } = useLiveJsonSWR<DashboardStateResponse>(
     "/api/dashboard/state",
     {
@@ -22,9 +24,9 @@ export function OfflineAutoRetry() {
 
   useEffect(() => {
     if (data?.daemonRunning) {
-      window.location.reload();
+      router.refresh();
     }
-  }, [data?.daemonRunning]);
+  }, [data?.daemonRunning, router]);
 
   return refreshError ? (
     <RefreshWarning

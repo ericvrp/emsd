@@ -1,5 +1,6 @@
 import { openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import {
+  acknowledgePendingBatteryStrategyPlan,
   type BatteryRecord,
   type BatteryStrategyPlanItem,
   type DynamicPriceSnapshotRecord,
@@ -220,6 +221,7 @@ function main(): void {
 
       for (const battery of polledBatteries) {
         logAppliedBatteryControlChanges(
+          db,
           observedBatteryControls.get(battery.id),
           battery,
           pollStartedAt,
@@ -280,6 +282,11 @@ function main(): void {
             await createBatteryPlugin(battery)
               .setStrategy(fallbackStrategy)
               .then(() => {
+                const nextRuntime = acknowledgePendingBatteryStrategyPlan(
+                  clearActiveBatteryStrategyRuntime(battery.strategyRuntime),
+                  pollStartedAt,
+                );
+
                 updateBatteryStrategyState(db, {
                   batteryId: battery.id,
                   siteId: battery.siteId,
@@ -290,9 +297,7 @@ function main(): void {
                 updateBatteryStrategyRuntime(db, {
                   batteryId: battery.id,
                   siteId: battery.siteId,
-                  strategyRuntime: clearActiveBatteryStrategyRuntime(
-                    battery.strategyRuntime,
-                  ),
+                  strategyRuntime: nextRuntime,
                 });
               })
               .catch((error: unknown) => {
@@ -1208,6 +1213,40 @@ async function runScheduledStrategy(
     higherPriorityCandidate ?? resolveScheduledActivationCandidate(1);
 
   if (activationCandidate === null) {
+    if (runtime.pendingPlanSavedAt !== null) {
+      const fallbackItem = getFallbackStrategyPlanItem(battery);
+      const fallbackStrategy = resolveBatteryStrategyFromPlanItem({
+        item: fallbackItem,
+        minimumDischargePercent: battery.minimumDischargePercent,
+        maximumChargePowerW: battery.maximumChargePowerW,
+        maximumDischargePowerW: battery.maximumDischargePowerW,
+      });
+      const nextRuntime = acknowledgePendingBatteryStrategyPlan(
+        clearActiveBatteryStrategyRuntime(runtime),
+        now,
+      );
+
+      logVerbose(
+        verbose,
+        `applying pending fallback strategy for ${battery.id}: ${describeStrategyPlanItem(fallbackItem)}`,
+      );
+
+      await createBatteryPlugin(battery).setStrategy(fallbackStrategy);
+
+      updateBatteryStrategyState(db, {
+        batteryId: battery.id,
+        siteId: battery.siteId,
+        manualModeActive: false,
+        manualModeStarted: false,
+        strategy: fallbackStrategy,
+      });
+      updateBatteryStrategyRuntime(db, {
+        batteryId: battery.id,
+        siteId: battery.siteId,
+        strategyRuntime: nextRuntime,
+      });
+    }
+
     return;
   }
 
@@ -1244,35 +1283,38 @@ async function runScheduledStrategy(
 
   await createBatteryPlugin(battery).setStrategy(strategy);
 
-  const nextRuntime = {
-    activeItemId: needsCompletionTracking(item) ? item.id : null,
-    activeResolvedManualState:
-      needsCompletionTracking(item) && item.targetMethod === "auto"
-        ? resolvedManualState
+  const nextRuntime = acknowledgePendingBatteryStrategyPlan(
+    {
+      activeItemId: needsCompletionTracking(item) ? item.id : null,
+      activeResolvedManualState:
+        needsCompletionTracking(item) && item.targetMethod === "auto"
+          ? resolvedManualState
+          : null,
+      activeTargetSocPercent:
+        needsCompletionTracking(item) && item.targetMethod === "auto"
+          ? (dynamicPriceTargetEstimate?.estimatedTargetPercent ?? null)
+          : null,
+      activeReserveSocPercent:
+        needsCompletionTracking(item) && item.targetMethod === "auto"
+          ? (dynamicPriceTargetEstimate?.estimatedReservePercentAtTargetTime ??
+            null)
+          : null,
+      activeTargetTime:
+        needsCompletionTracking(item) && item.targetMethod === "auto"
+          ? (dynamicPriceTargetEstimate?.targetTime ?? null)
+          : null,
+      activeStartedAt: needsCompletionTracking(item) ? now.toISOString() : null,
+      activeObservedAt: null,
+      activeStartSocPercent: needsCompletionTracking(item)
+        ? sample.socPercent
         : null,
-    activeTargetSocPercent:
-      needsCompletionTracking(item) && item.targetMethod === "auto"
-        ? (dynamicPriceTargetEstimate?.estimatedTargetPercent ?? null)
-        : null,
-    activeReserveSocPercent:
-      needsCompletionTracking(item) && item.targetMethod === "auto"
-        ? (dynamicPriceTargetEstimate?.estimatedReservePercentAtTargetTime ??
-          null)
-        : null,
-    activeTargetTime:
-      needsCompletionTracking(item) && item.targetMethod === "auto"
-        ? (dynamicPriceTargetEstimate?.targetTime ?? null)
-        : null,
-    activeStartedAt: needsCompletionTracking(item) ? now.toISOString() : null,
-    activeObservedAt: null,
-    activeStartSocPercent: needsCompletionTracking(item)
-      ? sample.socPercent
-      : null,
-    lastTriggeredAtByItemId: {
-      ...runtime.lastTriggeredAtByItemId,
-      [item.id]: triggerAt.toISOString(),
+      lastTriggeredAtByItemId: {
+        ...runtime.lastTriggeredAtByItemId,
+        [item.id]: triggerAt.toISOString(),
+      },
     },
-  };
+    now,
+  );
 
   updateBatteryStrategyState(db, {
     batteryId: battery.id,
@@ -1450,6 +1492,20 @@ async function restoreFallbackStrategy(
 
   await createBatteryPlugin(battery).setStrategy(fallbackStrategy);
 
+  const appliedAt = new Date();
+  const nextRuntime = acknowledgePendingBatteryStrategyPlan(
+    {
+      ...clearActiveBatteryStrategyRuntime(battery.strategyRuntime),
+      lastTriggeredAtByItemId: {
+        ...battery.strategyRuntime.lastTriggeredAtByItemId,
+        [completedItemId]:
+          battery.strategyRuntime.lastTriggeredAtByItemId[completedItemId] ??
+          appliedAt.toISOString(),
+      },
+    },
+    appliedAt,
+  );
+
   updateBatteryStrategyState(db, {
     batteryId: battery.id,
     siteId: battery.siteId,
@@ -1460,15 +1516,7 @@ async function restoreFallbackStrategy(
   updateBatteryStrategyRuntime(db, {
     batteryId: battery.id,
     siteId: battery.siteId,
-    strategyRuntime: {
-      ...clearActiveBatteryStrategyRuntime(battery.strategyRuntime),
-      lastTriggeredAtByItemId: {
-        ...battery.strategyRuntime.lastTriggeredAtByItemId,
-        [completedItemId]:
-          battery.strategyRuntime.lastTriggeredAtByItemId[completedItemId] ??
-          new Date().toISOString(),
-      },
-    },
+    strategyRuntime: nextRuntime,
   });
 }
 
@@ -1490,6 +1538,7 @@ function createBatteryControlSnapshot(
 }
 
 function logAppliedBatteryControlChanges(
+  db: ReturnType<typeof openDaemonDatabase>,
   previous: BatteryControlSnapshot | undefined,
   battery: BatteryRecord,
   now: Date,
@@ -1511,13 +1560,7 @@ function logAppliedBatteryControlChanges(
       isBatteryStrategyPriceTrigger(item.triggerKind),
     )
   ) {
-    const db = openDaemonDatabase();
-
-    try {
-      dynamicPriceSamples = readDynamicPriceSamples(db, battery.siteId);
-    } finally {
-      db.close();
-    }
+    dynamicPriceSamples = readDynamicPriceSamples(db, battery.siteId);
   }
 
   if (planChanged) {

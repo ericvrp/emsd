@@ -20,6 +20,7 @@ import {
 import type { SignedDiscoveredDevice } from "../lib/discovery-proof";
 import { UI_STYLES } from "../lib/ui-colors";
 import { SubmitButton } from "./submit-button";
+import { useFormActionToast } from "./use-form-action-toast";
 
 interface DiscoveryCachePayload {
   version: number;
@@ -42,6 +43,14 @@ export function DiscoveryPanel({
   existingDeviceIds: string[];
   selectedSiteId: string | null;
 }) {
+  const createAllFormAction = useFormActionToast(createAllFromDiscoveryAction);
+  const createBatteryFormAction = useFormActionToast(
+    createBatteryFromDiscoveryAction,
+  );
+  const createMeterFormAction = useFormActionToast(createMeterFromDiscoveryAction);
+  const createSolarProviderFormAction = useFormActionToast(
+    createSolarEnergyProviderFromDiscoveryAction,
+  );
   const [host, setHost] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -243,7 +252,7 @@ export function DiscoveryPanel({
         <div className="space-y-4">
           {selectedSiteId && addableDiscoveryIds.length > 0 ? (
             <form
-              action={createAllFromDiscoveryAction}
+              action={createAllFormAction}
               className="flex justify-start"
             >
               <input type="hidden" name="siteId" value={selectedSiteId} />
@@ -268,29 +277,38 @@ export function DiscoveryPanel({
           <section className="grid gap-4 xl:grid-cols-3">
             <DiscoveryResourceSection title="Batteries">
               <DiscoveryDeviceList
+                batteryAction={createBatteryFormAction}
                 devices={batteries}
                 existingIdSet={existingIdSet}
                 host={host.trim()}
                 kind="battery"
+                meterAction={createMeterFormAction}
                 selectedSiteId={selectedSiteId}
+                solarProviderAction={createSolarProviderFormAction}
               />
             </DiscoveryResourceSection>
             <DiscoveryResourceSection title="Solar Providers">
               <DiscoveryDeviceList
+                batteryAction={createBatteryFormAction}
                 devices={solarProviders}
                 existingIdSet={existingIdSet}
                 host={host.trim()}
                 kind="solar-energy-provider"
+                meterAction={createMeterFormAction}
                 selectedSiteId={selectedSiteId}
+                solarProviderAction={createSolarProviderFormAction}
               />
             </DiscoveryResourceSection>
             <DiscoveryResourceSection title="Meters">
               <DiscoveryDeviceList
+                batteryAction={createBatteryFormAction}
                 devices={meters}
                 existingIdSet={existingIdSet}
                 host={host.trim()}
                 kind="meter"
+                meterAction={createMeterFormAction}
                 selectedSiteId={selectedSiteId}
+                solarProviderAction={createSolarProviderFormAction}
               />
             </DiscoveryResourceSection>
           </section>
@@ -317,17 +335,23 @@ function DiscoveryResourceSection({
 }
 
 function DiscoveryDeviceList({
+  batteryAction,
   devices,
   existingIdSet,
   host,
   kind,
+  meterAction,
+  solarProviderAction,
   selectedSiteId,
 }: {
+  batteryAction: (formData: FormData) => Promise<void>;
   devices: SignedDiscoveredDevice[];
   existingIdSet: Set<string>;
   host: string;
   kind: SignedDiscoveredDevice["category"];
+  meterAction: (formData: FormData) => Promise<void>;
   selectedSiteId: string | null;
+  solarProviderAction: (formData: FormData) => Promise<void>;
 }) {
   if (devices.length === 0) {
     return (
@@ -341,11 +365,14 @@ function DiscoveryDeviceList({
     <div className="grid gap-3">
       {devices.map((device) => (
         <DiscoveryDeviceCard
+          batteryAction={batteryAction}
           device={device}
           existingIdSet={existingIdSet}
           host={host}
           key={device.discoveryId}
+          meterAction={meterAction}
           selectedSiteId={selectedSiteId}
+          solarProviderAction={solarProviderAction}
         />
       ))}
     </div>
@@ -353,15 +380,21 @@ function DiscoveryDeviceList({
 }
 
 function DiscoveryDeviceCard({
+  batteryAction,
   device,
   existingIdSet,
   host,
+  meterAction,
   selectedSiteId,
+  solarProviderAction,
 }: {
+  batteryAction: (formData: FormData) => Promise<void>;
   device: SignedDiscoveredDevice;
   existingIdSet: Set<string>;
   host: string;
+  meterAction: (formData: FormData) => Promise<void>;
   selectedSiteId: string | null;
+  solarProviderAction: (formData: FormData) => Promise<void>;
 }) {
   const alreadyAdded = existingIdSet.has(device.discoveryId);
 
@@ -433,10 +466,10 @@ function DiscoveryDeviceCard({
           <form
             action={
               device.category === "battery"
-                ? createBatteryFromDiscoveryAction
+                ? batteryAction
                 : device.category === "meter"
-                  ? createMeterFromDiscoveryAction
-                  : createSolarEnergyProviderFromDiscoveryAction
+                  ? meterAction
+                  : solarProviderAction
             }
           >
             <input type="hidden" name="siteId" value={selectedSiteId} />
