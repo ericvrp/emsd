@@ -46,6 +46,7 @@ import {
   type SiteCurrentResponse,
   useLiveJsonSWR,
 } from "./use-live-json-swr";
+import { useChartSeriesVisibility } from "./use-chart-series-visibility";
 
 type GridPageProps = {
   archive: HistoryArchive;
@@ -56,6 +57,11 @@ type GridPageProps = {
 
 const LIVE_CURRENT_REFRESH_INTERVAL_MS = 5_000;
 const GRAPH_REFRESH_INTERVAL_MS = 60 * 1_000;
+const GRID_CHART_VISIBILITY_STORAGE_KEY =
+  "emsd:chart-visibility:grid:overview";
+const GRID_POWER_SERIES_ID = "grid-power";
+const INFERRED_SITE_LOAD_SERIES_ID = "inferred-site-load";
+const EXPECTED_SITE_LOAD_SERIES_ID = "expected-site-load";
 
 export function GridPage({
   archive: initialArchive,
@@ -247,17 +253,37 @@ function GridOverviewChart({
       point.expectedSiteLoadFutureValue,
     ]),
   );
+  const { isVisible, toggle } = useChartSeriesVisibility({
+    seriesIds: [
+      GRID_POWER_SERIES_ID,
+      INFERRED_SITE_LOAD_SERIES_ID,
+      EXPECTED_SITE_LOAD_SERIES_ID,
+    ],
+    storageKey: GRID_CHART_VISIBILITY_STORAGE_KEY,
+  });
 
   return (
     <div className="space-y-2.5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-wrap gap-2 text-xs font-medium text-slate-300">
-          <LegendChip color={UI_COLORS.gridExport} label="Grid Power" />
-          <LegendChip color={UI_COLORS.gridImport} label="Inferred Site Load" />
+          <LegendChip
+            color={UI_COLORS.gridExport}
+            label="Grid Power"
+            onClick={() => toggle(GRID_POWER_SERIES_ID)}
+            selected={isVisible(GRID_POWER_SERIES_ID)}
+          />
+          <LegendChip
+            color={UI_COLORS.gridImport}
+            label="Inferred Site Load"
+            onClick={() => toggle(INFERRED_SITE_LOAD_SERIES_ID)}
+            selected={isVisible(INFERRED_SITE_LOAD_SERIES_ID)}
+          />
           <LegendChip
             color={UI_COLORS.solarPrediction}
             label="Expected Site Load"
             marker={<ExpectedLegendMarker />}
+            onClick={() => toggle(EXPECTED_SITE_LOAD_SERIES_ID)}
+            selected={isVisible(EXPECTED_SITE_LOAD_SERIES_ID)}
           />
         </div>
         {headerAccessory}
@@ -349,89 +375,101 @@ function GridOverviewChart({
                     yAxisId="left"
                   />
                 ) : null}
-                <Line
-                  activeDot={false}
-                  dataKey="gridCurrentValue"
-                  dot={false}
-                  isAnimationActive={false}
-                  name="Grid Power"
-                  stroke={UI_COLORS.gridExport}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2.8}
-                  type="monotone"
-                  yAxisId="left"
-                />
-                <Line
-                  activeDot={false}
-                  dataKey="gridFutureValue"
-                  dot={false}
-                  isAnimationActive={false}
-                  name="Grid Power"
-                  stroke={UI_COLORS.gridExport}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeOpacity={0.35}
-                  strokeWidth={2.8}
-                  type="monotone"
-                  yAxisId="left"
-                />
-                <Line
-                  activeDot={false}
-                  dataKey="actualSiteLoadCurrentValue"
-                  dot={false}
-                  isAnimationActive={false}
-                  name="Inferred Site Load"
-                  stroke={UI_COLORS.gridImport}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2.8}
-                  type="monotone"
-                  yAxisId="left"
-                />
-                <Line
-                  activeDot={false}
-                  dataKey="actualSiteLoadFutureValue"
-                  dot={false}
-                  isAnimationActive={false}
-                  name="Inferred Site Load"
-                  stroke={UI_COLORS.gridImport}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeOpacity={0.35}
-                  strokeWidth={2.8}
-                  type="monotone"
-                  yAxisId="left"
-                />
-                <Line
-                  activeDot={false}
-                  dataKey="expectedSiteLoadCurrentValue"
-                  dot={false}
-                  isAnimationActive={false}
-                  name="Expected Site Load"
-                  stroke={UI_COLORS.solarPrediction}
-                  strokeDasharray="1 6"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2.8}
-                  type="monotone"
-                  yAxisId="left"
-                />
-                <Line
-                  activeDot={false}
-                  dataKey="expectedSiteLoadFutureValue"
-                  dot={false}
-                  isAnimationActive={false}
-                  name="Expected Site Load"
-                  stroke={UI_COLORS.solarPrediction}
-                  strokeDasharray="1 6"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeOpacity={0.35}
-                  strokeWidth={2.8}
-                  type="monotone"
-                  yAxisId="left"
-                />
+                {isVisible(GRID_POWER_SERIES_ID) ? (
+                  <>
+                    <Line
+                      activeDot={false}
+                      dataKey="gridCurrentValue"
+                      dot={false}
+                      isAnimationActive={false}
+                      name="Grid Power"
+                      stroke={UI_COLORS.gridExport}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2.8}
+                      type="monotone"
+                      yAxisId="left"
+                    />
+                    <Line
+                      activeDot={false}
+                      dataKey="gridFutureValue"
+                      dot={false}
+                      isAnimationActive={false}
+                      name="Grid Power"
+                      stroke={UI_COLORS.gridExport}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeOpacity={0.35}
+                      strokeWidth={2.8}
+                      type="monotone"
+                      yAxisId="left"
+                    />
+                  </>
+                ) : null}
+                {isVisible(INFERRED_SITE_LOAD_SERIES_ID) ? (
+                  <>
+                    <Line
+                      activeDot={false}
+                      dataKey="actualSiteLoadCurrentValue"
+                      dot={false}
+                      isAnimationActive={false}
+                      name="Inferred Site Load"
+                      stroke={UI_COLORS.gridImport}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2.8}
+                      type="monotone"
+                      yAxisId="left"
+                    />
+                    <Line
+                      activeDot={false}
+                      dataKey="actualSiteLoadFutureValue"
+                      dot={false}
+                      isAnimationActive={false}
+                      name="Inferred Site Load"
+                      stroke={UI_COLORS.gridImport}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeOpacity={0.35}
+                      strokeWidth={2.8}
+                      type="monotone"
+                      yAxisId="left"
+                    />
+                  </>
+                ) : null}
+                {isVisible(EXPECTED_SITE_LOAD_SERIES_ID) ? (
+                  <>
+                    <Line
+                      activeDot={false}
+                      dataKey="expectedSiteLoadCurrentValue"
+                      dot={false}
+                      isAnimationActive={false}
+                      name="Expected Site Load"
+                      stroke={UI_COLORS.solarPrediction}
+                      strokeDasharray="1 6"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2.8}
+                      type="monotone"
+                      yAxisId="left"
+                    />
+                    <Line
+                      activeDot={false}
+                      dataKey="expectedSiteLoadFutureValue"
+                      dot={false}
+                      isAnimationActive={false}
+                      name="Expected Site Load"
+                      stroke={UI_COLORS.solarPrediction}
+                      strokeDasharray="1 6"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeOpacity={0.35}
+                      strokeWidth={2.8}
+                      type="monotone"
+                      yAxisId="left"
+                    />
+                  </>
+                ) : null}
               </LineChart>
             );
           }}

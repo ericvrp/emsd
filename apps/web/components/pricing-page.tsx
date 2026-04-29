@@ -25,6 +25,9 @@ import { type PricesGraphResponse, useLiveJsonSWR } from "./use-live-json-swr";
 
 const GRAPH_REFRESH_INTERVAL_MS = 15 * 60 * 1_000;
 const GRAPH_RETRY_INTERVAL_MS = 5_000;
+const PRICE_CHART_VISIBILITY_STORAGE_KEY =
+  "emsd:chart-visibility:prices:history";
+const PRICE_CHART_SERIES_ID = "import-price";
 
 export function PricingSection({
   archive: initialArchive,
@@ -158,6 +161,8 @@ export function PricingSection({
             valueFormatter={(value) =>
               `${value.toFixed(3)} ${priceCurrency}/kWh`
             }
+            visibilitySeriesId={PRICE_CHART_SERIES_ID}
+            visibilityStorageKey={PRICE_CHART_VISIBILITY_STORAGE_KEY}
             {...(priceAxisDomain ? { yAxisDomain: priceAxisDomain } : {})}
             yAxisFormatter={formatShortPriceAxisValue}
             yAxisLabel={`${priceCurrency}/kWh`}

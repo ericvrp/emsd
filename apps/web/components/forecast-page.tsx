@@ -63,10 +63,16 @@ import {
   type SolarGraphResponse,
   useLiveJsonSWR,
 } from "./use-live-json-swr";
+import { useChartSeriesVisibility } from "./use-chart-series-visibility";
 
 const LIVE_SOLAR_REFRESH_INTERVAL_MS = 5_000;
 const GRAPH_REFRESH_INTERVAL_MS = 60 * 1_000;
 const SOLAR_POWER_AXIS_MAX_W = 4_000;
+const SOLAR_CHART_VISIBILITY_STORAGE_KEY =
+  "emsd:chart-visibility:solar:forecast";
+const GENERATED_SOLAR_SERIES_ID = "generated";
+const PREDICTED_SOLAR_SERIES_ID = "predicted";
+const FORECAST_SERIES_ID = "forecast";
 
 export function WeatherForecastSection({
   archive: initialArchive,
@@ -287,6 +293,14 @@ function ForecastPredictionChart({
     ]),
     [0, SOLAR_POWER_AXIS_MAX_W],
   );
+  const { isVisible, toggle } = useChartSeriesVisibility({
+    seriesIds: [
+      GENERATED_SOLAR_SERIES_ID,
+      PREDICTED_SOLAR_SERIES_ID,
+      FORECAST_SERIES_ID,
+    ],
+    storageKey: SOLAR_CHART_VISIBILITY_STORAGE_KEY,
+  });
 
   return (
     <div className="space-y-2.5">
@@ -295,7 +309,8 @@ function ForecastPredictionChart({
           <LegendChip
             color={UI_COLORS.solarEnergy}
             label={buildGeneratedSolarLegendLabel()}
-            selected
+            onClick={() => toggle(GENERATED_SOLAR_SERIES_ID)}
+            selected={isVisible(GENERATED_SOLAR_SERIES_ID)}
           />
           <LegendChip
             color={UI_COLORS.solarEnergy}
@@ -303,12 +318,14 @@ function ForecastPredictionChart({
               predictionAccuracyPercentage,
             })}
             marker={<PredictedSolarLegendMarker />}
-            selected
+            onClick={() => toggle(PREDICTED_SOLAR_SERIES_ID)}
+            selected={isVisible(PREDICTED_SOLAR_SERIES_ID)}
           />
           <LegendChip
             color={UI_COLORS.forecast}
             label={forecastLabel}
-            selected
+            onClick={() => toggle(FORECAST_SERIES_ID)}
+            selected={isVisible(FORECAST_SERIES_ID)}
           />
         </div>
         {headerAccessory}
@@ -397,89 +414,101 @@ function ForecastPredictionChart({
                     yAxisId="forecast"
                   />
                 ) : null}
-                <Line
-                  activeDot={false}
-                  dataKey="forecastCurrentValue"
-                  dot={false}
-                  isAnimationActive={false}
-                  name={forecastLabel}
-                  stroke={UI_COLORS.forecast}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2.8}
-                  type="monotone"
-                  yAxisId="forecast"
-                />
-                <Line
-                  activeDot={false}
-                  dataKey="forecastFutureValue"
-                  dot={false}
-                  isAnimationActive={false}
-                  name={forecastLabel}
-                  stroke={UI_COLORS.forecast}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeOpacity={0.35}
-                  strokeWidth={2.8}
-                  type="monotone"
-                  yAxisId="forecast"
-                />
-                <Line
-                  activeDot={false}
-                  dataKey="generatedCurrentValue"
-                  dot={false}
-                  isAnimationActive={false}
-                  name="Generated Wattage"
-                  stroke={UI_COLORS.solarEnergy}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2.8}
-                  type="monotone"
-                  yAxisId="predicted"
-                />
-                <Line
-                  activeDot={false}
-                  dataKey="generatedFutureValue"
-                  dot={false}
-                  isAnimationActive={false}
-                  name="Generated Wattage"
-                  stroke={UI_COLORS.solarEnergy}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeOpacity={0.35}
-                  strokeWidth={2.8}
-                  type="monotone"
-                  yAxisId="predicted"
-                />
-                <Line
-                  activeDot={false}
-                  dataKey="predictedCurrentValue"
-                  dot={false}
-                  isAnimationActive={false}
-                  name="Predicted Solar Wattage"
-                  stroke={UI_COLORS.solarEnergy}
-                  strokeDasharray="1 6"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2.8}
-                  type="monotone"
-                  yAxisId="predicted"
-                />
-                <Line
-                  activeDot={false}
-                  dataKey="predictedFutureValue"
-                  dot={false}
-                  isAnimationActive={false}
-                  name="Predicted Solar Wattage"
-                  stroke={UI_COLORS.solarEnergy}
-                  strokeDasharray="1 6"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeOpacity={0.35}
-                  strokeWidth={2.8}
-                  type="monotone"
-                  yAxisId="predicted"
-                />
+                {isVisible(FORECAST_SERIES_ID) ? (
+                  <>
+                    <Line
+                      activeDot={false}
+                      dataKey="forecastCurrentValue"
+                      dot={false}
+                      isAnimationActive={false}
+                      name={forecastLabel}
+                      stroke={UI_COLORS.forecast}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2.8}
+                      type="monotone"
+                      yAxisId="forecast"
+                    />
+                    <Line
+                      activeDot={false}
+                      dataKey="forecastFutureValue"
+                      dot={false}
+                      isAnimationActive={false}
+                      name={forecastLabel}
+                      stroke={UI_COLORS.forecast}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeOpacity={0.35}
+                      strokeWidth={2.8}
+                      type="monotone"
+                      yAxisId="forecast"
+                    />
+                  </>
+                ) : null}
+                {isVisible(GENERATED_SOLAR_SERIES_ID) ? (
+                  <>
+                    <Line
+                      activeDot={false}
+                      dataKey="generatedCurrentValue"
+                      dot={false}
+                      isAnimationActive={false}
+                      name="Generated Wattage"
+                      stroke={UI_COLORS.solarEnergy}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2.8}
+                      type="monotone"
+                      yAxisId="predicted"
+                    />
+                    <Line
+                      activeDot={false}
+                      dataKey="generatedFutureValue"
+                      dot={false}
+                      isAnimationActive={false}
+                      name="Generated Wattage"
+                      stroke={UI_COLORS.solarEnergy}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeOpacity={0.35}
+                      strokeWidth={2.8}
+                      type="monotone"
+                      yAxisId="predicted"
+                    />
+                  </>
+                ) : null}
+                {isVisible(PREDICTED_SOLAR_SERIES_ID) ? (
+                  <>
+                    <Line
+                      activeDot={false}
+                      dataKey="predictedCurrentValue"
+                      dot={false}
+                      isAnimationActive={false}
+                      name="Predicted Solar Wattage"
+                      stroke={UI_COLORS.solarEnergy}
+                      strokeDasharray="1 6"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2.8}
+                      type="monotone"
+                      yAxisId="predicted"
+                    />
+                    <Line
+                      activeDot={false}
+                      dataKey="predictedFutureValue"
+                      dot={false}
+                      isAnimationActive={false}
+                      name="Predicted Solar Wattage"
+                      stroke={UI_COLORS.solarEnergy}
+                      strokeDasharray="1 6"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeOpacity={0.35}
+                      strokeWidth={2.8}
+                      type="monotone"
+                      yAxisId="predicted"
+                    />
+                  </>
+                ) : null}
               </LineChart>
             );
           }}

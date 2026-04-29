@@ -19,6 +19,8 @@ import {
 
 const LIVE_CURRENT_REFRESH_INTERVAL_MS = 5_000;
 const GRAPH_REFRESH_INTERVAL_MS = 60 * 1_000;
+const BATTERY_CHART_VISIBILITY_STORAGE_KEY =
+  "emsd:chart-visibility:home:battery";
 
 type HomeBatteryHistorySectionProps = {
   archive: HistoryArchive;
@@ -112,6 +114,7 @@ export function HomeBatteryHistorySection({
           nowMarkerPeriodStart={daySelection.nowMarkerPeriodStart}
           points={batteryHistoryPoints}
           strategyHistory={archive.batteryStrategyHistory}
+          visibilityStorageKey={BATTERY_CHART_VISIBILITY_STORAGE_KEY}
         />
       </div>
       {children ? <div className="mt-6">{children}</div> : null}

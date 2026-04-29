@@ -1,3 +1,5 @@
+"use client";
+
 import type { BatteryStrategyHistoryRecord } from "@emsd/core/client";
 import type { ReactElement, ReactNode } from "react";
 import {
@@ -19,6 +21,7 @@ import { formatShortPowerValue } from "../../lib/power-format";
 import { UI_CHART_STYLES, UI_COLORS } from "../../lib/ui-colors";
 import { cn } from "../../lib/utils";
 import { MeasuredChartContainer } from "../measured-chart-container";
+import { useChartSeriesVisibility } from "../use-chart-series-visibility";
 import {
   BATTERY_POWER_AXIS_DOMAIN,
   BATTERY_POWER_AXIS_TICKS,
@@ -55,6 +58,8 @@ const BATTERY_STRATEGY_BAND_BOTTOM =
   BATTERY_POWER_AXIS_DOMAIN[1] -
   (BATTERY_POWER_AXIS_DOMAIN[1] - BATTERY_POWER_AXIS_DOMAIN[0]) *
     BATTERY_STRATEGY_BAND_HEIGHT_RATIO;
+const BATTERY_POWER_SERIES_ID = "power";
+const BATTERY_CHARGE_SERIES_ID = "charge";
 
 export function LegendChip({
   color,
@@ -73,7 +78,7 @@ export function LegendChip({
     "inline-flex items-center gap-2 rounded-full border px-3 py-1.5",
     selected
       ? "border-white/25 bg-white/12 text-white shadow-[0_0_0_1px_rgba(255,255,255,0.04)]"
-      : "border-white/10 bg-white/5",
+      : "border-white/8 bg-white/[0.03] text-slate-500",
     onClick
       ? "cursor-pointer transition hover:border-white/20 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/50"
       : null,
@@ -87,7 +92,7 @@ export function LegendChip({
       width="18"
     >
       <line
-        stroke={color}
+        stroke={selected ? color : UI_COLORS.chartTickMuted}
         strokeLinecap="round"
         strokeWidth="2.8"
         x1="1.4"
@@ -100,7 +105,12 @@ export function LegendChip({
 
   if (onClick) {
     return (
-      <button className={className} onClick={onClick} type="button">
+      <button
+        aria-pressed={selected}
+        className={className}
+        onClick={onClick}
+        type="button"
+      >
         {markerNode}
         {label}
       </button>
@@ -121,12 +131,14 @@ export function BatteryHistoryChart({
   nowMarkerPeriodStart,
   points,
   strategyHistory,
+  visibilityStorageKey,
 }: {
   emptyMessage: string;
   headerAccessory?: ReactNode;
   nowMarkerPeriodStart: string | null;
   points: BatteryHistoryPoint[];
   strategyHistory: BatteryStrategyHistoryRecord[];
+  visibilityStorageKey?: string;
 }) {
   const hasValues = points.some((point) =>
     [
@@ -159,19 +171,44 @@ export function BatteryHistoryChart({
     strategyHistory,
   });
   const strategyStates = getBatteryStrategyLegendItems(strategySegments);
+  const { isVisible, toggle } = useChartSeriesVisibility({
+    seriesIds: [
+      BATTERY_POWER_SERIES_ID,
+      BATTERY_CHARGE_SERIES_ID,
+      ...strategyStates.map((state) => buildBatteryStrategySeriesId(state.state)),
+    ],
+    storageKey: visibilityStorageKey,
+  });
 
   return (
     <div className="space-y-2.5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-wrap gap-2 text-xs font-medium text-slate-300">
-          <LegendChip color={UI_COLORS.batteryPowerDischarging} label="Power" />
-          <LegendChip color={UI_COLORS.batteryChargeLevel} label="Charge" />
+          <LegendChip
+            color={UI_COLORS.batteryPowerDischarging}
+            label="Power"
+            onClick={() => toggle(BATTERY_POWER_SERIES_ID)}
+            selected={isVisible(BATTERY_POWER_SERIES_ID)}
+          />
+          <LegendChip
+            color={UI_COLORS.batteryChargeLevel}
+            label="Charge"
+            onClick={() => toggle(BATTERY_CHARGE_SERIES_ID)}
+            selected={isVisible(BATTERY_CHARGE_SERIES_ID)}
+          />
           {strategyStates.map((state) => (
             <LegendChip
               key={state.label}
               color={state.color}
               label={state.label}
-              marker={<StrategyLegendMarker color={state.color} />}
+              marker={
+                <StrategyLegendMarker
+                  color={state.color}
+                  selected={isVisible(buildBatteryStrategySeriesId(state.state))}
+                />
+              }
+              onClick={() => toggle(buildBatteryStrategySeriesId(state.state))}
+              selected={isVisible(buildBatteryStrategySeriesId(state.state))}
             />
           ))}
         </div>
@@ -253,76 +290,88 @@ export function BatteryHistoryChart({
                     />
                   }
                 />
-                {strategySegments.map((segment) => (
-                  <ReferenceArea
-                    fill={getStrategyLegendColor(segment.state)}
-                    fillOpacity={1}
-                    ifOverflow="hidden"
-                    key={`${segment.state}-${segment.startMs}-${segment.endMs}`}
-                    stroke={getStrategyLegendColor(segment.state)}
-                    strokeOpacity={0.95}
-                    strokeWidth={1.2}
-                    x1={segment.startMs}
-                    x2={segment.endMs}
-                    y1={BATTERY_STRATEGY_BAND_BOTTOM}
-                    y2={BATTERY_POWER_AXIS_DOMAIN[1]}
-                    yAxisId="power"
-                  />
-                ))}
-                <Line
-                  activeDot={false}
-                  connectNulls={false}
-                  dataKey="currentPower"
-                  dot={false}
-                  isAnimationActive={false}
-                  name="Power"
-                  stroke={UI_COLORS.batteryPowerDischarging}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2.8}
-                  type="monotone"
-                  yAxisId="power"
-                />
-                <Line
-                  activeDot={false}
-                  connectNulls={false}
-                  dataKey="futurePower"
-                  dot={false}
-                  isAnimationActive={false}
-                  name="Power"
-                  stroke={UI_COLORS.batteryPowerDischarging}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeOpacity={0.35}
-                  strokeWidth={2.8}
-                  type="monotone"
-                  yAxisId="power"
-                />
-                <Line
-                  dataKey="currentChargePercent"
-                  dot={false}
-                  isAnimationActive={false}
-                  name="Battery Charge"
-                  stroke={UI_COLORS.batteryChargeLevel}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2.8}
-                  type="monotone"
-                  yAxisId="charge"
-                />
-                <Line
-                  dataKey="futureChargePercent"
-                  dot={false}
-                  isAnimationActive={false}
-                  name="Battery Charge"
-                  stroke={UI_COLORS.batteryChargeLevel}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeOpacity={0.35}
-                  strokeWidth={2.8}
-                  type="monotone"
-                  yAxisId="charge"
-                />
+                {strategySegments
+                  .filter((segment) =>
+                    isVisible(buildBatteryStrategySeriesId(segment.state)),
+                  )
+                  .map((segment) => (
+                    <ReferenceArea
+                      fill={getStrategyLegendColor(segment.state)}
+                      fillOpacity={1}
+                      ifOverflow="hidden"
+                      key={`${segment.state}-${segment.startMs}-${segment.endMs}`}
+                      stroke={getStrategyLegendColor(segment.state)}
+                      strokeOpacity={0.95}
+                      strokeWidth={1.2}
+                      x1={segment.startMs}
+                      x2={segment.endMs}
+                      y1={BATTERY_STRATEGY_BAND_BOTTOM}
+                      y2={BATTERY_POWER_AXIS_DOMAIN[1]}
+                      yAxisId="power"
+                    />
+                  ))}
+                {isVisible(BATTERY_POWER_SERIES_ID) ? (
+                  <>
+                    <Line
+                      activeDot={false}
+                      connectNulls={false}
+                      dataKey="currentPower"
+                      dot={false}
+                      isAnimationActive={false}
+                      name="Power"
+                      stroke={UI_COLORS.batteryPowerDischarging}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2.8}
+                      type="monotone"
+                      yAxisId="power"
+                    />
+                    <Line
+                      activeDot={false}
+                      connectNulls={false}
+                      dataKey="futurePower"
+                      dot={false}
+                      isAnimationActive={false}
+                      name="Power"
+                      stroke={UI_COLORS.batteryPowerDischarging}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeOpacity={0.35}
+                      strokeWidth={2.8}
+                      type="monotone"
+                      yAxisId="power"
+                    />
+                  </>
+                ) : null}
+                {isVisible(BATTERY_CHARGE_SERIES_ID) ? (
+                  <>
+                    <Line
+                      dataKey="currentChargePercent"
+                      dot={false}
+                      isAnimationActive={false}
+                      name="Battery Charge"
+                      stroke={UI_COLORS.batteryChargeLevel}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2.8}
+                      type="monotone"
+                      yAxisId="charge"
+                    />
+                    <Line
+                      dataKey="futureChargePercent"
+                      dot={false}
+                      isAnimationActive={false}
+                      name="Battery Charge"
+                      stroke={UI_COLORS.batteryChargeLevel}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeOpacity={0.35}
+                      strokeWidth={2.8}
+                      type="monotone"
+                      yAxisId="charge"
+                    />
+                  </>
+                ) : null}
                 {nowMarkerPeriodStart ? (
                   <ReferenceLine
                     label={buildNowLabel()}
@@ -353,6 +402,7 @@ function getBatteryStrategyLegendItems(
 ): Array<{
   color: string;
   label: string;
+  state: NonNullable<BatteryHistoryPoint["strategyDisplayState"]>;
 }> {
   const presentStates = new Set(segments.map((segment) => segment.state));
 
@@ -365,7 +415,14 @@ function getBatteryStrategyLegendItems(
     .map((state) => ({
       color: getStrategyLegendColor(state),
       label: getStrategyLegendLabel(state),
+      state,
     }));
+}
+
+function buildBatteryStrategySeriesId(
+  state: NonNullable<BatteryHistoryPoint["strategyDisplayState"]>,
+): string {
+  return `strategy:${state}`;
 }
 
 function getStrategyLegendColor(
@@ -398,12 +455,18 @@ function getStrategyLegendLabel(
   }
 }
 
-function StrategyLegendMarker({ color }: { color: string }) {
+function StrategyLegendMarker({
+  color,
+  selected,
+}: {
+  color: string;
+  selected?: boolean;
+}) {
   return (
     <span
       aria-hidden="true"
       className="h-2.5 w-4 rounded-sm border border-white/10"
-      style={{ backgroundColor: color }}
+      style={{ backgroundColor: selected ? color : UI_COLORS.chartTickMuted }}
     />
   );
 }
@@ -421,6 +484,8 @@ export function SingleValueHistoryChart({
   showLegend = true,
   tooltipContent,
   valueFormatter,
+  visibilitySeriesId,
+  visibilityStorageKey,
   yAxisLabel,
   yAxisDomain,
   yAxisFormatter,
@@ -437,6 +502,8 @@ export function SingleValueHistoryChart({
   showLegend?: boolean;
   tooltipContent?: ReactElement;
   valueFormatter: (value: number) => string;
+  visibilitySeriesId?: string;
+  visibilityStorageKey?: string;
   yAxisLabel?: string;
   yAxisDomain?: [number, number];
   yAxisFormatter: (value: number) => string;
@@ -456,6 +523,11 @@ export function SingleValueHistoryChart({
     points.flatMap((point) => [point.currentValue, point.futureValue]),
     yAxisDomain,
   );
+  const seriesId = visibilitySeriesId ?? label.toLowerCase().replace(/\s+/g, "-");
+  const { isVisible, toggle } = useChartSeriesVisibility({
+    seriesIds: [seriesId],
+    storageKey: visibilityStorageKey,
+  });
 
   return (
     <div className="space-y-2.5">
@@ -463,7 +535,12 @@ export function SingleValueHistoryChart({
         <div className="flex flex-wrap items-start justify-between gap-3">
           {showLegend ? (
             <div className="flex flex-wrap gap-2 text-xs font-medium text-slate-300">
-              <LegendChip color={accentColor} label={label} />
+              <LegendChip
+                color={accentColor}
+                label={label}
+                onClick={() => toggle(seriesId)}
+                selected={isVisible(seriesId)}
+              />
             </div>
           ) : null}
           {headerAccessory}
@@ -607,29 +684,33 @@ export function SingleValueHistoryChart({
                     yAxisId="left"
                   />
                 ))}
-                <Area
-                  activeDot={false}
-                  dataKey="currentValue"
-                  fill={`url(#${gradientId})`}
-                  isAnimationActive={false}
-                  name={label}
-                  stroke={accentColor}
-                  strokeWidth={3}
-                  type="monotone"
-                  yAxisId="left"
-                />
-                <Area
-                  activeDot={false}
-                  dataKey="futureValue"
-                  fill={`url(#${mutedGradientId})`}
-                  isAnimationActive={false}
-                  name={label}
-                  stroke={accentColor}
-                  strokeOpacity={0.35}
-                  strokeWidth={3}
-                  type="monotone"
-                  yAxisId="left"
-                />
+                {isVisible(seriesId) ? (
+                  <>
+                    <Area
+                      activeDot={false}
+                      dataKey="currentValue"
+                      fill={`url(#${gradientId})`}
+                      isAnimationActive={false}
+                      name={label}
+                      stroke={accentColor}
+                      strokeWidth={3}
+                      type="monotone"
+                      yAxisId="left"
+                    />
+                    <Area
+                      activeDot={false}
+                      dataKey="futureValue"
+                      fill={`url(#${mutedGradientId})`}
+                      isAnimationActive={false}
+                      name={label}
+                      stroke={accentColor}
+                      strokeOpacity={0.35}
+                      strokeWidth={3}
+                      type="monotone"
+                      yAxisId="left"
+                    />
+                  </>
+                ) : null}
                 <Area
                   activeDot={false}
                   dataKey="rightAxisValue"

@@ -12,7 +12,7 @@ import {
   type DiscoverySignatureDefinition,
   discoveryPlugins,
 } from "./plugins";
-import { formatFetchError } from "./plugins/shared";
+import { fetchWithLanFallback, formatFetchError } from "./plugins/shared";
 
 export type {
   BatteryTelemetrySample,
@@ -181,12 +181,12 @@ async function fetchTelemetryResponse(
     const headers = resolveRequestHeaders(request, ipAddress);
 
     try {
-      const response = await fetch(url, {
-        method: request.method,
-        ...(headers ? { headers } : {}),
-        ...(scheme === "https"
-          ? ({ tls: { rejectUnauthorized: false } } as RequestInit)
-          : {}),
+        const response = await fetchWithLanFallback(url, {
+          method: request.method,
+          ...(headers ? { headers } : {}),
+          ...(scheme === "https"
+            ? ({ tls: { rejectUnauthorized: false } } as RequestInit)
+            : {}),
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
 
@@ -570,7 +570,7 @@ async function fetchDiscoveryResponse(
       console.error(`Probing ${requestUrl} for ${plugin.model}...`);
     }
 
-    const responseResult = await fetch(requestUrl, {
+    const responseResult = await fetchWithLanFallback(requestUrl, {
       method: request.method,
       ...(headers ? { headers } : {}),
       ...(scheme === "https"
