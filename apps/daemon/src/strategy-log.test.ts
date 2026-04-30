@@ -175,7 +175,7 @@ test("includes the dynamic target estimate in the scheduled start summary", () =
       },
     ),
   ).toBe(
-    "the 19:30 schedule is now active for battery-1: scheduled discharge at 2400W; discharging to 34% to reserve 10% by 08:15 based on overnight house load and predicted solar recovery",
+    "the 19:30 schedule is now active for battery-1: scheduled discharge to 34% at 2400W; discharging to 34% to reserve 10% by 08:15 based on overnight house load and predicted solar recovery",
   );
 });
 
@@ -203,6 +203,32 @@ test("uses the resolved runtime action in the scheduled start summary when delay
     ),
   ).toBe(
     "the delayed charging schedule is now active for battery-1: scheduled discharge to 38% at 2400W; discharging to 38% to reserve 15% by 10:00 based on expected demand until the delayed charging marker, recent history, predicted solar contribution",
+  );
+});
+
+test("uses self-consumption wording in the scheduled start summary for delayed-charging auto self-consumption", () => {
+  expect(
+    formatScheduledStrategyStartedSummary(
+      "battery-1",
+      buildDailyItem({
+        manualChargeTargetSoc: 100,
+        manualDischargeTargetSoc: null,
+        manualState: "charging",
+        manualTargetSoc: 100,
+        targetMethod: "auto",
+        triggerKind: BatteryStrategyTriggerKind.DelayedCharging,
+      }),
+      "",
+      {
+        reasoning: "expected net solar fill power at the low-price marker",
+        resolvedManualState: null,
+        targetSocPercent: 100,
+        reserveSocPercent: 100,
+        targetTime: "2026-04-13T10:00:00.000Z",
+      },
+    ),
+  ).toBe(
+    "the delayed charging schedule is now active for battery-1: self-consumption with a dynamic target; switching to self-consumption ahead of 10:00 based on expected net solar fill power at the low-price marker",
   );
 });
 
@@ -448,6 +474,20 @@ test("strategy status summary reports manual override duration", () => {
   ).toBe("Discharging at 800W for 5 minutes");
 });
 
+test("strategy status summary omits power for idle manual override", () => {
+  expect(
+    formatBatteryStrategyStatusSummary(
+      buildBattery({
+        strategyMode: "manual",
+        manualState: "idle",
+        manualPowerW: 2400,
+        manualTargetSoc: 10,
+        manualModeActive: true,
+      }),
+    ),
+  ).toBe("Idle to 10%");
+});
+
 test("strategy status summary reports idle without zero target", () => {
   expect(
     formatBatteryStrategyStatusSummary(
@@ -521,6 +561,33 @@ test("strategy status summary prefixes delayed-charging trigger kind", () => {
       new Date("2026-04-21T02:15:00.000Z"),
     ),
   ).toBe("Delayed charging: Charging to 100%");
+});
+
+test("strategy status summary keeps delayed-charging label when it resolves to self-consumption", () => {
+  expect(
+    formatBatteryStrategyStatusSummary(
+      buildBattery({
+        strategyRuntime: buildRuntime({
+          activeItemId: "daily-2",
+          activeResolvedManualState: null,
+          activeTargetSocPercent: 100,
+          activeStartedAt: "2026-04-30T10:35:14.000Z",
+        }),
+        strategyPlan: [
+          buildDefaultItem(),
+          buildDailyItem({
+            id: "daily-2",
+            triggerKind: BatteryStrategyTriggerKind.DelayedCharging,
+            manualState: "charging",
+            manualChargeTargetSoc: null,
+            manualTargetSoc: null,
+            targetMethod: "auto",
+          }),
+        ],
+      }),
+      new Date("2026-04-30T10:40:00.000Z"),
+    ),
+  ).toBe("Delayed charging: Self-consumption to 100%");
 });
 
 function buildBattery(overrides: Partial<BatteryRecord> = {}): BatteryRecord {

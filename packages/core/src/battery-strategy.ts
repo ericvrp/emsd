@@ -24,3 +24,15 @@ export function resolveActiveManualState(input: {
     ? (input.resolvedManualState ?? input.fallbackManualState)
     : input.fallbackManualState;
 }
+
+export function resolveEstimatedManualState(input: {
+  fallbackManualState: BatteryManualState | null;
+  resolvedManualState: BatteryManualState | null | undefined;
+  targetMethod: BatteryStrategyPlanItem["targetMethod"] | undefined;
+}): BatteryManualState | null {
+  return input.targetMethod === "auto"
+    ? (input.resolvedManualState === undefined
+        ? input.fallbackManualState
+        : input.resolvedManualState)
+    : input.fallbackManualState;
+}

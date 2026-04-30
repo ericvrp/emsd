@@ -18,7 +18,6 @@ import {
   shouldMarkScheduledItemObserved,
   shouldSkipScheduledItem,
   shouldSkipDelayedSocItemBecauseLaterItemIsDue,
-  shouldTransitionDelayedChargingToIdle,
   shouldWaitForObservedStart,
 } from "./strategy-scheduler";
 
@@ -240,42 +239,15 @@ test("shouldCompleteScheduledItem uses the computed dynamic target while an auto
   ).toBe(true);
 });
 
-test("shouldTransitionDelayedChargingToIdle when the target is reached before the low-price marker", () => {
-  const item = createDailyItem({
-    id: "daily-1",
-    manualState: "charging",
-    targetMethod: "auto",
-    triggerKind: BatteryStrategyTriggerKind.DelayedCharging,
-  });
-
-  expect(
-    shouldTransitionDelayedChargingToIdle({
-      item,
-      now: new Date("2026-04-09T09:00:00.000Z"),
-      runtime: {
-        activeItemId: "daily-1",
-        activeObservedAt: "2026-04-09T07:00:05.000Z",
-        activeResolvedManualState: "discharging",
-        activeStartSocPercent: 60,
-        activeStartedAt: "2026-04-09T07:00:00.000Z",
-        activeTargetSocPercent: 40,
-        activeTargetTime: "2026-04-09T10:00:00.000Z",
-        lastTriggeredAtByItemId: { "daily-1": "2026-04-09T07:00:00.000Z" },
-      },
-      sample: createSample({ socPercent: 39, status: "discharging" }),
-    }),
-  ).toBe(true);
-});
-
-test("shouldCompleteScheduledItem keeps delayed-charging active after the target is reached before the window starts", () => {
+test("shouldCompleteScheduledItem keeps delayed-charging active until 100% is reached", () => {
   const battery = createBattery({
     strategyRuntime: {
       activeItemId: "daily-1",
       activeObservedAt: "2026-04-09T07:00:05.000Z",
-      activeResolvedManualState: "discharging",
+      activeResolvedManualState: null,
       activeStartSocPercent: 60,
       activeStartedAt: "2026-04-09T07:00:00.000Z",
-      activeTargetSocPercent: 40,
+      activeTargetSocPercent: 100,
       activeTargetTime: "2026-04-09T10:00:00.000Z",
       lastTriggeredAtByItemId: { "daily-1": "2026-04-09T07:00:00.000Z" },
     },
@@ -293,20 +265,20 @@ test("shouldCompleteScheduledItem keeps delayed-charging active after the target
       item,
       now: new Date("2026-04-09T09:00:00.000Z"),
       runtime: battery.strategyRuntime,
-      sample: createSample({ socPercent: 39, status: "discharging" }),
+      sample: createSample({ socPercent: 95, status: "idle" }),
     }),
   ).toBeNull();
 });
 
-test("shouldCompleteScheduledItem completes delayed-charging when the low-price window starts", () => {
+test("shouldCompleteScheduledItem completes delayed-charging when it reaches 100%", () => {
   const battery = createBattery({
     strategyRuntime: {
       activeItemId: "daily-1",
       activeObservedAt: "2026-04-09T07:00:05.000Z",
-      activeResolvedManualState: "idle",
+      activeResolvedManualState: null,
       activeStartSocPercent: 60,
       activeStartedAt: "2026-04-09T07:00:00.000Z",
-      activeTargetSocPercent: 40,
+      activeTargetSocPercent: 100,
       activeTargetTime: "2026-04-09T10:00:00.000Z",
       lastTriggeredAtByItemId: { "daily-1": "2026-04-09T07:00:00.000Z" },
     },
@@ -324,11 +296,11 @@ test("shouldCompleteScheduledItem completes delayed-charging when the low-price 
       item,
       now: new Date("2026-04-09T10:00:00.000Z"),
       runtime: battery.strategyRuntime,
-      sample: createSample({ socPercent: 40, status: "idle" }),
+      sample: createSample({ socPercent: 100, status: "idle" }),
     }),
   ).toMatchObject({
-    endAt: "2026-04-09T10:00:00.000Z",
-    reason: "delayed-charging-window-start-reached",
+    reason: "charge-target-reached",
+    targetSoc: 100,
   });
 });
 
@@ -354,6 +326,31 @@ test("shouldMarkScheduledItemObserved uses the resolved runtime state for delaye
       sample: createSample({ status: "discharging" }),
     }),
   ).toBe(true);
+});
+
+test("shouldMarkScheduledItemObserved does not wait for delayed-charging self-consumption mode", () => {
+  const item = createDailyItem({
+    id: "daily-1",
+    manualState: "charging",
+    targetMethod: "auto",
+    triggerKind: BatteryStrategyTriggerKind.DelayedCharging,
+  });
+
+  expect(
+    shouldMarkScheduledItemObserved({
+      item,
+      runtime: {
+        activeItemId: "daily-1",
+        activeObservedAt: null,
+        activeResolvedManualState: null,
+        activeStartSocPercent: 60,
+        activeStartedAt: "2026-04-09T07:00:00.000Z",
+        activeTargetSocPercent: 100,
+        lastTriggeredAtByItemId: { "daily-1": "2026-04-09T07:00:00.000Z" },
+      },
+      sample: createSample({ status: "idle" }),
+    }),
+  ).toBe(false);
 });
 
 test("shouldCompleteScheduledItem waits until a scheduled discharge is observed", () => {

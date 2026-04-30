@@ -658,7 +658,7 @@ function getBuiltInStrategyDescription(
     case BatteryStrategyBuiltinItemKey.ExportSurplus:
       return "Discharges during a local high-price window to earn from otherwise unneeded battery capacity while keeping reserve for expected household demand.";
     case BatteryStrategyBuiltinItemKey.DelayedCharging:
-      return "Under construction and disabled by default because the current delayed-charging behavior is not correct yet.";
+      return "Starts shortly before a low-price marker and then switches to self-consumption or full charging, depending on that marker price.";
   }
 }
 

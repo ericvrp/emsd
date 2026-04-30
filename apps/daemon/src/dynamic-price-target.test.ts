@@ -88,7 +88,7 @@ test("evening export-surplus ignores same-day solar blips and targets next-morni
   expect(estimate.estimatedReservePercentAtTargetTime).toBe(14);
 });
 
-test("delayed-charging auto reserves daytime headroom from the low-price window", () => {
+test("delayed-charging auto switches to self-consumption before a positive low-price marker", () => {
   const now = new Date("2026-04-19T06:00:00.000Z");
   const battery = createBattery();
   const item = createAutoLowPriceItem();
@@ -116,42 +116,39 @@ test("delayed-charging auto reserves daytime headroom from the low-price window"
   });
 
   expect(estimate.targetTime).toBe("2026-04-19T10:00:00.000Z");
-  expect(estimate.expectedHouseLoadWh).toBeGreaterThan(0);
-  expect(estimate.predictedSolarGenerationWh).toBeGreaterThan(
-    estimate.expectedHouseLoadWh,
-  );
   expect(estimate.skipReason).toBeNull();
-  expect(estimate.targetTimeSignal?.predictedSolarW).toBeGreaterThan(0);
-  expect(estimate.estimatedReservePercentAtTargetTime).toBe(20);
-  expect(estimate.estimatedTargetPercent).toBeLessThan(100);
-  expect(estimate.startTime).not.toBeNull();
-  expect(estimate.effectiveDischargePowerW).toBe(2400);
-  expect(estimate.delayedChargingDetails).toMatchObject({
-    actualWindowEnd: "2026-04-19T11:15:00.000Z",
-    actualWindowEndPrice: 10,
-    actualWindowStart: "2026-04-19T10:00:00.000Z",
-    actualWindowStartPrice: 10,
-    chargePowerW: 2400,
-    chargeStartSocPercent: 70,
-    currentSocBasisPercent: 70,
-    latestFeasiblePreDischargeStartTime: "2026-04-19T06:00:00.000Z",
-    lowestPrice: 10,
-    lowPriceMargin: 0.39,
-    lowPriceMarkerTime: "2026-04-19T10:00:00.000Z",
-    minimumTimeToFullChargeMinutes: 75,
-    normalizedImportExportSpread: 0.13,
-    potentialWindowEnd: "2026-04-19T11:15:00.000Z",
-    potentialWindowStart: "2026-04-19T08:45:00.000Z",
-    preDischargeTargetSocPercent: 93,
+  expect(estimate.targetTimeSignal).toMatchObject({
+    expectedHouseLoadW: 250,
   });
+  expect(estimate.estimatedReservePercentAtTargetTime).toBe(100);
+  expect(estimate.estimatedTargetPercent).toBe(100);
+  expect(estimate.estimatedRemainingEnergyWh).toBe(3000);
+  expect(estimate.resolvedManualState).toBeNull();
+  expect(estimate.delayedChargingDetails).toMatchObject({
+    activationMode: "self-consumption",
+    currentSocBasisPercent: 70,
+    energyToFullWh: 3000,
+    expectedHouseLoadAtMarkerW: 250,
+    lowestPrice: 10,
+    lowPriceMarkerTime: "2026-04-19T10:00:00.000Z",
+    targetChargePercent: 100,
+  });
+  expect(estimate.delayedChargingDetails?.effectiveFillPowerW).toBeGreaterThan(0);
+  expect(
+    estimate.delayedChargingDetails?.expectedNetSolarFillPowerW,
+  ).toBeGreaterThan(0);
+  expect(estimate.delayedChargingDetails?.predictedSolarAtMarkerW).toBeGreaterThan(0);
+  expect(estimate.delayedChargingDetails?.timeToFullMinutes).toBeGreaterThan(0);
+  expect(estimate.delayedChargingDetails?.triggerLeadTimeMinutes).toBeGreaterThan(0);
+  expect(estimate.startTime).not.toBeNull();
   expect(
     new Date(estimate.startTime ?? "").getTime() +
-      (estimate.requiredDischargeMinutes ?? 0) * 60_000,
-  ).toBeLessThanOrEqual(new Date(estimate.targetTime ?? "").getTime());
-  expect(estimate.reasoning).toContain("delayed charging window");
+      (estimate.delayedChargingDetails?.triggerLeadTimeMinutes ?? 0) * 60_000,
+  ).toBe(new Date(estimate.targetTime ?? "").getTime());
+  expect(estimate.reasoning).toContain("low-price marker");
 });
 
-test("delayed-charging auto idles when the battery is already at the target", () => {
+test("delayed-charging auto charges to full before a non-positive low-price marker", () => {
   const now = new Date("2026-04-19T06:00:00.000Z");
   const battery = createBattery();
   const item = createAutoLowPriceItem();
@@ -163,7 +160,7 @@ test("delayed-charging auto idles when the battery is already at the target", ()
     dynamicPriceSamples: createDynamicPriceSamples([
       ["2026-04-19T02:00:00.000Z", 20],
       ["2026-04-19T06:00:00.000Z", 30],
-      ["2026-04-19T10:00:00.000Z", 10],
+      ["2026-04-19T10:00:00.000Z", -2],
       ["2026-04-19T14:00:00.000Z", 28],
       ["2026-04-19T18:00:00.000Z", 18],
     ]),
@@ -172,16 +169,25 @@ test("delayed-charging auto idles when the battery is already at the target", ()
     now,
     normalizedImportExportSpread: 0.13,
     p1MeterSamples: history.p1MeterSamples,
-    sample: createSample({ socPercent: 35 }),
+    sample: createSample(),
     solarEnergyProviderSamples: history.solarEnergyProviderSamples,
-    solarForecastSamples: createDaytimeSolarForecastSamples(1600),
+    solarForecastSamples: createDaytimeSolarForecastSamples(3000),
   });
 
-  expect(estimate.resolvedManualState).toBe("idle");
+  expect(estimate.targetTime).toBe("2026-04-19T10:00:00.000Z");
+  expect(estimate.startTime).toBe("2026-04-19T07:45:00.000Z");
+  expect(estimate.resolvedManualState).toBe("charging");
   expect(estimate.skipReason).toBeNull();
+  expect(estimate.delayedChargingDetails).toMatchObject({
+    activationMode: "charging",
+    effectiveFillPowerW: 800,
+    targetChargePercent: 100,
+    timeToFullMinutes: 225,
+    triggerLeadTimeMinutes: 135,
+  });
 });
 
-test("delayed-charging auto is skipped when no net solar charge is expected", () => {
+test("delayed-charging auto is skipped when the marker price is positive but net solar fill power is not", () => {
   const now = new Date("2026-04-19T06:00:00.000Z");
   const battery = createBattery();
   const item = createAutoLowPriceItem();
@@ -210,7 +216,10 @@ test("delayed-charging auto is skipped when no net solar charge is expected", ()
     ),
   });
 
-  expect(estimate.skipReason).toContain("no net solar charge expected");
+  expect(estimate.startTime).toBeNull();
+  expect(estimate.skipReason).toContain(
+    "expected net solar fill power at the marker",
+  );
 });
 
 function createAutoLowPriceItem(): BatteryStrategyPlanItem {

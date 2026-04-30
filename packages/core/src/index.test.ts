@@ -11,7 +11,8 @@ import {
   getDatabasePath,
   normalizeBatteryStrategyPlan,
   parseGpsCoordinate,
-} from "./index";
+  resolveEstimatedManualState,
+ } from "./index";
 
 const originalPath = process.env.EMSD_DB_PATH;
 
@@ -46,6 +47,24 @@ test("parseGpsCoordinate parses normalized latitude longitude pairs", () => {
   });
   expect(parseGpsCoordinate("invalid")).toBeNull();
   expect(parseGpsCoordinate("91, 4.9")).toBeNull();
+});
+
+test("resolveEstimatedManualState preserves null auto estimates", () => {
+  expect(
+    resolveEstimatedManualState({
+      fallbackManualState: "charging",
+      resolvedManualState: null,
+      targetMethod: "auto",
+    }),
+  ).toBeNull();
+
+  expect(
+    resolveEstimatedManualState({
+      fallbackManualState: "charging",
+      resolvedManualState: undefined,
+      targetMethod: "auto",
+    }),
+  ).toBe("charging");
 });
 
 test("createBatteryStrategyRuntimeForPlanApply marks earlier same-day items as triggered", () => {

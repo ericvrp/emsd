@@ -13,18 +13,18 @@ The goal is:
 
 For delayed-charging schedules with `targetMethod === "auto"`, the flow is:
 - resolve the upcoming delayed-charging marker as the local low-price marker
-- estimate the net solar charge opportunity during the low-price window itself
-- compute the desired battery level at the low-price window start
-- compute `minimumTimeToFullCharge` from that low-price-window-start SoC to full
-- derive the potential and actual low-price windows around the marker using that charge-time estimate and the normalized import/export spread
-- derive the latest feasible pre-discharge start time from the current SoC, the desired SoC at the low-price window start, and the effective discharge power
-- never discharge below the delayed-charging provisional floor of backup reserve plus 10%
-- once the target SoC is reached before the window starts, hold the battery idle until the low-price window begins
-- when the low-price window begins, complete the delayed-charging item and restore the default strategy instead of keeping the delayed-charging item active through the full window
+- compute the battery energy still needed to reach `100%`
+- if the marker price is above `0`, use `expectedSolarAtMarkerW - expectedHouseLoadAtMarkerW` as the effective fill power and apply `self-consumption`
+- if the marker price is `0` or below, use `battery.maximumChargePowerW` as the effective fill power and apply full charging
+- compute `timeToFull`
+- compute lead time as `timeToFull * 0.5 * triggerMarginFactor`
+- trigger delayed charging at `lowPriceMarkerTime - leadTime`
+- skip positive-price markers when the expected net solar fill power at the marker is not positive
+- complete the delayed-charging item when the battery reaches `100%`, then restore the default strategy
 
 Important:
-- delayed charging start time should not be tied to a preceding `export-surplus` or other high-price marker
-- if the battery is already at or below the desired delayed-charging start level, the daemon should wait instead of continuing to discharge
+- delayed charging start time is based on the low-price marker only
+- the estimator uses the marker signal only; it does not average across a larger delayed-charging window
 
 This same estimator is used by:
 - the daemon activation path for dynamic target schedule items
@@ -130,22 +130,20 @@ Default values:
 This reserve-floor helper is used by:
 - export-surplus auto discharge until solar recovery
 
-Delayed charging uses its own provisional start threshold rule:
-
-`delayedChargingStartFloorPercent = minimumDischargePercent + 10`
+Delayed charging no longer uses a pre-discharge floor or a separate delayed-charging reserve rule.
 
 ## Daemon Behavior
 
 When a dynamic schedule item activates:
 - the daemon computes the estimate in `apps/daemon/src/dynamic-price-target.ts`
 - applies the computed stop target to the activated strategy
-- delayed-charging auto items resolve from configured `charging` to runtime `discharging` while pre-discharging is needed
+- delayed-charging auto items now resolve to either runtime `self-consumption` or runtime full `charging`
 - stores the resolved target SoC and target time in runtime state
 - stores the resolved runtime manual state for completion checks and status text
 - uses that same resolved target for completion checks
 - logs the dynamic estimate in the normal scheduled-start log line
 
-The delayed-charging start time should be the latest feasible pre-discharge start time needed to reach the computed delayed-charging start target by the low-price window start. It should not be derived from the preceding `export-surplus` marker.
+The delayed-charging start time should be derived directly from the low-price marker and the explicit lead-time formula. It is not derived from a preceding `export-surplus` marker.
 
 This logic is wired from `apps/daemon/src/index.ts` and the completion logic lives in `apps/daemon/src/strategy-scheduler.ts`.
 
@@ -185,7 +183,7 @@ The script supports:
 - `--site <site-id>`
 - `--days <n>`
 
-For delayed-charging auto evaluation, `--marker-date` and `--marker-time` select the delayed-charging marker being evaluated. Verbose `why` output explains the marker, price margin, potential and actual low-price windows, pre-discharge target, and computed latest feasible pre-discharge start time.
+For delayed-charging auto evaluation, `--marker-date` and `--marker-time` select the delayed-charging marker being evaluated. Verbose `why` output explains the marker, resolved activation mode, marker load/solar signal, effective fill power, time to full, trigger lead time, and computed trigger time.
 
 ## Main Files
 

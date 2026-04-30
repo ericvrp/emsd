@@ -50,7 +50,6 @@ export function shouldCompleteScheduledItem(input: {
 
 export interface ScheduledItemCompletion {
   reason:
-    | "delayed-charging-window-start-reached"
     | "missing-start-time"
     | "duration-elapsed"
     | "end-time-reached"
@@ -85,7 +84,6 @@ export function getScheduledItemCompletion(input: {
   });
   const activeTargetSoc =
     item.targetMethod === "auto" ? runtime.activeTargetSocPercent : null;
-  const delayedChargingWindowStartAt = resolveRuntimeTargetTime(runtime);
 
   if (!startedAt) {
     return {
@@ -157,26 +155,6 @@ export function getScheduledItemCompletion(input: {
       : null;
   }
 
-  if (
-    isDelayedChargingAutoDischargeItem(item) &&
-    delayedChargingWindowStartAt !== null &&
-    now.getTime() >= delayedChargingWindowStartAt.getTime()
-  ) {
-    const targetSoc = activeTargetSoc ?? item.manualTargetSoc;
-
-    return {
-      reason: "delayed-charging-window-start-reached",
-      nowAt: now.toISOString(),
-      observedAt: runtime.activeObservedAt,
-      startedAt,
-      state: activeManualState,
-      status: sample.status,
-      socPercent: sample.socPercent,
-      endAt: delayedChargingWindowStartAt.toISOString(),
-      ...(targetSoc !== null ? { targetSoc } : {}),
-    };
-  }
-
   if (item.strategyMode === "manual" && activeManualState === "charging") {
     const targetSoc = activeTargetSoc ?? item.manualChargeTargetSoc ?? 100;
 
@@ -203,14 +181,6 @@ export function getScheduledItemCompletion(input: {
       battery.minimumDischargePercent;
 
     if (sample.socPercent !== null && sample.socPercent <= targetSoc) {
-      if (
-        isDelayedChargingAutoDischargeItem(item) &&
-        delayedChargingWindowStartAt !== null &&
-        now.getTime() < delayedChargingWindowStartAt.getTime()
-      ) {
-        return null;
-      }
-
       return {
         reason: "discharge-target-reached",
         nowAt: now.toISOString(),
@@ -233,14 +203,6 @@ export function getScheduledItemCompletion(input: {
       battery.minimumDischargePercent;
 
     if (sample.socPercent !== null && sample.socPercent <= targetSoc) {
-      if (
-        isDelayedChargingAutoDischargeItem(item) &&
-        delayedChargingWindowStartAt !== null &&
-        now.getTime() < delayedChargingWindowStartAt.getTime()
-      ) {
-        return null;
-      }
-
       return {
         reason: "idle-target-reached",
         nowAt: now.toISOString(),
@@ -573,6 +535,13 @@ export function shouldMarkScheduledItemObserved(input: {
   runtime: BatteryStrategyRuntimeRecord;
   sample: NormalizedBatteryInfo;
 }): boolean {
+  if (
+    isDelayedChargingAutoDischargeItem(input.item) &&
+    input.runtime.activeResolvedManualState === null
+  ) {
+    return false;
+  }
+
   const activeManualState = resolveActiveManualState({
     fallbackManualState: input.item.manualState,
     resolvedManualState: input.runtime.activeResolvedManualState,
@@ -603,34 +572,6 @@ export function shouldWaitForObservedStart(
   );
 }
 
-export function shouldTransitionDelayedChargingToIdle(input: {
-  item: BatteryStrategyPlanItem;
-  now: Date;
-  runtime: BatteryStrategyRuntimeRecord;
-  sample: NormalizedBatteryInfo;
-}): boolean {
-  if (!isDelayedChargingAutoDischargeItem(input.item)) {
-    return false;
-  }
-
-  const activeManualState = resolveActiveManualState({
-    fallbackManualState: input.item.manualState,
-    resolvedManualState: input.runtime.activeResolvedManualState,
-    targetMethod: input.item.targetMethod,
-  });
-  const targetTime = resolveRuntimeTargetTime(input.runtime);
-  const targetSoc = input.runtime.activeTargetSocPercent ?? null;
-
-  return (
-    activeManualState === "discharging" &&
-    targetTime !== null &&
-    input.now.getTime() < targetTime.getTime() &&
-    targetSoc !== null &&
-    input.sample.socPercent !== null &&
-    input.sample.socPercent <= targetSoc
-  );
-}
-
 function isSocTargetItem(item: BatteryStrategyPlanItem): boolean {
   return (
     item.strategyMode === "manual" &&
@@ -639,18 +580,6 @@ function isSocTargetItem(item: BatteryStrategyPlanItem): boolean {
       item.targetMethod === "soc" ||
       item.targetMethod === "auto")
   );
-}
-
-function resolveRuntimeTargetTime(
-  runtime: BatteryStrategyRuntimeRecord,
-): Date | null {
-  if (!runtime.activeTargetTime) {
-    return null;
-  }
-
-  const targetTime = new Date(runtime.activeTargetTime);
-
-  return Number.isNaN(targetTime.getTime()) ? null : targetTime;
 }
 
 function getLowPriceAutoTriggerAt(input: {

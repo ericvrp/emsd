@@ -17,7 +17,7 @@ import {
   getDatabasePath,
   isBatteryStrategyPriceTrigger,
   isDelayedChargingAutoDischargeItem,
-  resolveActiveManualState,
+  resolveEstimatedManualState,
   resolveBatteryStrategyFromPlanItem,
 } from "@emsd/core";
 import { createBatteryPlugin } from "../../ems/src/battery-plugins";
@@ -77,7 +77,6 @@ import {
   needsCompletionTracking,
   shouldMarkScheduledItemObserved,
   shouldSkipScheduledItem,
-  shouldTransitionDelayedChargingToIdle,
   shouldWaitForObservedStart,
 } from "./strategy-scheduler";
 import {
@@ -1049,7 +1048,7 @@ async function runScheduledStrategy(
       return {
         dynamicPriceTargetEstimate,
         item,
-        resolvedManualState: resolveActiveManualState({
+        resolvedManualState: resolveEstimatedManualState({
           fallbackManualState: item.manualState,
           resolvedManualState: dynamicPriceTargetEstimate?.resolvedManualState,
           targetMethod: item.targetMethod,
@@ -1120,56 +1119,6 @@ async function runScheduledStrategy(
         ),
         `strategy item started for ${battery.id}: ${describeStrategyPlanItemWithIndex(battery, activeItem)}${observedDelay}`,
       );
-    }
-
-    if (
-      shouldTransitionDelayedChargingToIdle({
-        item: activeItem,
-        now,
-        runtime,
-        sample,
-      })
-    ) {
-      const idleStrategy = applyEstimatedTargetToStrategy(
-        resolveBatteryStrategyFromPlanItem({
-          item: activeItem,
-          minimumDischargePercent: battery.minimumDischargePercent,
-          maximumChargePowerW: battery.maximumChargePowerW,
-          maximumDischargePowerW: battery.maximumDischargePowerW,
-        }),
-        activeItem,
-        "idle",
-        runtime.activeTargetSocPercent ?? null,
-        battery.minimumDischargePercent,
-        battery.maximumChargePowerW,
-        battery.maximumDischargePowerW,
-      );
-
-      await createBatteryPlugin(battery).setStrategy(idleStrategy);
-
-      runtime = {
-        ...runtime,
-        activeResolvedManualState: "idle",
-      };
-
-      updateBatteryStrategyState(db, {
-        batteryId: battery.id,
-        siteId: battery.siteId,
-        manualModeActive: false,
-        manualModeStarted: false,
-        strategy: idleStrategy,
-      });
-      updateBatteryStrategyRuntime(db, {
-        batteryId: battery.id,
-        siteId: battery.siteId,
-        strategyRuntime: runtime,
-      });
-
-      logVerbose(
-        verbose,
-        `holding delayed charging target for ${battery.id}: ${describeStrategyPlanItem(activeItem)}`,
-      );
-      return;
     }
 
     const completion = getScheduledItemCompletion({
@@ -1383,6 +1332,17 @@ function applyEstimatedTargetToStrategy(
 
   if (item.strategyMode === "self-consumption") {
     return strategy;
+  }
+
+  if (isDelayedChargingAutoDischargeItem(item) && resolvedManualState === null) {
+    return {
+      strategyMode: "self-consumption",
+      manualState: null,
+      manualPowerW: null,
+      manualTargetSoc: 100,
+      manualChargeTargetSoc: 100,
+      manualDischargeTargetSoc: minimumDischargePercent,
+    };
   }
 
   if (resolvedManualState === "charging") {

@@ -24,6 +24,7 @@ import {
   parseBatteryStrategyPlanJson,
   parseBatteryStrategyRuntimeJson,
   parseGpsCoordinate,
+  resolveBatteryStrategyFromPlanItem,
   stringifyBatteryStrategyPlan,
   stringifyBatteryStrategyRuntime,
 } from "@emsd/core";
@@ -956,24 +957,25 @@ export function setHouseStrategyPlan(
     const observedAt = new Date().toISOString();
 
     for (const battery of batteries) {
-      const strategy = input.strategy ?? {
-        strategyMode: battery.strategyMode,
-        manualState: battery.manualState,
-        manualPowerW: battery.manualPowerW,
-        manualChargeTargetSoc: battery.manualChargeTargetSoc,
-        manualDischargeTargetSoc: battery.manualDischargeTargetSoc,
-        manualTargetSoc: battery.manualTargetSoc,
-      };
+      const strategy =
+        input.strategy ??
+        resolveBatteryStrategyFromPlanItem({
+          item: input.strategyPlan[0],
+          minimumDischargePercent: battery.minimumDischargePercent,
+          maximumChargePowerW: battery.maximumChargePowerW,
+          maximumDischargePowerW: battery.maximumDischargePowerW,
+        });
       const planChanged =
         JSON.stringify(battery.strategyPlan) !==
         JSON.stringify(input.strategyPlan);
+      const leavingManualMode = battery.manualModeActive;
       const strategyRuntime = {
         ...(input.strategyRuntime ?? createBatteryStrategyRuntime()),
         lastPlanAcknowledgedAt:
           battery.strategyRuntime.lastPlanAcknowledgedAt ?? null,
         pendingPlanSavedAt:
           battery.strategyRuntime.pendingPlanSavedAt ??
-          (planChanged ? observedAt : null),
+          (planChanged || leavingManualMode ? observedAt : null),
       };
 
       db.query(

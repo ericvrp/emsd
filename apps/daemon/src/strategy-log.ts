@@ -9,6 +9,7 @@ import {
   BatteryStrategyTriggerKind,
   formatBatteryStrategyTriggerKindLabel,
   isBatteryStrategyPriceTrigger,
+  isDelayedChargingAutoDischargeItem,
   resolveActiveManualState,
 } from "@emsd/core";
 import type { ScheduledItemCompletion } from "./strategy-scheduler";
@@ -106,11 +107,11 @@ export function formatScheduledStrategyStartedSummary(
   } | null,
 ): string {
   void observedDelay;
+  const resolvedItem = estimate
+    ? buildResolvedEstimateItem(item, estimate)
+    : item;
   const base = `${describeStrategyScheduleHuman(item)} is now active for ${batteryId}: ${describeStrategyPlanItemHuman(
-    estimate?.resolvedManualState &&
-      estimate.resolvedManualState !== item.manualState
-      ? buildResolvedEstimateItem(item, estimate)
-      : item,
+    resolvedItem,
   )}`;
 
   if (!estimate) {
@@ -121,6 +122,18 @@ export function formatScheduledStrategyStartedSummary(
     estimate.targetTime === null
       ? ""
       : ` by ${formatHumanClockTime(estimate.targetTime)}`;
+
+  if (
+    isDelayedChargingAutoDischargeItem(item) &&
+    estimate.resolvedManualState === null
+  ) {
+    const markerTimeLabel =
+      estimate.targetTime === null
+        ? ""
+        : ` ahead of ${formatHumanClockTime(estimate.targetTime)}`;
+
+    return `${base}; switching to self-consumption${markerTimeLabel} based on ${estimate.reasoning}`;
+  }
 
   if (estimate.resolvedManualState === "charging") {
     return `${base}; charging to ${estimate.targetSocPercent}%${targetTimeLabel} based on ${estimate.reasoning}`;
@@ -281,6 +294,30 @@ export function formatBatteryStrategyStatusSummary(
     return defaultSummary;
   }
 
+  if (
+    isDelayedChargingAutoDischargeItem(activeItem) &&
+    battery.strategyRuntime.activeResolvedManualState === null
+  ) {
+    return summarizeActiveStrategy({
+      strategyMode: "self-consumption",
+      manualState: null,
+      manualPowerW: null,
+      manualChargeTargetSoc: null,
+      manualDischargeTargetSoc: null,
+      manualTargetSoc: battery.strategyRuntime.activeTargetSocPercent ?? 100,
+      minimumDischargePercent: battery.minimumDischargePercent,
+      resolvedTargetSoc: battery.strategyRuntime.activeTargetSocPercent ?? null,
+      targetMethod: activeItem.targetMethod,
+      targetDurationMinutes: activeItem.targetDurationMinutes,
+      targetEndTime: activeItem.targetEndTime,
+      targetTime: battery.strategyRuntime.activeTargetTime ?? null,
+      activeStartedAt: battery.strategyRuntime.activeStartedAt,
+      preferPowerWhenAvailable: false,
+      now,
+      triggerKind: activeItem.triggerKind,
+    });
+  }
+
   const baseSummary = summarizeActiveStrategy({
     strategyMode: activeItem.strategyMode,
     manualState: resolveActiveManualState({
@@ -410,6 +447,10 @@ function resolveDisplayedPowerW(input: {
   maximumChargePowerW: number;
   maximumDischargePowerW: number;
 }): number | null {
+  if (input.manualState === "idle") {
+    return null;
+  }
+
   if (input.manualState === "charging") {
     return input.maximumChargePowerW;
   }
@@ -521,6 +562,17 @@ function buildResolvedEstimateItem(
     Parameters<typeof formatScheduledStrategyStartedSummary>[3]
   >,
 ): BatteryStrategyPlanItem {
+  if (isDelayedChargingAutoDischargeItem(item) && estimate.resolvedManualState === null) {
+    return {
+      ...item,
+      strategyMode: "self-consumption",
+      manualState: null,
+      manualChargeTargetSoc: null,
+      manualDischargeTargetSoc: null,
+      manualTargetSoc: estimate.targetSocPercent,
+    };
+  }
+
   return {
     ...item,
     manualState: estimate.resolvedManualState,
@@ -726,10 +778,6 @@ function describeCompletionReasonHuman(
       return completion.targetDurationMinutes === null
         ? "its duration completed"
         : `${completion.targetDurationMinutes} minute(s) elapsed`;
-    case "delayed-charging-window-start-reached":
-      return completion.endAt
-        ? `the delayed charging window started at ${formatLocalCutoffTimestamp(completion.endAt)}`
-        : "the delayed charging window started";
     case "end-time-reached":
       return completion.endAt
         ? `it reached its cutoff at ${formatLocalCutoffTimestamp(completion.endAt)}`

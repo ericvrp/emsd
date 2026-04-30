@@ -46,6 +46,7 @@ const DEFAULT_TARGET_BUFFER_PERCENT_PER_HOUR =
 interface ScriptOptions {
   backupReserveMargin: number;
   markerDate: string;
+  markerPercentage: number | null;
   days: number;
   hasExplicitMarkerTime: boolean;
   minimumSolarSurplusWOverride: number;
@@ -110,6 +111,7 @@ interface EvaluationContext {
 
 export function parseArgs(args: string[]): ScriptOptions {
   let markerDate = getCurrentLocalDate();
+  let markerPercentage: number | null = null;
   let days = DEFAULT_DAYS;
   let backupReserveMargin = DEFAULT_BACKUP_RESERVE_MARGIN;
   let hasExplicitMarkerTime = false;
@@ -148,6 +150,22 @@ export function parseArgs(args: string[]): ScriptOptions {
       markerDate = dateArg.value;
       hasExplicitMarkerTime = true;
       index = dateArg.newIndex;
+      continue;
+    }
+
+    const markerPercentageArg = parseNumberArg(
+      args,
+      index,
+      "--marker-percentage",
+      (value) =>
+        value < 0 || value > 100
+          ? "--marker-percentage must be between 0 and 100."
+          : null,
+    );
+
+    if (markerPercentageArg) {
+      markerPercentage = markerPercentageArg.value;
+      index = markerPercentageArg.newIndex;
       continue;
     }
 
@@ -265,6 +283,7 @@ export function parseArgs(args: string[]): ScriptOptions {
 
   return {
     markerDate,
+    markerPercentage,
     days,
     backupReserveMargin,
     hasExplicitMarkerTime,
@@ -290,6 +309,7 @@ function printHelp(): void {
       `  backup reserve margin per hour: ${DEFAULT_TARGET_BUFFER_PERCENT_PER_HOUR}%`,
       `  power: ${DEFAULT_POWER_W}W`,
       "  marker date/time: next relevant price marker unless --marker-date or --marker-time is set",
+      "  marker percentage: current battery SoC unless --marker-percentage is set",
       `  days: ${DEFAULT_DAYS}`,
       `  --verbose enables: ${DEFAULT_VERBOSE_BLOCKS.join(", ")}`,
       "",
@@ -298,6 +318,7 @@ function printHelp(): void {
       "  bun run dynamic-price-target:evaluate -- --strategy=delayed-charging",
       "  bun run dynamic-price-target:evaluate -- --strategy=export-surplus,delayed-charging",
       "  bun run dynamic-price-target:evaluate -- --marker-date=2026-04-19",
+      "  bun run dynamic-price-target:evaluate -- --marker-percentage=55",
       "  bun run dynamic-price-target:evaluate -- --backup-reserve-margin=2",
       "  bun run dynamic-price-target:evaluate -- --minimum-solar-surplus=75",
       "  bun run dynamic-price-target:evaluate -- --backup-reserve-margin-per-hour=0.5",
@@ -459,11 +480,9 @@ function evaluateSite(
         manualTargetSoc: battery.manualTargetSoc,
         model: battery.model,
         name: battery.name,
-        socPercent: getBatterySocAt(
-          batteryPowerSamples,
-          battery.id,
-          estimateAt,
-        ),
+        socPercent:
+          options.markerPercentage ??
+          getBatterySocAt(batteryPowerSamples, battery.id, estimateAt),
         status: battery.status,
         strategyMode: "manual",
       },
@@ -794,19 +813,29 @@ export function buildEstimateSummaryRows(
     return [
       {
         label: "Low Price Marker",
-        value: `${formatTargetTime(delayedChargingDetails.lowPriceMarkerTime)} at ${formatPrice(delayedChargingDetails.lowestPrice)} (+ ${formatPrice(delayedChargingDetails.lowPriceMargin)} margin -> max ${formatPrice(delayedChargingDetails.lowestPrice + delayedChargingDetails.lowPriceMargin)} in window)`,
+        value: `${formatTargetTime(delayedChargingDetails.lowPriceMarkerTime)} at ${formatPrice(delayedChargingDetails.lowestPrice)}`,
       },
       {
-        label: "Time to charge",
-        value: `${formatDurationMinutes(delayedChargingDetails.minimumTimeToFullChargeMinutes)} from ${formatNumber(delayedChargingDetails.chargeStartSocPercent)}% to 100% (${formatWh(computeChargeEnergyWh(input.capacityWh, delayedChargingDetails.chargeStartSocPercent))} at ${formatW(delayedChargingDetails.chargePowerW)})`,
+        label: "Activation Mode",
+        value:
+          delayedChargingDetails.activationMode === "charging"
+            ? "full charge"
+            : "self-consumption",
       },
       {
-        label: "Low price window",
-        value: `${formatClockTime(delayedChargingDetails.actualWindowStart)} (${formatPrice(delayedChargingDetails.actualWindowStartPrice)}) -> ${formatClockTime(delayedChargingDetails.actualWindowEnd)} (${formatPrice(delayedChargingDetails.actualWindowEndPrice)}) (potential: ${formatClockTime(delayedChargingDetails.potentialWindowStart)} -> ${formatClockTime(delayedChargingDetails.potentialWindowEnd)})`,
+        label: "Time to full",
+        value: `${formatDurationMinutes(delayedChargingDetails.timeToFullMinutes)} from ${formatNumber(delayedChargingDetails.currentSocBasisPercent)}% to ${delayedChargingDetails.targetChargePercent}% (${formatWh(delayedChargingDetails.energyToFullWh)} at ${formatW(delayedChargingDetails.effectiveFillPowerW)})`,
       },
       {
-        label: "Latest feasable discharge start",
-        value: formatDelayedChargingStartLine(input),
+        label: "Trigger lead time",
+        value: `${formatDurationMinutes(delayedChargingDetails.triggerLeadTimeMinutes)} = ${formatDurationMinutes(delayedChargingDetails.timeToFullMinutes)} * 0.5 * ${formatNumber(delayedChargingDetails.triggerMarginFactor)}`,
+      },
+      {
+        label: "Start",
+        value: formatDisplayedStartTime(
+          input.dynamicPriceTargetEstimate,
+          input.referenceTime,
+        ),
       },
     ];
   }
@@ -868,43 +897,14 @@ function printLabelValueRows(
   }
 }
 
-function formatDelayedChargingStartLine(input: EvaluationContext): string {
-  const estimate = input.dynamicPriceTargetEstimate;
-
-  if (
-    estimate.startTimeBasisSocPercent === null ||
-    estimate.effectiveDischargePowerW === null ||
-    estimate.requiredDischargeMinutes === null
-  ) {
-    return formatDisplayedStartTime(estimate, input.referenceTime);
-  }
-
-  const targetPercent = getDisplayedTargetPercentForEstimate(input);
-
-  return `${formatDisplayedStartTime(estimate, input.referenceTime)} from ${formatNullablePercent(estimate.startTimeBasisSocPercent)} -> ${targetPercent}% (at ${formatW(estimate.effectiveDischargePowerW)} for ${formatDurationMinutes(estimate.requiredDischargeMinutes)})`;
-}
-
-function formatDelayedChargingActionLine(input: EvaluationContext): string {
-  const estimate = input.dynamicPriceTargetEstimate;
-  const targetPercent = getDisplayedTargetPercentForEstimate(input);
-
-  if (estimate.startTimeBasisSocPercent === null) {
-    return `${formatResolvedActionLabel(estimate)} to ${targetPercent}% before the low-price window`;
-  }
-
-  if (estimate.startTimeBasisSocPercent <= targetPercent) {
-    return `idle at ${formatNullablePercent(estimate.startTimeBasisSocPercent)} because the pre-discharge target is already reached`;
-  }
-
-  return `${formatResolvedActionLabel(estimate)} from ${formatNullablePercent(estimate.startTimeBasisSocPercent)} to ${targetPercent}% to reach the pre-discharge target before the low-price window`;
-}
-
 export function buildEstimateSummaryLine(input: EvaluationContext): string {
   const currentTargetPercent = getDisplayedTargetPercentForEstimate(input);
   const reserveAtTargetPercent = getDisplayedReserveAtTargetPercent(input);
   const actionLabel = formatResolvedActionLabel(
     input.dynamicPriceTargetEstimate,
   );
+  const delayedChargingDetails =
+    input.dynamicPriceTargetEstimate.delayedChargingDetails;
   const delayedChargingStartExplanation = formatDelayedChargingStartExplanation(
     {
       dynamicPriceTargetEstimate: input.dynamicPriceTargetEstimate,
@@ -915,6 +915,13 @@ export function buildEstimateSummaryLine(input: EvaluationContext): string {
 
   if (input.dynamicPriceTargetEstimate.skipReason) {
     return `${input.siteName} (${input.siteId}) | ${input.battery.name} (${input.batteryId}) | ${formatStrategyTriggerKindLabel(input.strategyTriggerKind)} ${actionLabel} skipped | ${input.dynamicPriceTargetEstimate.skipReason}`;
+  }
+
+  if (
+    input.strategyTriggerKind === BatteryStrategyTriggerKind.DelayedCharging &&
+    delayedChargingDetails !== null
+  ) {
+    return `${input.siteName} (${input.siteId}) | ${input.battery.name} (${input.batteryId}) | delayed-charging ${actionLabel} at ${formatTargetTime(delayedChargingDetails.lowPriceMarkerTime)} (${formatPrice(delayedChargingDetails.lowestPrice)}) | start ${formatDisplayedStartTime(input.dynamicPriceTargetEstimate, input.referenceTime)} | lead ${formatDurationMinutes(delayedChargingDetails.triggerLeadTimeMinutes)}`;
   }
 
   return `${input.siteName} (${input.siteId}) | ${input.battery.name} (${input.batteryId}) | target percentage ${reserveAtTargetPercent}% at ${formatTargetTime(input.dynamicPriceTargetEstimate.targetTime)} | ${formatStrategyTriggerKindLabel(input.strategyTriggerKind)} ${actionLabel} target ${currentTargetPercent}% start time ${formatDisplayedStartTime(input.dynamicPriceTargetEstimate, input.referenceTime)}${delayedChargingStartExplanation === null ? "" : ` | ${delayedChargingStartExplanation}`}`;
@@ -970,27 +977,21 @@ export function buildEnergyEstimateRows(input: {
   );
 
   if (delayedChargingDetails !== null) {
-    const computedHeadroomPercent = Math.ceil(
-      (input.dynamicPriceTargetEstimate.estimatedRemainingEnergyWh /
-        Math.max(1, input.capacityWh)) *
-        100,
-    );
-
     return {
-      "Low-price window": formatInterval(
-        new Date(delayedChargingDetails.actualWindowStart),
-        delayedChargingDetails.actualWindowEnd,
+      "Marker price": formatPrice(delayedChargingDetails.lowestPrice),
+      "Expected house load at marker": formatW(
+        delayedChargingDetails.expectedHouseLoadAtMarkerW,
       ),
-      "Expected house load during low-price window": formatWh(
-        input.dynamicPriceTargetEstimate.expectedHouseLoadWh,
+      "Predicted solar at marker": formatW(
+        delayedChargingDetails.predictedSolarAtMarkerW,
       ),
-      "Predicted solar during low-price window": formatWh(
-        input.dynamicPriceTargetEstimate.predictedSolarGenerationWh,
+      "Expected net solar fill power": formatSignedW(
+        delayedChargingDetails.expectedNetSolarFillPowerW,
       ),
-      "Expected net charge opportunity": `${formatWh(input.dynamicPriceTargetEstimate.estimatedRemainingEnergyWh)} = max(0, ${formatWh(input.dynamicPriceTargetEstimate.predictedSolarGenerationWh)} - ${formatWh(input.dynamicPriceTargetEstimate.expectedHouseLoadWh)})`,
       "Battery capacity basis": formatWh(input.capacityWh),
-      "Headroom converted to target": `${computedHeadroomPercent}% = ceil(${formatWh(input.dynamicPriceTargetEstimate.estimatedRemainingEnergyWh)} / ${formatWh(input.capacityWh)} * 100)`,
-      "Final target formula": `${currentTargetPercent}% = max(${input.dynamicPriceTargetEstimate.estimatedReservePercentAtTargetTime}% floor, 100% - ${computedHeadroomPercent}% headroom)`,
+      "Energy to full": formatWh(delayedChargingDetails.energyToFullWh),
+      "Time-to-full formula": `${formatDurationMinutes(delayedChargingDetails.timeToFullMinutes)} = ${formatWh(delayedChargingDetails.energyToFullWh)} / ${formatW(delayedChargingDetails.effectiveFillPowerW)}`,
+      "Trigger lead-time formula": `${formatDurationMinutes(delayedChargingDetails.triggerLeadTimeMinutes)} = ${formatDurationMinutes(delayedChargingDetails.timeToFullMinutes)} * 0.5 * ${formatNumber(delayedChargingDetails.triggerMarginFactor)}`,
     };
   }
 
@@ -1061,33 +1062,25 @@ function buildWhyRows(input: EvaluationContext): Record<string, string> {
       "Low-price marker": formatTargetTime(
         delayedChargingDetails.lowPriceMarkerTime,
       ),
+      "Activation mode":
+        delayedChargingDetails.activationMode === "charging"
+          ? "full charge"
+          : "self-consumption",
       "Lowest price": formatPrice(delayedChargingDetails.lowestPrice),
-      "Normalized import/export spread": formatPrice(
-        delayedChargingDetails.normalizedImportExportSpread,
+      "Expected house load at marker": formatW(
+        delayedChargingDetails.expectedHouseLoadAtMarkerW,
       ),
-      "Low-price margin": formatPrice(delayedChargingDetails.lowPriceMargin),
-      "Minimum time to full charge": formatDurationMinutes(
-        delayedChargingDetails.minimumTimeToFullChargeMinutes,
+      "Predicted solar at marker": formatW(
+        delayedChargingDetails.predictedSolarAtMarkerW,
       ),
-      "Potential low-price window": formatInterval(
-        new Date(delayedChargingDetails.potentialWindowStart),
-        delayedChargingDetails.potentialWindowEnd,
+      "Expected net solar fill power": formatSignedW(
+        delayedChargingDetails.expectedNetSolarFillPowerW,
       ),
-      "Actual low-price window": formatInterval(
-        new Date(delayedChargingDetails.actualWindowStart),
-        delayedChargingDetails.actualWindowEnd,
+      "Time to full": formatDurationMinutes(
+        delayedChargingDetails.timeToFullMinutes,
       ),
-      "Actual start edge price": formatPrice(
-        delayedChargingDetails.actualWindowStartPrice,
-      ),
-      "Actual end edge price": formatPrice(
-        delayedChargingDetails.actualWindowEndPrice,
-      ),
-      "Pre-discharge target": formatNullablePercent(
-        delayedChargingDetails.preDischargeTargetSocPercent,
-      ),
-      "Latest feasible pre-discharge start": formatTargetTime(
-        delayedChargingDetails.latestFeasiblePreDischargeStartTime,
+      "Trigger lead time": formatDurationMinutes(
+        delayedChargingDetails.triggerLeadTimeMinutes,
       ),
       ...rows,
     };
@@ -1194,6 +1187,10 @@ function formatActionLabel(action: EvaluationOptions["action"]): string {
 function formatResolvedActionLabel(
   estimate: DynamicPriceTargetEstimate,
 ): string {
+  if (estimate.delayedChargingDetails?.activationMode === "self-consumption") {
+    return "self-consumption";
+  }
+
   return estimate.resolvedManualState === "charging" ? "charge" : "discharge";
 }
 
@@ -1318,22 +1315,17 @@ function formatDelayedChargingStartExplanation(input: {
     return null;
   }
 
-  const startTimeBasisSocPercent =
-    input.dynamicPriceTargetEstimate.startTimeBasisSocPercent;
-  const effectiveDischargePowerW =
-    input.dynamicPriceTargetEstimate.effectiveDischargePowerW;
-  const requiredDischargeMinutes =
-    input.dynamicPriceTargetEstimate.requiredDischargeMinutes;
+  const delayedChargingDetails =
+    input.dynamicPriceTargetEstimate.delayedChargingDetails;
 
   if (
-    startTimeBasisSocPercent === null ||
-    effectiveDischargePowerW === null ||
-    requiredDischargeMinutes === null
+    delayedChargingDetails === null ||
+    input.dynamicPriceTargetEstimate.startTimeBasisSocPercent === null
   ) {
     return null;
   }
 
-  return `start computed from ${formatNullablePercent(startTimeBasisSocPercent)} to ${input.displayedTargetPercent}% at ${formatW(effectiveDischargePowerW)} over ${formatDurationMinutes(requiredDischargeMinutes)}`;
+  return `start computed from ${formatNullablePercent(input.dynamicPriceTargetEstimate.startTimeBasisSocPercent)} to ${input.displayedTargetPercent}% at ${formatW(delayedChargingDetails.effectiveFillPowerW)} over ${formatDurationMinutes(delayedChargingDetails.timeToFullMinutes)} * 0.5 * ${formatNumber(delayedChargingDetails.triggerMarginFactor)}`;
 }
 
 function getDisplayedStartTimeDate(
@@ -1444,13 +1436,6 @@ function formatClockTime(value: string | null): string {
 
 function clampPercent(value: number, minimum: number): number {
   return Math.max(minimum, Math.min(100, Math.round(value)));
-}
-
-function computeChargeEnergyWh(
-  capacityWh: number,
-  chargeStartSocPercent: number,
-): number {
-  return Math.max(0, capacityWh * ((100 - chargeStartSocPercent) / 100));
 }
 
 if (import.meta.main) {

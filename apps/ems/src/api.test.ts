@@ -1035,6 +1035,102 @@ test("house-strategy-plan-set applies the fallback and skips earlier same-day it
   }
 });
 
+test("house-strategy-plan-set restores automatic fallback after manual idle override", async () => {
+  const databasePath = createTempDatabase();
+
+  globalThis.fetch = Object.assign(
+    async () =>
+      new Response(JSON.stringify({ result: true }), {
+        headers: { "content-type": "application/json" },
+        status: 200,
+      }),
+    {
+      preconnect: originalFetch.preconnect.bind(originalFetch),
+    },
+  ) as typeof fetch;
+
+  createSite(
+    {
+      id: "home",
+      location: "52.367600, 4.904100",
+      name: "Home",
+    },
+    databasePath,
+  );
+  createBattery(
+    {
+      connected: true,
+      enabled: true,
+      id: "battery-1",
+      ipAddress: "192.168.1.10",
+      minimumDischargePercent: 10,
+      model: "indevolt-battery",
+      name: "Battery",
+      plugin: "indevolt-battery",
+      status: "idle",
+    },
+    "home",
+    databasePath,
+  );
+
+  const initial = getBattery("battery-1", "home", databasePath);
+
+  expect(initial).not.toBeNull();
+
+  await runApiAction("house-strategy-set", {
+    manualModeActive: true,
+    manualState: "idle",
+    manualTargetSoc: 20,
+    siteId: "home",
+    strategyMode: "manual",
+    targetMethod: "soc",
+  });
+
+  const manual = getBattery("battery-1", "home", databasePath);
+
+  expect(manual).not.toBeNull();
+  expect(manual?.manualModeActive).toBe(true);
+  expect(manual?.strategyMode).toBe("manual");
+  expect(manual?.manualState).toBe("idle");
+
+  await runApiAction("house-strategy-plan-set", {
+    siteId: "home",
+    strategyPlan: initial?.strategyPlan ?? [],
+  });
+
+  const updated = getBattery("battery-1", "home", databasePath);
+
+  expect(updated).not.toBeNull();
+  expect(updated?.manualModeActive).toBe(false);
+  expect(updated?.strategyMode).toBe("self-consumption");
+  expect(updated?.manualState).toBeNull();
+  expect(updated?.strategyRuntime.pendingPlanSavedAt).not.toBeNull();
+
+  const db = openDaemonDatabase(databasePath);
+
+  try {
+    const history = readBatteryStrategyHistory(db, "home");
+
+    expect(history).toHaveLength(2);
+    expect(history[0]).toMatchObject({
+      displayLabel: "Idle",
+      displayState: "idle",
+      source: "manual",
+      strategyMode: "manual",
+    });
+    expect(history[1]).toMatchObject({
+      activeItemId: null,
+      displayLabel: "Self-consumption",
+      displayState: "self-consumption",
+      manualState: null,
+      source: "automatic",
+      strategyMode: "self-consumption",
+    });
+  } finally {
+    db.close();
+  }
+});
+
 test("house-strategy-plan-set does not mark unchanged plans as pending", async () => {
   const databasePath = createTempDatabase();
 

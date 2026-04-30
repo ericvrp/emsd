@@ -29,6 +29,16 @@ test("parseArgs rejects unknown strategy names", () => {
   );
 });
 
+test("parseArgs accepts --marker-percentage", () => {
+  expect(parseArgs(["--marker-percentage=55.5"]).markerPercentage).toBe(55.5);
+});
+
+test("parseArgs rejects out-of-range marker percentages", () => {
+  expect(() => parseArgs(["--marker-percentage=120"])).toThrow(
+    "--marker-percentage must be between 0 and 100.",
+  );
+});
+
 test("resolveEvaluationReferenceTime keeps the explicit marker time for export-surplus items", () => {
   expect(
     resolveEvaluationReferenceTime({
@@ -172,10 +182,26 @@ test("buildEstimateSummaryLine explains how delayed-charging start time was comp
       capacityWh: 6000,
       dynamicPriceTargetEstimate: {
         ...createEstimate(),
-        effectiveDischargePowerW: 2400,
-        estimatedReservePercentAtTargetTime: 20,
-        estimatedTargetPercent: 35,
-        requiredDischargeMinutes: 75,
+        delayedChargingDetails: {
+          activationMode: "self-consumption",
+          currentSocBasisPercent: 65,
+          effectiveFillPowerW: 2400,
+          energyToFullWh: 2100,
+          expectedHouseLoadAtMarkerW: 300,
+          expectedNetSolarFillPowerW: 2400,
+          lowestPrice: 0.08,
+          lowPriceMarkerTime: createReplayTime(
+            "2026-04-22",
+            "07:30",
+          ).toISOString(),
+          predictedSolarAtMarkerW: 2700,
+          targetChargePercent: 100,
+          timeToFullMinutes: 53,
+          triggerLeadTimeMinutes: 32,
+          triggerMarginFactor: 1.2,
+        },
+        estimatedReservePercentAtTargetTime: 100,
+        estimatedTargetPercent: 100,
         startTime: createReplayTime("2026-04-21", "18:30").toISOString(),
         startTimeBasisSocPercent: 65,
         targetTime: createReplayTime("2026-04-22", "07:30").toISOString(),
@@ -188,7 +214,7 @@ test("buildEstimateSummaryLine explains how delayed-charging start time was comp
       strategyTriggerKind: "delayed-charging",
       verboseBlocks: new Set(),
     }),
-  ).toContain("start computed from 65% to 35% at 2400 W over 1h 15m");
+  ).toContain("delayed-charging self-consumption");
 });
 
 test("buildEstimateSummaryRows keeps delayed-charging output short and strategy-specific", () => {
@@ -206,48 +232,28 @@ test("buildEstimateSummaryRows keeps delayed-charging output short and strategy-
       dynamicPriceTargetEstimate: {
         ...createEstimate(),
         delayedChargingDetails: {
-          actualWindowEnd: createReplayTime(
-            "2026-04-22",
-            "15:45",
-          ).toISOString(),
-          actualWindowEndPrice: -0.01,
-          actualWindowStart: createReplayTime(
-            "2026-04-22",
-            "12:45",
-          ).toISOString(),
-          actualWindowStartPrice: -0.02,
-          chargeStartSocPercent: 20,
-          chargePowerW: 2400,
+          activationMode: "charging",
           currentSocBasisPercent: 21,
-          latestFeasiblePreDischargeStartTime: createReplayTime(
-            "2026-04-22",
-            "12:43",
-          ).toISOString(),
+          effectiveFillPowerW: 2400,
+          energyToFullWh: 4740,
+          expectedHouseLoadAtMarkerW: 250,
+          expectedNetSolarFillPowerW: 1550,
           lowestPrice: -0.11,
-          lowPriceMargin: 0.104,
           lowPriceMarkerTime: createReplayTime(
             "2026-04-22",
             "13:45",
           ).toISOString(),
-          minimumTimeToFullChargeMinutes: 120,
-          normalizedImportExportSpread: 0.13,
-          potentialWindowEnd: createReplayTime(
-            "2026-04-22",
-            "15:45",
-          ).toISOString(),
-          potentialWindowStart: createReplayTime(
-            "2026-04-22",
-            "11:45",
-          ).toISOString(),
-          preDischargeTargetSocPercent: 20,
+          predictedSolarAtMarkerW: 1800,
+          targetChargePercent: 100,
+          timeToFullMinutes: 119,
+          triggerLeadTimeMinutes: 72,
+          triggerMarginFactor: 1.2,
         },
-        effectiveDischargePowerW: 2400,
-        estimatedReservePercentAtTargetTime: 20,
-        estimatedTargetPercent: 20,
-        requiredDischargeMinutes: 2,
+        estimatedReservePercentAtTargetTime: 100,
+        estimatedTargetPercent: 100,
         startTime: createReplayTime("2026-04-22", "12:43").toISOString(),
         startTimeBasisSocPercent: 21,
-        targetTime: createReplayTime("2026-04-22", "12:45").toISOString(),
+        targetTime: createReplayTime("2026-04-22", "13:45").toISOString(),
       },
       minimumSolarSurplusWOverride: 50,
       referenceTime: createReplayTime("2026-04-22", "11:00"),
@@ -260,16 +266,23 @@ test("buildEstimateSummaryRows keeps delayed-charging output short and strategy-
   ).toEqual([
     {
       label: "Low Price Marker",
-      value: "2026-04-22 13:45 at -0.11 EUR/kWh (+ 0.10 EUR/kWh margin -> max -0.01 EUR/kWh in window)",
-    },
-    { label: "Time to charge", value: "2h from 20% to 100% (4800 Wh at 2400 W)" },
-    {
-      label: "Low price window",
-      value: "12:45 (-0.02 EUR/kWh) -> 15:45 (-0.01 EUR/kWh) (potential: 11:45 -> 15:45)",
+      value: "2026-04-22 13:45 at -0.11 EUR/kWh",
     },
     {
-      label: "Latest feasable discharge start",
-      value: "2026-04-22 12:43 from 21% -> 20% (at 2400 W for 2m)",
+      label: "Activation Mode",
+      value: "full charge",
+    },
+    {
+      label: "Time to full",
+      value: "1h 59m from 21% to 100% (4740 Wh at 2400 W)",
+    },
+    {
+      label: "Trigger lead time",
+      value: "1h 12m = 1h 59m * 0.5 * 1.20",
+    },
+    {
+      label: "Start",
+      value: "2026-04-22 12:43",
     },
   ]);
 });
