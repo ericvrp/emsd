@@ -9,6 +9,8 @@ import { fetchWithAction } from "./plugins/shared";
 
 const INDEVOLT_PORT = 8080;
 const INDEVOLT_MAX_POWER_W = 2400;
+const INDEVOLT_CAPACITY_POINT = 142;
+const INDEVOLT_TELEMETRY_POINTS = [6000, 6001, 6002, 7101];
 const HOMEWIZARD_PORT = 443;
 const SONNEN_MAX_POWER_W = 3300;
 
@@ -51,14 +53,13 @@ export function createBatteryPlugin(battery: BatteryRecord): BatteryPlugin {
 
 class IndevoltBatteryPlugin extends BatteryPlugin {
   async getNormalizedInfo(): Promise<NormalizedBatteryInfo> {
-    const payload = await fetchIndevoltData(
-      this.battery.ipAddress,
-      [142, 6000, 6001, 6002, 7101],
-    );
+    const payload = await fetchIndevoltTelemetry(this.battery.ipAddress);
     const currentW = parseIndevoltSignedPower(payload);
 
     return {
-      capacityWh: parseNullableKiloWattHours(payload?.["142"]),
+      capacityWh: parseNullableKiloWattHours(
+        payload?.[String(INDEVOLT_CAPACITY_POINT)],
+      ),
       currentW,
       manualChargeTargetSoc: this.battery.manualChargeTargetSoc,
       manualDischargeTargetSoc: this.battery.manualDischargeTargetSoc,
@@ -217,6 +218,23 @@ class HomeWizardBatteryPlugin extends BatteryPlugin {
   }
 }
 
+async function fetchIndevoltTelemetry(
+  host: string,
+): Promise<Record<string, unknown> | null> {
+  try {
+    return await fetchIndevoltData(host, [
+      INDEVOLT_CAPACITY_POINT,
+      ...INDEVOLT_TELEMETRY_POINTS,
+    ]);
+  } catch (error) {
+    if (!isBatteryTelemetryTimeout(error)) {
+      throw error;
+    }
+
+    return fetchIndevoltData(host, INDEVOLT_TELEMETRY_POINTS);
+  }
+}
+
 async function fetchIndevoltData(
   host: string,
   points: number[],
@@ -236,6 +254,19 @@ async function fetchIndevoltData(
   }
 
   return parseJsonObject(await response.text());
+}
+
+function isBatteryTelemetryTimeout(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+
+  return (
+    error.name === "AbortError" ||
+    message.startsWith("battery telemetry request timed out ")
+  );
 }
 
 async function setIndevoltData(

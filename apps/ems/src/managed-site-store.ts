@@ -20,7 +20,9 @@ import {
   clearActiveBatteryStrategyRuntime,
   createBatteryStrategyRuntime,
   ensureParentDirectory,
+  formatBatteryStrategyTriggerKindLabel,
   getDatabasePath,
+  isBatteryStrategyPriceTrigger,
   parseBatteryStrategyPlanJson,
   parseBatteryStrategyRuntimeJson,
   parseGpsCoordinate,
@@ -2163,10 +2165,32 @@ function getBatteryStrategyDisplayState(
 }
 
 function getBatteryStrategyDisplayLabel(
-  battery: Pick<BatteryRecord, "strategyMode" | "manualState">,
+  battery: Pick<
+    BatteryRecord,
+    "strategyMode" | "manualState" | "strategyPlan" | "strategyRuntime"
+  >,
 ): string {
   const displayState = getBatteryStrategyDisplayState(battery);
+  const baseLabel = formatBatteryStrategyDisplayState(displayState);
+  const activeItem = battery.strategyRuntime.activeItemId
+    ? (battery.strategyPlan.find(
+        (item) => item.id === battery.strategyRuntime.activeItemId,
+      ) ?? null)
+    : null;
 
+  if (
+    activeItem?.triggerKind &&
+    isBatteryStrategyPriceTrigger(activeItem.triggerKind)
+  ) {
+    return `${formatBatteryStrategyTriggerKindLabel(activeItem.triggerKind)}: ${baseLabel}`;
+  }
+
+  return baseLabel;
+}
+
+function formatBatteryStrategyDisplayState(
+  displayState: BatteryStrategyHistoryDisplayState,
+): string {
   switch (displayState) {
     case "self-consumption":
       return "Self-consumption";

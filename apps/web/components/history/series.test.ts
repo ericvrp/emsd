@@ -3,6 +3,7 @@ import type { BatteryStrategyHistoryRecord } from "@emsd/core/client";
 import {
   buildBatteryHistoryPoints,
   buildExactBatteryStrategySegments,
+  getBatteryHistoryStrategyBatteryId,
 } from "./series";
 
 test("buildExactBatteryStrategySegments preserves exact mid-bucket strategy boundaries", () => {
@@ -102,6 +103,70 @@ test("buildExactBatteryStrategySegments clips active strategy segments at now", 
   ]);
 });
 
+test("buildExactBatteryStrategySegments uses the selected battery history", () => {
+  const strategyHistory: BatteryStrategyHistoryRecord[] = [
+    buildStrategyRecord({
+      batteryId: "old-battery",
+      displayState: "idle",
+      startedAt: "2026-04-17T19:00:00.000Z",
+    }),
+    buildStrategyRecord({
+      batteryId: "current-battery",
+      displayState: "charge",
+      startedAt: "2026-04-17T19:00:00.000Z",
+    }),
+  ];
+
+  expect(
+    buildExactBatteryStrategySegments({
+      chartEndMs: new Date("2026-04-17T20:00:00.000Z").getTime(),
+      chartStartMs: new Date("2026-04-17T19:00:00.000Z").getTime(),
+      cutoffMs: null,
+      strategyBatteryId: "current-battery",
+      strategyHistory,
+    }),
+  ).toEqual([
+    {
+      endMs: new Date("2026-04-17T20:00:00.000Z").getTime(),
+      startMs: new Date("2026-04-17T19:00:00.000Z").getTime(),
+      state: "charge",
+    },
+  ]);
+});
+
+test("getBatteryHistoryStrategyBatteryId picks the sampled battery for the selected day", () => {
+  expect(
+    getBatteryHistoryStrategyBatteryId(
+      [
+        { batteryId: "old-battery", periodStart: "2026-04-16T19:30:00.000Z" },
+        {
+          batteryId: "current-battery",
+          periodStart: "2026-04-17T19:30:00.000Z",
+        },
+        {
+          batteryId: "current-battery",
+          periodStart: "2026-04-17T19:45:00.000Z",
+        },
+      ],
+      "2026-04-17",
+    ),
+  ).toBe("current-battery");
+});
+
+test("getBatteryHistoryStrategyBatteryId falls back to available samples", () => {
+  expect(
+    getBatteryHistoryStrategyBatteryId(
+      [
+        {
+          batteryId: "current-battery",
+          periodStart: "2026-04-16T19:30:00.000Z",
+        },
+      ],
+      "2026-04-17",
+    ),
+  ).toBe("current-battery");
+});
+
 test("buildBatteryHistoryPoints keeps signed battery power direction", () => {
   const points = buildBatteryHistoryPoints(
     [
@@ -147,3 +212,64 @@ test("buildBatteryHistoryPoints keeps signed battery power direction", () => {
     currentPower: 0,
   });
 });
+
+test("buildBatteryHistoryPoints uses latest strategy transition within a period", () => {
+  const points = buildBatteryHistoryPoints(
+    [
+      {
+        batteryId: "current-battery",
+        periodStart: "2026-04-17T19:45:00.000Z",
+        powerW: -950,
+        socPercent: 60,
+      },
+    ],
+    [
+      buildStrategyRecord({
+        batteryId: "old-battery",
+        displayLabel: "Idle",
+        displayState: "idle",
+        startedAt: "2026-04-17T19:00:00.000Z",
+      }),
+      buildStrategyRecord({
+        batteryId: "current-battery",
+        displayLabel: "Self-consumption",
+        displayState: "self-consumption",
+        endedAt: "2026-04-17T19:45:05.000Z",
+        startedAt: "2026-04-17T19:00:00.000Z",
+      }),
+      buildStrategyRecord({
+        batteryId: "current-battery",
+        displayLabel: "Delayed charging: Self-consumption",
+        displayState: "self-consumption",
+        startedAt: "2026-04-17T19:45:05.000Z",
+      }),
+    ],
+    "2026-04-17",
+  );
+
+  expect(
+    points.find((point) => point.periodStart === "2026-04-17T19:45:00.000Z"),
+  ).toMatchObject({
+    strategyDisplayLabel: "Delayed charging: Self-consumption",
+    strategyDisplayState: "self-consumption",
+  });
+});
+
+function buildStrategyRecord(
+  overrides: Partial<BatteryStrategyHistoryRecord> = {},
+): BatteryStrategyHistoryRecord {
+  return {
+    activeItemId: null,
+    batteryId: "battery-1",
+    displayLabel: "Self-consumption",
+    displayState: "self-consumption",
+    endedAt: null,
+    manualState: null,
+    observedAt: "2026-04-17T19:00:00.000Z",
+    siteId: "site-1",
+    source: "automatic",
+    startedAt: "2026-04-17T19:00:00.000Z",
+    strategyMode: "self-consumption",
+    ...overrides,
+  };
+}

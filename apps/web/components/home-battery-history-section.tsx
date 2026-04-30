@@ -4,7 +4,11 @@ import { deriveBatteryStatusFromPower } from "@emsd/core/client";
 import type { HistoryArchive } from "@emsd/core/client";
 import type { ReactNode } from "react";
 import { formatAbsolutePowerValue } from "../lib/power-format";
-import { BatteryHistoryChart, buildBatteryHistoryPoints } from "./history";
+import {
+  BatteryHistoryChart,
+  buildBatteryHistoryPoints,
+  getBatteryHistoryStrategyBatteryId,
+} from "./history";
 import { PageRefreshButton } from "./page-refresh-button";
 import { RefreshWarning } from "./refresh-warning";
 import { SectionSummaryCard } from "./section-summary-card";
@@ -68,6 +72,10 @@ export function HomeBatteryHistorySection({
     archive.batteryStrategyHistory,
     daySelection.selectedDay,
   );
+  const strategyBatteryId = getBatteryHistoryStrategyBatteryId(
+    archive.batteryPowerSamples,
+    daySelection.selectedDay,
+  );
   const refreshError = graphRefreshError ?? currentRefreshError;
   const liveCurrentChargePercent = currentData
     ? (currentData.currentBatteryChargePercent ?? null)
@@ -113,6 +121,7 @@ export function HomeBatteryHistorySection({
           headerAccessory={<TopLevelDaySelect daySelection={daySelection} />}
           nowMarkerPeriodStart={daySelection.nowMarkerPeriodStart}
           points={batteryHistoryPoints}
+          strategyBatteryId={strategyBatteryId}
           strategyHistory={archive.batteryStrategyHistory}
           visibilityStorageKey={BATTERY_CHART_VISIBILITY_STORAGE_KEY}
         />

@@ -130,6 +130,7 @@ export function BatteryHistoryChart({
   headerAccessory,
   nowMarkerPeriodStart,
   points,
+  strategyBatteryId,
   strategyHistory,
   visibilityStorageKey,
 }: {
@@ -137,6 +138,7 @@ export function BatteryHistoryChart({
   headerAccessory?: ReactNode;
   nowMarkerPeriodStart: string | null;
   points: BatteryHistoryPoint[];
+  strategyBatteryId?: string | null;
   strategyHistory: BatteryStrategyHistoryRecord[];
   visibilityStorageKey?: string;
 }) {
@@ -168,6 +170,7 @@ export function BatteryHistoryChart({
     chartEndMs: xAxisDomain[1],
     chartStartMs: xAxisDomain[0],
     cutoffMs,
+    strategyBatteryId: strategyBatteryId ?? null,
     strategyHistory,
   });
   const strategyStates = getBatteryStrategyLegendItems(strategySegments);

@@ -10,7 +10,7 @@ afterEach(() => {
 
 test("Indevolt battery connection errors include the telemetry endpoint", async () => {
   globalThis.fetch = (async () => {
-    throw new Error("Was there a typo in the url or port?");
+    throw new Error("connection refused");
   }) as unknown as typeof fetch;
 
   await expect(
@@ -48,6 +48,44 @@ test("Indevolt battery normalization signs discharge power from state code", asy
     status: "discharging",
     strategyMode: "manual",
   });
+});
+
+test("Indevolt battery telemetry retries without capacity point after timeout", async () => {
+  const requestedUrls: string[] = [];
+
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+    requestedUrls.push(url);
+
+    if (url.includes("142%2C6000%2C6001%2C6002%2C7101")) {
+      throw new Error("Request timed out");
+    }
+
+    return new Response(
+      JSON.stringify({
+        6000: 350,
+        6001: 1002,
+        6002: 72,
+        7101: 1,
+      }),
+      { status: 200 },
+    );
+  }) as unknown as typeof fetch;
+
+  await expect(
+    createBatteryPlugin(buildBattery()).getNormalizedInfo(),
+  ).resolves.toMatchObject({
+    capacityWh: null,
+    currentW: 350,
+    socPercent: 72,
+    status: "discharging",
+    strategyMode: "self-consumption",
+  });
+
+  expect(requestedUrls).toEqual([
+    "http://192.168.1.232:8080/rpc/Indevolt.GetData?config=%7B%22t%22%3A%5B142%2C6000%2C6001%2C6002%2C7101%5D%7D",
+    "http://192.168.1.232:8080/rpc/Indevolt.GetData?config=%7B%22t%22%3A%5B6000%2C6001%2C6002%2C7101%5D%7D",
+  ]);
 });
 
 function buildBattery(): BatteryRecord {

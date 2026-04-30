@@ -11,6 +11,7 @@ export {
   createSignedSeries,
   fillSignedDay,
   fillSingleValueDay,
+  getBatteryHistoryStrategyBatteryId,
   invertSingleValueSeries,
   splitSignedSeriesByTime,
   splitSingleValueSeriesByTime,

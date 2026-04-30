@@ -183,6 +183,10 @@ function formatStrategyTooltipLabel(
   displayState: BatteryHistoryPoint["strategyDisplayState"],
   fallbackLabel: string | null,
 ): string | null {
+  if (fallbackLabel && fallbackLabel.trim().length > 0) {
+    return fallbackLabel;
+  }
+
   switch (displayState) {
     case "charge":
       return "Charging";

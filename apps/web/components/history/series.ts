@@ -151,6 +151,7 @@ export function fillSignedDay(
 
 export function buildBatteryHistoryPoints(
   samples: Array<{
+    batteryId?: string;
     periodStart: string;
     powerW: number | null;
     socPercent: number | null;
@@ -168,23 +169,69 @@ export function buildBatteryHistoryPoints(
       fillSingleValueDay(batteryChargeSeries, dayKey),
     ),
     power: splitSignedSeriesByTime(fillSignedDay(batterySeries, dayKey)),
+    strategyBatteryId: getBatteryHistoryStrategyBatteryId(samples, dayKey),
     strategyHistory,
   });
+}
+
+export function getBatteryHistoryStrategyBatteryId(
+  samples: Array<{ batteryId?: string; periodStart: string }>,
+  dayKey: string,
+): string | null {
+  const countsByBatteryId = new Map<string, number>();
+
+  for (const sample of samples) {
+    if (
+      typeof sample.batteryId !== "string" ||
+      sample.batteryId.length === 0 ||
+      getLocalDayKey(sample.periodStart) !== dayKey
+    ) {
+      continue;
+    }
+
+    countsByBatteryId.set(
+      sample.batteryId,
+      (countsByBatteryId.get(sample.batteryId) ?? 0) + 1,
+    );
+  }
+
+  if (countsByBatteryId.size === 0) {
+    for (const sample of samples) {
+      if (
+        typeof sample.batteryId !== "string" ||
+        sample.batteryId.length === 0
+      ) {
+        continue;
+      }
+
+      countsByBatteryId.set(
+        sample.batteryId,
+        (countsByBatteryId.get(sample.batteryId) ?? 0) + 1,
+      );
+    }
+  }
+
+  return (
+    [...countsByBatteryId.entries()].sort(
+      (left, right) => right[1] - left[1],
+    )[0]?.[0] ?? null
+  );
 }
 
 export function buildExactBatteryStrategySegments(input: {
   chartEndMs: number;
   chartStartMs: number;
   cutoffMs: number | null;
+  strategyBatteryId?: string | null;
   strategyHistory: BatteryStrategyHistoryRecord[];
 }): Array<{
   endMs: number;
   startMs: number;
   state: BatteryStrategyHistoryDisplayState;
 }> {
-  const historyForDisplay = getStrategyHistoryForPrimaryBattery(
+  const historyForDisplay = getStrategyHistoryForBattery(
     input.strategyHistory,
-    null,
+    input.strategyBatteryId ?? null,
   );
   const segments: Array<{
     endMs: number;
@@ -271,16 +318,17 @@ function aggregateBatteryChargeSamples(
 function combineBatteryHistorySeries(input: {
   charge: SplitSingleValuePoint[];
   power: SplitSignedValuePoint[];
+  strategyBatteryId: string | null;
   strategyHistory: BatteryStrategyHistoryRecord[];
 }): BatteryHistoryPoint[] {
-  const historyForDisplay = getStrategyHistoryForPrimaryBattery(
+  const historyForDisplay = getStrategyHistoryForBattery(
     input.strategyHistory,
-    input.power[0]?.periodStart ?? null,
+    input.strategyBatteryId,
   );
 
   return input.power.map((powerPoint, index) => {
     const chargePoint = input.charge[index];
-    const strategyEntry = findStrategyEntryAtPeriodStart(
+    const strategyEntry = findStrategyEntryForPeriod(
       historyForDisplay,
       powerPoint.periodStart,
     );
@@ -317,45 +365,56 @@ function combineBatteryHistorySeries(input: {
   });
 }
 
-function getStrategyHistoryForPrimaryBattery(
+function getStrategyHistoryForBattery(
   strategyHistory: BatteryStrategyHistoryRecord[],
-  _periodStart: string | null,
+  batteryId: string | null,
 ): BatteryStrategyHistoryRecord[] {
-  const batteryId = strategyHistory[0]?.batteryId ?? null;
+  const selectedBatteryId = batteryId ?? strategyHistory[0]?.batteryId ?? null;
 
-  if (batteryId === null) {
+  if (selectedBatteryId === null) {
     return [];
   }
 
-  return strategyHistory.filter((entry) => entry.batteryId === batteryId);
+  return strategyHistory.filter(
+    (entry) => entry.batteryId === selectedBatteryId,
+  );
 }
 
-function findStrategyEntryAtPeriodStart(
+function findStrategyEntryForPeriod(
   strategyHistory: BatteryStrategyHistoryRecord[],
   periodStart: string,
 ): BatteryStrategyHistoryRecord | null {
-  const targetMs = new Date(periodStart).getTime();
+  const periodStartMs = new Date(periodStart).getTime();
+  const periodEndMs = periodStartMs + HISTORY_STEP_MS;
 
-  if (Number.isNaN(targetMs)) {
+  if (Number.isNaN(periodStartMs)) {
     return null;
   }
 
   return (
-    strategyHistory.find((entry) => {
-      const startedAtMs = new Date(entry.startedAt).getTime();
-      const endedAtMs = entry.endedAt
-        ? new Date(entry.endedAt).getTime()
-        : null;
+    strategyHistory
+      .filter((entry) => {
+        const startedAtMs = new Date(entry.startedAt).getTime();
+        const endedAtMs = entry.endedAt
+          ? new Date(entry.endedAt).getTime()
+          : null;
 
-      if (Number.isNaN(startedAtMs)) {
-        return false;
-      }
+        if (Number.isNaN(startedAtMs)) {
+          return false;
+        }
 
-      return (
-        startedAtMs <= targetMs &&
-        (endedAtMs === null || Number.isNaN(endedAtMs) || targetMs < endedAtMs)
-      );
-    }) ?? null
+        return (
+          startedAtMs < periodEndMs &&
+          (endedAtMs === null ||
+            Number.isNaN(endedAtMs) ||
+            periodStartMs < endedAtMs)
+        );
+      })
+      .sort(
+        (left, right) =>
+          new Date(right.startedAt).getTime() -
+          new Date(left.startedAt).getTime(),
+      )[0] ?? null
   );
 }
 
