@@ -1,6 +1,7 @@
 "use client";
 
 import type { BatteryStrategyHistoryRecord } from "@emsd/core/client";
+import { CalendarClock, Hand } from "lucide-react";
 import type { ReactElement, ReactNode } from "react";
 import {
   Area,
@@ -34,6 +35,10 @@ import {
   STANDARD_RIGHT_AXIS_MARGIN,
 } from "./constants";
 import { buildExactBatteryStrategySegments } from "./series";
+import {
+  getBatteryStrategyLegendItems,
+  getStrategyLegendColor,
+} from "./strategy-legend";
 import {
   BatteryHistoryTooltip,
   HistoryTooltip,
@@ -173,7 +178,7 @@ export function BatteryHistoryChart({
     strategyBatteryId: strategyBatteryId ?? null,
     strategyHistory,
   });
-  const strategyStates = getBatteryStrategyLegendItems(strategySegments);
+  const strategyStates = getBatteryStrategyLegendItems(points);
   const { isVisible, toggle } = useChartSeriesVisibility({
     seriesIds: [
       BATTERY_POWER_SERIES_ID,
@@ -201,12 +206,13 @@ export function BatteryHistoryChart({
           />
           {strategyStates.map((state) => (
             <LegendChip
-              key={state.label}
+              key={state.key}
               color={state.color}
               label={state.label}
               marker={
                 <StrategyLegendMarker
                   color={state.color}
+                  source={state.source}
                   selected={isVisible(buildBatteryStrategySeriesId(state.state))}
                 />
               }
@@ -396,81 +402,36 @@ export function BatteryHistoryChart({
   );
 }
 
-function getBatteryStrategyLegendItems(
-  segments: Array<{
-    endMs: number;
-    startMs: number;
-    state: NonNullable<BatteryHistoryPoint["strategyDisplayState"]>;
-  }>,
-): Array<{
-  color: string;
-  label: string;
-  state: NonNullable<BatteryHistoryPoint["strategyDisplayState"]>;
-}> {
-  const presentStates = new Set(segments.map((segment) => segment.state));
-
-  const orderedStates: Array<
-    NonNullable<BatteryHistoryPoint["strategyDisplayState"]>
-  > = ["self-consumption", "charge", "discharge", "idle"];
-
-  return orderedStates
-    .filter((state) => presentStates.has(state))
-    .map((state) => ({
-      color: getStrategyLegendColor(state),
-      label: getStrategyLegendLabel(state),
-      state,
-    }));
-}
-
 function buildBatteryStrategySeriesId(
   state: NonNullable<BatteryHistoryPoint["strategyDisplayState"]>,
 ): string {
   return `strategy:${state}`;
 }
 
-function getStrategyLegendColor(
-  state: NonNullable<BatteryHistoryPoint["strategyDisplayState"]>,
-): string {
-  switch (state) {
-    case "self-consumption":
-      return UI_COLORS.strategySelfConsumption;
-    case "charge":
-      return UI_COLORS.strategyCharge;
-    case "discharge":
-      return UI_COLORS.strategyDischarge;
-    case "idle":
-      return UI_COLORS.strategyIdle;
-  }
-}
-
-function getStrategyLegendLabel(
-  state: NonNullable<BatteryHistoryPoint["strategyDisplayState"]>,
-): string {
-  switch (state) {
-    case "self-consumption":
-      return "Self-consumption";
-    case "charge":
-      return "Charging";
-    case "discharge":
-      return "Discharging";
-    case "idle":
-      return "Idle";
-  }
-}
-
 function StrategyLegendMarker({
   color,
+  source,
   selected,
 }: {
   color: string;
+  source: BatteryStrategyHistoryRecord["source"] | null;
   selected?: boolean;
 }) {
+  const Icon = source === "manual" ? Hand : CalendarClock;
+
   return (
-    <span
-      aria-hidden="true"
-      className="h-2.5 w-4 rounded-sm border border-white/10"
-      style={{ backgroundColor: selected ? color : UI_COLORS.chartTickMuted }}
-    />
+    <span className="inline-flex items-center gap-1.5">
+      <span
+        aria-hidden="true"
+        className="h-2.5 w-4 rounded-sm border border-white/10"
+        style={{ backgroundColor: selected ? color : UI_COLORS.chartTickMuted }}
+      />
+      <Icon
+        aria-hidden="true"
+        className="h-3.5 w-3.5 shrink-0"
+        style={{ color: selected ? UI_COLORS.textPrimary : UI_COLORS.chartTickMuted }}
+      />
+    </span>
   );
 }
 

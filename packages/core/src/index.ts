@@ -3,7 +3,9 @@ import { dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   BATTERY_STRATEGY_FIXED_ITEM_COUNT,
+  BatteryStrategyBuiltinItemKey,
   BatteryStrategyTriggerKind,
+  formatBatteryStrategyBuiltinItemLabel,
 } from "./battery-strategy-shared";
 
 export * from "./cli-args";
@@ -55,6 +57,7 @@ export interface BatteryStrategyPlanItem extends BatteryStrategyRecord {
   enabled: boolean;
   id: string;
   kind: BatteryStrategyPlanItemKind;
+  name?: string | null;
   startTime: string | null;
   targetDurationMinutes: number | null;
   targetEndTime: string | null;
@@ -78,6 +81,7 @@ export interface BatteryStrategyRuntimeRecord {
   manualTargetMethod?: BatteryStrategyTargetMethod | null;
   manualTargetDurationMinutes?: number | null;
   manualTargetEndTime?: string | null;
+  manualLabel?: string | null;
   manualTargetStartedAt?: string | null;
   pendingPlanSavedAt?: string | null;
 }
@@ -88,6 +92,7 @@ export interface BatteryStrategyHistoryRecord {
   displayLabel: string;
   displayState: BatteryStrategyHistoryDisplayState;
   endedAt: string | null;
+  itemLabel?: string | null;
   manualState: BatteryManualState | null;
   observedAt: string;
   siteId: string;
@@ -374,6 +379,7 @@ export function createBatteryStrategyRuntime(): BatteryStrategyRuntimeRecord {
     manualTargetMethod: null,
     manualTargetDurationMinutes: null,
     manualTargetEndTime: null,
+    manualLabel: null,
     manualTargetStartedAt: null,
     pendingPlanSavedAt: null,
   };
@@ -395,6 +401,7 @@ export function clearActiveBatteryStrategyRuntime(
     manualTargetMethod: null,
     manualTargetDurationMinutes: null,
     manualTargetEndTime: null,
+    manualLabel: null,
     manualTargetStartedAt: null,
   };
 }
@@ -446,6 +453,7 @@ export function createBatteryStrategyRuntimeForPlanApply(
     manualTargetMethod: null,
     manualTargetDurationMinutes: null,
     manualTargetEndTime: null,
+    manualLabel: null,
     manualTargetStartedAt: null,
     pendingPlanSavedAt: null,
   };
@@ -539,6 +547,9 @@ export function normalizeBatteryStrategyPlan(input: {
     ...firstItem,
     enabled: true,
     kind: "default",
+    name:
+      normalizeStrategyItemName(firstItem.name) ??
+      "Self-consumption",
     startTime: null,
     targetDurationMinutes: null,
     targetEndTime: null,
@@ -583,6 +594,7 @@ export function normalizeBatteryStrategyPlan(input: {
     .map((item) => ({
       ...item,
       kind: "daily" as const,
+      name: normalizeStrategyItemName(item.name),
       startTime: isDailyStartTime(item.startTime) ? item.startTime : "08:00",
       triggerKind:
         normalizeTriggerKind(item.triggerKind) ??
@@ -689,6 +701,7 @@ function normalizeBatteryStrategyPlanItem(
         : createBatteryStrategyPlanId(),
     enabled: candidate.enabled !== false,
     kind: candidate.kind === "daily" ? "daily" : "default",
+    name: normalizeStrategyItemName(candidate.name),
     startTime:
       typeof candidate.startTime === "string" &&
       isDailyStartTime(candidate.startTime)
@@ -869,6 +882,11 @@ function normalizeBatteryStrategyRuntime(
       isDailyStartTime(candidate.manualTargetEndTime ?? null)
         ? (candidate.manualTargetEndTime ?? null)
         : null,
+    manualLabel:
+      typeof candidate.manualLabel === "string" &&
+      candidate.manualLabel.trim().length > 0
+        ? candidate.manualLabel.trim()
+        : null,
     manualTargetStartedAt:
       typeof candidate.manualTargetStartedAt === "string" &&
       candidate.manualTargetStartedAt.length > 0
@@ -890,6 +908,12 @@ function normalizeTargetMethod(
     value === "end-time" ||
     value === "auto"
     ? value
+    : null;
+}
+
+function normalizeStrategyItemName(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
     : null;
 }
 
@@ -921,6 +945,7 @@ function createAutomaticBatteryStrategyPlanItem(
     enabled: true,
     id: createBatteryStrategyPlanId(),
     kind: "default",
+    name: "Self-consumption",
     startTime: null,
     targetDurationMinutes: null,
     targetEndTime: null,
@@ -940,6 +965,9 @@ function createExportSurplusBatteryStrategyPlanItem(): BatteryStrategyPlanItem {
     enabled: true,
     id: createBatteryStrategyPlanId(),
     kind: "daily",
+    name: formatBatteryStrategyBuiltinItemLabel(
+      BatteryStrategyBuiltinItemKey.ExportSurplus,
+    ),
     startTime: null,
     targetDurationMinutes: null,
     targetEndTime: null,
@@ -959,6 +987,9 @@ function createDelayedChargingBatteryStrategyPlanItem(): BatteryStrategyPlanItem
     enabled: true,
     id: createBatteryStrategyPlanId(),
     kind: "daily",
+    name: formatBatteryStrategyBuiltinItemLabel(
+      BatteryStrategyBuiltinItemKey.DelayedCharging,
+    ),
     startTime: null,
     targetDurationMinutes: null,
     targetEndTime: null,
@@ -983,6 +1014,8 @@ function normalizeFixedBatteryStrategyPlanItem(input: {
     ...source,
     enabled: input.value?.enabled ?? input.fallback.enabled,
     kind: "daily",
+    name:
+      normalizeStrategyItemName(input.value?.name) ?? input.fallback.name ?? null,
     startTime: null,
     targetDurationMinutes: null,
     targetEndTime: null,
@@ -1132,6 +1165,7 @@ export interface BulkDiscoveryAddResult {
 
 export interface HistoryArchive {
   batteryPowerSamples: BatteryPowerSampleRecord[];
+  batteryStrategyPlansByBatteryId: Record<string, BatteryStrategyPlanRecord>;
   batteryStrategyHistory: BatteryStrategyHistoryRecord[];
   dynamicPriceSamples: DynamicPriceSampleRecord[];
   p1MeterSamples: P1MeterSampleRecord[];

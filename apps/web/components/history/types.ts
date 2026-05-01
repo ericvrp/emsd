@@ -44,9 +44,11 @@ export type BatteryHistoryPoint = {
   overlayStrokeWidth: number;
   overlayValue: number | null;
   periodStart: string;
-  strategyDisplayLabel: string | null;
-  strategyDisplayState: BatteryStrategyHistoryDisplayState | null;
-  strategySource: BatteryStrategyHistorySource | null;
+  strategyActiveItemId: string | null;
+   strategyDisplayLabel: string | null;
+   strategyDisplayState: BatteryStrategyHistoryDisplayState | null;
+  strategyItemLabel: string | null;
+   strategySource: BatteryStrategyHistorySource | null;
 };
 
 export type TooltipPayloadEntry = {

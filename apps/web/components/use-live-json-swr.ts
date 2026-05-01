@@ -38,6 +38,9 @@ async function fetchJson<T>(url: string): Promise<T> {
 
 export interface SiteCurrentResponse {
   currentBatteryChargePercent?: number | null;
+  currentBatteryStrategySummaryById?: Record<string, string | null>;
+  currentManualModeActive?: boolean;
+  currentBatteryManualModeActiveById?: Record<string, boolean>;
   currentBatteryPowerW?: number | null;
   currentBatteryState?: string | null;
   currentGridPowerW?: number | null;

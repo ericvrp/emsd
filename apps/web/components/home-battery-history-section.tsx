@@ -71,6 +71,7 @@ export function HomeBatteryHistorySection({
     archive.batteryPowerSamples,
     archive.batteryStrategyHistory,
     daySelection.selectedDay,
+    archive.batteryStrategyPlansByBatteryId,
   );
   const strategyBatteryId = getBatteryHistoryStrategyBatteryId(
     archive.batteryPowerSamples,

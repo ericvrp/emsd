@@ -13,7 +13,11 @@ import {
   type WeatherForecastSourceRecord,
   clearActiveBatteryStrategyRuntime,
   ensureParentDirectory,
+  formatBatteryStrategyDisplayState,
   formatBatteryStrategyTriggerKindLabel,
+  getBatteryStrategyDisplayLabel,
+  getBatteryStrategyDisplayState,
+  getBatteryStrategyItemLabel,
   getDaemonLockPath,
   getDatabasePath,
   isBatteryStrategyPriceTrigger,
@@ -641,6 +645,7 @@ function buildBatteryStrategyHistoryRecord(
     displayLabel: getBatteryStrategyDisplayLabel(battery),
     displayState: getBatteryStrategyDisplayState(battery),
     endedAt: null,
+    itemLabel: getBatteryStrategyItemLabel(battery),
     manualState: battery.manualState,
     observedAt,
     siteId: battery.siteId,
@@ -648,63 +653,6 @@ function buildBatteryStrategyHistoryRecord(
     startedAt: observedAt,
     strategyMode: battery.strategyMode,
   };
-}
-
-function getBatteryStrategyDisplayState(
-  battery: Pick<BatteryRecord, "strategyMode" | "manualState">,
-): import("@emsd/core").BatteryStrategyHistoryDisplayState {
-  if (battery.strategyMode === "self-consumption") {
-    return "self-consumption";
-  }
-
-  if (battery.manualState === "charging") {
-    return "charge";
-  }
-
-  if (battery.manualState === "discharging") {
-    return "discharge";
-  }
-
-  return "idle";
-}
-
-function getBatteryStrategyDisplayLabel(
-  battery: Pick<
-    BatteryRecord,
-    "strategyMode" | "manualState" | "strategyPlan" | "strategyRuntime"
-  >,
-): string {
-  const displayState = getBatteryStrategyDisplayState(battery);
-  const baseLabel = formatBatteryStrategyDisplayState(displayState);
-  const activeItem = battery.strategyRuntime.activeItemId
-    ? (battery.strategyPlan.find(
-        (item) => item.id === battery.strategyRuntime.activeItemId,
-      ) ?? null)
-    : null;
-
-  if (
-    activeItem?.triggerKind &&
-    isBatteryStrategyPriceTrigger(activeItem.triggerKind)
-  ) {
-    return `${formatBatteryStrategyTriggerKindLabel(activeItem.triggerKind)}: ${baseLabel}`;
-  }
-
-  return baseLabel;
-}
-
-function formatBatteryStrategyDisplayState(
-  displayState: import("@emsd/core").BatteryStrategyHistoryDisplayState,
-): string {
-  switch (displayState) {
-    case "self-consumption":
-      return "Self-consumption";
-    case "charge":
-      return "Charge";
-    case "discharge":
-      return "Discharge";
-    case "idle":
-      return "Idle";
-  }
 }
 
 function shouldRestoreDefaultStrategy(

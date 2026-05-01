@@ -205,6 +205,7 @@ export function deleteBattery(input: { id: string; siteId: string }) {
 }
 
 export function setHouseStrategy(input: {
+  manualLabel?: string | null;
   manualChargeTargetSoc: number | null;
   manualDischargeTargetSoc: number | null;
   manualPowerW: number | null;

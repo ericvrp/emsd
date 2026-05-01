@@ -66,6 +66,8 @@ export function HouseStrategyDialog({
       refreshIntervalMs: STRATEGY_REFRESH_INTERVAL_MS,
     },
   );
+  const effectiveManualModeActive =
+    currentData?.currentManualModeActive ?? manualModeActive;
 
   useEffect(() => {
     if (!isOpen) {
@@ -87,9 +89,9 @@ export function HouseStrategyDialog({
 
   useEffect(() => {
     if (isOpen) {
-      setSelectedMode(manualModeActive ? "manual" : "strategy");
+      setSelectedMode(effectiveManualModeActive ? "manual" : "strategy");
     }
-  }, [isOpen, manualModeActive]);
+  }, [effectiveManualModeActive, isOpen]);
 
   const strategy = firstBattery?.batteryStrategy ?? {
     strategyMode: "self-consumption",
@@ -120,7 +122,7 @@ export function HouseStrategyDialog({
         type="button"
         variant="ghost"
       >
-        {manualModeActive ? (
+        {effectiveManualModeActive ? (
           <Hand className="h-4 w-4" />
         ) : (
           <CalendarClock className="h-4 w-4" />

@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
-import type { BatteryStrategyHistoryRecord } from "@emsd/core/client";
+import {
+  BatteryStrategyTriggerKind,
+  type BatteryStrategyHistoryRecord,
+} from "@emsd/core/client";
 import {
   buildBatteryHistoryPoints,
   buildExactBatteryStrategySegments,
@@ -252,6 +255,74 @@ test("buildBatteryHistoryPoints uses latest strategy transition within a period"
   ).toMatchObject({
     strategyDisplayLabel: "Delayed charging: Self-consumption",
     strategyDisplayState: "self-consumption",
+  });
+});
+
+test("buildBatteryHistoryPoints resolves strategy item labels from the current plan", () => {
+  const points = buildBatteryHistoryPoints(
+    [
+      {
+        batteryId: "current-battery",
+        periodStart: "2026-04-17T12:30:00.000Z",
+        powerW: 0,
+        socPercent: 60,
+      },
+    ],
+    [
+      buildStrategyRecord({
+        activeItemId: "delayed-item",
+        batteryId: "current-battery",
+        displayLabel: "Self-consumption",
+        displayState: "self-consumption",
+        startedAt: "2026-04-17T12:00:00.000Z",
+      }),
+    ],
+    "2026-04-17",
+    {
+      "current-battery": [
+        {
+          enabled: true,
+          id: "default-item",
+          kind: "default",
+          name: "Automatic",
+          startTime: null,
+          targetDurationMinutes: null,
+          targetEndTime: null,
+          targetMethod: null,
+          triggerKind: null,
+          strategyMode: "self-consumption",
+          manualState: null,
+          manualPowerW: null,
+          manualChargeTargetSoc: 100,
+          manualDischargeTargetSoc: 10,
+          manualTargetSoc: 100,
+        },
+        {
+          enabled: true,
+          id: "delayed-item",
+          kind: "daily",
+          name: "Delayed charging",
+          startTime: null,
+          targetDurationMinutes: null,
+          targetEndTime: null,
+          targetMethod: "auto",
+          triggerKind: BatteryStrategyTriggerKind.DelayedCharging,
+          strategyMode: "manual",
+          manualState: "charging",
+          manualPowerW: null,
+          manualChargeTargetSoc: null,
+          manualDischargeTargetSoc: null,
+          manualTargetSoc: null,
+        },
+      ],
+    },
+  );
+
+  expect(
+    points.find((point) => point.periodStart === "2026-04-17T12:30:00.000Z"),
+  ).toMatchObject({
+    strategyDisplayLabel: "Self-consumption",
+    strategyItemLabel: "Delayed charging",
   });
 });
 

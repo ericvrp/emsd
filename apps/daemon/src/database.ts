@@ -169,6 +169,7 @@ interface BatteryStrategyHistoryRow {
   display_label: string;
   display_state: BatteryStrategyHistoryRecord["displayState"];
   ended_at: string | null;
+  item_label: string | null;
   manual_state: BatteryStrategyHistoryRecord["manualState"];
   observed_at: string;
   site_id: string;
@@ -423,11 +424,13 @@ export function openDaemonDatabase(databasePath = getDatabasePath()): Database {
       strategy_mode TEXT NOT NULL,
       manual_state TEXT,
       active_item_id TEXT,
+      item_label TEXT,
       display_label TEXT NOT NULL,
       display_state TEXT NOT NULL,
       FOREIGN KEY(site_id) REFERENCES sites(id)
     );
   `);
+  ensureBatteryStrategyHistoryColumns(db);
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_battery_strategy_history_site_started
     ON battery_strategy_history (site_id, started_at);
@@ -1013,6 +1016,17 @@ export function readBatteries(db: Database): BatteryRecord[] {
   }));
 }
 
+function ensureBatteryStrategyHistoryColumns(db: Database): void {
+  const columns = db
+    .query<{ name: string }, []>("PRAGMA table_info(battery_strategy_history)")
+    .all()
+    .map((column) => column.name);
+
+  if (!columns.includes("item_label")) {
+    db.exec("ALTER TABLE battery_strategy_history ADD COLUMN item_label TEXT;");
+  }
+}
+
 function ensureBatteryColumns(db: Database): void {
   const columns = db
     .query<{ name: string }, []>("PRAGMA table_info(batteries)")
@@ -1331,6 +1345,7 @@ export function readBatteryStrategyHistory(
           strategy_mode,
           manual_state,
           active_item_id,
+          item_label,
           display_label,
           display_state
         FROM battery_strategy_history
@@ -1348,6 +1363,7 @@ export function readBatteryStrategyHistory(
       row.display_state,
     ),
     endedAt: row.ended_at,
+    ...(row.item_label ? { itemLabel: row.item_label } : {}),
     manualState: row.manual_state,
     observedAt: row.observed_at,
     siteId: row.site_id,
@@ -1387,6 +1403,7 @@ export function upsertBatteryStrategyHistoryState(
           strategy_mode,
           manual_state,
           active_item_id,
+          item_label,
           display_label,
           display_state
         FROM battery_strategy_history
@@ -1404,6 +1421,7 @@ export function upsertBatteryStrategyHistoryState(
     latest.strategy_mode === record.strategyMode &&
     latest.manual_state === record.manualState &&
     latest.active_item_id === record.activeItemId &&
+    latest.item_label === (record.itemLabel ?? null) &&
     latest.display_label === record.displayLabel &&
     normalizeBatteryStrategyHistoryDisplayState(latest.display_state) ===
       record.displayState
@@ -1440,9 +1458,10 @@ export function upsertBatteryStrategyHistoryState(
         strategy_mode,
         manual_state,
         active_item_id,
+        item_label,
         display_label,
         display_state
-      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
     `,
   ).run(
     record.siteId,
@@ -1454,6 +1473,7 @@ export function upsertBatteryStrategyHistoryState(
     record.strategyMode,
     record.manualState,
     record.activeItemId,
+    record.itemLabel ?? null,
     record.displayLabel,
     record.displayState,
   );

@@ -86,6 +86,7 @@ export function BatteryStrategyForm({
   const [manualChargeTargetSocInput, setManualChargeTargetSocInput] = useState(
     String(strategy.manualChargeTargetSoc ?? 100),
   );
+  const [manualLabel, setManualLabel] = useState("");
   const [manualDischargeTargetSocInput, setManualDischargeTargetSocInput] =
     useState(
       String(strategy.manualDischargeTargetSoc ?? minimumDischargePercent),
@@ -279,6 +280,7 @@ export function BatteryStrategyForm({
       ) : null}
       <input type="hidden" name="returnPath" value={returnPath ?? "/"} />
       <input type="hidden" name="strategyMode" value={strategyMode} />
+      <input type="hidden" name="manualLabel" value={manualLabel} />
       <input type="hidden" name="manualState" value={manualState} />
       {manualModeActive !== undefined ? (
         <input
@@ -407,6 +409,16 @@ export function BatteryStrategyForm({
 
       {strategyMode === "manual" || strategyMode === "self-consumption" ? (
         <>
+          <div className="space-y-2">
+            <Label htmlFor={`${batteryId}-manual-label`}>Name</Label>
+            <Input
+              id={`${batteryId}-manual-label`}
+              onChange={(event) => setManualLabel(event.target.value)}
+              placeholder="Optional strategy name"
+              value={manualLabel}
+            />
+          </div>
+
           {showContextSummary ? (
             <div className="rounded-2xl border border-white/8 bg-white/4 p-4 text-sm text-slate-300">
               <p>Current charge: {formatSoc(currentSocPercent)}</p>

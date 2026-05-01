@@ -3,7 +3,6 @@ import { existsSync } from "node:fs";
 import {
   type BatteryManualState,
   type BatteryRecord,
-  type BatteryStrategyHistoryDisplayState,
   type BatteryStatus,
   type BatteryStrategyMode,
   type BatteryStrategyPlanRecord,
@@ -20,9 +19,11 @@ import {
   clearActiveBatteryStrategyRuntime,
   createBatteryStrategyRuntime,
   ensureParentDirectory,
-  formatBatteryStrategyTriggerKindLabel,
+  formatBatteryStrategyDisplayState,
+  getBatteryStrategyDisplayLabel,
+  getBatteryStrategyDisplayState,
+  getBatteryStrategyItemLabel,
   getDatabasePath,
-  isBatteryStrategyPriceTrigger,
   parseBatteryStrategyPlanJson,
   parseBatteryStrategyRuntimeJson,
   parseGpsCoordinate,
@@ -195,6 +196,7 @@ interface CreateBatteryInput {
 
 interface UpdateBatteryStrategyInput {
   strategyMode: BatteryStrategyMode;
+  manualLabel?: string | null;
   manualState?: BatteryManualState | null;
   manualPowerW?: number | null;
   manualChargeTargetSoc?: number | null;
@@ -868,6 +870,7 @@ export function setHouseStrategy(
       );
       const nextRuntime = stringifyBatteryStrategyRuntime({
         ...baseRuntime,
+        manualLabel: tracksManualTarget ? (input.manualLabel ?? null) : null,
         manualTargetMethod: tracksManualTarget
           ? (input.manualTargetMethod ?? "soc")
           : null,
@@ -1659,6 +1662,7 @@ function ensureSchema(db: Database): void {
       strategy_mode TEXT NOT NULL,
       manual_state TEXT,
       active_item_id TEXT,
+      item_label TEXT,
       display_label TEXT NOT NULL,
       display_state TEXT NOT NULL,
       FOREIGN KEY(site_id) REFERENCES sites(id)
@@ -1937,6 +1941,10 @@ function ensureBatteryStrategyHistoryColumns(db: Database): void {
     );
   }
 
+  if (!columns.includes("item_label")) {
+    db.exec("ALTER TABLE battery_strategy_history ADD COLUMN item_label TEXT;");
+  }
+
   db.exec(`
     UPDATE battery_strategy_history
     SET display_state = CASE display_label
@@ -2137,6 +2145,7 @@ function buildBatteryStrategyHistoryRecord(
     displayLabel: getBatteryStrategyDisplayLabel(battery),
     displayState: getBatteryStrategyDisplayState(battery),
     endedAt: null,
+    itemLabel: getBatteryStrategyItemLabel(battery),
     manualState: battery.manualState,
     observedAt,
     siteId: battery.siteId,
@@ -2144,63 +2153,6 @@ function buildBatteryStrategyHistoryRecord(
     startedAt: observedAt,
     strategyMode: battery.strategyMode,
   };
-}
-
-function getBatteryStrategyDisplayState(
-  battery: Pick<BatteryRecord, "strategyMode" | "manualState">,
-): BatteryStrategyHistoryDisplayState {
-  if (battery.strategyMode === "self-consumption") {
-    return "self-consumption";
-  }
-
-  if (battery.manualState === "charging") {
-    return "charge";
-  }
-
-  if (battery.manualState === "discharging") {
-    return "discharge";
-  }
-
-  return "idle";
-}
-
-function getBatteryStrategyDisplayLabel(
-  battery: Pick<
-    BatteryRecord,
-    "strategyMode" | "manualState" | "strategyPlan" | "strategyRuntime"
-  >,
-): string {
-  const displayState = getBatteryStrategyDisplayState(battery);
-  const baseLabel = formatBatteryStrategyDisplayState(displayState);
-  const activeItem = battery.strategyRuntime.activeItemId
-    ? (battery.strategyPlan.find(
-        (item) => item.id === battery.strategyRuntime.activeItemId,
-      ) ?? null)
-    : null;
-
-  if (
-    activeItem?.triggerKind &&
-    isBatteryStrategyPriceTrigger(activeItem.triggerKind)
-  ) {
-    return `${formatBatteryStrategyTriggerKindLabel(activeItem.triggerKind)}: ${baseLabel}`;
-  }
-
-  return baseLabel;
-}
-
-function formatBatteryStrategyDisplayState(
-  displayState: BatteryStrategyHistoryDisplayState,
-): string {
-  switch (displayState) {
-    case "self-consumption":
-      return "Self-consumption";
-    case "charge":
-      return "Charge";
-    case "discharge":
-      return "Discharge";
-    case "idle":
-      return "Idle";
-  }
 }
 
 function readBatteries(db: Database, siteId: string): BatteryRecord[] {

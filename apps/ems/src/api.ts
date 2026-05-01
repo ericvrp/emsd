@@ -692,6 +692,7 @@ export async function runApiAction(
       const db = openDaemonDatabase();
 
       try {
+        const batteries = listBatteries(siteId);
         const batteryPowerSamples = readBatteryPowerSamples(db, siteId);
         const p1MeterSamples = readP1MeterSamples(db, siteId);
         const solarEnergyProviderSamples = readSolarEnergyProviderSamples(
@@ -707,6 +708,9 @@ export async function runApiAction(
 
         return {
           batteryPowerSamples,
+          batteryStrategyPlansByBatteryId: Object.fromEntries(
+            batteries.map((battery) => [battery.id, battery.strategyPlan]),
+          ),
           batteryStrategyHistory: readBatteryStrategyHistory(db, siteId),
           dynamicPriceSamples: readDynamicPriceSamples(db, siteId),
           p1MeterSamples,
@@ -925,6 +929,10 @@ export async function runApiAction(
           : null;
       const manualTargetEndTime =
         typeof input.targetEndTime === "string" ? input.targetEndTime : null;
+      const manualLabel =
+        typeof input.manualLabel === "string" && input.manualLabel.trim().length > 0
+          ? input.manualLabel.trim()
+          : null;
       const normalizedManualState =
         strategyMode === "manual" ? manualState : null;
       const normalizedManualPowerW =
@@ -983,6 +991,7 @@ export async function runApiAction(
         {
           manualChargeTargetSoc: normalizedManualChargeTargetSoc,
           manualDischargeTargetSoc: normalizedManualDischargeTargetSoc,
+          manualLabel,
           manualPowerW: normalizedManualPowerW,
           manualState: normalizedManualState,
           manualTargetSoc: normalizedManualTargetSoc,

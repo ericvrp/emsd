@@ -46,6 +46,15 @@ export async function GET(request: NextRequest) {
     batteries.find(
       (battery) => typeof battery.batteryStrategySummary === "string",
     )?.batteryStrategySummary ?? null;
+  const currentBatteryStrategySummaryById = Object.fromEntries(
+    batteries.map((battery) => [battery.id, battery.batteryStrategySummary ?? null]),
+  );
+  const currentManualModeActive = batteries.some(
+    (battery) => battery.batteryManualModeActive,
+  );
+  const currentBatteryManualModeActiveById = Object.fromEntries(
+    batteries.map((battery) => [battery.id, battery.batteryManualModeActive]),
+  );
   const currentGridPowerW =
     site?.devices
       .filter((device) => device.kind === "meter")
@@ -73,6 +82,9 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     currentBatteryChargePercent,
+    currentBatteryManualModeActiveById,
+    currentBatteryStrategySummaryById,
+    currentManualModeActive,
     currentBatteryPowerW,
     currentBatteryState: deriveBatteryStatusFromPower(currentBatteryPowerW),
     currentStrategySummary,

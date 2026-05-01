@@ -216,6 +216,7 @@ export function BatteryStrategyPlanForm({
             <table className="min-w-[980px] w-full border-collapse text-sm">
               <thead>
                 <tr className="border-b border-white/8 text-left text-xs uppercase tracking-[0.18em] text-slate-400">
+                  <th className="px-4 py-3 font-medium">Name</th>
                   <th className="px-4 py-3 font-medium">When</th>
                   <th className="px-4 py-3 font-medium">Set</th>
                   <th className="px-4 py-3 font-medium">Settings</th>
@@ -237,6 +238,20 @@ export function BatteryStrategyPlanForm({
                       key={item.id}
                       className="border-b border-white/8 align-top last:border-b-0"
                     >
+                      <td className={contentCellClass}>
+                        <Input
+                          disabled={!item.enabled}
+                          id={`${item.id}-name`}
+                          onChange={(event) =>
+                            updateItem(item.id, (currentItem) => ({
+                              ...currentItem,
+                              name: event.target.value,
+                            }))
+                          }
+                          placeholder="Optional item name"
+                          value={item.name ?? ""}
+                        />
+                      </td>
                       <td className={contentCellClass}>
                         <div className="space-y-3">
                           <div className="space-y-2">
@@ -590,6 +605,10 @@ function describePendingDeleteItem(
     return "This schedule item";
   }
 
+  if (item.name && item.name.trim().length > 0) {
+    return item.name;
+  }
+
   const triggerKind = getPersistedTriggerKind(item);
 
   if (triggerKind === BatteryStrategyTriggerKind.DailyTime) {
@@ -669,6 +688,7 @@ function createDailyPlanItem(
     enabled: true,
     id: createLocalStrategyPlanId(),
     kind: "daily",
+    name: null,
     startTime: "08:00",
     triggerKind: BatteryStrategyTriggerKind.DailyTime,
     targetDurationMinutes: null,

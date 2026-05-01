@@ -158,6 +158,7 @@ export function buildBatteryHistoryPoints(
   }>,
   strategyHistory: BatteryStrategyHistoryRecord[],
   dayKey: string,
+  strategyPlansByBatteryId: Record<string, import("@emsd/core/client").BatteryStrategyPlanRecord> = {},
 ): BatteryHistoryPoint[] {
   const batterySeries = createSignedSeries(aggregatePowerSamples(samples));
   const batteryChargeSeries = createSingleValueSeries(
@@ -169,6 +170,7 @@ export function buildBatteryHistoryPoints(
       fillSingleValueDay(batteryChargeSeries, dayKey),
     ),
     power: splitSignedSeriesByTime(fillSignedDay(batterySeries, dayKey)),
+    strategyPlansByBatteryId,
     strategyBatteryId: getBatteryHistoryStrategyBatteryId(samples, dayKey),
     strategyHistory,
   });
@@ -318,6 +320,7 @@ function aggregateBatteryChargeSamples(
 function combineBatteryHistorySeries(input: {
   charge: SplitSingleValuePoint[];
   power: SplitSignedValuePoint[];
+  strategyPlansByBatteryId: Record<string, import("@emsd/core/client").BatteryStrategyPlanRecord>;
   strategyBatteryId: string | null;
   strategyHistory: BatteryStrategyHistoryRecord[];
 }): BatteryHistoryPoint[] {
@@ -358,11 +361,40 @@ function combineBatteryHistorySeries(input: {
       overlayStrokeWidth: overlay.strokeWidth,
       overlayValue: strategyEntry ? 1 : null,
       periodStart: powerPoint.periodStart,
+      strategyActiveItemId: strategyEntry?.activeItemId ?? null,
       strategyDisplayLabel: strategyEntry?.displayLabel ?? null,
       strategyDisplayState: strategyEntry?.displayState ?? null,
+      strategyItemLabel: resolveStrategyItemLabel(
+        strategyEntry,
+        input.strategyPlansByBatteryId,
+      ),
       strategySource: strategyEntry?.source ?? null,
     };
   });
+}
+
+function resolveStrategyItemLabel(
+  strategyEntry: BatteryStrategyHistoryRecord | null,
+  strategyPlansByBatteryId: Record<string, import("@emsd/core/client").BatteryStrategyPlanRecord>,
+): string | null {
+  if (!strategyEntry) {
+    return null;
+  }
+
+  if (strategyEntry.itemLabel && strategyEntry.itemLabel.trim().length > 0) {
+    return strategyEntry.itemLabel;
+  }
+
+  if (!strategyEntry.activeItemId) {
+    return null;
+  }
+
+  const batteryPlan = strategyPlansByBatteryId[strategyEntry.batteryId] ?? [];
+  const activeItem = batteryPlan.find(
+    (item) => item.id === strategyEntry.activeItemId,
+  );
+
+  return activeItem?.name?.trim().length ? activeItem.name : null;
 }
 
 function getStrategyHistoryForBattery(

@@ -772,6 +772,7 @@ export async function setHouseStrategyAction(
     async () => {
       const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
       const strategyMode = stringValue(formData, "strategyMode");
+      const manualLabel = optionalStringValue(formData, "manualLabel");
       const manualState = optionalStringValue(formData, "manualState");
       const manualPowerRaw = optionalStringValue(formData, "manualPowerW");
       const manualChargeTargetSocRaw = optionalStringValue(
@@ -797,6 +798,7 @@ export async function setHouseStrategyAction(
         "manualTargetSoc",
       );
       await setHouseStrategy({
+        manualLabel,
         manualChargeTargetSoc:
           manualChargeTargetSocRaw === null ||
           manualChargeTargetSocRaw.length === 0

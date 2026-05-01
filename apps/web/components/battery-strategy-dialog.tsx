@@ -10,8 +10,11 @@ import type { ComponentType } from "react";
 import { useEffect, useState } from "react";
 import { BatteryStrategyForm } from "./battery-strategy-form";
 import { BatteryStrategyPlanForm } from "./battery-strategy-plan-form";
+import { type SiteCurrentResponse, useLiveJsonSWR } from "./use-live-json-swr";
 import { Button } from "./ui/button";
 import { DialogPortal } from "./ui/dialog-portal";
+
+const STRATEGY_REFRESH_INTERVAL_MS = 5_000;
 
 export function BatteryStrategyDialog({
   batteryId,
@@ -47,6 +50,24 @@ export function BatteryStrategyDialog({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const returnPath = buildReturnPath(pathname, searchParams);
+  const { data: currentData } = useLiveJsonSWR<SiteCurrentResponse>(
+    `/api/site/current?siteId=${encodeURIComponent(siteId)}`,
+    {
+      failureMessage:
+        "Strategy updates are retrying. Showing last available data.",
+      refreshIntervalMs: STRATEGY_REFRESH_INTERVAL_MS,
+    },
+  );
+  const effectiveManualModeActive =
+    currentData?.currentBatteryManualModeActiveById?.[batteryId] ??
+    manualModeActive;
+  const defaultLabel = formatStrategyLabel({
+    manualModeActive: effectiveManualModeActive,
+    strategy,
+    strategyPlan,
+  });
+  const buttonLabel =
+    currentData?.currentBatteryStrategySummaryById?.[batteryId] ?? defaultLabel;
 
   useEffect(() => {
     if (!isOpen) {
@@ -68,26 +89,20 @@ export function BatteryStrategyDialog({
 
   useEffect(() => {
     if (isOpen) {
-      setSelectedMode(manualModeActive ? "manual" : "strategy");
+      setSelectedMode(effectiveManualModeActive ? "manual" : "strategy");
     }
-  }, [isOpen, manualModeActive]);
+  }, [effectiveManualModeActive, isOpen]);
 
   return (
     <>
       <Button
-        aria-label={formatStrategyLabel({
-          manualModeActive,
-          strategy,
-          strategyPlan,
-        })}
+        aria-label={buttonLabel}
         className={className}
         onClick={() => setIsOpen(true)}
         variant="ghost"
       >
-        <CurrentModeIcon manualModeActive={manualModeActive} />
-        <span className="hidden md:inline">
-          {formatStrategyLabel({ manualModeActive, strategy, strategyPlan })}
-        </span>
+        <CurrentModeIcon manualModeActive={effectiveManualModeActive} />
+        <span className="hidden md:inline">{buttonLabel}</span>
       </Button>
 
       {isOpen ? (
