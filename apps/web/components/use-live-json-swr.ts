@@ -1,9 +1,6 @@
 "use client";
 
-import type {
-  HistoryArchive,
-  WeatherForecastRecord,
-} from "@emsd/core/client";
+import type { HistoryArchive, WeatherForecastRecord } from "@emsd/core/client";
 import { useEffect, useState } from "react";
 import useSWR from "swr";
 
@@ -30,7 +27,10 @@ async function fetchJson<T>(url: string): Promise<T> {
   }
 
   if (!response.ok) {
-    throw new ClientRequestError(response.status, `Request failed: ${response.status}`);
+    throw new ClientRequestError(
+      response.status,
+      `Request failed: ${response.status}`,
+    );
   }
 
   return (await response.json()) as T;
@@ -60,7 +60,9 @@ export interface SolarCurrentResponse {
 
 export interface PricesGraphResponse {
   archive: HistoryArchive;
-  dynamicPriceSnapshot: import("@emsd/core/client").DynamicPriceSnapshotRecord | null;
+  dynamicPriceSnapshot:
+    | import("@emsd/core/client").DynamicPriceSnapshotRecord
+    | null;
   dynamicPriceSnapshotError: string | null;
   highestMarkerPeriodStarts: string[];
   lowestMarkerPeriodStarts: string[];

@@ -8,11 +8,7 @@ export function PageRefreshButton() {
   const router = useRouter();
 
   return (
-    <Button
-      onClick={() => router.refresh()}
-      type="button"
-      variant="danger"
-    >
+    <Button onClick={() => router.refresh()} type="button" variant="danger">
       <RotateCw size={14} />
       Refresh page
     </Button>

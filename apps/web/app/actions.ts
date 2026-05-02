@@ -216,7 +216,9 @@ async function runAction(
   }
 }
 
-export async function createSiteAction(formData: FormData): Promise<ActionResult> {
+export async function createSiteAction(
+  formData: FormData,
+): Promise<ActionResult> {
   const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
 
   return runAction(
@@ -252,7 +254,9 @@ export async function createSiteAction(formData: FormData): Promise<ActionResult
   );
 }
 
-export async function updateSiteAction(formData: FormData): Promise<ActionResult> {
+export async function updateSiteAction(
+  formData: FormData,
+): Promise<ActionResult> {
   const siteId = stringValue(formData, "siteId");
   const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
 
@@ -278,7 +282,9 @@ export async function updateSiteAction(formData: FormData): Promise<ActionResult
   );
 }
 
-export async function deleteSiteAction(formData: FormData): Promise<ActionResult> {
+export async function deleteSiteAction(
+  formData: FormData,
+): Promise<ActionResult> {
   const siteId = stringValue(formData, "siteId");
   const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
 
@@ -350,7 +356,9 @@ export async function setBatteryEnabledAction(
   }, "devices");
 }
 
-export async function deleteBatteryAction(formData: FormData): Promise<ActionResult> {
+export async function deleteBatteryAction(
+  formData: FormData,
+): Promise<ActionResult> {
   const siteId = stringValue(formData, "siteId");
   const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
 
@@ -498,7 +506,9 @@ export async function createSolarEnergyProviderFromDiscoveryAction(
   }, "discover");
 }
 
-export async function setMeterEnabledAction(formData: FormData): Promise<ActionResult> {
+export async function setMeterEnabledAction(
+  formData: FormData,
+): Promise<ActionResult> {
   const siteId = stringValue(formData, "siteId");
 
   return runAction(async () => {
@@ -512,7 +522,9 @@ export async function setMeterEnabledAction(formData: FormData): Promise<ActionR
   }, "devices");
 }
 
-export async function deleteMeterAction(formData: FormData): Promise<ActionResult> {
+export async function deleteMeterAction(
+  formData: FormData,
+): Promise<ActionResult> {
   const siteId = stringValue(formData, "siteId");
   const returnPath = optionalStringValue(formData, "returnPath") ?? "/";
 

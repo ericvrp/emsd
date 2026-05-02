@@ -47,7 +47,9 @@ export function DiscoveryPanel({
   const createBatteryFormAction = useFormActionToast(
     createBatteryFromDiscoveryAction,
   );
-  const createMeterFormAction = useFormActionToast(createMeterFromDiscoveryAction);
+  const createMeterFormAction = useFormActionToast(
+    createMeterFromDiscoveryAction,
+  );
   const createSolarProviderFormAction = useFormActionToast(
     createSolarEnergyProviderFromDiscoveryAction,
   );
@@ -251,10 +253,7 @@ export function DiscoveryPanel({
       ) : (
         <div className="space-y-4">
           {selectedSiteId && addableDiscoveryIds.length > 0 ? (
-            <form
-              action={createAllFormAction}
-              className="flex justify-start"
-            >
+            <form action={createAllFormAction} className="flex justify-start">
               <input type="hidden" name="siteId" value={selectedSiteId} />
               <input
                 type="hidden"

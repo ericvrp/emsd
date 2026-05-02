@@ -158,7 +158,10 @@ export function buildBatteryHistoryPoints(
   }>,
   strategyHistory: BatteryStrategyHistoryRecord[],
   dayKey: string,
-  strategyPlansByBatteryId: Record<string, import("@emsd/core/client").BatteryStrategyPlanRecord> = {},
+  strategyPlansByBatteryId: Record<
+    string,
+    import("@emsd/core/client").BatteryStrategyPlanRecord
+  > = {},
 ): BatteryHistoryPoint[] {
   const batterySeries = createSignedSeries(aggregatePowerSamples(samples));
   const batteryChargeSeries = createSingleValueSeries(
@@ -320,7 +323,10 @@ function aggregateBatteryChargeSamples(
 function combineBatteryHistorySeries(input: {
   charge: SplitSingleValuePoint[];
   power: SplitSignedValuePoint[];
-  strategyPlansByBatteryId: Record<string, import("@emsd/core/client").BatteryStrategyPlanRecord>;
+  strategyPlansByBatteryId: Record<
+    string,
+    import("@emsd/core/client").BatteryStrategyPlanRecord
+  >;
   strategyBatteryId: string | null;
   strategyHistory: BatteryStrategyHistoryRecord[];
 }): BatteryHistoryPoint[] {
@@ -375,7 +381,10 @@ function combineBatteryHistorySeries(input: {
 
 function resolveStrategyItemLabel(
   strategyEntry: BatteryStrategyHistoryRecord | null,
-  strategyPlansByBatteryId: Record<string, import("@emsd/core/client").BatteryStrategyPlanRecord>,
+  strategyPlansByBatteryId: Record<
+    string,
+    import("@emsd/core/client").BatteryStrategyPlanRecord
+  >,
 ): string | null {
   if (!strategyEntry) {
     return null;

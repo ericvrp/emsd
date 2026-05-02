@@ -86,7 +86,9 @@ async function fetchViaCurl(
     const status = Number.parseInt(statusText, 10);
 
     if (!Number.isInteger(status) || status < 100) {
-      throw new Error(`curl fallback returned invalid HTTP status: ${statusText}`);
+      throw new Error(
+        `curl fallback returned invalid HTTP status: ${statusText}`,
+      );
     }
 
     return new Response(responseBody, { status });
@@ -147,7 +149,9 @@ function isLanIpv4Url(url: string): boolean {
   );
 }
 
-function formatCurlTimeoutSeconds(signal: AbortSignal | null | undefined): string {
+function formatCurlTimeoutSeconds(
+  signal: AbortSignal | null | undefined,
+): string {
   if (!signal) {
     return "2";
   }
@@ -186,7 +190,9 @@ function shouldUseInsecureTls(init: RequestInit): boolean {
   return candidate.tls?.rejectUnauthorized === false;
 }
 
-function normalizeRequestBody(body: FetchBodyInit | null | undefined): string | null {
+function normalizeRequestBody(
+  body: FetchBodyInit | null | undefined,
+): string | null {
   if (body === null || body === undefined) {
     return null;
   }

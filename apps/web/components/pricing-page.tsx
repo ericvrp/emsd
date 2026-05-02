@@ -47,15 +47,16 @@ export function PricingSection({
   requestedDay: string | null;
 }) {
   const [showExportPrice, setShowExportPrice] = useState(false);
-  const { data: graphData, refreshError: graphRefreshError } = useLiveJsonSWR<PricesGraphResponse>(
-    `/api/prices/graph?siteId=${encodeURIComponent(site.id)}`,
-    {
-      failureMessage:
-        "Price graph updates are retrying. Showing last available data.",
-      refreshIntervalMs: GRAPH_REFRESH_INTERVAL_MS,
-      retryIntervalMs: GRAPH_RETRY_INTERVAL_MS,
-    },
-  );
+  const { data: graphData, refreshError: graphRefreshError } =
+    useLiveJsonSWR<PricesGraphResponse>(
+      `/api/prices/graph?siteId=${encodeURIComponent(site.id)}`,
+      {
+        failureMessage:
+          "Price graph updates are retrying. Showing last available data.",
+        refreshIntervalMs: GRAPH_REFRESH_INTERVAL_MS,
+        retryIntervalMs: GRAPH_RETRY_INTERVAL_MS,
+      },
+    );
   const archive = graphData?.archive ?? initialArchive;
   const snapshot = graphData?.dynamicPriceSnapshot ?? initialSnapshot;
   const error = graphData?.dynamicPriceSnapshotError ?? initialError;

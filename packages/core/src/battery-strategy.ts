@@ -41,9 +41,9 @@ export function resolveEstimatedManualState(input: {
   targetMethod: BatteryStrategyPlanItem["targetMethod"] | undefined;
 }): BatteryManualState | null {
   return input.targetMethod === "auto"
-    ? (input.resolvedManualState === undefined
-        ? input.fallbackManualState
-        : input.resolvedManualState)
+    ? input.resolvedManualState === undefined
+      ? input.fallbackManualState
+      : input.resolvedManualState
     : input.fallbackManualState;
 }
 
@@ -81,10 +81,7 @@ export function formatBatteryStrategyDisplayState(
 }
 
 export function getBatteryStrategyDisplayLabel(
-  battery: Pick<
-    BatteryStrategyRecord,
-    "manualState" | "strategyMode"
-  > & {
+  battery: Pick<BatteryStrategyRecord, "manualState" | "strategyMode"> & {
     strategyPlan: Array<Pick<BatteryStrategyPlanItem, "id" | "triggerKind">>;
     strategyRuntime: Pick<BatteryStrategyRuntimeRecord, "activeItemId">;
   },
@@ -109,7 +106,10 @@ export function getBatteryStrategyDisplayLabel(
 export function getBatteryStrategyItemLabel(battery: {
   manualModeActive: boolean;
   strategyPlan: Array<Pick<BatteryStrategyPlanItem, "id" | "name">>;
-  strategyRuntime: Pick<BatteryStrategyRuntimeRecord, "activeItemId" | "manualLabel">;
+  strategyRuntime: Pick<
+    BatteryStrategyRuntimeRecord,
+    "activeItemId" | "manualLabel"
+  >;
 }): string | null {
   if (battery.manualModeActive) {
     return battery.strategyRuntime.manualLabel ?? null;

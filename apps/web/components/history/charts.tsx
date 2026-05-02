@@ -183,7 +183,9 @@ export function BatteryHistoryChart({
     seriesIds: [
       BATTERY_POWER_SERIES_ID,
       BATTERY_CHARGE_SERIES_ID,
-      ...strategyStates.map((state) => buildBatteryStrategySeriesId(state.state)),
+      ...strategyStates.map((state) =>
+        buildBatteryStrategySeriesId(state.state),
+      ),
     ],
     storageKey: visibilityStorageKey,
   });
@@ -213,7 +215,9 @@ export function BatteryHistoryChart({
                 <StrategyLegendMarker
                   color={state.color}
                   source={state.source}
-                  selected={isVisible(buildBatteryStrategySeriesId(state.state))}
+                  selected={isVisible(
+                    buildBatteryStrategySeriesId(state.state),
+                  )}
                 />
               }
               onClick={() => toggle(buildBatteryStrategySeriesId(state.state))}
@@ -429,7 +433,9 @@ function StrategyLegendMarker({
       <Icon
         aria-hidden="true"
         className="h-3.5 w-3.5 shrink-0"
-        style={{ color: selected ? UI_COLORS.textPrimary : UI_COLORS.chartTickMuted }}
+        style={{
+          color: selected ? UI_COLORS.textPrimary : UI_COLORS.chartTickMuted,
+        }}
       />
     </span>
   );
@@ -487,7 +493,8 @@ export function SingleValueHistoryChart({
     points.flatMap((point) => [point.currentValue, point.futureValue]),
     yAxisDomain,
   );
-  const seriesId = visibilitySeriesId ?? label.toLowerCase().replace(/\s+/g, "-");
+  const seriesId =
+    visibilitySeriesId ?? label.toLowerCase().replace(/\s+/g, "-");
   const { isVisible, toggle } = useChartSeriesVisibility({
     seriesIds: [seriesId],
     storageKey: visibilityStorageKey,

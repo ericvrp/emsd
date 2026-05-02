@@ -23,11 +23,8 @@ export default async function PricesPage({
     return <DaemonOfflineState />;
   }
 
-  const {
-    currentSite,
-    dynamicPriceSnapshot,
-    dynamicPriceSnapshotError,
-  } = dashboardData;
+  const { currentSite, dynamicPriceSnapshot, dynamicPriceSnapshotError } =
+    dashboardData;
   const requestedDay = getSearchParamValue(
     dashboardData.resolvedSearchParams.day,
   );

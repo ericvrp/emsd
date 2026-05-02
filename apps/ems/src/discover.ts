@@ -181,12 +181,12 @@ async function fetchTelemetryResponse(
     const headers = resolveRequestHeaders(request, ipAddress);
 
     try {
-        const response = await fetchWithLanFallback(url, {
-          method: request.method,
-          ...(headers ? { headers } : {}),
-          ...(scheme === "https"
-            ? ({ tls: { rejectUnauthorized: false } } as RequestInit)
-            : {}),
+      const response = await fetchWithLanFallback(url, {
+        method: request.method,
+        ...(headers ? { headers } : {}),
+        ...(scheme === "https"
+          ? ({ tls: { rejectUnauthorized: false } } as RequestInit)
+          : {}),
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
 

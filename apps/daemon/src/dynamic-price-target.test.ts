@@ -133,13 +133,19 @@ test("delayed-charging auto switches to self-consumption before a positive low-p
     lowPriceMarkerTime: "2026-04-19T10:00:00.000Z",
     targetChargePercent: 100,
   });
-  expect(estimate.delayedChargingDetails?.effectiveFillPowerW).toBeGreaterThan(0);
+  expect(estimate.delayedChargingDetails?.effectiveFillPowerW).toBeGreaterThan(
+    0,
+  );
   expect(
     estimate.delayedChargingDetails?.expectedNetSolarFillPowerW,
   ).toBeGreaterThan(0);
-  expect(estimate.delayedChargingDetails?.predictedSolarAtMarkerW).toBeGreaterThan(0);
+  expect(
+    estimate.delayedChargingDetails?.predictedSolarAtMarkerW,
+  ).toBeGreaterThan(0);
   expect(estimate.delayedChargingDetails?.timeToFullMinutes).toBeGreaterThan(0);
-  expect(estimate.delayedChargingDetails?.triggerLeadTimeMinutes).toBeGreaterThan(0);
+  expect(
+    estimate.delayedChargingDetails?.triggerLeadTimeMinutes,
+  ).toBeGreaterThan(0);
   expect(estimate.startTime).not.toBeNull();
   expect(
     new Date(estimate.startTime ?? "").getTime() +

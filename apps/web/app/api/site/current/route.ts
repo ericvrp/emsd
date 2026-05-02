@@ -47,7 +47,10 @@ export async function GET(request: NextRequest) {
       (battery) => typeof battery.batteryStrategySummary === "string",
     )?.batteryStrategySummary ?? null;
   const currentBatteryStrategySummaryById = Object.fromEntries(
-    batteries.map((battery) => [battery.id, battery.batteryStrategySummary ?? null]),
+    batteries.map((battery) => [
+      battery.id,
+      battery.batteryStrategySummary ?? null,
+    ]),
   );
   const currentManualModeActive = batteries.some(
     (battery) => battery.batteryManualModeActive,

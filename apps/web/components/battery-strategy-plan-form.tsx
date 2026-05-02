@@ -151,10 +151,7 @@ export function BatteryStrategyPlanForm({
   }
 
   return (
-    <form
-      action={submitAction}
-      className="space-y-4"
-    >
+    <form action={submitAction} className="space-y-4">
       <input type="hidden" name="siteId" value={siteId} />
       <input type="hidden" name="batteryId" value={batteryId} />
       {batteryName ? (
@@ -197,13 +194,55 @@ export function BatteryStrategyPlanForm({
                     {...(builtInItemKey ===
                     BatteryStrategyBuiltinItemKey.Automatic
                       ? {}
-                      : {
-                          onToggle: () =>
-                            updateItem(item.id, (currentItem) => ({
-                              ...currentItem,
-                              enabled: !currentItem.enabled,
-                            })),
-                        })}
+                      : builtInItemKey ===
+                          BatteryStrategyBuiltinItemKey.DelayedChargePrep
+                        ? {
+                            onToggle: () => {
+                              const prepItem = items[2];
+                              const dcItem = items[3];
+                              const newEnabled = !(prepItem?.enabled ?? true);
+                              if (prepItem) {
+                                updateItem(prepItem.id, (currentItem) => ({
+                                  ...currentItem,
+                                  enabled: newEnabled,
+                                }));
+                              }
+                              if (dcItem) {
+                                updateItem(dcItem.id, (currentItem) => ({
+                                  ...currentItem,
+                                  enabled: newEnabled,
+                                }));
+                              }
+                            },
+                          }
+                        : builtInItemKey ===
+                            BatteryStrategyBuiltinItemKey.DelayedCharging
+                          ? {
+                              onToggle: () => {
+                                const prepItem = items[2];
+                                const dcItem = items[3];
+                                const newEnabled = !(dcItem?.enabled ?? true);
+                                if (prepItem) {
+                                  updateItem(prepItem.id, (currentItem) => ({
+                                    ...currentItem,
+                                    enabled: newEnabled,
+                                  }));
+                                }
+                                if (dcItem) {
+                                  updateItem(dcItem.id, (currentItem) => ({
+                                    ...currentItem,
+                                    enabled: newEnabled,
+                                  }));
+                                }
+                              },
+                            }
+                          : {
+                              onToggle: () =>
+                                updateItem(item.id, (currentItem) => ({
+                                  ...currentItem,
+                                  enabled: !currentItem.enabled,
+                                })),
+                            })}
                   />
                 );
               },
@@ -676,6 +715,8 @@ function getBuiltInStrategyDescription(
       return "Fallback when no scheduled item is active.";
     case BatteryStrategyBuiltinItemKey.ExportSurplus:
       return "Discharges during a local high-price window to earn from otherwise unneeded battery capacity while keeping reserve for expected household demand.";
+    case BatteryStrategyBuiltinItemKey.DelayedChargePrep:
+      return "Holds the battery idle after export surplus to preserve empty headroom until delayed charging starts.";
     case BatteryStrategyBuiltinItemKey.DelayedCharging:
       return "Starts shortly before a low-price marker and then switches to self-consumption or full charging, depending on that marker price.";
   }

@@ -90,26 +90,25 @@ export function WeatherForecastSection({
   source: WeatherForecastSourceRecord | null;
 }) {
   const params = new URLSearchParams({ siteId: site.id });
-  const { data: graphData, refreshError: graphRefreshError } = useLiveJsonSWR<SolarGraphResponse>(
-    `/api/solar/graph?${params.toString()}`,
-    {
-      failureMessage:
-        "Solar graph updates are retrying. Showing last available data.",
-      refreshIntervalMs: GRAPH_REFRESH_INTERVAL_MS,
-      retryIntervalMs: LIVE_SOLAR_REFRESH_INTERVAL_MS,
-    },
-  );
-  const {
-    data: currentData,
-    refreshError: currentRefreshError,
-  } = useLiveJsonSWR<SolarCurrentResponse>(
-    `/api/solar/current?siteId=${encodeURIComponent(site.id)}`,
-    {
-      failureMessage:
-        "Solar current updates are retrying. Showing last available data.",
-      refreshIntervalMs: LIVE_SOLAR_REFRESH_INTERVAL_MS,
-    },
-  );
+  const { data: graphData, refreshError: graphRefreshError } =
+    useLiveJsonSWR<SolarGraphResponse>(
+      `/api/solar/graph?${params.toString()}`,
+      {
+        failureMessage:
+          "Solar graph updates are retrying. Showing last available data.",
+        refreshIntervalMs: GRAPH_REFRESH_INTERVAL_MS,
+        retryIntervalMs: LIVE_SOLAR_REFRESH_INTERVAL_MS,
+      },
+    );
+  const { data: currentData, refreshError: currentRefreshError } =
+    useLiveJsonSWR<SolarCurrentResponse>(
+      `/api/solar/current?siteId=${encodeURIComponent(site.id)}`,
+      {
+        failureMessage:
+          "Solar current updates are retrying. Showing last available data.",
+        refreshIntervalMs: LIVE_SOLAR_REFRESH_INTERVAL_MS,
+      },
+    );
   const archive = graphData?.archive ?? initialArchive;
   const forecast = graphData?.forecast ?? initialForecast;
   const error = graphData?.forecastError ?? initialError;
@@ -152,9 +151,9 @@ export function WeatherForecastSection({
   const liveCurrentGeneratedPower = getCurrentSolarPower(site);
   const refreshError = graphRefreshError ?? currentRefreshError;
   const currentGeneratedPower = currentData
-    ? (typeof currentData.currentGeneratedPower === "number"
-        ? currentData.currentGeneratedPower
-        : null)
+    ? typeof currentData.currentGeneratedPower === "number"
+      ? currentData.currentGeneratedPower
+      : null
     : (liveCurrentGeneratedPower ?? archiveCurrentGeneratedPower);
 
   return (

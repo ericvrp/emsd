@@ -3,6 +3,7 @@ import {
   acknowledgePendingBatteryStrategyPlan,
   type BatteryRecord,
   type BatteryStrategyPlanItem,
+  BatteryStrategyTriggerKind,
   type DynamicPriceSnapshotRecord,
   type DynamicPriceSourceRecord,
   EMSD_NAME,
@@ -21,6 +22,7 @@ import {
   getDaemonLockPath,
   getDatabasePath,
   isBatteryStrategyPriceTrigger,
+  isBatteryStrategyTriggerNeedingPriceSamples,
   isDelayedChargingAutoDischargeItem,
   resolveEstimatedManualState,
   resolveBatteryStrategyFromPlanItem,
@@ -78,6 +80,7 @@ import {
   getNextStrategyTriggerAt,
   getScheduledItemCompletion,
   getStrategyTriggerAt,
+  isDelayedChargePrepItem,
   isItemAlreadyTriggeredToday,
   needsCompletionTracking,
   shouldMarkScheduledItemObserved,
@@ -800,7 +803,7 @@ async function runScheduledStrategy(
   const activeItem = getActiveStrategyPlanItem(battery);
   const dueItems = battery.strategyPlan.slice(1).filter((item) => item.enabled);
   const dynamicPriceSamples = dueItems.some((item) =>
-    isBatteryStrategyPriceTrigger(item.triggerKind),
+    isBatteryStrategyTriggerNeedingPriceSamples(item.triggerKind),
   )
     ? readDynamicPriceSamples(db, battery.siteId)
     : [];
@@ -811,6 +814,7 @@ async function runScheduledStrategy(
 
   const resolveScheduledActivationCandidate = (
     minimumPlanIndex: number,
+    bypassExportSurplusGuard?: boolean,
   ): {
     dynamicPriceTargetEstimate: ReturnType<
       typeof estimateDynamicPriceTarget
@@ -827,6 +831,18 @@ async function runScheduledStrategy(
       const item = battery.strategyPlan[index];
 
       if (!item || !item.enabled) {
+        continue;
+      }
+
+      if (
+        isDelayedChargePrepItem(item) &&
+        !bypassExportSurplusGuard &&
+        activeItem?.triggerKind === BatteryStrategyTriggerKind.ExportSurplus
+      ) {
+        logVerbose(
+          verbose,
+          `delayed-charge prep waiting for export surplus to complete for ${battery.id}: ${describeStrategyPlanItem(item)}`,
+        );
         continue;
       }
 
@@ -957,7 +973,7 @@ async function runScheduledStrategy(
       }
 
       dynamicPriceTargetEstimate ??=
-        item.targetMethod === "auto"
+        item.targetMethod === "auto" && !isDelayedChargePrepItem(item)
           ? estimateDynamicPriceTarget({
               battery,
               batteryPowerSamples: readBatteryPowerSamples(db, battery.siteId),
@@ -1106,6 +1122,104 @@ async function runScheduledStrategy(
         `keeping active strategy item for ${battery.id}: ${describeStrategyPlanItem(activeItem)}`,
       );
       return;
+    }
+
+    if (activeItem.triggerKind === BatteryStrategyTriggerKind.ExportSurplus) {
+      const prepCandidate = resolveScheduledActivationCandidate(
+        activeItemIndex + 1,
+        true,
+      );
+
+      if (
+        prepCandidate !== null &&
+        isDelayedChargePrepItem(prepCandidate.item)
+      ) {
+        logInfoWithVerboseDetails(
+          verbose,
+          `export surplus completed for ${battery.id}, activating delayed-charge prep`,
+          `export surplus completed for ${battery.id}: ${describeStrategyPlanItemWithIndex(battery, activeItem)}, activating ${describeStrategyPlanItemWithIndex(battery, prepCandidate.item)}`,
+        );
+        const prepStrategy = applyEstimatedTargetToStrategy(
+          resolveBatteryStrategyFromPlanItem({
+            item: prepCandidate.item,
+            minimumDischargePercent: battery.minimumDischargePercent,
+            maximumChargePowerW: battery.maximumChargePowerW,
+            maximumDischargePowerW: battery.maximumDischargePowerW,
+          }),
+          prepCandidate.item,
+          prepCandidate.resolvedManualState,
+          prepCandidate.dynamicPriceTargetEstimate?.estimatedTargetPercent ??
+            null,
+          battery.minimumDischargePercent,
+          battery.maximumChargePowerW,
+          battery.maximumDischargePowerW,
+        );
+
+        await createBatteryPlugin(battery).setStrategy(prepStrategy);
+
+        const appliedAt = new Date();
+        const prepRuntime = acknowledgePendingBatteryStrategyPlan(
+          {
+            activeItemId: needsCompletionTracking(prepCandidate.item)
+              ? prepCandidate.item.id
+              : null,
+            activeResolvedManualState:
+              needsCompletionTracking(prepCandidate.item) &&
+              prepCandidate.item.targetMethod === "auto"
+                ? prepCandidate.resolvedManualState
+                : null,
+            activeTargetSocPercent:
+              needsCompletionTracking(prepCandidate.item) &&
+              prepCandidate.item.targetMethod === "auto"
+                ? (prepCandidate.dynamicPriceTargetEstimate
+                    ?.estimatedTargetPercent ?? null)
+                : null,
+            activeReserveSocPercent:
+              needsCompletionTracking(prepCandidate.item) &&
+              prepCandidate.item.targetMethod === "auto"
+                ? (prepCandidate.dynamicPriceTargetEstimate
+                    ?.estimatedReservePercentAtTargetTime ?? null)
+                : null,
+            activeTargetTime:
+              needsCompletionTracking(prepCandidate.item) &&
+              prepCandidate.item.targetMethod === "auto"
+                ? (prepCandidate.dynamicPriceTargetEstimate?.targetTime ?? null)
+                : null,
+            activeStartedAt: needsCompletionTracking(prepCandidate.item)
+              ? appliedAt.toISOString()
+              : null,
+            activeObservedAt: null,
+            activeStartSocPercent: needsCompletionTracking(prepCandidate.item)
+              ? sample.socPercent
+              : null,
+            lastTriggeredAtByItemId: {
+              ...runtime.lastTriggeredAtByItemId,
+              [prepCandidate.item.id]: prepCandidate.triggerAt.toISOString(),
+            },
+          },
+          appliedAt,
+        );
+
+        updateBatteryStrategyState(db, {
+          batteryId: battery.id,
+          siteId: battery.siteId,
+          manualModeActive: false,
+          manualModeStarted: false,
+          strategy: prepStrategy,
+        });
+        updateBatteryStrategyRuntime(db, {
+          batteryId: battery.id,
+          siteId: battery.siteId,
+          strategyRuntime: prepRuntime,
+        });
+
+        logInfoWithVerboseDetails(
+          verbose,
+          `delayed-charge prep active for ${battery.id}`,
+          `delayed-charge prep started for ${battery.id}: ${describeStrategyPlanItemWithIndex(battery, prepCandidate.item)}`,
+        );
+        return;
+      }
     }
 
     logInfoWithVerboseDetails(
@@ -1305,7 +1419,10 @@ function applyEstimatedTargetToStrategy(
     return strategy;
   }
 
-  if (isDelayedChargingAutoDischargeItem(item) && resolvedManualState === null) {
+  if (
+    isDelayedChargingAutoDischargeItem(item) &&
+    resolvedManualState === null
+  ) {
     return {
       strategyMode: "self-consumption",
       manualState: null,
@@ -1488,7 +1605,7 @@ function logAppliedBatteryControlChanges(
 
   if (
     battery.strategyPlan.some((item) =>
-      isBatteryStrategyPriceTrigger(item.triggerKind),
+      isBatteryStrategyTriggerNeedingPriceSamples(item.triggerKind),
     )
   ) {
     dynamicPriceSamples = readDynamicPriceSamples(db, battery.siteId);

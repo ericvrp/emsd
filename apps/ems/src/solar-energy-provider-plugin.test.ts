@@ -336,7 +336,10 @@ test("Enphase local provider refuses to guess writes for nested dynamic PEL payl
   }) as typeof fetch;
 
   await expect(
-    setSolarEnergyProviderProductionEnabled(buildProvider("192.168.1.48"), true),
+    setSolarEnergyProviderProductionEnabled(
+      buildProvider("192.168.1.48"),
+      true,
+    ),
   ).rejects.toThrow("recognized top-level production control field");
 });
 

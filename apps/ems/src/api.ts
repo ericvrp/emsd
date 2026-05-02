@@ -398,7 +398,8 @@ function toManagedDeviceRecord(
       batteryManualTargetEndTime:
         record.strategyRuntime.manualTargetEndTime ?? null,
       batteryManualModeActive: record.manualModeActive,
-      batteryStrategyPlanPending: record.strategyRuntime.pendingPlanSavedAt !== null,
+      batteryStrategyPlanPending:
+        record.strategyRuntime.pendingPlanSavedAt !== null,
       batteryStrategyPlanPendingSince:
         record.strategyRuntime.pendingPlanSavedAt ?? null,
       maximumChargePowerW: record.maximumChargePowerW,
@@ -930,7 +931,8 @@ export async function runApiAction(
       const manualTargetEndTime =
         typeof input.targetEndTime === "string" ? input.targetEndTime : null;
       const manualLabel =
-        typeof input.manualLabel === "string" && input.manualLabel.trim().length > 0
+        typeof input.manualLabel === "string" &&
+        input.manualLabel.trim().length > 0
           ? input.manualLabel.trim()
           : null;
       const normalizedManualState =

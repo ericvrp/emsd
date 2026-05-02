@@ -731,7 +731,9 @@ function normalizeControlStateString(
   return null;
 }
 
-function formatProductionControlState(enabled: boolean): "enabled" | "disabled" {
+function formatProductionControlState(
+  enabled: boolean,
+): "enabled" | "disabled" {
   return enabled ? "enabled" : "disabled";
 }
 

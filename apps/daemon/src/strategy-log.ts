@@ -562,7 +562,10 @@ function buildResolvedEstimateItem(
     Parameters<typeof formatScheduledStrategyStartedSummary>[3]
   >,
 ): BatteryStrategyPlanItem {
-  if (isDelayedChargingAutoDischargeItem(item) && estimate.resolvedManualState === null) {
+  if (
+    isDelayedChargingAutoDischargeItem(item) &&
+    estimate.resolvedManualState === null
+  ) {
     return {
       ...item,
       strategyMode: "self-consumption",

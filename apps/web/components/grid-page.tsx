@@ -42,10 +42,7 @@ import {
   TopLevelDaySelect,
   useTopLevelDaySelection,
 } from "./top-level-day-select";
-import {
-  type SiteCurrentResponse,
-  useLiveJsonSWR,
-} from "./use-live-json-swr";
+import { type SiteCurrentResponse, useLiveJsonSWR } from "./use-live-json-swr";
 import { useChartSeriesVisibility } from "./use-chart-series-visibility";
 
 type GridPageProps = {
@@ -57,8 +54,7 @@ type GridPageProps = {
 
 const LIVE_CURRENT_REFRESH_INTERVAL_MS = 5_000;
 const GRAPH_REFRESH_INTERVAL_MS = 60 * 1_000;
-const GRID_CHART_VISIBILITY_STORAGE_KEY =
-  "emsd:chart-visibility:grid:overview";
+const GRID_CHART_VISIBILITY_STORAGE_KEY = "emsd:chart-visibility:grid:overview";
 const GRID_POWER_SERIES_ID = "grid-power";
 const INFERRED_SITE_LOAD_SERIES_ID = "inferred-site-load";
 const EXPECTED_SITE_LOAD_SERIES_ID = "expected-site-load";
@@ -72,26 +68,25 @@ export function GridPage({
   const requestedDayParam = requestedDay
     ? `&day=${encodeURIComponent(requestedDay)}`
     : "";
-  const { data: archiveData, refreshError: graphRefreshError } = useLiveJsonSWR<HistoryArchive>(
-    `/api/history/archive?siteId=${encodeURIComponent(siteId)}${requestedDayParam}`,
-    {
-      failureMessage:
-        "Grid graph updates are retrying. Showing last available data.",
-      refreshIntervalMs: GRAPH_REFRESH_INTERVAL_MS,
-      retryIntervalMs: LIVE_CURRENT_REFRESH_INTERVAL_MS,
-    },
-  );
-  const {
-    data: currentData,
-    refreshError: currentRefreshError,
-  } = useLiveJsonSWR<SiteCurrentResponse>(
-    `/api/site/current?siteId=${encodeURIComponent(siteId)}`,
-    {
-      failureMessage:
-        "Grid current updates are retrying. Showing last available data.",
-      refreshIntervalMs: LIVE_CURRENT_REFRESH_INTERVAL_MS,
-    },
-  );
+  const { data: archiveData, refreshError: graphRefreshError } =
+    useLiveJsonSWR<HistoryArchive>(
+      `/api/history/archive?siteId=${encodeURIComponent(siteId)}${requestedDayParam}`,
+      {
+        failureMessage:
+          "Grid graph updates are retrying. Showing last available data.",
+        refreshIntervalMs: GRAPH_REFRESH_INTERVAL_MS,
+        retryIntervalMs: LIVE_CURRENT_REFRESH_INTERVAL_MS,
+      },
+    );
+  const { data: currentData, refreshError: currentRefreshError } =
+    useLiveJsonSWR<SiteCurrentResponse>(
+      `/api/site/current?siteId=${encodeURIComponent(siteId)}`,
+      {
+        failureMessage:
+          "Grid current updates are retrying. Showing last available data.",
+        refreshIntervalMs: LIVE_CURRENT_REFRESH_INTERVAL_MS,
+      },
+    );
   const archive = archiveData ?? initialArchive;
   const daySelection = useTopLevelDaySelection({ archive, requestedDay });
   const gridSeries = invertSingleValueSeries(

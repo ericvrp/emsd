@@ -786,8 +786,8 @@ function DeviceList({
                 />
               ) : null}
               {kind === "battery" ? (
-                  <form
-                    action={updateBatterySettingsFormAction}
+                <form
+                  action={updateBatterySettingsFormAction}
                   className="rounded-2xl border border-white/8 bg-slate-950/55 px-3 py-2"
                   id={`battery-settings-${device.id}`}
                 >
@@ -851,8 +851,8 @@ function DeviceList({
                 </form>
               ) : null}
               {kind === "solar-energy-provider" ? (
-                  <form
-                    action={setSolarProductionFormAction}
+                <form
+                  action={setSolarProductionFormAction}
                   className="rounded-2xl border border-white/8 bg-slate-950/55 px-3 py-3 sm:col-span-2"
                   id={`solar-provider-settings-${device.id}`}
                 >

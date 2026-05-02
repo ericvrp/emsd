@@ -754,8 +754,7 @@ function estimateDelayedChargingAuto(input: {
       markerSignal.expectedHouseLoadW,
   );
 
-  const activationMode =
-    lowestPrice > 0 ? "self-consumption" : "charging";
+  const activationMode = lowestPrice > 0 ? "self-consumption" : "charging";
   const effectiveFillPowerW =
     activationMode === "self-consumption"
       ? expectedNetSolarFillPowerW
@@ -768,7 +767,8 @@ function estimateDelayedChargingAuto(input: {
         : `skipped: maximum charge power unavailable for delayed charging item ${input.item.id}`;
 
     return {
-      availability: markerSignal.predictedSolarW === null ? "partial" : baseAvailability,
+      availability:
+        markerSignal.predictedSolarW === null ? "partial" : baseAvailability,
       breakEvenTrace: [],
       delayedChargingDetails: serializeDelayedChargingDetails({
         activationMode,
@@ -812,7 +812,9 @@ function estimateDelayedChargingAuto(input: {
     };
   }
 
-  const timeToFullMinutes = Math.ceil((energyToFullWh / effectiveFillPowerW) * 60);
+  const timeToFullMinutes = Math.ceil(
+    (energyToFullWh / effectiveFillPowerW) * 60,
+  );
   const triggerLeadTimeMinutes = Math.ceil(
     timeToFullMinutes *
       DELAYED_CHARGING_TRIGGER_BASE_FACTOR *
@@ -823,7 +825,8 @@ function estimateDelayedChargingAuto(input: {
   );
 
   return {
-    availability: markerSignal.predictedSolarW === null ? "partial" : baseAvailability,
+    availability:
+      markerSignal.predictedSolarW === null ? "partial" : baseAvailability,
     breakEvenTrace: [],
     delayedChargingDetails: serializeDelayedChargingDetails({
       activationMode,

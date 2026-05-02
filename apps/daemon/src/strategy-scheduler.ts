@@ -76,6 +76,11 @@ export function getScheduledItemCompletion(input: {
   sample: NormalizedBatteryInfo;
 }): ScheduledItemCompletion | null {
   const { battery, item, now, runtime, sample } = input;
+
+  if (isDelayedChargePrepItem(item)) {
+    return null;
+  }
+
   const startedAt = runtime.activeStartedAt;
   const activeManualState = resolveActiveManualState({
     fallbackManualState: item.manualState,
@@ -397,6 +402,10 @@ export function getStrategyTriggerAt(input: {
     return getTodayTriggerAt(item, now);
   }
 
+  if (item.triggerKind === BatteryStrategyTriggerKind.DelayedChargePrep) {
+    return getDelayedChargePrepTriggerAt({ now, dynamicPriceSamples });
+  }
+
   if (!isBatteryStrategyPriceTrigger(item.triggerKind)) {
     return null;
   }
@@ -421,6 +430,10 @@ export function getNextStrategyTriggerAt(input: {
 
   if (item.triggerKind === BatteryStrategyTriggerKind.DailyTime) {
     return getTodayTriggerAt(item, now);
+  }
+
+  if (item.triggerKind === BatteryStrategyTriggerKind.DelayedChargePrep) {
+    return getDelayedChargePrepTriggerAt({ now, dynamicPriceSamples });
   }
 
   if (!isBatteryStrategyPriceTrigger(item.triggerKind)) {
@@ -745,6 +758,52 @@ function getAllPriceMarkers(input: {
     .map((periodStart) => new Date(periodStart))
     .filter((markerAt) => !Number.isNaN(markerAt.getTime()))
     .sort((left, right) => left.getTime() - right.getTime());
+}
+
+export function isDelayedChargePrepItem(
+  item: Pick<
+    BatteryStrategyPlanItem,
+    "manualState" | "strategyMode" | "targetMethod" | "triggerKind"
+  >,
+): boolean {
+  return (
+    item.strategyMode === "manual" &&
+    item.manualState === "idle" &&
+    item.targetMethod === "auto" &&
+    item.triggerKind === BatteryStrategyTriggerKind.DelayedChargePrep
+  );
+}
+
+function getDelayedChargePrepTriggerAt(input: {
+  now: Date;
+  dynamicPriceSamples: DynamicPriceSampleRecord[];
+}): Date | null {
+  const lowMarkers = getPriceMarkersOnOrAfterDay({
+    triggerKind: BatteryStrategyTriggerKind.DelayedCharging,
+    now: input.now,
+    dynamicPriceSamples: input.dynamicPriceSamples,
+  });
+  const upcomingLowMarker = lowMarkers.find(
+    (markerAt) => markerAt.getTime() >= input.now.getTime(),
+  );
+  if (!upcomingLowMarker) {
+    return null;
+  }
+  const highMarkers = getPriceMarkersOnOrAfterDay({
+    triggerKind: BatteryStrategyTriggerKind.ExportSurplus,
+    now: input.now,
+    dynamicPriceSamples: input.dynamicPriceSamples,
+  });
+  let priorHighMarker: Date | null = null;
+  for (const markerAt of highMarkers) {
+    if (markerAt.getTime() < upcomingLowMarker.getTime()) {
+      priorHighMarker = markerAt;
+    }
+  }
+  if (priorHighMarker === null) {
+    return null;
+  }
+  return new Date(priorHighMarker.getTime() + 60 * 60 * 1000);
 }
 
 function formatLocalDate(date: Date): string {

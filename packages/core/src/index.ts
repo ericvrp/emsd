@@ -508,6 +508,7 @@ export function createDefaultBatteryStrategyPlan(
   return [
     createAutomaticBatteryStrategyPlanItem(strategy, minimumDischargePercent),
     createExportSurplusBatteryStrategyPlanItem(),
+    createDelayedChargePrepBatteryStrategyPlanItem(),
     createDelayedChargingBatteryStrategyPlanItem(),
   ];
 }
@@ -547,9 +548,7 @@ export function normalizeBatteryStrategyPlan(input: {
     ...firstItem,
     enabled: true,
     kind: "default",
-    name:
-      normalizeStrategyItemName(firstItem.name) ??
-      "Self-consumption",
+    name: normalizeStrategyItemName(firstItem.name) ?? "Self-consumption",
     startTime: null,
     targetDurationMinutes: null,
     targetEndTime: null,
@@ -570,9 +569,19 @@ export function normalizeBatteryStrategyPlan(input: {
     exportSurplusSourceIndex === -1
       ? null
       : (restItems[exportSurplusSourceIndex] ?? null);
+  const delayedChargePrepSourceIndex = restItems.findIndex(
+    (item, index) =>
+      index !== exportSurplusSourceIndex &&
+      item.triggerKind === BatteryStrategyTriggerKind.DelayedChargePrep,
+  );
+  const delayedChargePrepSource =
+    delayedChargePrepSourceIndex === -1
+      ? null
+      : (restItems[delayedChargePrepSourceIndex] ?? null);
   const delayedChargingSourceIndex = restItems.findIndex(
     (item, index) =>
       index !== exportSurplusSourceIndex &&
+      index !== delayedChargePrepSourceIndex &&
       item.triggerKind === BatteryStrategyTriggerKind.DelayedCharging,
   );
   const delayedChargingSource =
@@ -585,10 +594,22 @@ export function normalizeBatteryStrategyPlan(input: {
       value: exportSurplusSource,
     }),
     normalizeFixedBatteryStrategyPlanItem({
-      fallback: fallback[2] ?? createDelayedChargingBatteryStrategyPlanItem(),
+      fallback:
+        fallback[2] ?? createDelayedChargePrepBatteryStrategyPlanItem(),
+      value: delayedChargePrepSource,
+      ...(delayedChargePrepSource
+        ? {}
+        : { migrationId: "migrated-delayed-charge-prep" }),
+    }),
+    normalizeFixedBatteryStrategyPlanItem({
+      fallback: fallback[3] ?? createDelayedChargingBatteryStrategyPlanItem(),
       value: delayedChargingSource,
     }),
   ];
+
+  if (!normalizedFixedItems[2]?.enabled && normalizedFixedItems[1]) {
+    normalizedFixedItems[1] = { ...normalizedFixedItems[1], enabled: false };
+  }
 
   const normalizedRestItems = restItems
     .map((item) => ({
@@ -613,6 +634,7 @@ export function normalizeBatteryStrategyPlan(input: {
     .filter(
       (_, index) =>
         index !== exportSurplusSourceIndex &&
+        index !== delayedChargePrepSourceIndex &&
         index !== delayedChargingSourceIndex,
     );
 
@@ -924,12 +946,16 @@ function normalizeTriggerKind(
     return BatteryStrategyTriggerKind.DailyTime;
   }
 
-  if (value === BatteryStrategyTriggerKind.DelayedCharging) {
-    return BatteryStrategyTriggerKind.DelayedCharging;
-  }
-
   if (value === BatteryStrategyTriggerKind.ExportSurplus) {
     return BatteryStrategyTriggerKind.ExportSurplus;
+  }
+
+  if (value === BatteryStrategyTriggerKind.DelayedChargePrep) {
+    return BatteryStrategyTriggerKind.DelayedChargePrep;
+  }
+
+  if (value === BatteryStrategyTriggerKind.DelayedCharging) {
+    return BatteryStrategyTriggerKind.DelayedCharging;
   }
 
   return null;
@@ -1004,18 +1030,44 @@ function createDelayedChargingBatteryStrategyPlanItem(): BatteryStrategyPlanItem
   };
 }
 
+function createDelayedChargePrepBatteryStrategyPlanItem(): BatteryStrategyPlanItem {
+  return {
+    enabled: true,
+    id: createBatteryStrategyPlanId(),
+    kind: "daily",
+    name: formatBatteryStrategyBuiltinItemLabel(
+      BatteryStrategyBuiltinItemKey.DelayedChargePrep,
+    ),
+    startTime: null,
+    targetDurationMinutes: null,
+    targetEndTime: null,
+    targetMethod: "auto",
+    triggerKind: BatteryStrategyTriggerKind.DelayedChargePrep,
+    strategyMode: "manual",
+    manualState: "idle",
+    manualPowerW: null,
+    manualChargeTargetSoc: null,
+    manualDischargeTargetSoc: null,
+    manualTargetSoc: null,
+  };
+}
+
 function normalizeFixedBatteryStrategyPlanItem(input: {
   fallback: BatteryStrategyPlanItem;
   value: BatteryStrategyPlanItem | null;
+  migrationId?: string;
 }): BatteryStrategyPlanItem {
   const source = input.value ?? input.fallback;
 
   return {
     ...source,
+    id: input.value ? source.id : (input.migrationId ?? source.id),
     enabled: input.value?.enabled ?? input.fallback.enabled,
     kind: "daily",
     name:
-      normalizeStrategyItemName(input.value?.name) ?? input.fallback.name ?? null,
+      normalizeStrategyItemName(input.value?.name) ??
+      input.fallback.name ??
+      null,
     startTime: null,
     targetDurationMinutes: null,
     targetEndTime: null,

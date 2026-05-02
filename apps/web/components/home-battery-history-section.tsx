@@ -16,10 +16,7 @@ import {
   TopLevelDaySelect,
   useTopLevelDaySelection,
 } from "./top-level-day-select";
-import {
-  type SiteCurrentResponse,
-  useLiveJsonSWR,
-} from "./use-live-json-swr";
+import { type SiteCurrentResponse, useLiveJsonSWR } from "./use-live-json-swr";
 
 const LIVE_CURRENT_REFRESH_INTERVAL_MS = 5_000;
 const GRAPH_REFRESH_INTERVAL_MS = 60 * 1_000;
@@ -45,26 +42,25 @@ export function HomeBatteryHistorySection({
   siteId,
   siteName,
 }: HomeBatteryHistorySectionProps) {
-  const { data: archiveData, refreshError: graphRefreshError } = useLiveJsonSWR<HistoryArchive>(
-    `/api/history/archive?siteId=${encodeURIComponent(siteId)}`,
-    {
-      failureMessage:
-        "Battery graph updates are retrying. Showing last available data.",
-      refreshIntervalMs: GRAPH_REFRESH_INTERVAL_MS,
-      retryIntervalMs: LIVE_CURRENT_REFRESH_INTERVAL_MS,
-    },
-  );
-  const {
-    data: currentData,
-    refreshError: currentRefreshError,
-  } = useLiveJsonSWR<SiteCurrentResponse>(
-    `/api/site/current?siteId=${encodeURIComponent(siteId)}`,
-    {
-      failureMessage:
-        "Battery current updates are retrying. Showing last available data.",
-      refreshIntervalMs: LIVE_CURRENT_REFRESH_INTERVAL_MS,
-    },
-  );
+  const { data: archiveData, refreshError: graphRefreshError } =
+    useLiveJsonSWR<HistoryArchive>(
+      `/api/history/archive?siteId=${encodeURIComponent(siteId)}`,
+      {
+        failureMessage:
+          "Battery graph updates are retrying. Showing last available data.",
+        refreshIntervalMs: GRAPH_REFRESH_INTERVAL_MS,
+        retryIntervalMs: LIVE_CURRENT_REFRESH_INTERVAL_MS,
+      },
+    );
+  const { data: currentData, refreshError: currentRefreshError } =
+    useLiveJsonSWR<SiteCurrentResponse>(
+      `/api/site/current?siteId=${encodeURIComponent(siteId)}`,
+      {
+        failureMessage:
+          "Battery current updates are retrying. Showing last available data.",
+        refreshIntervalMs: LIVE_CURRENT_REFRESH_INTERVAL_MS,
+      },
+    );
   const archive = archiveData ?? initialArchive;
   const daySelection = useTopLevelDaySelection({ archive, requestedDay });
   const batteryHistoryPoints = buildBatteryHistoryPoints(

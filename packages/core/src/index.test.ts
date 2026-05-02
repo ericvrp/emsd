@@ -9,10 +9,11 @@ import {
   createBatteryStrategyRuntimeForPlanApply,
   discoverReportJsonSchema,
   getDatabasePath,
+  isBatteryStrategyTriggerNeedingPriceSamples,
   normalizeBatteryStrategyPlan,
   parseGpsCoordinate,
   resolveEstimatedManualState,
- } from "./index";
+} from "./index";
 
 const originalPath = process.env.EMSD_DB_PATH;
 
@@ -375,9 +376,200 @@ test("normalizeBatteryStrategyPlan accepts low and high price triggers and drops
     BatteryStrategyTriggerKind.ExportSurplus,
   );
   expect(normalized[2]?.triggerKind).toBe(
+    BatteryStrategyTriggerKind.DelayedChargePrep,
+  );
+  expect(normalized[3]?.triggerKind).toBe(
     BatteryStrategyTriggerKind.DelayedCharging,
   );
-  expect(normalized[3]?.triggerKind).toBe(BatteryStrategyTriggerKind.DailyTime);
+  expect(normalized[4]?.triggerKind).toBe(BatteryStrategyTriggerKind.DailyTime);
+});
+
+test("normalizeBatteryStrategyPlan assigns a stable migration id to legacy delayed-charge-prep", () => {
+  const legacy3ItemPlan = [
+    {
+      enabled: true,
+      id: "default",
+      kind: "default" as const,
+      startTime: null,
+      targetDurationMinutes: null,
+      targetEndTime: null,
+      targetMethod: null,
+      triggerKind: null,
+      strategyMode: "self-consumption" as const,
+      manualState: null,
+      manualPowerW: null,
+      manualChargeTargetSoc: 100,
+      manualDischargeTargetSoc: 20,
+      manualTargetSoc: 100,
+    },
+    {
+      enabled: true,
+      id: "export-1",
+      kind: "daily" as const,
+      startTime: null,
+      targetDurationMinutes: null,
+      targetEndTime: null,
+      targetMethod: "auto" as const,
+      triggerKind: BatteryStrategyTriggerKind.ExportSurplus,
+      strategyMode: "manual" as const,
+      manualState: "discharging" as const,
+      manualPowerW: null,
+      manualChargeTargetSoc: null,
+      manualDischargeTargetSoc: null,
+      manualTargetSoc: null,
+    },
+    {
+      enabled: true,
+      id: "charge-1",
+      kind: "daily" as const,
+      startTime: null,
+      targetDurationMinutes: null,
+      targetEndTime: null,
+      targetMethod: "auto" as const,
+      triggerKind: BatteryStrategyTriggerKind.DelayedCharging,
+      strategyMode: "manual" as const,
+      manualState: "charging" as const,
+      manualPowerW: null,
+      manualChargeTargetSoc: null,
+      manualDischargeTargetSoc: null,
+      manualTargetSoc: null,
+    },
+  ];
+
+  const base = {
+    minimumDischargePercent: 20,
+    strategy: {
+      strategyMode: "self-consumption" as const,
+      manualState: null,
+      manualPowerW: null,
+      manualChargeTargetSoc: 100,
+      manualDischargeTargetSoc: 20,
+      manualTargetSoc: 100,
+    },
+  };
+
+  const first = normalizeBatteryStrategyPlan({
+    ...base,
+    value: legacy3ItemPlan,
+  });
+  const second = normalizeBatteryStrategyPlan({
+    ...base,
+    value: legacy3ItemPlan,
+  });
+
+  expect(first[2]?.triggerKind).toBe(
+    BatteryStrategyTriggerKind.DelayedChargePrep,
+  );
+  expect(second[2]?.triggerKind).toBe(
+    BatteryStrategyTriggerKind.DelayedChargePrep,
+  );
+  expect(first[2]?.id).toBe("migrated-delayed-charge-prep");
+  expect(first[2]?.id).toBe(second[2]?.id);
+});
+
+test("isBatteryStrategyTriggerNeedingPriceSamples includes delayed-charge-prep", () => {
+  expect(
+    isBatteryStrategyTriggerNeedingPriceSamples(
+      BatteryStrategyTriggerKind.DelayedCharging,
+    ),
+  ).toBe(true);
+  expect(
+    isBatteryStrategyTriggerNeedingPriceSamples(
+      BatteryStrategyTriggerKind.ExportSurplus,
+    ),
+  ).toBe(true);
+  expect(
+    isBatteryStrategyTriggerNeedingPriceSamples(
+      BatteryStrategyTriggerKind.DelayedChargePrep,
+    ),
+  ).toBe(true);
+  expect(
+    isBatteryStrategyTriggerNeedingPriceSamples(
+      BatteryStrategyTriggerKind.DailyTime,
+    ),
+  ).toBe(false);
+  expect(
+    isBatteryStrategyTriggerNeedingPriceSamples(null),
+  ).toBe(false);
+  expect(
+    isBatteryStrategyTriggerNeedingPriceSamples(undefined),
+  ).toBe(false);
+});
+
+test("normalizeBatteryStrategyPlan disables prep when delayed charging is disabled", () => {
+  const normalized = normalizeBatteryStrategyPlan({
+    minimumDischargePercent: 20,
+    strategy: {
+      strategyMode: "self-consumption",
+      manualState: null,
+      manualPowerW: null,
+      manualChargeTargetSoc: 100,
+      manualDischargeTargetSoc: 20,
+      manualTargetSoc: 100,
+    },
+    value: [
+      {
+        enabled: true,
+        id: "default",
+        kind: "default",
+        startTime: null,
+        targetDurationMinutes: null,
+        targetEndTime: null,
+        targetMethod: null,
+        triggerKind: null,
+        strategyMode: "self-consumption",
+        manualState: null,
+        manualPowerW: null,
+        manualChargeTargetSoc: 100,
+        manualDischargeTargetSoc: 20,
+        manualTargetSoc: 100,
+      },
+      {
+        enabled: true,
+        id: "prep-1",
+        kind: "daily",
+        startTime: null,
+        targetDurationMinutes: null,
+        targetEndTime: null,
+        targetMethod: "auto",
+        triggerKind: BatteryStrategyTriggerKind.DelayedChargePrep,
+        strategyMode: "manual",
+        manualState: "idle",
+        manualPowerW: null,
+        manualChargeTargetSoc: null,
+        manualDischargeTargetSoc: null,
+        manualTargetSoc: null,
+      },
+      {
+        enabled: false,
+        id: "charge-1",
+        kind: "daily",
+        startTime: null,
+        targetDurationMinutes: null,
+        targetEndTime: null,
+        targetMethod: "auto",
+        triggerKind: BatteryStrategyTriggerKind.DelayedCharging,
+        strategyMode: "manual",
+        manualState: "charging",
+        manualPowerW: null,
+        manualChargeTargetSoc: null,
+        manualDischargeTargetSoc: null,
+        manualTargetSoc: null,
+      },
+    ],
+  });
+
+  expect(normalized[1]?.triggerKind).toBe(
+    BatteryStrategyTriggerKind.ExportSurplus,
+  );
+  expect(normalized[2]?.triggerKind).toBe(
+    BatteryStrategyTriggerKind.DelayedChargePrep,
+  );
+  expect(normalized[2]?.enabled).toBe(false);
+  expect(normalized[3]?.triggerKind).toBe(
+    BatteryStrategyTriggerKind.DelayedCharging,
+  );
+  expect(normalized[3]?.enabled).toBe(false);
 });
 
 test("normalizeBatteryStrategyPlan defaults enabled to true", () => {

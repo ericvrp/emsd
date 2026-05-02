@@ -1,16 +1,18 @@
 export enum BatteryStrategyBuiltinItemKey {
   Automatic = "automatic",
   ExportSurplus = "export-surplus",
+  DelayedChargePrep = "delayed-charge-prep",
   DelayedCharging = "delayed-charging",
 }
 
 export enum BatteryStrategyTriggerKind {
   DailyTime = "daily-time",
   ExportSurplus = "export-surplus",
+  DelayedChargePrep = "delayed-charge-prep",
   DelayedCharging = "delayed-charging",
 }
 
-export const BATTERY_STRATEGY_FIXED_ITEM_COUNT = 3;
+export const BATTERY_STRATEGY_FIXED_ITEM_COUNT = 4;
 
 export function getBatteryStrategyBuiltinItemKey(
   index: number,
@@ -24,6 +26,10 @@ export function getBatteryStrategyBuiltinItemKey(
   }
 
   if (index === 2) {
+    return BatteryStrategyBuiltinItemKey.DelayedChargePrep;
+  }
+
+  if (index === 3) {
     return BatteryStrategyBuiltinItemKey.DelayedCharging;
   }
 
@@ -38,6 +44,8 @@ export function formatBatteryStrategyBuiltinItemLabel(
       return "Automatic";
     case BatteryStrategyBuiltinItemKey.ExportSurplus:
       return "Export surplus";
+    case BatteryStrategyBuiltinItemKey.DelayedChargePrep:
+      return "Delayed-charge prep";
     case BatteryStrategyBuiltinItemKey.DelayedCharging:
       return "Delayed charging";
   }
@@ -51,6 +59,8 @@ export function formatBatteryStrategyTriggerKindLabel(
       return "Scheduled time";
     case BatteryStrategyTriggerKind.ExportSurplus:
       return "Export surplus";
+    case BatteryStrategyTriggerKind.DelayedChargePrep:
+      return "Delayed-charge prep";
     case BatteryStrategyTriggerKind.DelayedCharging:
       return "Delayed charging";
   }
@@ -64,5 +74,14 @@ export function isBatteryStrategyPriceTrigger(
   return (
     triggerKind === BatteryStrategyTriggerKind.ExportSurplus ||
     triggerKind === BatteryStrategyTriggerKind.DelayedCharging
+  );
+}
+
+export function isBatteryStrategyTriggerNeedingPriceSamples(
+  triggerKind: BatteryStrategyTriggerKind | null | undefined,
+): triggerKind is BatteryStrategyTriggerKind {
+  return (
+    isBatteryStrategyPriceTrigger(triggerKind) ||
+    triggerKind === BatteryStrategyTriggerKind.DelayedChargePrep
   );
 }

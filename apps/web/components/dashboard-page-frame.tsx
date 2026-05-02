@@ -38,7 +38,10 @@ export function DashboardPageFrame({
       headerActions={
         <>
           {batteries.length > 0 && currentSite ? (
-            <HouseStrategyDialog batteries={batteries} siteId={currentSite.id} />
+            <HouseStrategyDialog
+              batteries={batteries}
+              siteId={currentSite.id}
+            />
           ) : null}
           <SettingsDialog>
             <SettingsPanel currentSite={currentSite} />

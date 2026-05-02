@@ -285,13 +285,11 @@ function computeSolarForecast(
     resolvedCurrentIndex >= 0
       ? resolvedCurrentIndex + 1
       : findUpcomingIndex(sortedPoints, now);
-  const upcoming = sortedPoints
-    .slice(upcomingStart)
-    .map((point) => ({
-      period: point.period,
-      periodEnd: point.periodEnd,
-      value: point.value,
-    }));
+  const upcoming = sortedPoints.slice(upcomingStart).map((point) => ({
+    period: point.period,
+    periodEnd: point.periodEnd,
+    value: point.value,
+  }));
 
   return {
     generatedAt: forecast.generatedAt,

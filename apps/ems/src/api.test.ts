@@ -1296,10 +1296,10 @@ test("house-strategy-plan-set accepts low and high price triggers", async () => 
     BatteryStrategyTriggerKind.ExportSurplus,
   );
   expect(updated?.strategyPlan[1]?.enabled).toBe(true);
-  expect(updated?.strategyPlan[2]?.triggerKind).toBe(
+  expect(updated?.strategyPlan[3]?.triggerKind).toBe(
     BatteryStrategyTriggerKind.DelayedCharging,
   );
-  expect(updated?.strategyPlan[2]?.enabled).toBe(false);
+  expect(updated?.strategyPlan[3]?.enabled).toBe(false);
 });
 
 test("house-strategy-plan-set marks past same-day export-surplus markers as already triggered", async () => {
