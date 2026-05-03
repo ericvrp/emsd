@@ -64,7 +64,11 @@ import {
   upsertManagedDeviceTelemetry,
   upsertWeatherForecast,
 } from "./database";
-import { estimateDynamicPriceTarget } from "./dynamic-price-target";
+import {
+  estimateDynamicPriceTarget,
+  formatDelayedChargingLowPriceMarkerSkipReason,
+  resolveDelayedChargingLowPriceMarkerEligibility,
+} from "./dynamic-price-target";
 import {
   formatFallbackStrategyRestoreSummary,
   formatManualStrategyAppliedSummary,
@@ -811,6 +815,39 @@ async function runScheduledStrategy(
     dynamicPriceSamples.length > 0 ? readDynamicPriceSources(db) : [];
   const managedDeviceTelemetry = readManagedDeviceTelemetry(db);
   let runtime = battery.strategyRuntime;
+  let batteryPowerSamples: ReturnType<typeof readBatteryPowerSamples> | null =
+    null;
+  let p1MeterSamples: ReturnType<typeof readP1MeterSamples> | null = null;
+  let solarEnergyProviderSamples: ReturnType<
+    typeof readSolarEnergyProviderSamples
+  > | null = null;
+  let solarForecastSamples: ReturnType<typeof readSolarForecastSamples> | null =
+    null;
+  let delayedChargingMarkerEligibility: ReturnType<
+    typeof resolveDelayedChargingLowPriceMarkerEligibility
+  > | null = null;
+
+  const getBatteryPowerSamples = () =>
+    (batteryPowerSamples ??= readBatteryPowerSamples(db, battery.siteId));
+  const getP1MeterSamples = () =>
+    (p1MeterSamples ??= readP1MeterSamples(db, battery.siteId));
+  const getSolarEnergyProviderSamples = () =>
+    (solarEnergyProviderSamples ??= readSolarEnergyProviderSamples(
+      db,
+      battery.siteId,
+    ));
+  const getSolarForecastSamples = () =>
+    (solarForecastSamples ??= readSolarForecastSamples(db, battery.siteId));
+  const getDelayedChargingMarkerEligibility = () =>
+    (delayedChargingMarkerEligibility ??=
+      resolveDelayedChargingLowPriceMarkerEligibility({
+        batteryPowerSamples: getBatteryPowerSamples(),
+        dynamicPriceSamples,
+        now,
+        p1MeterSamples: getP1MeterSamples(),
+        solarEnergyProviderSamples: getSolarEnergyProviderSamples(),
+        solarForecastSamples: getSolarForecastSamples(),
+      }));
 
   const resolveScheduledActivationCandidate = (
     minimumPlanIndex: number,
@@ -856,7 +893,7 @@ async function runScheduledStrategy(
         item.targetMethod === "auto" && isDelayedChargingAutoDischargeItem(item)
           ? estimateDynamicPriceTarget({
               battery,
-              batteryPowerSamples: readBatteryPowerSamples(db, battery.siteId),
+              batteryPowerSamples: getBatteryPowerSamples(),
               dynamicPriceSamples,
               item,
               items: battery.strategyPlan,
@@ -865,16 +902,10 @@ async function runScheduledStrategy(
                 dynamicPriceSources,
                 battery.siteId,
               ),
-              p1MeterSamples: readP1MeterSamples(db, battery.siteId),
+              p1MeterSamples: getP1MeterSamples(),
               sample,
-              solarEnergyProviderSamples: readSolarEnergyProviderSamples(
-                db,
-                battery.siteId,
-              ),
-              solarForecastSamples: readSolarForecastSamples(
-                db,
-                battery.siteId,
-              ),
+              solarEnergyProviderSamples: getSolarEnergyProviderSamples(),
+              solarForecastSamples: getSolarForecastSamples(),
             })
           : null;
 
@@ -972,11 +1003,40 @@ async function runScheduledStrategy(
         continue;
       }
 
+      if (isDelayedChargePrepItem(item)) {
+        const markerEligibility = getDelayedChargingMarkerEligibility();
+
+        if (!markerEligibility.eligible) {
+          const skipReason = formatDelayedChargingLowPriceMarkerSkipReason(
+            markerEligibility,
+          );
+
+          logInfoWithVerboseDetails(
+            verbose,
+            skipReason,
+            `skipping strategy item for ${battery.id}: ${describeStrategyPlanItemWithIndex(battery, item)} triggerAt=${formatDaemonLogTimestamp(triggerAt)} now=${formatDaemonLogTimestamp(now)}`,
+          );
+          runtime = {
+            ...runtime,
+            lastTriggeredAtByItemId: {
+              ...runtime.lastTriggeredAtByItemId,
+              [item.id]: triggerAt.toISOString(),
+            },
+          };
+          updateBatteryStrategyRuntime(db, {
+            batteryId: battery.id,
+            siteId: battery.siteId,
+            strategyRuntime: runtime,
+          });
+          continue;
+        }
+      }
+
       dynamicPriceTargetEstimate ??=
         item.targetMethod === "auto" && !isDelayedChargePrepItem(item)
           ? estimateDynamicPriceTarget({
               battery,
-              batteryPowerSamples: readBatteryPowerSamples(db, battery.siteId),
+              batteryPowerSamples: getBatteryPowerSamples(),
               dynamicPriceSamples,
               item,
               items: battery.strategyPlan,
@@ -985,16 +1045,10 @@ async function runScheduledStrategy(
                 dynamicPriceSources,
                 battery.siteId,
               ),
-              p1MeterSamples: readP1MeterSamples(db, battery.siteId),
+              p1MeterSamples: getP1MeterSamples(),
               sample,
-              solarEnergyProviderSamples: readSolarEnergyProviderSamples(
-                db,
-                battery.siteId,
-              ),
-              solarForecastSamples: readSolarForecastSamples(
-                db,
-                battery.siteId,
-              ),
+              solarEnergyProviderSamples: getSolarEnergyProviderSamples(),
+              solarForecastSamples: getSolarForecastSamples(),
             })
           : null;
 

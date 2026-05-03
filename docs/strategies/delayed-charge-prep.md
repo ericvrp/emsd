@@ -45,6 +45,10 @@ When active, prep applies manual `idle`.
 
 That means the battery is held between the export window and the delayed-charging window instead of continuing export discharge or starting charge early.
 
+Prep only activates when the upcoming delayed-charging low-price marker is expected to have solar production above expected house load.
+
+If that low-price marker does not have expected solar surplus, prep is skipped instead of holding the battery idle.
+
 Prep does not have its own SoC completion rule. It stays active until a higher-priority item replaces it.
 
 In the normal built-in flow, that replacement is `Delayed charging`.
@@ -72,4 +76,4 @@ For prep specifically:
 
 `Delayed-charge prep` is implemented as an active built-in rule.
 
-The current daemon behavior is to derive prep from price markers only, hold the battery in manual `idle` after the relevant export marker, and hand off to `Delayed charging` when the low-price window becomes due.
+The current daemon behavior is to derive prep from price markers, require the same low-price-marker solar-surplus condition as `Delayed charging`, hold the battery in manual `idle` after the relevant export marker, and hand off to `Delayed charging` when the low-price window becomes due.

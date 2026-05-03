@@ -33,6 +33,10 @@ This means delayed charging is still an automatically decided built-in rule, but
 
 ## Positive-Price Branch
 
+Delayed charging only activates when the upcoming low-price marker is expected to have solar production above expected house load.
+
+If the marker does not have expected solar surplus, delayed charging is skipped for that marker regardless of price.
+
 When the low-price marker is still above zero, delayed charging assumes the battery should fill naturally from solar rather than force grid charging.
 
 At the marker, the daemon computes:
@@ -53,7 +57,7 @@ In that branch the daemon uses:
 
 `effectiveFillPowerW = battery.maximumChargePowerW`
 
-This branch does not depend on expected solar surplus.
+This branch still requires expected solar at the low-price marker to be above expected house load before it is allowed to activate.
 
 ## Start Time Formula
 
@@ -128,4 +132,4 @@ For delayed charging specifically:
 
 `Delayed charging` is implemented as an active built-in rule.
 
-The daemon now resolves delayed charging from the low-price marker only, picks either `self-consumption` or full charging from that marker price, starts earlier using the explicit lead-time formula, skips positive-price markers that have no positive net solar fill power, and restores the fallback strategy after the battery reaches `100%`.
+The daemon now resolves delayed charging from the low-price marker only, requires expected solar at that marker to beat expected house load, picks either `self-consumption` or full charging from that marker price, starts earlier using the explicit lead-time formula, and restores the fallback strategy after the battery reaches `100%`.

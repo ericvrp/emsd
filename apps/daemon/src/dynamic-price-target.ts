@@ -135,6 +135,14 @@ interface DelayedChargingMarkerSignal {
   recoveryThresholdW: number;
 }
 
+export interface DelayedChargingLowPriceMarkerEligibility {
+  eligible: boolean;
+  expectedHouseLoadW: number;
+  expectedNetSolarFillPowerW: number;
+  lowPriceMarkerTime: Date | null;
+  predictedSolarW: number | null;
+}
+
 export interface EnergyBucket {
   time: string;
   durationMinutes: number;
@@ -463,6 +471,59 @@ function buildPredictedSolarSeries(
   );
 }
 
+export function resolveDelayedChargingLowPriceMarkerEligibility(input: {
+  batteryPowerSamples: BatteryPowerSampleRecord[];
+  dynamicPriceSamples: DynamicPriceSampleRecord[];
+  now: Date;
+  p1MeterSamples: P1MeterSampleRecord[];
+  solarEnergyProviderSamples: SolarEnergyProviderSampleRecord[];
+  solarForecastSamples: SolarForecastSampleRecord[];
+}): DelayedChargingLowPriceMarkerEligibility {
+  const lowPriceMarkerTime = getNextPriceMarkerTriggerAt({
+    triggerKind: BatteryStrategyTriggerKind.DelayedCharging,
+    now: input.now,
+    dynamicPriceSamples: input.dynamicPriceSamples,
+  });
+  const predictedSeries = buildPredictedSolarSeries(
+    input.solarForecastSamples,
+    input.solarEnergyProviderSamples,
+  );
+  const historySeries = buildHouseLoadHistorySeries({
+    batteryPowerSamples: input.batteryPowerSamples,
+    p1MeterSamples: input.p1MeterSamples,
+    solarEnergyProviderSamples: input.solarEnergyProviderSamples,
+  });
+  const sharedLoadProfile = buildExpectedSiteLoadProfile(historySeries, input.now);
+  const loadProfile: LoadProfile = {
+    expectedLoadBySlot: sharedLoadProfile.expectedLoadBySlot,
+    fallbackLoadW: sharedLoadProfile.fallbackLoadW,
+    historicalPeriodsUsed: sharedLoadProfile.historicalPeriodsUsed,
+    sameWeekdayPeriodsUsed: sharedLoadProfile.sameWeekdayPeriodsUsed,
+  };
+
+  return resolveDelayedChargingMarkerEligibility({
+    loadProfile,
+    lowPriceMarkerTime,
+    predictedSeries,
+    solarForecastSamples: input.solarForecastSamples,
+  });
+}
+
+export function formatDelayedChargingLowPriceMarkerSkipReason(
+  eligibility: DelayedChargingLowPriceMarkerEligibility,
+): string {
+  if (eligibility.lowPriceMarkerTime === null) {
+    return "skipped: no delayed charging marker resolved";
+  }
+
+  const predictedSolarText =
+    eligibility.predictedSolarW === null
+      ? "unknown"
+      : String(Math.round(eligibility.predictedSolarW));
+
+  return `skipped: low-price marker ${eligibility.lowPriceMarkerTime.toISOString()} needs expected solar above expected house load, but predicted solar is ${predictedSolarText}W and expected house load is ${Math.round(eligibility.expectedHouseLoadW)}W`;
+}
+
 function findSolarRecoveryTime(input: {
   earliestRecoveryAt?: Date;
   minimumSolarSurplusW: number;
@@ -738,21 +799,53 @@ function estimateDelayedChargingAuto(input: {
     };
   }
 
-  const markerSignal = resolveDelayedChargingMarkerSignal({
+  const markerEligibility = resolveDelayedChargingMarkerEligibility({
     loadProfile: input.loadProfile,
-    minimumSolarSurplusW: input.minimumSolarSurplusW,
+    lowPriceMarkerTime: input.lowPriceMarkerTime,
     predictedSeries: input.predictedSeries,
     solarForecastSamples: input.solarForecastSamples,
-    targetTime: input.lowPriceMarkerTime,
   });
+  const markerSignal =
+    input.lowPriceMarkerTime === null
+      ? null
+      : resolveDelayedChargingMarkerSignal({
+          loadProfile: input.loadProfile,
+          minimumSolarSurplusW: input.minimumSolarSurplusW,
+          predictedSeries: input.predictedSeries,
+          solarForecastSamples: input.solarForecastSamples,
+          targetTime: input.lowPriceMarkerTime,
+        });
+  if (markerSignal === null) {
+    return {
+      availability: "unavailable",
+      breakEvenTrace: [],
+      delayedChargingDetails: null,
+      effectiveDischargePowerW: null,
+      energyBuckets: [],
+      estimatedRemainingEnergyWh: 0,
+      estimatedReservePercentAtTargetTime: 100,
+      estimatedTargetPercent: 100,
+      expectedHouseLoadWh: 0,
+      historyStats,
+      predictedSolarGenerationWh: 0,
+      reasoning: "no delayed-charging marker was resolved",
+      requiredDischargeMinutes: null,
+      resolvedManualState: null,
+      skipReason: `skipped: no delayed charging marker resolved for item ${input.item.id}`,
+      startTime: null,
+      startTimeBasisSocPercent: input.currentSocBasisPercent,
+      targetTime: null,
+      targetTimeSignal: null,
+      warning: null,
+      windowKind: "general",
+    };
+  }
   const energyToFullWh = Math.max(
     0,
     input.capacityWh * ((100 - input.currentSocBasisPercent) / 100),
   );
-  const expectedNetSolarFillPowerW = round2(
-    Math.max(0, markerSignal.predictedSolarW ?? 0) -
-      markerSignal.expectedHouseLoadW,
-  );
+  const expectedNetSolarFillPowerW =
+    markerEligibility.expectedNetSolarFillPowerW;
 
   const activationMode = lowestPrice > 0 ? "self-consumption" : "charging";
   const effectiveFillPowerW =
@@ -760,10 +853,54 @@ function estimateDelayedChargingAuto(input: {
       ? expectedNetSolarFillPowerW
       : resolveDelayedChargingChargePowerW(input.battery);
 
+  if (!markerEligibility.eligible) {
+    return {
+      availability:
+        markerSignal.predictedSolarW === null ? "partial" : baseAvailability,
+      breakEvenTrace: [],
+      delayedChargingDetails: serializeDelayedChargingDetails({
+        activationMode,
+        currentSocBasisPercent: input.currentSocBasisPercent,
+        effectiveFillPowerW: 0,
+        energyToFullWh,
+        expectedHouseLoadAtMarkerW: markerSignal.expectedHouseLoadW,
+        expectedNetSolarFillPowerW,
+        lowestPrice,
+        lowPriceMarkerTime: input.lowPriceMarkerTime,
+        predictedSolarAtMarkerW: markerSignal.predictedSolarW,
+        targetChargePercent: 100,
+        timeToFullMinutes: 0,
+        triggerLeadTimeMinutes: 0,
+      }),
+      effectiveDischargePowerW: null,
+      energyBuckets: [],
+      estimatedRemainingEnergyWh: energyToFullWh,
+      estimatedReservePercentAtTargetTime: 100,
+      estimatedTargetPercent: 100,
+      expectedHouseLoadWh: 0,
+      historyStats,
+      predictedSolarGenerationWh: 0,
+      reasoning: "expected solar surplus at the low-price marker",
+      requiredDischargeMinutes: null,
+      resolvedManualState: null,
+      skipReason: `${formatDelayedChargingLowPriceMarkerSkipReason(markerEligibility)} for item ${input.item.id}`,
+      startTime: null,
+      startTimeBasisSocPercent: input.currentSocBasisPercent,
+      targetTime: input.lowPriceMarkerTime.toISOString(),
+      targetTimeSignal: {
+        expectedHouseLoadW: markerSignal.expectedHouseLoadW,
+        predictedSolarW: markerSignal.predictedSolarW,
+        recoveryThresholdW: markerSignal.recoveryThresholdW,
+      },
+      warning: null,
+      windowKind: "general",
+    };
+  }
+
   if (effectiveFillPowerW === null || effectiveFillPowerW <= 0) {
     const skipReason =
       activationMode === "self-consumption"
-        ? `skipped: low-price marker ${input.lowPriceMarkerTime.toISOString()} is above zero but expected net solar fill power at the marker is ${Math.round(expectedNetSolarFillPowerW)}W`
+        ? `${formatDelayedChargingLowPriceMarkerSkipReason(markerEligibility)} for item ${input.item.id}`
         : `skipped: maximum charge power unavailable for delayed charging item ${input.item.id}`;
 
     return {
@@ -1010,6 +1147,45 @@ function resolveDelayedChargingMarkerSignal(input: {
     expectedHouseLoadW,
     predictedSolarW,
     recoveryThresholdW: expectedHouseLoadW + input.minimumSolarSurplusW,
+  };
+}
+
+function resolveDelayedChargingMarkerEligibility(input: {
+  loadProfile: LoadProfile;
+  lowPriceMarkerTime: Date | null;
+  predictedSeries: PredictedPoint[];
+  solarForecastSamples: SolarForecastSampleRecord[];
+}): DelayedChargingLowPriceMarkerEligibility {
+  if (input.lowPriceMarkerTime === null) {
+    return {
+      eligible: false,
+      expectedHouseLoadW: 0,
+      expectedNetSolarFillPowerW: 0,
+      lowPriceMarkerTime: null,
+      predictedSolarW: null,
+    };
+  }
+
+  const markerSignal = resolveDelayedChargingMarkerSignal({
+    loadProfile: input.loadProfile,
+    minimumSolarSurplusW: MIN_SOLAR_SURPLUS_W,
+    predictedSeries: input.predictedSeries,
+    solarForecastSamples: input.solarForecastSamples,
+    targetTime: input.lowPriceMarkerTime,
+  });
+  const expectedNetSolarFillPowerW = round2(
+    Math.max(0, markerSignal.predictedSolarW ?? 0) -
+      markerSignal.expectedHouseLoadW,
+  );
+
+  return {
+    eligible:
+      markerSignal.predictedSolarW !== null &&
+      markerSignal.predictedSolarW > markerSignal.expectedHouseLoadW,
+    expectedHouseLoadW: markerSignal.expectedHouseLoadW,
+    expectedNetSolarFillPowerW,
+    lowPriceMarkerTime: input.lowPriceMarkerTime,
+    predictedSolarW: markerSignal.predictedSolarW,
   };
 }
 

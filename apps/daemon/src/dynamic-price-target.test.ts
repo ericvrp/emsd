@@ -10,7 +10,10 @@ import {
   type SolarEnergyProviderSampleRecord,
   type SolarForecastSampleRecord,
 } from "@emsd/core";
-import { estimateDynamicPriceTarget } from "./dynamic-price-target";
+import {
+  estimateDynamicPriceTarget,
+  resolveDelayedChargingLowPriceMarkerEligibility,
+} from "./dynamic-price-target";
 
 test("evening auto discharge targets tomorrow morning and keeps a reserve above backup", () => {
   const now = new Date("2026-04-19T20:25:00");
@@ -193,6 +196,41 @@ test("delayed-charging auto charges to full before a non-positive low-price mark
   });
 });
 
+test("delayed-charging auto is skipped when the marker price is non-positive but marker solar does not beat load", () => {
+  const now = new Date("2026-04-19T06:00:00.000Z");
+  const battery = createBattery();
+  const item = createAutoLowPriceItem();
+  const history = createDaytimeUsageHistory(700);
+  const estimate = estimateDynamicPriceTarget({
+    battery,
+    batteryPowerSamples: history.batteryPowerSamples,
+    backupReserveMarginOverride: 2,
+    dynamicPriceSamples: createDynamicPriceSamples([
+      ["2026-04-19T02:00:00.000Z", 20],
+      ["2026-04-19T06:00:00.000Z", 30],
+      ["2026-04-19T10:00:00.000Z", -2],
+      ["2026-04-19T14:00:00.000Z", 28],
+      ["2026-04-19T18:00:00.000Z", 18],
+    ]),
+    item,
+    items: [createDefaultItem(), item],
+    now,
+    normalizedImportExportSpread: 0.13,
+    p1MeterSamples: history.p1MeterSamples,
+    sample: createSample(),
+    solarEnergyProviderSamples: history.solarEnergyProviderSamples,
+    solarForecastSamples: createZeroSolarForecastSamples(
+      "2026-04-19T06:00:00.000Z",
+      "2026-04-19T14:00:00.000Z",
+    ),
+  });
+
+  expect(estimate.startTime).toBeNull();
+  expect(estimate.skipReason).toContain(
+    "needs expected solar above expected house load",
+  );
+});
+
 test("delayed-charging auto is skipped when the marker price is positive but net solar fill power is not", () => {
   const now = new Date("2026-04-19T06:00:00.000Z");
   const battery = createBattery();
@@ -224,8 +262,54 @@ test("delayed-charging auto is skipped when the marker price is positive but net
 
   expect(estimate.startTime).toBeNull();
   expect(estimate.skipReason).toContain(
-    "expected net solar fill power at the marker",
+    "needs expected solar above expected house load",
   );
+});
+
+test("delayed-charge prep uses the same low-price marker solar-surplus gate", () => {
+  const now = new Date("2026-04-19T06:00:00.000Z");
+  const lowSolarHistory = createDaytimeUsageHistory(700);
+  const blocked = resolveDelayedChargingLowPriceMarkerEligibility({
+    batteryPowerSamples: lowSolarHistory.batteryPowerSamples,
+    dynamicPriceSamples: createDynamicPriceSamples([
+      ["2026-04-19T02:00:00.000Z", 20],
+      ["2026-04-19T06:00:00.000Z", 30],
+      ["2026-04-19T10:00:00.000Z", -2],
+      ["2026-04-19T14:00:00.000Z", 28],
+      ["2026-04-19T18:00:00.000Z", 18],
+    ]),
+    now,
+    p1MeterSamples: lowSolarHistory.p1MeterSamples,
+    solarEnergyProviderSamples: lowSolarHistory.solarEnergyProviderSamples,
+    solarForecastSamples: createZeroSolarForecastSamples(
+      "2026-04-19T06:00:00.000Z",
+      "2026-04-19T14:00:00.000Z",
+    ),
+  });
+  const surplusHistory = createDaytimeUsageHistory(250);
+  const allowed = resolveDelayedChargingLowPriceMarkerEligibility({
+    batteryPowerSamples: surplusHistory.batteryPowerSamples,
+    dynamicPriceSamples: createDynamicPriceSamples([
+      ["2026-04-19T02:00:00.000Z", 20],
+      ["2026-04-19T06:00:00.000Z", 30],
+      ["2026-04-19T10:00:00.000Z", -2],
+      ["2026-04-19T14:00:00.000Z", 28],
+      ["2026-04-19T18:00:00.000Z", 18],
+    ]),
+    now,
+    p1MeterSamples: surplusHistory.p1MeterSamples,
+    solarEnergyProviderSamples: surplusHistory.solarEnergyProviderSamples,
+    solarForecastSamples: createDaytimeSolarForecastSamples(3000),
+  });
+
+  expect(blocked.lowPriceMarkerTime?.toISOString()).toBe(
+    "2026-04-19T10:00:00.000Z",
+  );
+  expect(blocked.eligible).toBe(false);
+  expect(blocked.predictedSolarW).toBe(0);
+  expect(blocked.expectedHouseLoadW).toBe(700);
+  expect(allowed.eligible).toBe(true);
+  expect(allowed.predictedSolarW).toBeGreaterThan(allowed.expectedHouseLoadW);
 });
 
 function createAutoLowPriceItem(): BatteryStrategyPlanItem {
