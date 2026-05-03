@@ -25,6 +25,7 @@ For delayed-charging schedules with `targetMethod === "auto"`, the flow is:
 Important:
 - delayed charging start time is based on the low-price marker only
 - the estimator uses the marker signal only; it does not average across a larger delayed-charging window
+- the separate `Delayed-charge prep` built-in item is not estimated here; it has its own marker-based trigger before delayed charging becomes due
 
 This same estimator is used by:
 - the daemon activation path for dynamic target schedule items
@@ -35,10 +36,12 @@ This same estimator is used by:
 Product-facing explanations for the built-in rules now live in:
 - `../strategies/self-consumption.md`
 - `../strategies/export-surplus.md`
+- `../strategies/delayed-charge-prep.md`
 - `../strategies/delayed-charging.md`
 
 Important:
 - `Export surplus` is documented as an active built-in rule
+- `Delayed-charge prep` is documented as an active built-in rule
 - `Delayed charging` is documented as an active built-in rule
 - this file documents the shared estimator and evaluation script, not the final product wording for each strategy type
 

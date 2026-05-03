@@ -10,6 +10,7 @@
 - `strategies/priority.md`: strategy priority, blocking, and preemption rules
 - `strategies/self-consumption.md`: default fallback strategy
 - `strategies/export-surplus.md`: built-in export-surplus rule
+- `strategies/delayed-charge-prep.md`: built-in bridge between export surplus and delayed charging
 - `strategies/delayed-charging.md`: delayed-charging rule status and implementation notes
 
 ## Plugins

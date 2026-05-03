@@ -6,11 +6,15 @@
 
 Its job is to activate shortly before a low-price marker and then choose the battery behavior that best fits that marker.
 
+It is the charging-side phase that follows built-in `Delayed-charge prep`, which is documented separately in `delayed-charge-prep.md`.
+
 ## Current Behavior
 
 Delayed charging now starts from the low-price marker only.
 
 The daemon resolves the next delayed-charging marker as the local low-price point from price selection.
+
+In the built-in flow, `Delayed-charge prep` may already be holding the battery in `idle` before this rule starts.
 
 From that marker it computes:
 
@@ -77,6 +81,8 @@ Finally:
 
 Delayed charging no longer pre-discharges and no longer has an intermediate idle-hold phase.
 
+That prior idle bridge is now represented by the separate built-in `Delayed-charge prep` item.
+
 The active delayed-charging item now completes when the battery reaches `100%` charge.
 
 After completion, the daemon restores the fallback strategy from `strategyPlan[0]`, which is currently the default `self-consumption` item.
@@ -114,6 +120,7 @@ Cross-strategy priority, blocking, and preemption rules are documented in `prior
 For delayed charging specifically:
 
 - `Delayed charging` has higher priority than built-in `Export surplus`
+- `Delayed charging` has higher priority than built-in `Delayed-charge prep`
 - a higher-priority user schedule can preempt delayed charging
 - delayed charging blocks lower-priority items while it remains active
 

@@ -19,7 +19,7 @@ This repository currently contains an initial runnable scaffold:
 
 ## Documentation
 
-- Battery strategy docs live in `docs/strategies/README.md`, with one page per built-in strategy type.
+- Battery strategy docs live in `docs/strategies/README.md`, including separate pages for `Delayed-charge prep` and `Delayed charging`.
 - The shared `targetMethod: auto` estimator and evaluator script are documented in `docs/scripts/dynamic-price-target.md`.
 
 ## Requirements

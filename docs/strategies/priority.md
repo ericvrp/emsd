@@ -36,13 +36,16 @@ The built-in normalized strategy order is:
 
 1. `Self-consumption` at index `0` as the default fallback
 2. `Export surplus` at index `1`
-3. `Delayed charging` at index `2`
+3. `Delayed-charge prep` at index `2`
+4. `Delayed charging` at index `3`
 
 User-added scheduled items appear after the built-in items and therefore have higher priority than the built-in non-default rules.
 
 ## Delayed Charging Example
 
-If `Export surplus` is active and `Delayed charging` becomes due, `Delayed charging` wins because its index is higher.
+If `Export surplus` is active and `Delayed-charge prep` becomes due, prep does not cut export short. The daemon waits for export completion and then activates prep.
+
+If `Delayed-charge prep` is active and `Delayed charging` becomes due, `Delayed charging` wins because its index is higher.
 
 If a user-added evening discharge item is active, `Export surplus` and `Delayed charging` are both blocked until that user item completes or until an even higher-index item preempts it.
 
