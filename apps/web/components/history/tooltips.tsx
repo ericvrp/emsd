@@ -139,7 +139,10 @@ export function BatteryHistoryTooltip({
         ) : null}
         {strategyLabel ? (
           <TooltipRow
-            color={getStrategyTooltipColor(point?.strategyDisplayState ?? null)}
+            color={
+              point?.strategyColor ??
+              getStrategyTooltipColor(point?.strategyDisplayState ?? null)
+            }
             label="Strategy"
             strokeDasharray={undefined}
             value={

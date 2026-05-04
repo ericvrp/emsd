@@ -35,10 +35,7 @@ import {
   STANDARD_RIGHT_AXIS_MARGIN,
 } from "./constants";
 import { buildExactBatteryStrategySegments } from "./series";
-import {
-  getBatteryStrategyLegendItems,
-  getStrategyLegendColor,
-} from "./strategy-legend";
+import { getBatteryStrategyLegendItems } from "./strategy-legend";
 import {
   BatteryHistoryTooltip,
   HistoryTooltip,
@@ -137,12 +134,17 @@ export function BatteryHistoryChart({
   points,
   strategyBatteryId,
   strategyHistory,
+  strategyPlansByBatteryId,
   visibilityStorageKey,
 }: {
   emptyMessage: string;
   headerAccessory?: ReactNode;
   nowMarkerPeriodStart: string | null;
   points: BatteryHistoryPoint[];
+  strategyPlansByBatteryId?: Record<
+    string,
+    import("@emsd/core/client").BatteryStrategyPlanRecord
+  >;
   strategyBatteryId?: string | null;
   strategyHistory: BatteryStrategyHistoryRecord[];
   visibilityStorageKey?: string;
@@ -175,6 +177,7 @@ export function BatteryHistoryChart({
     chartEndMs: xAxisDomain[1],
     chartStartMs: xAxisDomain[0],
     cutoffMs,
+    ...(strategyPlansByBatteryId ? { strategyPlansByBatteryId } : {}),
     strategyBatteryId: strategyBatteryId ?? null,
     strategyHistory,
   });
@@ -183,9 +186,7 @@ export function BatteryHistoryChart({
     seriesIds: [
       BATTERY_POWER_SERIES_ID,
       BATTERY_CHARGE_SERIES_ID,
-      ...strategyStates.map((state) =>
-        buildBatteryStrategySeriesId(state.state),
-      ),
+      ...strategyStates.map((state) => state.seriesId),
     ],
     storageKey: visibilityStorageKey,
   });
@@ -215,13 +216,11 @@ export function BatteryHistoryChart({
                 <StrategyLegendMarker
                   color={state.color}
                   source={state.source}
-                  selected={isVisible(
-                    buildBatteryStrategySeriesId(state.state),
-                  )}
+                  selected={isVisible(state.seriesId)}
                 />
               }
-              onClick={() => toggle(buildBatteryStrategySeriesId(state.state))}
-              selected={isVisible(buildBatteryStrategySeriesId(state.state))}
+              onClick={() => toggle(state.seriesId)}
+              selected={isVisible(state.seriesId)}
             />
           ))}
         </div>
@@ -304,16 +303,14 @@ export function BatteryHistoryChart({
                   }
                 />
                 {strategySegments
-                  .filter((segment) =>
-                    isVisible(buildBatteryStrategySeriesId(segment.state)),
-                  )
+                  .filter((segment) => isVisible(segment.seriesId))
                   .map((segment) => (
                     <ReferenceArea
-                      fill={getStrategyLegendColor(segment.state)}
+                      fill={segment.color}
                       fillOpacity={1}
                       ifOverflow="hidden"
-                      key={`${segment.state}-${segment.startMs}-${segment.endMs}`}
-                      stroke={getStrategyLegendColor(segment.state)}
+                      key={`${segment.seriesId}-${segment.startMs}-${segment.endMs}`}
+                      stroke={segment.color}
                       strokeOpacity={0.95}
                       strokeWidth={1.2}
                       x1={segment.startMs}
@@ -404,12 +401,6 @@ export function BatteryHistoryChart({
       </div>
     </div>
   );
-}
-
-function buildBatteryStrategySeriesId(
-  state: NonNullable<BatteryHistoryPoint["strategyDisplayState"]>,
-): string {
-  return `strategy:${state}`;
 }
 
 function StrategyLegendMarker({

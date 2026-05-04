@@ -61,12 +61,17 @@ test("buildExactBatteryStrategySegments preserves exact mid-bucket strategy boun
     }),
   ).toEqual([
     {
+      color: "#b9ad5a",
       endMs: new Date("2026-04-17T19:45:05.000Z").getTime(),
+      seriesId:
+        "strategy:automatic:self-consumption:self-consumption",
       startMs: new Date("2026-04-17T19:30:00.000Z").getTime(),
       state: "self-consumption",
     },
     {
+      color: "#7dd3fc",
       endMs: new Date("2026-04-17T20:10:00.000Z").getTime(),
+      seriesId: "strategy:manual:discharge:discharging",
       startMs: new Date("2026-04-17T19:45:05.000Z").getTime(),
       state: "discharge",
     },
@@ -99,7 +104,9 @@ test("buildExactBatteryStrategySegments clips active strategy segments at now", 
     }),
   ).toEqual([
     {
+      color: "#7dd3fc",
       endMs: new Date("2026-04-17T20:00:00.000Z").getTime(),
+      seriesId: "strategy:manual:discharge:discharging",
       startMs: new Date("2026-04-17T19:45:05.000Z").getTime(),
       state: "discharge",
     },
@@ -115,6 +122,7 @@ test("buildExactBatteryStrategySegments uses the selected battery history", () =
     }),
     buildStrategyRecord({
       batteryId: "current-battery",
+      displayLabel: "Charge",
       displayState: "charge",
       startedAt: "2026-04-17T19:00:00.000Z",
     }),
@@ -130,9 +138,61 @@ test("buildExactBatteryStrategySegments uses the selected battery history", () =
     }),
   ).toEqual([
     {
+      color: "#34d399",
       endMs: new Date("2026-04-17T20:00:00.000Z").getTime(),
+      seriesId: "strategy:automatic:charge:charge",
       startMs: new Date("2026-04-17T19:00:00.000Z").getTime(),
       state: "charge",
+    },
+  ]);
+});
+
+test("buildExactBatteryStrategySegments uses resolved plan item labels for series identity", () => {
+  expect(
+    buildExactBatteryStrategySegments({
+      chartEndMs: new Date("2026-04-17T13:00:00.000Z").getTime(),
+      chartStartMs: new Date("2026-04-17T12:00:00.000Z").getTime(),
+      cutoffMs: null,
+      strategyHistory: [
+        buildStrategyRecord({
+          activeItemId: "delayed-item",
+          batteryId: "current-battery",
+          displayLabel: "Self-consumption",
+          displayState: "self-consumption",
+          startedAt: "2026-04-17T12:00:00.000Z",
+        }),
+      ],
+      strategyPlansByBatteryId: {
+        "current-battery": [
+          {
+            enabled: true,
+            id: "delayed-item",
+            kind: "daily",
+            manualChargeTargetSoc: null,
+            manualDischargeTargetSoc: null,
+            manualPowerW: null,
+            manualState: "charging",
+            manualTargetSoc: null,
+            name: "Delayed charging",
+            startTime: null,
+            strategyMode: "manual",
+            targetDurationMinutes: null,
+            targetEndTime: null,
+            targetMethod: "auto",
+            triggerKind: BatteryStrategyTriggerKind.DelayedCharging,
+          },
+        ],
+      },
+      strategyBatteryId: "current-battery",
+    }),
+  ).toEqual([
+    {
+      color: "#f59e0b",
+      endMs: new Date("2026-04-17T13:00:00.000Z").getTime(),
+      seriesId:
+        "strategy:automatic:self-consumption:delayed%20charging",
+      startMs: new Date("2026-04-17T12:00:00.000Z").getTime(),
+      state: "self-consumption",
     },
   ]);
 });

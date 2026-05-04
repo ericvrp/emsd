@@ -44,10 +44,12 @@ export type BatteryHistoryPoint = {
   overlayStrokeWidth: number;
   overlayValue: number | null;
   periodStart: string;
+  strategyColor: string | null;
   strategyActiveItemId: string | null;
   strategyDisplayLabel: string | null;
   strategyDisplayState: BatteryStrategyHistoryDisplayState | null;
   strategyItemLabel: string | null;
+  strategySeriesId: string | null;
   strategySource: BatteryStrategyHistorySource | null;
 };
 

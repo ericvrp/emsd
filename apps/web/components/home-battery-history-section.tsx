@@ -120,6 +120,7 @@ export function HomeBatteryHistorySection({
           points={batteryHistoryPoints}
           strategyBatteryId={strategyBatteryId}
           strategyHistory={archive.batteryStrategyHistory}
+          strategyPlansByBatteryId={archive.batteryStrategyPlansByBatteryId}
           visibilityStorageKey={BATTERY_CHART_VISIBILITY_STORAGE_KEY}
         />
       </div>

@@ -2,8 +2,8 @@ import type {
   BatteryStrategyHistoryDisplayState,
   BatteryStrategyHistoryRecord,
 } from "@emsd/core/client";
-import { UI_COLORS } from "../../lib/ui-colors";
 import { HISTORY_STEP_MS } from "./constants";
+import { buildBatteryStrategyLegendItem } from "./strategy-legend";
 import type {
   BatteryHistoryPoint,
   SignedValuePoint,
@@ -227,10 +227,16 @@ export function buildExactBatteryStrategySegments(input: {
   chartEndMs: number;
   chartStartMs: number;
   cutoffMs: number | null;
+  strategyPlansByBatteryId?: Record<
+    string,
+    import("@emsd/core/client").BatteryStrategyPlanRecord
+  >;
   strategyBatteryId?: string | null;
   strategyHistory: BatteryStrategyHistoryRecord[];
 }): Array<{
+  color: string;
   endMs: number;
+  seriesId: string;
   startMs: number;
   state: BatteryStrategyHistoryDisplayState;
 }> {
@@ -239,7 +245,9 @@ export function buildExactBatteryStrategySegments(input: {
     input.strategyBatteryId ?? null,
   );
   const segments: Array<{
+    color: string;
     endMs: number;
+    seriesId: string;
     startMs: number;
     state: BatteryStrategyHistoryDisplayState;
   }> = [];
@@ -269,8 +277,20 @@ export function buildExactBatteryStrategySegments(input: {
       continue;
     }
 
+    const legendItem = buildBatteryStrategyLegendItem({
+      displayLabel: entry.displayLabel,
+      displayState: entry.displayState,
+      itemLabel: resolveStrategyItemLabel(
+        entry,
+        input.strategyPlansByBatteryId ?? {},
+      ),
+      source: entry.source,
+    });
+
     segments.push({
+      color: legendItem.color,
       endMs,
+      seriesId: legendItem.seriesId,
       startMs,
       state: entry.displayState,
     });
@@ -341,10 +361,21 @@ function combineBatteryHistorySeries(input: {
       historyForDisplay,
       powerPoint.periodStart,
     );
-    const overlay = buildStrategyOverlayStyle(
-      strategyEntry?.source ?? null,
-      strategyEntry?.displayState ?? null,
+    const strategyItemLabel = resolveStrategyItemLabel(
+      strategyEntry,
+      input.strategyPlansByBatteryId,
     );
+    const strategyLegendItem =
+      strategyEntry?.displayState !== undefined &&
+      strategyEntry?.displayState !== null
+        ? buildBatteryStrategyLegendItem({
+            displayLabel: strategyEntry.displayLabel,
+            displayState: strategyEntry.displayState,
+            itemLabel: strategyItemLabel,
+            source: strategyEntry.source,
+          })
+        : null;
+    const overlay = buildStrategyOverlayStyle(strategyLegendItem?.color ?? null);
 
     return {
       currentChargePercent: chargePoint?.currentValue ?? null,
@@ -367,13 +398,12 @@ function combineBatteryHistorySeries(input: {
       overlayStrokeWidth: overlay.strokeWidth,
       overlayValue: strategyEntry ? 1 : null,
       periodStart: powerPoint.periodStart,
+      strategyColor: strategyLegendItem?.color ?? null,
       strategyActiveItemId: strategyEntry?.activeItemId ?? null,
       strategyDisplayLabel: strategyEntry?.displayLabel ?? null,
       strategyDisplayState: strategyEntry?.displayState ?? null,
-      strategyItemLabel: resolveStrategyItemLabel(
-        strategyEntry,
-        input.strategyPlansByBatteryId,
-      ),
+      strategyItemLabel,
+      strategySeriesId: strategyLegendItem?.seriesId ?? null,
       strategySource: strategyEntry?.source ?? null,
     };
   });
@@ -459,38 +489,20 @@ function findStrategyEntryForPeriod(
   );
 }
 
-function buildStrategyOverlayStyle(
-  source: BatteryHistoryPoint["strategySource"],
-  displayState: BatteryHistoryPoint["strategyDisplayState"],
-): { color: string | null; stroke: string | null; strokeWidth: number } {
-  if (displayState === null) {
+function buildStrategyOverlayStyle(color: string | null): {
+  color: string | null;
+  stroke: string | null;
+  strokeWidth: number;
+} {
+  if (color === null) {
     return { color: null, stroke: null, strokeWidth: 0 };
   }
-
-  const color = getStrategyOverlayColor(displayState);
-
-  void source;
 
   return {
     color,
     stroke: null,
     strokeWidth: 0,
   };
-}
-
-function getStrategyOverlayColor(
-  displayState: NonNullable<BatteryHistoryPoint["strategyDisplayState"]>,
-): string {
-  switch (displayState) {
-    case "charge":
-      return UI_COLORS.strategyCharge;
-    case "discharge":
-      return UI_COLORS.strategyDischarge;
-    case "idle":
-      return UI_COLORS.strategyIdle;
-    case "self-consumption":
-      return UI_COLORS.strategySelfConsumption;
-  }
 }
 
 function createLocalDayPeriods(dayKey: string): string[] {

@@ -17,8 +17,48 @@ test("battery strategy legend uses automatic trigger reasons", () => {
       }),
     ]),
   ).toMatchObject([
-    { label: "Delayed charging", source: "automatic" },
-    { label: "Export surplus", source: "automatic" },
+    {
+      color: "#f59e0b",
+      label: "Delayed charging",
+      seriesId: "strategy:automatic:charge:delayed%20charging",
+      source: "automatic",
+    },
+    {
+      color: "#8F71BF",
+      label: "Export surplus",
+      seriesId: "strategy:automatic:discharge:export%20surplus",
+      source: "automatic",
+    },
+  ]);
+});
+
+test("battery strategy legend keeps self-consumption distinct from delayed charging", () => {
+  expect(
+    getBatteryStrategyLegendItems([
+      buildPoint({
+        strategyDisplayLabel: "Self-consumption",
+        strategyDisplayState: "self-consumption",
+        strategySource: "automatic",
+      }),
+      buildPoint({
+        strategyDisplayLabel: "Delayed charging: Self-consumption",
+        strategyDisplayState: "self-consumption",
+        strategySource: "automatic",
+      }),
+    ]),
+  ).toMatchObject([
+    {
+      color: "#b9ad5a",
+      label: "Self-consumption",
+      seriesId:
+        "strategy:automatic:self-consumption:self-consumption",
+    },
+    {
+      color: "#f59e0b",
+      label: "Delayed charging",
+      seriesId:
+        "strategy:automatic:self-consumption:delayed%20charging",
+    },
   ]);
 });
 
@@ -75,10 +115,12 @@ function buildPoint(
     overlayStrokeWidth: 0,
     overlayValue: null,
     periodStart: "2026-04-30T10:00:00.000Z",
+    strategyColor: null,
     strategyActiveItemId: null,
     strategyDisplayLabel: null,
     strategyDisplayState: null,
     strategyItemLabel: null,
+    strategySeriesId: null,
     strategySource: null,
     ...overrides,
   };
