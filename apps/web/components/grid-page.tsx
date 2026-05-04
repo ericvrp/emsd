@@ -15,8 +15,14 @@ import {
   formatAbsolutePowerValue,
   formatShortPowerValue,
 } from "../lib/power-format";
+import {
+  computeExportPrice,
+  formatCurrencyAmount,
+  getActivePricePointAtOrBefore,
+} from "../lib/price-format";
 import { UI_CHART_STYLES, UI_COLORS } from "../lib/ui-colors";
 import {
+  HISTORY_STEP_MS,
   LEFT_Y_AXIS_WIDTH,
   RIGHT_Y_AXIS_WIDTH,
   STANDARD_LEFT_AXIS_MARGIN,
@@ -29,11 +35,21 @@ import {
   buildNowLabel,
   buildResponsiveDayTicks,
   buildYAxisLabel,
+  formatDayTick,
   fillSingleValueDay,
   invertSingleValueSeries,
   splitSingleValueSeriesByTime,
 } from "./history";
-import { HistoryTooltip } from "./history/tooltips";
+import type { TooltipPayloadEntry } from "./history/types";
+import {
+  TooltipCard,
+  TooltipMarker,
+  TooltipRow,
+} from "./history/tooltips";
+import {
+  deduplicateTooltipEntries,
+  formatTooltipTimestamp,
+} from "./history/utils";
 import { MeasuredChartContainer } from "./measured-chart-container";
 import { PageRefreshButton } from "./page-refresh-button";
 import { RefreshWarning } from "./refresh-warning";
@@ -47,6 +63,7 @@ import { useChartSeriesVisibility } from "./use-chart-series-visibility";
 
 type GridPageProps = {
   archive: HistoryArchive;
+  exportDeduction?: number;
   requestedDay: string | null;
   siteId: string;
   siteName: string;
@@ -61,6 +78,7 @@ const EXPECTED_SITE_LOAD_SERIES_ID = "expected-site-load";
 
 export function GridPage({
   archive: initialArchive,
+  exportDeduction,
   requestedDay,
   siteId,
   siteName,
@@ -99,6 +117,10 @@ export function GridPage({
   const selectedDaySiteLoadSeries = archive.selectedDaySiteLoadSamples;
   const selectedDayExpectedSiteLoadSeries =
     archive.selectedDayExpectedSiteLoadSamples;
+  const importPriceSamples = archive.dynamicPriceSamples.map((sample) => ({
+    periodStart: sample.periodStart,
+    value: sample.importPrice,
+  }));
   const archiveCurrentGridPower = getLatestValueAtOrBefore(
     gridSeries,
     new Date().toISOString(),
@@ -107,6 +129,7 @@ export function GridPage({
   const currentGridPower = currentData
     ? (currentData.currentGridPowerW ?? null)
     : archiveCurrentGridPower;
+  const priceCurrency = archive.dynamicPriceSamples[0]?.currency ?? "EUR";
 
   return (
     <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
@@ -149,10 +172,13 @@ export function GridPage({
           )}
           headerAccessory={<TopLevelDaySelect daySelection={daySelection} />}
           gridPoints={splitSingleValueSeriesByTime(selectedDayGridSeries)}
+          importPricePoints={importPriceSamples}
           nowMarkerPeriodStart={daySelection.nowMarkerPeriodStart}
+          priceCurrency={priceCurrency}
           valueFormatter={formatAbsolutePowerValue}
           yAxisFormatter={formatShortPowerValue}
           yAxisLabel="Power"
+          {...(typeof exportDeduction === "number" ? { exportDeduction } : {})}
         />
       </div>
     </section>
@@ -198,9 +224,12 @@ function GridOverviewChart({
   actualSiteLoadPoints,
   emptyMessage,
   expectedSiteLoadPoints,
+  exportDeduction,
   gridPoints,
   headerAccessory,
+  importPricePoints,
   nowMarkerPeriodStart,
+  priceCurrency,
   valueFormatter,
   yAxisFormatter,
   yAxisLabel,
@@ -208,20 +237,46 @@ function GridOverviewChart({
   actualSiteLoadPoints: ReturnType<typeof splitSingleValueSeriesByTime>;
   emptyMessage: string;
   expectedSiteLoadPoints: ReturnType<typeof splitSingleValueSeriesByTime>;
+  exportDeduction?: number;
   gridPoints: ReturnType<typeof splitSingleValueSeriesByTime>;
   headerAccessory?: ReactNode;
+  importPricePoints: Array<{ periodStart: string; value: number | null }>;
   nowMarkerPeriodStart: string | null;
+  priceCurrency: string;
   valueFormatter: (value: number) => string;
   yAxisFormatter: (value: number) => string;
   yAxisLabel?: string;
 }) {
+  let cumulativeImportCost = 0;
+  let cumulativeExportEarnings = 0;
   const chartData = gridPoints.map((gridPoint, index) => {
     const actualSiteLoadPoint = actualSiteLoadPoints[index];
     const expectedSiteLoadPoint = expectedSiteLoadPoints[index];
+    const importPrice =
+      getActivePricePointAtOrBefore(
+        importPricePoints,
+        gridPoint.periodStart,
+      )?.value ?? null;
+
+    if (typeof gridPoint.value === "number" && typeof importPrice === "number") {
+      const energyKwh =
+        (Math.abs(gridPoint.value) * (HISTORY_STEP_MS / (60 * 60 * 1_000))) /
+        1_000;
+
+      if (gridPoint.value < 0) {
+        cumulativeImportCost += energyKwh * importPrice;
+      } else {
+        cumulativeExportEarnings +=
+          energyKwh * computeExportPrice(importPrice, exportDeduction);
+      }
+    }
 
     return {
       actualSiteLoadCurrentValue: actualSiteLoadPoint?.currentValue ?? null,
       actualSiteLoadFutureValue: actualSiteLoadPoint?.futureValue ?? null,
+      cumulativeExportEarnings,
+      cumulativeImportCost,
+      cumulativeNetCost: cumulativeImportCost - cumulativeExportEarnings,
       expectedSiteLoadCurrentValue: expectedSiteLoadPoint?.currentValue ?? null,
       expectedSiteLoadFutureValue: expectedSiteLoadPoint?.futureValue ?? null,
       gridCurrentValue: gridPoint.currentValue,
@@ -314,7 +369,7 @@ function GridOverviewChart({
                   interval={0}
                   minTickGap={28}
                   tick={UI_CHART_STYLES.axisTick}
-                  tickFormatter={formatGridChartTime}
+                  tickFormatter={formatDayTick}
                   tickLine={false}
                   ticks={xAxisTicks}
                 />
@@ -353,10 +408,10 @@ function GridOverviewChart({
                 />
                 <Tooltip
                   content={
-                    <HistoryTooltip
+                    <GridOverviewTooltip
                       entryLabelFormatter={formatGridOverviewTooltipLabel}
                       formatter={valueFormatter}
-                      labelFormatter={formatGridChartTooltipTime}
+                      priceCurrency={priceCurrency}
                     />
                   }
                 />
@@ -481,6 +536,123 @@ function GridOverviewChart({
   );
 }
 
+type GridOverviewChartPoint = {
+  actualSiteLoadCurrentValue: number | null;
+  actualSiteLoadFutureValue: number | null;
+  cumulativeExportEarnings: number;
+  cumulativeImportCost: number;
+  cumulativeNetCost: number;
+  expectedSiteLoadCurrentValue: number | null;
+  expectedSiteLoadFutureValue: number | null;
+  gridCurrentValue: number | null;
+  gridFutureValue: number | null;
+  periodStart: string;
+};
+
+function GridOverviewTooltip({
+  active,
+  entryLabelFormatter,
+  formatter,
+  label,
+  payload,
+  priceCurrency,
+}: {
+  active?: boolean;
+  entryLabelFormatter?: (value: number, key?: string) => string;
+  formatter: (value: number, key?: string, payload?: unknown) => string;
+  label?: string;
+  payload?: TooltipPayloadEntry[];
+  priceCurrency: string;
+}) {
+  if (!active || !label || !payload || payload.length === 0) return null;
+
+  const numericEntries = payload.filter(
+    (entry): entry is TooltipPayloadEntry & { value: number } =>
+      typeof entry.value === "number",
+  );
+  const deduplicatedEntries = deduplicateTooltipEntries(numericEntries);
+  const point = payload.find((entry) => entry.payload)?.payload as
+    | GridOverviewChartPoint
+    | undefined;
+
+  if (deduplicatedEntries.length === 0 || !point) return null;
+
+  return (
+    <TooltipCard>
+      <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+        {formatTooltipTimestamp(label)}
+      </p>
+      <div className="space-y-1.5">
+        {deduplicatedEntries.map((entry) => (
+          <div
+            key={`${entry.dataKey}-${entry.name}`}
+            className="flex items-center justify-between gap-4"
+          >
+            <span className="flex items-center gap-2 text-slate-200">
+              <TooltipMarker
+                color={entry.color ?? UI_COLORS.chartSeriesFallback}
+                strokeDasharray={
+                  entry.dataKey?.startsWith("expected") ? "1 6" : undefined
+                }
+              />
+              {entryLabelFormatter?.(entry.value, entry.dataKey) ??
+                entry.name ??
+                entry.dataKey ??
+                "Value"}
+            </span>
+            <span className="font-medium text-white">
+              {formatter(entry.value, entry.dataKey, entry.payload)}
+            </span>
+          </div>
+        ))}
+        <div className="mt-2 border-t border-white/10 pt-2">
+          <div className="space-y-1.5">
+            <TooltipDetailRow
+              label="Net Energy Earnings"
+              value={formatCurrencyAmount(
+                -point.cumulativeNetCost,
+                priceCurrency,
+              )}
+            />
+            <TooltipDetailRow
+              label="Import Cost"
+              value={formatCurrencyAmount(
+                point.cumulativeImportCost,
+                priceCurrency,
+              )}
+            />
+            <TooltipDetailRow
+              label="Export Earnings"
+              value={formatCurrencyAmount(
+                point.cumulativeExportEarnings,
+                priceCurrency,
+              )}
+            />
+          </div>
+        </div>
+      </div>
+    </TooltipCard>
+  );
+}
+
+function TooltipDetailRow({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <span className="flex items-center gap-2 text-slate-200">
+        <span aria-hidden="true" className="shrink-0" style={{ width: 18 }} />
+        {label}
+      </span>
+      <span className="font-medium text-white">{value}</span>
+    </div>
+  );
+}
+
 function ExpectedLegendMarker() {
   return (
     <svg
@@ -514,20 +686,4 @@ function formatGridOverviewTooltipLabel(value: number, key?: string): string {
   }
 
   return "Inferred Site Load";
-}
-
-function formatGridChartTime(value: string | number): string {
-  return new Intl.DateTimeFormat(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value));
-}
-
-function formatGridChartTooltipTime(value: string | number): string {
-  return new Intl.DateTimeFormat(undefined, {
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    month: "short",
-  }).format(new Date(value));
 }

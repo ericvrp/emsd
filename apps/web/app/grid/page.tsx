@@ -36,6 +36,7 @@ export default async function GridRoute({
   const historyArchive = currentSite
     ? await getHistoryArchive({ day: requestedDay, siteId: currentSite.id })
     : null;
+  const exportDeduction = currentSite?.dynamicPriceSources[0]?.exportDeduction;
 
   return (
     <DashboardPageFrame currentSite={currentSite}>
@@ -45,6 +46,7 @@ export default async function GridRoute({
           requestedDay={requestedDay}
           siteId={currentSite.id}
           siteName={currentSite.name}
+          {...(typeof exportDeduction === "number" ? { exportDeduction } : {})}
         />
       ) : (
         <SiteSetupPanel />

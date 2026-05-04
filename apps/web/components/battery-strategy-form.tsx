@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ActionResult } from "../app/actions";
 import { setHouseStrategyAction } from "../app/actions";
 import { logBrowserIntervalHeartbeat } from "../lib/browser-heartbeat";
+import { formatKilowattHoursFromWh } from "../lib/energy-format";
 import { SubmitButton } from "./submit-button";
 import { useFormActionToast } from "./use-form-action-toast";
 import { Input } from "./ui/input";
@@ -888,7 +889,7 @@ function formatCapacity(capacityWh: number | null): string {
     return "Unavailable";
   }
 
-  return `${(capacityWh / 1000).toFixed(1)} kWh`;
+  return formatKilowattHoursFromWh(capacityWh);
 }
 
 function formatSoc(value: number | null | undefined): string {

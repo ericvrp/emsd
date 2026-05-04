@@ -23,6 +23,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { formatKilowattHoursFromWh } from "../lib/energy-format";
 import {
   createDynamicPriceSourceAction,
   createSiteAction,
@@ -69,7 +70,7 @@ function formatCapacity(capacityWh: number | null | undefined): string {
     return "Unavailable";
   }
 
-  return `${(capacityWh / 1000).toFixed(1)} kWh`;
+  return formatKilowattHoursFromWh(capacityWh);
 }
 
 function formatProductionControlStatus(

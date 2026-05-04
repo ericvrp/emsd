@@ -6,12 +6,18 @@ import type {
   HistoryArchive,
 } from "@emsd/core/client";
 import { useState } from "react";
+import {
+  computeExportPrice,
+  formatPricePerKwh,
+  getActivePricePointAtOrBefore,
+} from "../lib/price-format";
 import { UI_COLORS } from "../lib/ui-colors";
 import {
   SingleValueHistoryChart,
   fillSingleValueDay,
   splitSingleValueSeriesByTime,
 } from "./history";
+import { TooltipCard, TooltipRow } from "./history/tooltips";
 import { formatTooltipTimestamp } from "./history/utils";
 import { PageRefreshButton } from "./page-refresh-button";
 import { RefreshWarning } from "./refresh-warning";
@@ -75,10 +81,13 @@ export function PricingSection({
   const coverageSummary = snapshot
     ? formatPriceCoverageSummary(snapshot.points)
     : null;
-  const currentPricePoint = getCurrentPricePoint(
-    snapshot?.points ?? [],
-    Date.now(),
-  );
+  const currentPricePoint =
+    getActivePricePointAtOrBefore(
+      snapshot?.points ?? [],
+      Date.now(),
+    ) ??
+    snapshot?.points[0] ??
+    null;
   const priceCurrency = snapshot?.currency ?? "EUR";
   const emptyMessage =
     snapshot === null
@@ -160,7 +169,7 @@ export function PricingSection({
               />
             }
             valueFormatter={(value) =>
-              `${value.toFixed(3)} ${priceCurrency}/kWh`
+              formatPricePerKwh(value, priceCurrency)
             }
             visibilitySeriesId={PRICE_CHART_SERIES_ID}
             visibilityStorageKey={PRICE_CHART_VISIBILITY_STORAGE_KEY}
@@ -174,34 +183,10 @@ export function PricingSection({
   );
 }
 
-function getCurrentPricePoint(
-  points: DynamicPricePointRecord[],
-  now: number,
-): DynamicPricePointRecord | null {
-  let currentPoint: DynamicPricePointRecord | null = null;
-
-  for (const point of points) {
-    if (new Date(point.startsAt).getTime() <= now) {
-      currentPoint = point;
-    } else {
-      break;
-    }
-  }
-
-  return currentPoint ?? points[0] ?? null;
-}
-
 function formatPriceCoverageSummary(
   _points: DynamicPricePointRecord[],
 ): string | null {
   return null;
-}
-
-function computeExportPrice(
-  importPrice: number,
-  exportDeduction: number | undefined,
-): number {
-  return importPrice - (exportDeduction ?? 0.13);
 }
 
 function PriceTooltip({
@@ -237,68 +222,30 @@ function PriceTooltip({
   const exportPrice = computeExportPrice(importPrice, exportDeduction);
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-slate-950/95 px-3 py-2 text-sm text-slate-50 shadow-[0_24px_70px_rgba(2,6,23,0.6)] backdrop-blur">
+    <TooltipCard>
       <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
         {formatTooltipTimestamp(label)}
       </p>
       <div className="space-y-1.5">
-        <div className="flex items-center justify-between gap-4">
-          <span className="flex items-center gap-2 text-slate-200">
-            <svg
-              aria-hidden="true"
-              className="shrink-0"
-              height="8"
-              viewBox="0 0 18 8"
-              width="18"
-            >
-              <line
-                stroke={UI_COLORS.price}
-                strokeLinecap="round"
-                strokeWidth="2.8"
-                x1="1.4"
-                x2="16.6"
-                y1="4"
-                y2="4"
-              />
-            </svg>
-            Import price
-          </span>
-          <span className="font-medium text-white">
-            {formatPriceSummaryValue(importPrice, currency)}
-          </span>
-        </div>
-        <div className="flex items-center justify-between gap-4">
-          <span className="flex items-center gap-2 text-slate-200">
-            <svg
-              aria-hidden="true"
-              className="shrink-0"
-              height="8"
-              viewBox="0 0 18 8"
-              width="18"
-            >
-              <line
-                stroke={UI_COLORS.success}
-                strokeLinecap="round"
-                strokeWidth="2.8"
-                x1="1.4"
-                x2="16.6"
-                y1="4"
-                y2="4"
-              />
-            </svg>
-            Export price
-          </span>
-          <span className="font-medium text-white">
-            {formatPriceSummaryValue(exportPrice, currency)}
-          </span>
-        </div>
+        <TooltipRow
+          color={UI_COLORS.price}
+          label="Import price"
+          strokeDasharray={undefined}
+          value={formatPriceSummaryValue(importPrice, currency)}
+        />
+        <TooltipRow
+          color={UI_COLORS.success}
+          label="Export price"
+          strokeDasharray={undefined}
+          value={formatPriceSummaryValue(exportPrice, currency)}
+        />
       </div>
-    </div>
+    </TooltipCard>
   );
 }
 
 function formatPriceSummaryValue(value: number, currency: string): string {
-  return `${value.toFixed(3)} ${currency}/kWh`;
+  return formatPricePerKwh(value, currency);
 }
 
 function formatShortPriceAxisValue(value: number): string {

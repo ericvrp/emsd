@@ -6,6 +6,9 @@ import { UI_COLORS } from "../../lib/ui-colors";
 import type { BatteryHistoryPoint, TooltipPayloadEntry } from "./types";
 import { deduplicateTooltipEntries, formatPercentValue } from "./utils";
 
+const TOOLTIP_CARD_CLASS_NAME =
+  "rounded-2xl border border-white/10 bg-slate-950/95 px-3 py-2 text-sm text-slate-50 shadow-[0_24px_70px_rgba(2,6,23,0.6)] backdrop-blur";
+
 export function HistoryTooltip({
   active,
   entryLabelFormatter,
@@ -31,7 +34,7 @@ export function HistoryTooltip({
   if (deduplicatedEntries.length === 0) return null;
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-slate-950/95 px-3 py-2 text-sm text-slate-50 shadow-[0_24px_70px_rgba(2,6,23,0.6)] backdrop-blur">
+    <TooltipCard>
       <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
         {labelFormatter(label)}
       </p>
@@ -59,7 +62,7 @@ export function HistoryTooltip({
           </div>
         ))}
       </div>
-    </div>
+    </TooltipCard>
   );
 }
 
@@ -116,7 +119,7 @@ export function BatteryHistoryTooltip({
   if (!powerEntry && !chargeEntry && !strategyLabel) return null;
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-slate-950/95 px-3 py-2 text-sm text-slate-50 shadow-[0_24px_70px_rgba(2,6,23,0.6)] backdrop-blur">
+    <TooltipCard>
       <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
         {labelFormatter(label)}
       </p>
@@ -156,7 +159,7 @@ export function BatteryHistoryTooltip({
           />
         ) : null}
       </div>
-    </div>
+    </TooltipCard>
   );
 }
 
@@ -277,7 +280,7 @@ export function SegmentedHistoryTooltip({
   const seriesLabel = isPositive ? positiveLabel : negativeLabel;
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-slate-950/95 px-3 py-2 text-sm text-slate-50 shadow-[0_24px_70px_rgba(2,6,23,0.6)] backdrop-blur">
+    <TooltipCard>
       <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
         {labelFormatter(label)}
       </p>
@@ -289,11 +292,15 @@ export function SegmentedHistoryTooltip({
           value={valueFormatter(selectedEntry.value)}
         />
       </div>
-    </div>
+    </TooltipCard>
   );
 }
 
-function TooltipRow({
+export function TooltipCard({ children }: { children: ReactNode }) {
+  return <div className={TOOLTIP_CARD_CLASS_NAME}>{children}</div>;
+}
+
+export function TooltipRow({
   color,
   label,
   strokeDasharray,
@@ -315,7 +322,7 @@ function TooltipRow({
   );
 }
 
-function TooltipMarker({
+export function TooltipMarker({
   color,
   strokeDasharray,
 }: {

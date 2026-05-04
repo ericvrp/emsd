@@ -27,6 +27,7 @@ import {
   formatPowerValue,
   formatShortPowerValue,
 } from "../lib/power-format";
+import { formatEnergyValue } from "../lib/energy-format";
 import { UI_CHART_STYLES, UI_COLORS } from "../lib/ui-colors";
 import {
   LegendChip,
@@ -715,12 +716,4 @@ function getForecastTooltipRunningTotalWh(
   }
 
   return null;
-}
-
-function formatEnergyValue(valueWh: number): string {
-  if (valueWh >= 1000) {
-    return `${(valueWh / 1000).toFixed(1)} kWh`;
-  }
-
-  return `${Math.round(valueWh)} Wh`;
 }
