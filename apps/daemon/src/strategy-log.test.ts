@@ -450,7 +450,7 @@ test("strategy status summary prefers power for manual discharging override", ()
         manualModeActive: true,
       }),
     ),
-  ).toBe("Discharging at 800W to 10%");
+  ).toBe("Discharging");
 });
 
 test("strategy status summary reports manual override duration", () => {
@@ -471,7 +471,7 @@ test("strategy status summary reports manual override duration", () => {
       }),
       new Date("2026-04-12T17:31:10.000Z"),
     ),
-  ).toBe("Discharging at 800W for 5 minutes");
+  ).toBe("Discharging for 5 minutes");
 });
 
 test("strategy status summary omits power for idle manual override", () => {
@@ -485,7 +485,7 @@ test("strategy status summary omits power for idle manual override", () => {
         manualModeActive: true,
       }),
     ),
-  ).toBe("Idle to 10%");
+  ).toBe("Idle");
 });
 
 test("strategy status summary reports idle without zero target", () => {
@@ -560,7 +560,34 @@ test("strategy status summary prefixes delayed-charging trigger kind", () => {
       }),
       new Date("2026-04-21T02:15:00.000Z"),
     ),
-  ).toBe("Delayed charging: Charging to 100%");
+  ).toBe("Delayed charging: Charging");
+});
+
+test("strategy status summary omits a full-charge auto target even with a target time", () => {
+  expect(
+    formatBatteryStrategyStatusSummary(
+      buildBattery({
+        strategyRuntime: buildRuntime({
+          activeItemId: "daily-2",
+          activeResolvedManualState: "charging",
+          activeTargetSocPercent: 100,
+          activeTargetTime: "2026-04-21T07:00:00.000Z",
+          activeStartedAt: "2026-04-21T02:00:00.000Z",
+        }),
+        strategyPlan: [
+          buildDefaultItem(),
+          buildDailyItem({
+            id: "daily-2",
+            manualState: "charging",
+            manualChargeTargetSoc: null,
+            manualTargetSoc: null,
+            targetMethod: "auto",
+          }),
+        ],
+      }),
+      new Date("2026-04-21T02:15:00.000Z"),
+    ),
+  ).toBe("Charging");
 });
 
 test("strategy status summary keeps delayed-charging label when it resolves to self-consumption", () => {
@@ -587,7 +614,7 @@ test("strategy status summary keeps delayed-charging label when it resolves to s
       }),
       new Date("2026-04-30T10:40:00.000Z"),
     ),
-  ).toBe("Delayed charging: Self-consumption to 100%");
+  ).toBe("Delayed charging: Self-consumption");
 });
 
 function buildBattery(overrides: Partial<BatteryRecord> = {}): BatteryRecord {

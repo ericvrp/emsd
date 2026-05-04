@@ -215,6 +215,8 @@ export function formatBatteryStrategyStatusSummary(
       manualChargeTargetSoc: battery.manualChargeTargetSoc,
       manualDischargeTargetSoc: battery.manualDischargeTargetSoc,
       manualTargetSoc: battery.manualTargetSoc,
+      maximumChargePowerW: battery.maximumChargePowerW,
+      maximumDischargePowerW: battery.maximumDischargePowerW,
       minimumDischargePercent: battery.minimumDischargePercent,
       resolvedTargetSoc:
         battery.strategyRuntime.manualTargetMethod === "auto"
@@ -247,6 +249,8 @@ export function formatBatteryStrategyStatusSummary(
         manualChargeTargetSoc: fallbackItem.manualChargeTargetSoc,
         manualDischargeTargetSoc: fallbackItem.manualDischargeTargetSoc,
         manualTargetSoc: fallbackItem.manualTargetSoc,
+        maximumChargePowerW: battery.maximumChargePowerW,
+        maximumDischargePowerW: battery.maximumDischargePowerW,
         minimumDischargePercent: battery.minimumDischargePercent,
         resolvedTargetSoc:
           fallbackItem.targetMethod === "auto"
@@ -272,6 +276,8 @@ export function formatBatteryStrategyStatusSummary(
         manualChargeTargetSoc: battery.manualChargeTargetSoc,
         manualDischargeTargetSoc: battery.manualDischargeTargetSoc,
         manualTargetSoc: battery.manualTargetSoc,
+        maximumChargePowerW: battery.maximumChargePowerW,
+        maximumDischargePowerW: battery.maximumDischargePowerW,
         minimumDischargePercent: battery.minimumDischargePercent,
         resolvedTargetSoc: null,
         targetMethod: null,
@@ -305,6 +311,8 @@ export function formatBatteryStrategyStatusSummary(
       manualChargeTargetSoc: null,
       manualDischargeTargetSoc: null,
       manualTargetSoc: battery.strategyRuntime.activeTargetSocPercent ?? 100,
+      maximumChargePowerW: battery.maximumChargePowerW,
+      maximumDischargePowerW: battery.maximumDischargePowerW,
       minimumDischargePercent: battery.minimumDischargePercent,
       resolvedTargetSoc: battery.strategyRuntime.activeTargetSocPercent ?? null,
       targetMethod: activeItem.targetMethod,
@@ -338,6 +346,8 @@ export function formatBatteryStrategyStatusSummary(
     manualChargeTargetSoc: activeItem.manualChargeTargetSoc,
     manualDischargeTargetSoc: activeItem.manualDischargeTargetSoc,
     manualTargetSoc: activeItem.manualTargetSoc,
+    maximumChargePowerW: battery.maximumChargePowerW,
+    maximumDischargePowerW: battery.maximumDischargePowerW,
     minimumDischargePercent: battery.minimumDischargePercent,
     resolvedTargetSoc:
       activeItem.targetMethod === "auto"
@@ -469,6 +479,8 @@ function summarizeActiveStrategy(input: {
   manualChargeTargetSoc: BatteryStrategyRecord["manualChargeTargetSoc"];
   manualDischargeTargetSoc: BatteryStrategyRecord["manualDischargeTargetSoc"];
   manualTargetSoc: BatteryStrategyRecord["manualTargetSoc"];
+  maximumChargePowerW: number;
+  maximumDischargePowerW: number;
   minimumDischargePercent: number;
   resolvedTargetSoc: number | null;
   targetMethod: BatteryStrategyPlanItem["targetMethod"];
@@ -487,6 +499,7 @@ function summarizeActiveStrategy(input: {
           powerW: null,
           preferPowerWhenAvailable: false,
           defaultTargetSoc: input.resolvedTargetSoc ?? input.manualTargetSoc,
+          minimumDischargePercent: input.minimumDischargePercent,
           targetMethod: input.targetMethod,
           targetDurationMinutes: input.targetDurationMinutes,
           targetEndTime: input.targetEndTime,
@@ -509,6 +522,10 @@ function summarizeActiveStrategy(input: {
         input.resolvedTargetSoc ??
         input.manualChargeTargetSoc ??
         input.manualTargetSoc,
+      omitPowerW:
+        input.manualPowerW !== null &&
+        input.manualPowerW === input.maximumChargePowerW,
+      minimumDischargePercent: input.minimumDischargePercent,
       targetMethod: input.targetMethod,
       targetDurationMinutes: input.targetDurationMinutes,
       targetEndTime: input.targetEndTime,
@@ -528,6 +545,10 @@ function summarizeActiveStrategy(input: {
         input.manualDischargeTargetSoc ??
         input.manualTargetSoc ??
         input.minimumDischargePercent,
+      omitPowerW:
+        input.manualPowerW !== null &&
+        input.manualPowerW === input.maximumDischargePowerW,
+      minimumDischargePercent: input.minimumDischargePercent,
       targetMethod: input.targetMethod,
       targetDurationMinutes: input.targetDurationMinutes,
       targetEndTime: input.targetEndTime,
@@ -543,6 +564,7 @@ function summarizeActiveStrategy(input: {
       powerW: input.manualPowerW,
       preferPowerWhenAvailable: input.preferPowerWhenAvailable,
       defaultTargetSoc: input.resolvedTargetSoc ?? input.manualTargetSoc,
+      minimumDischargePercent: input.minimumDischargePercent,
       targetMethod: input.targetMethod,
       targetDurationMinutes: input.targetDurationMinutes,
       targetEndTime: input.targetEndTime,
@@ -597,6 +619,8 @@ function describeActionWithTarget(
     powerW: number | null;
     preferPowerWhenAvailable: boolean;
     defaultTargetSoc: number | null;
+    omitPowerW?: boolean;
+    minimumDischargePercent: number;
     targetMethod: BatteryStrategyPlanItem["targetMethod"];
     targetDurationMinutes: BatteryStrategyPlanItem["targetDurationMinutes"];
     targetEndTime: BatteryStrategyPlanItem["targetEndTime"];
@@ -612,11 +636,20 @@ function describeActionWithTarget(
     targetLabel =
       input.defaultTargetSoc === null
         ? "with a dynamic target"
-        : `to ${input.defaultTargetSoc}%`;
+        : shouldOmitTargetSocLabel(
+              input.defaultTargetSoc,
+              input.minimumDischargePercent,
+            )
+          ? null
+          : `to ${input.defaultTargetSoc}%`;
 
     // Only include the time for non-price triggers; for price triggers the
     // target time is misleading (it looks like a daily schedule time)
-    if (input.targetTime && !isPriceTrigger(input.triggerKind)) {
+    if (
+      targetLabel !== null &&
+      input.targetTime &&
+      !isPriceTrigger(input.triggerKind)
+    ) {
       targetLabel = `${targetLabel} by ${formatHumanClockTime(input.targetTime)}`;
     }
   }
@@ -641,6 +674,10 @@ function describeActionWithTarget(
       action === "Idle" &&
       input.defaultTargetSoc !== null &&
       input.defaultTargetSoc <= 0
+    ) &&
+    !shouldOmitTargetSocLabel(
+      input.defaultTargetSoc,
+      input.minimumDischargePercent,
     )
   ) {
     targetLabel =
@@ -656,6 +693,7 @@ function describeActionWithTarget(
 
   if (
     input.preferPowerWhenAvailable &&
+    input.omitPowerW !== true &&
     input.powerW !== null &&
     input.powerW > 0
   ) {
@@ -667,6 +705,16 @@ function describeActionWithTarget(
   return targetLabel
     ? `${prefix}${action} ${targetLabel}`
     : `${prefix}${action}`;
+}
+
+function shouldOmitTargetSocLabel(
+  targetSoc: number | null,
+  minimumDischargePercent: number,
+): boolean {
+  return (
+    targetSoc !== null &&
+    (targetSoc === 100 || targetSoc === minimumDischargePercent)
+  );
 }
 
 function formatDurationTargetLabel(input: {
