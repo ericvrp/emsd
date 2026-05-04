@@ -35,6 +35,7 @@ import {
   splitSingleValueSeriesByTime,
 } from "./history";
 import {
+  HISTORY_STEP_MS,
   LEFT_Y_AXIS_WIDTH,
   RIGHT_Y_AXIS_WIDTH,
   STANDARD_LEFT_AXIS_MARGIN,
@@ -255,15 +256,30 @@ function ForecastPredictionChart({
   predictionAccuracyPercentage: number | null;
   predictedPoints: SplitSingleValuePoint[];
 }) {
+  let generatedCumulativeWh = 0;
+  let predictedCumulativeWh = 0;
   const chartData = forecastPoints.map((forecastPoint, index) => {
     const generatedPoint = generatedPoints[index];
     const predictedPoint = predictedPoints[index];
+
+    if (typeof generatedPoint?.value === "number") {
+      generatedCumulativeWh +=
+        generatedPoint.value * (HISTORY_STEP_MS / (60 * 60 * 1_000));
+    }
+
+    if (typeof predictedPoint?.value === "number") {
+      predictedCumulativeWh +=
+        predictedPoint.value * (HISTORY_STEP_MS / (60 * 60 * 1_000));
+    }
+
     return {
       forecastCurrentValue: forecastPoint.currentValue,
       forecastFutureValue: forecastPoint.futureValue,
+      generatedCumulativeWh,
       generatedCurrentValue: generatedPoint?.currentValue ?? null,
       generatedFutureValue: generatedPoint?.futureValue ?? null,
       periodStart: forecastPoint.periodStart,
+      predictedCumulativeWh,
       predictedCurrentValue: predictedPoint?.currentValue ?? null,
       predictedFutureValue: predictedPoint?.futureValue ?? null,
     };
@@ -393,10 +409,10 @@ function ForecastPredictionChart({
                   content={
                     <HistoryTooltip
                       entryLabelFormatter={formatForecastTooltipLabel}
-                      formatter={(value, key) =>
+                      formatter={(value, key, payload) =>
                         key?.startsWith("predicted") ||
                         key?.startsWith("generated")
-                          ? formatPowerValue(value)
+                          ? formatPowerTooltipWithRunningTotal(value, key, payload)
                           : formatForecastValue(value, forecastUnitLabel)
                       }
                       labelFormatter={formatTooltipTimestamp}
@@ -662,4 +678,49 @@ function formatForecastTooltipLabel(_: number, key?: string): string {
   }
 
   return "Solar Forecast";
+}
+
+function formatPowerTooltipWithRunningTotal(
+  value: number,
+  key?: string,
+  payload?: unknown,
+): string {
+  const totalWh = getForecastTooltipRunningTotalWh(key, payload);
+
+  if (totalWh === null) {
+    return formatPowerValue(value);
+  }
+
+  return `${formatPowerValue(value)} • Total ${formatEnergyValue(totalWh)}`;
+}
+
+function getForecastTooltipRunningTotalWh(
+  key?: string,
+  payload?: unknown,
+): number | null {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  if (key?.startsWith("generated")) {
+    const totalWh = (payload as { generatedCumulativeWh?: unknown })
+      .generatedCumulativeWh;
+    return typeof totalWh === "number" ? totalWh : null;
+  }
+
+  if (key?.startsWith("predicted")) {
+    const totalWh = (payload as { predictedCumulativeWh?: unknown })
+      .predictedCumulativeWh;
+    return typeof totalWh === "number" ? totalWh : null;
+  }
+
+  return null;
+}
+
+function formatEnergyValue(valueWh: number): string {
+  if (valueWh >= 1000) {
+    return `${(valueWh / 1000).toFixed(1)} kWh`;
+  }
+
+  return `${Math.round(valueWh)} Wh`;
 }

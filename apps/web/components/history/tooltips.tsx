@@ -16,7 +16,7 @@ export function HistoryTooltip({
 }: {
   active?: boolean;
   entryLabelFormatter?: (value: number, key?: string) => string;
-  formatter: (value: number, key?: string) => string;
+  formatter: (value: number, key?: string, payload?: unknown) => string;
   label?: string;
   labelFormatter: (label: string) => string;
   payload?: TooltipPayloadEntry[];
@@ -54,7 +54,7 @@ export function HistoryTooltip({
                 "Value"}
             </span>
             <span className="font-medium text-white">
-              {formatter(entry.value, entry.dataKey)}
+              {formatter(entry.value, entry.dataKey, entry.payload)}
             </span>
           </div>
         ))}
