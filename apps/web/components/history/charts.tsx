@@ -56,12 +56,9 @@ import {
 } from "./utils";
 
 const BATTERY_STRATEGY_BAND_HEIGHT_RATIO = 0.0603;
-const BATTERY_STRATEGY_BAND_BOTTOM =
-  BATTERY_POWER_AXIS_DOMAIN[1] -
-  (BATTERY_POWER_AXIS_DOMAIN[1] - BATTERY_POWER_AXIS_DOMAIN[0]) *
-    BATTERY_STRATEGY_BAND_HEIGHT_RATIO;
-const BATTERY_POWER_SERIES_ID = "power";
-const BATTERY_CHARGE_SERIES_ID = "charge";
+const BATTERY_STRATEGY_BAND_BOTTOM = 1 - BATTERY_STRATEGY_BAND_HEIGHT_RATIO;
+const BATTERY_POWER_SERIES_ID = "battery-history:power";
+const BATTERY_CHARGE_SERIES_ID = "battery-history:charge";
 
 export function LegendChip({
   color,
@@ -302,6 +299,17 @@ export function BatteryHistoryChart({
                     />
                   }
                 />
+                <Line
+                  activeDot={false}
+                  dataKey="overlayValue"
+                  dot={false}
+                  isAnimationActive={false}
+                  legendType="none"
+                  stroke="transparent"
+                  strokeWidth={1}
+                  type="monotone"
+                  yAxisId="overlay"
+                />
                 {strategySegments
                   .filter((segment) => isVisible(segment.seriesId))
                   .map((segment) => (
@@ -316,8 +324,8 @@ export function BatteryHistoryChart({
                       x1={segment.startMs}
                       x2={segment.endMs}
                       y1={BATTERY_STRATEGY_BAND_BOTTOM}
-                      y2={BATTERY_POWER_AXIS_DOMAIN[1]}
-                      yAxisId="power"
+                      y2={1}
+                      yAxisId="overlay"
                     />
                   ))}
                 {isVisible(BATTERY_POWER_SERIES_ID) ? (

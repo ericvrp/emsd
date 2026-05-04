@@ -21,7 +21,7 @@ import { type SiteCurrentResponse, useLiveJsonSWR } from "./use-live-json-swr";
 const LIVE_CURRENT_REFRESH_INTERVAL_MS = 5_000;
 const GRAPH_REFRESH_INTERVAL_MS = 60 * 1_000;
 const BATTERY_CHART_VISIBILITY_STORAGE_KEY =
-  "emsd:chart-visibility:home:battery";
+  "emsd:chart-visibility:home:battery:v2";
 
 type HomeBatteryHistorySectionProps = {
   archive: HistoryArchive;
