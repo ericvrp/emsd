@@ -40,6 +40,7 @@ import {
   completeSolarEnergyProviderControlRequest,
   markSolarEnergyProviderControlRequestRunning,
   openDaemonDatabase,
+  queueSolarEnergyProviderControlRequest,
   readBatteries,
   readBatteryById,
   readBatteryPowerSamples,
@@ -83,6 +84,7 @@ import {
   getDelayedChargePrepSkipReason,
   getNextStrategyTriggerAt,
   getScheduledItemCompletion,
+  getSolarProductionControlDecision,
   getStrategyTriggerAt,
   isDelayedChargePrepItem,
   isItemAlreadyTriggeredToday,
@@ -324,10 +326,27 @@ function main(): void {
               });
           }
 
-          if (!battery.manualModeActive) {
+          const scheduledBattery =
+            readBatteryById(db, battery.siteId, battery.id) ?? battery;
+
+          if (!scheduledBattery.manualModeActive) {
+            await runIndependentSolarProductionControlStrategy(
+              db,
+              scheduledBattery,
+              new Date(),
+              options.verbose,
+            );
+          } else {
+            logVerbose(
+              options.verbose,
+              `skipping independent solar production control for ${scheduledBattery.id} because manual mode is active`,
+            );
+          }
+
+          if (!scheduledBattery.manualModeActive) {
             await runScheduledStrategy(
               db,
-              battery,
+              scheduledBattery,
               sample,
               new Date(),
               options.verbose,
@@ -335,7 +354,7 @@ function main(): void {
           } else {
             logVerbose(
               options.verbose,
-              `skipping scheduled strategy for ${battery.id} because manual mode is active`,
+              `skipping scheduled strategy for ${scheduledBattery.id} because manual mode is active`,
             );
           }
 
@@ -805,7 +824,13 @@ async function runScheduledStrategy(
   verbose: boolean,
 ): Promise<void> {
   const activeItem = getActiveStrategyPlanItem(battery);
-  const dueItems = battery.strategyPlan.slice(1).filter((item) => item.enabled);
+  const dueItems = battery.strategyPlan
+    .slice(1)
+    .filter(
+      (item) =>
+        item.enabled &&
+        item.triggerKind !== BatteryStrategyTriggerKind.SolarProductionControl,
+    );
   const dynamicPriceSamples = dueItems.some((item) =>
     isBatteryStrategyTriggerNeedingPriceSamples(item.triggerKind),
   )
@@ -1471,6 +1496,122 @@ async function runScheduledStrategy(
   }
 
   return;
+}
+
+async function runIndependentSolarProductionControlStrategy(
+  db: ReturnType<typeof openDaemonDatabase>,
+  battery: BatteryRecord,
+  now: Date,
+  verbose: boolean,
+): Promise<void> {
+  const item =
+    battery.strategyPlan.find(
+      (entry) =>
+        entry.enabled &&
+        entry.triggerKind === BatteryStrategyTriggerKind.SolarProductionControl,
+    ) ?? null;
+
+  if (item === null) {
+    return;
+  }
+
+  const dynamicPriceSamples = readDynamicPriceSamples(db, battery.siteId);
+  const normalizedImportExportSpread = resolveNormalizedImportExportSpread(
+    readDynamicPriceSources(db),
+    battery.siteId,
+  );
+  const decision = getSolarProductionControlDecision({
+    item,
+    now,
+    dynamicPriceSamples,
+    normalizedImportExportSpread,
+  });
+
+  if (decision === null) {
+    logVerbose(
+      verbose,
+      `solar production control has no active price decision for ${battery.id}`,
+    );
+    return;
+  }
+
+  if (
+    isItemAlreadyTriggeredToday({
+      runtime: battery.strategyRuntime,
+      itemId: item.id,
+      triggerAt: decision.triggerAt,
+    })
+  ) {
+    return;
+  }
+
+  const providers = readSolarEnergyProviders(db).filter(
+    (provider) => provider.siteId === battery.siteId && provider.enabled,
+  );
+
+  if (providers.length === 0) {
+    logVerbose(
+      verbose,
+      `solar production control has no enabled providers for ${battery.id}`,
+    );
+    return;
+  }
+
+  const telemetry = readManagedDeviceTelemetry(db);
+  let processedProviderCount = 0;
+
+  for (const provider of providers) {
+    const providerTelemetry =
+      telemetry.find(
+        (entry) =>
+          entry.kind === "solar-energy-provider" && entry.deviceId === provider.id,
+      ) ?? null;
+    const currentStatus = providerTelemetry?.productionControlStatus ?? null;
+
+    if (currentStatus === null || currentStatus === "unavailable") {
+      logVerbose(
+        verbose,
+        `solar production control skipped for ${provider.id}: provider state is unavailable`,
+      );
+      continue;
+    }
+
+    processedProviderCount += 1;
+    const currentlyEnabled = currentStatus === "enabled";
+
+    if (currentlyEnabled === decision.desiredEnabled) {
+      continue;
+    }
+
+    queueSolarEnergyProviderControlRequest(db, {
+      providerId: provider.id,
+      requestedAt: now.toISOString(),
+      requestedEnabled: decision.desiredEnabled,
+      siteId: provider.siteId,
+    });
+
+    logInfoWithVerboseDetails(
+      verbose,
+      `queued solar production ${decision.desiredEnabled ? "enable" : "disable"} for ${provider.id} because export price is ${decision.exportPrice.toFixed(3)}`,
+      `queued independent solar production control for ${provider.id}: importPrice=${decision.importPrice.toFixed(3)} exportPrice=${decision.exportPrice.toFixed(3)} triggerAt=${decision.triggerAt.toISOString()}`,
+    );
+  }
+
+  if (processedProviderCount === 0) {
+    return;
+  }
+
+  updateBatteryStrategyRuntime(db, {
+    batteryId: battery.id,
+    siteId: battery.siteId,
+    strategyRuntime: {
+      ...battery.strategyRuntime,
+      lastTriggeredAtByItemId: {
+        ...battery.strategyRuntime.lastTriggeredAtByItemId,
+        [item.id]: decision.triggerAt.toISOString(),
+      },
+    },
+  });
 }
 
 function getActiveStrategyPlanItem(

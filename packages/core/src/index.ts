@@ -516,6 +516,7 @@ export function createDefaultBatteryStrategyPlan(
     createExportSurplusBatteryStrategyPlanItem(),
     createDelayedChargePrepBatteryStrategyPlanItem(),
     createDelayedChargingBatteryStrategyPlanItem(),
+    createSolarProductionControlBatteryStrategyPlanItem(),
   ];
 }
 
@@ -594,6 +595,17 @@ export function normalizeBatteryStrategyPlan(input: {
     delayedChargingSourceIndex === -1
       ? null
       : (restItems[delayedChargingSourceIndex] ?? null);
+  const solarProductionControlSourceIndex = restItems.findIndex(
+    (item, index) =>
+      index !== exportSurplusSourceIndex &&
+      index !== delayedChargePrepSourceIndex &&
+      index !== delayedChargingSourceIndex &&
+      item.triggerKind === BatteryStrategyTriggerKind.SolarProductionControl,
+  );
+  const solarProductionControlSource =
+    solarProductionControlSourceIndex === -1
+      ? null
+      : (restItems[solarProductionControlSourceIndex] ?? null);
   const normalizedFixedItems = [
     normalizeFixedBatteryStrategyPlanItem({
       fallback: fallback[1] ?? createExportSurplusBatteryStrategyPlanItem(),
@@ -609,6 +621,14 @@ export function normalizeBatteryStrategyPlan(input: {
     normalizeFixedBatteryStrategyPlanItem({
       fallback: fallback[3] ?? createDelayedChargingBatteryStrategyPlanItem(),
       value: delayedChargingSource,
+    }),
+    normalizeFixedBatteryStrategyPlanItem({
+      fallback:
+        fallback[4] ?? createSolarProductionControlBatteryStrategyPlanItem(),
+      value: solarProductionControlSource,
+      ...(solarProductionControlSource
+        ? {}
+        : { migrationId: "migrated-solar-production-control" }),
     }),
   ];
 
@@ -640,8 +660,9 @@ export function normalizeBatteryStrategyPlan(input: {
       (_, index) =>
         index !== exportSurplusSourceIndex &&
         index !== delayedChargePrepSourceIndex &&
-        index !== delayedChargingSourceIndex,
-    );
+        index !== delayedChargingSourceIndex &&
+        index !== solarProductionControlSourceIndex,
+     );
 
   return [normalizedFirstItem, ...normalizedFixedItems, ...normalizedRestItems];
 }
@@ -963,6 +984,10 @@ function normalizeTriggerKind(
     return BatteryStrategyTriggerKind.DelayedCharging;
   }
 
+  if (value === BatteryStrategyTriggerKind.SolarProductionControl) {
+    return BatteryStrategyTriggerKind.SolarProductionControl;
+  }
+
   return null;
 }
 
@@ -1048,6 +1073,28 @@ function createDelayedChargePrepBatteryStrategyPlanItem(): BatteryStrategyPlanIt
     targetEndTime: null,
     targetMethod: "auto",
     triggerKind: BatteryStrategyTriggerKind.DelayedChargePrep,
+    strategyMode: "manual",
+    manualState: "idle",
+    manualPowerW: null,
+    manualChargeTargetSoc: null,
+    manualDischargeTargetSoc: null,
+    manualTargetSoc: null,
+  };
+}
+
+function createSolarProductionControlBatteryStrategyPlanItem(): BatteryStrategyPlanItem {
+  return {
+    enabled: true,
+    id: createBatteryStrategyPlanId(),
+    kind: "daily",
+    name: formatBatteryStrategyBuiltinItemLabel(
+      BatteryStrategyBuiltinItemKey.SolarProductionControl,
+    ),
+    startTime: null,
+    targetDurationMinutes: null,
+    targetEndTime: null,
+    targetMethod: "auto",
+    triggerKind: BatteryStrategyTriggerKind.SolarProductionControl,
     strategyMode: "manual",
     manualState: "idle",
     manualPowerW: null,

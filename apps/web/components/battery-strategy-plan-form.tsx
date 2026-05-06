@@ -22,6 +22,7 @@ import {
   ToggleRight,
   Trash2,
 } from "lucide-react";
+import type { MouseEvent } from "react";
 import { useEffect, useState } from "react";
 import type { ActionResult } from "../app/actions";
 import { setHouseStrategyPlanAction } from "../app/actions";
@@ -683,7 +684,10 @@ function BuiltInStrategyItemCard({
         <Button
           aria-label={enabled ? `Disable ${title}` : `Enable ${title}`}
           className="h-9 w-9 shrink-0 px-0"
-          onClick={onToggle}
+          onClick={(event) => {
+            preventFormSubmit(event);
+            onToggle();
+          }}
           title={enabled ? `Disable ${title}` : `Enable ${title}`}
           type="button"
           variant="ghost"
@@ -699,9 +703,18 @@ function BuiltInStrategyItemCard({
   );
 }
 
+function preventFormSubmit(event: MouseEvent<HTMLButtonElement>): void {
+  event.preventDefault();
+  event.stopPropagation();
+}
+
 function getBuiltInStrategyTitle(key: BatteryStrategyBuiltinItemKey): string {
   if (key === BatteryStrategyBuiltinItemKey.Automatic) {
     return "Self-consumption";
+  }
+
+  if (key === BatteryStrategyBuiltinItemKey.SolarProductionControl) {
+    return "Solar production control";
   }
 
   return formatBatteryStrategyBuiltinItemLabel(key);
@@ -719,6 +732,8 @@ function getBuiltInStrategyDescription(
       return "Holds the battery idle after export surplus to preserve empty headroom until delayed charging starts.";
     case BatteryStrategyBuiltinItemKey.DelayedCharging:
       return "Starts shortly before a low-price marker and then switches to self-consumption or full charging, depending on that marker price.";
+    case BatteryStrategyBuiltinItemKey.SolarProductionControl:
+      return "Independently disables solar production while normalized export price is negative and re-enables it when export price turns positive again.";
   }
 }
 

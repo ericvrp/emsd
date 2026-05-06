@@ -12,6 +12,7 @@ import {
   getDelayedChargePrepSkipReason,
   getLowPriceAutoTriggerAtForMarker,
   getScheduledItemCompletion,
+  getSolarProductionControlDecision,
   getStrategyTriggerAt,
   getTodayTriggerAt,
   needsCompletionTracking,
@@ -169,6 +170,66 @@ test("getLowPriceAutoTriggerAtForMarker keeps a next-day delayed-charging marker
       ]),
     })?.toISOString(),
   ).toBe("2026-04-10T10:00:00.000Z");
+});
+
+test("getSolarProductionControlDecision disables solar when export price is negative", () => {
+  const decision = getSolarProductionControlDecision({
+    item: createDailyItem({
+      triggerKind: BatteryStrategyTriggerKind.SolarProductionControl,
+      targetMethod: "auto",
+    }),
+    now: new Date("2026-04-09T12:30:00.000Z"),
+    dynamicPriceSamples: createDynamicPriceSamples([
+      ["2026-04-09T12:00:00.000Z", 0.08],
+      ["2026-04-09T12:15:00.000Z", 0.09],
+      ["2026-04-09T12:30:00.000Z", 0.1],
+    ]),
+    normalizedImportExportSpread: 0.13,
+  });
+
+  expect(decision).toMatchObject({
+    desiredEnabled: false,
+    exportPrice: -0.03,
+    importPrice: 0.1,
+  });
+  expect(decision?.triggerAt.toISOString()).toBe("2026-04-09T12:30:00.000Z");
+});
+
+test("getSolarProductionControlDecision enables solar when export price is positive", () => {
+  const item = createDailyItem({
+    triggerKind: BatteryStrategyTriggerKind.SolarProductionControl,
+    targetMethod: "auto",
+  });
+
+  expect(
+    getSolarProductionControlDecision({
+      item,
+      now: new Date("2026-04-09T12:20:00.000Z"),
+      dynamicPriceSamples: createDynamicPriceSamples([
+        ["2026-04-09T12:00:00.000Z", 0.08],
+        ["2026-04-09T12:15:00.000Z", 0.35],
+        ["2026-04-09T12:30:00.000Z", 0.1],
+      ]),
+      normalizedImportExportSpread: 0.13,
+    }),
+  ).toMatchObject({
+    desiredEnabled: true,
+    importPrice: 0.35,
+  });
+  expect(
+    getSolarProductionControlDecision({
+      item,
+      now: new Date("2026-04-09T12:20:00.000Z"),
+      dynamicPriceSamples: createDynamicPriceSamples([
+        ["2026-04-09T12:00:00.000Z", 0.08],
+        ["2026-04-09T12:15:00.000Z", 0.35],
+        ["2026-04-09T12:30:00.000Z", 0.1],
+      ]),
+      normalizedImportExportSpread: 0.13,
+    })?.exportPrice,
+  ).toBeCloseTo(0.22, 6);
+  expect(needsCompletionTracking(item)).toBe(false);
+  expect(shouldWaitForObservedStart(item)).toBe(false);
 });
 
 test("shouldCompleteScheduledItem uses the active plan item rather than the persisted battery strategy", () => {

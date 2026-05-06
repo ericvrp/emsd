@@ -3,6 +3,7 @@ export enum BatteryStrategyBuiltinItemKey {
   ExportSurplus = "export-surplus",
   DelayedChargePrep = "delayed-charge-prep",
   DelayedCharging = "delayed-charging",
+  SolarProductionControl = "solar-production-control",
 }
 
 export enum BatteryStrategyTriggerKind {
@@ -10,9 +11,10 @@ export enum BatteryStrategyTriggerKind {
   ExportSurplus = "export-surplus",
   DelayedChargePrep = "delayed-charge-prep",
   DelayedCharging = "delayed-charging",
+  SolarProductionControl = "solar-production-control",
 }
 
-export const BATTERY_STRATEGY_FIXED_ITEM_COUNT = 4;
+export const BATTERY_STRATEGY_FIXED_ITEM_COUNT = 5;
 
 export function getBatteryStrategyBuiltinItemKey(
   index: number,
@@ -33,6 +35,10 @@ export function getBatteryStrategyBuiltinItemKey(
     return BatteryStrategyBuiltinItemKey.DelayedCharging;
   }
 
+  if (index === 4) {
+    return BatteryStrategyBuiltinItemKey.SolarProductionControl;
+  }
+
   return null;
 }
 
@@ -48,6 +54,8 @@ export function formatBatteryStrategyBuiltinItemLabel(
       return "Delayed-charge prep";
     case BatteryStrategyBuiltinItemKey.DelayedCharging:
       return "Delayed charging";
+    case BatteryStrategyBuiltinItemKey.SolarProductionControl:
+      return "Solar production control";
   }
 }
 
@@ -63,6 +71,8 @@ export function formatBatteryStrategyTriggerKindLabel(
       return "Delayed-charge prep";
     case BatteryStrategyTriggerKind.DelayedCharging:
       return "Delayed charging";
+    case BatteryStrategyTriggerKind.SolarProductionControl:
+      return "Solar production control";
   }
 }
 

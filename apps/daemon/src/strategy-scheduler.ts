@@ -406,6 +406,10 @@ export function getStrategyTriggerAt(input: {
     return getDelayedChargePrepTriggerAt({ now, dynamicPriceSamples });
   }
 
+  if (item.triggerKind === BatteryStrategyTriggerKind.SolarProductionControl) {
+    return null;
+  }
+
   if (!isBatteryStrategyPriceTrigger(item.triggerKind)) {
     return null;
   }
@@ -434,6 +438,10 @@ export function getNextStrategyTriggerAt(input: {
 
   if (item.triggerKind === BatteryStrategyTriggerKind.DelayedChargePrep) {
     return getDelayedChargePrepTriggerAt({ now, dynamicPriceSamples });
+  }
+
+  if (item.triggerKind === BatteryStrategyTriggerKind.SolarProductionControl) {
+    return null;
   }
 
   if (!isBatteryStrategyPriceTrigger(item.triggerKind)) {
@@ -474,6 +482,10 @@ export function getScheduledEndAt(
 export function needsCompletionTracking(
   item: BatteryStrategyPlanItem,
 ): boolean {
+  if (item.triggerKind === BatteryStrategyTriggerKind.SolarProductionControl) {
+    return false;
+  }
+
   if (item.targetMethod === "duration" || item.targetMethod === "end-time") {
     return true;
   }
@@ -579,10 +591,61 @@ export function shouldWaitForObservedStart(
   item: BatteryStrategyPlanItem,
   activeManualState: BatteryStrategyPlanItem["manualState"] = item.manualState,
 ): boolean {
+  if (item.triggerKind === BatteryStrategyTriggerKind.SolarProductionControl) {
+    return false;
+  }
+
   return (
     item.strategyMode === "manual" &&
     (activeManualState === "charging" || activeManualState === "discharging")
   );
+}
+
+export function getSolarProductionControlDecision(input: {
+  item: BatteryStrategyPlanItem;
+  now: Date;
+  dynamicPriceSamples: DynamicPriceSampleRecord[];
+  normalizedImportExportSpread: number | null;
+}): {
+  desiredEnabled: boolean;
+  exportPrice: number;
+  importPrice: number;
+  triggerAt: Date;
+} | null {
+  if (
+    input.item.triggerKind !== BatteryStrategyTriggerKind.SolarProductionControl
+  ) {
+    return null;
+  }
+
+  if (input.normalizedImportExportSpread === null) {
+    return null;
+  }
+
+  const activeSample = getActiveDynamicPriceSampleAtOrBefore(
+    input.dynamicPriceSamples,
+    input.now,
+  );
+
+  if (activeSample === null) {
+    return null;
+  }
+
+  const triggerAt = new Date(activeSample.periodStart);
+
+  if (Number.isNaN(triggerAt.getTime())) {
+    return null;
+  }
+
+  const exportPrice =
+    activeSample.importPrice - input.normalizedImportExportSpread;
+
+  return {
+    desiredEnabled: exportPrice > 0,
+    exportPrice,
+    importPrice: activeSample.importPrice,
+    triggerAt,
+  };
 }
 
 function isSocTargetItem(item: BatteryStrategyPlanItem): boolean {
@@ -758,6 +821,30 @@ function getAllPriceMarkers(input: {
     .map((periodStart) => new Date(periodStart))
     .filter((markerAt) => !Number.isNaN(markerAt.getTime()))
     .sort((left, right) => left.getTime() - right.getTime());
+}
+
+function getActiveDynamicPriceSampleAtOrBefore(
+  samples: DynamicPriceSampleRecord[],
+  now: Date,
+): DynamicPriceSampleRecord | null {
+  let activeSample: DynamicPriceSampleRecord | null = null;
+
+  for (const sample of samples) {
+    const sampleAt = new Date(sample.periodStart);
+
+    if (Number.isNaN(sampleAt.getTime())) {
+      continue;
+    }
+
+    if (sampleAt.getTime() <= now.getTime()) {
+      activeSample = sample;
+      continue;
+    }
+
+    break;
+  }
+
+  return activeSample;
 }
 
 export function isDelayedChargePrepItem(

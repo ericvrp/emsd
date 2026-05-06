@@ -381,7 +381,11 @@ test("normalizeBatteryStrategyPlan accepts low and high price triggers and drops
   expect(normalized[3]?.triggerKind).toBe(
     BatteryStrategyTriggerKind.DelayedCharging,
   );
-  expect(normalized[4]?.triggerKind).toBe(BatteryStrategyTriggerKind.DailyTime);
+  expect(normalized[4]?.triggerKind).toBe(
+    BatteryStrategyTriggerKind.SolarProductionControl,
+  );
+  expect(normalized[4]?.enabled).toBe(true);
+  expect(normalized[5]?.triggerKind).toBe(BatteryStrategyTriggerKind.DailyTime);
 });
 
 test("normalizeBatteryStrategyPlan assigns a stable migration id to legacy delayed-charge-prep", () => {
@@ -465,6 +469,106 @@ test("normalizeBatteryStrategyPlan assigns a stable migration id to legacy delay
   );
   expect(first[2]?.id).toBe("migrated-delayed-charge-prep");
   expect(first[2]?.id).toBe(second[2]?.id);
+});
+
+test("normalizeBatteryStrategyPlan assigns a stable migration id to legacy solar production control", () => {
+  const legacy4ItemPlan = [
+    {
+      enabled: true,
+      id: "default",
+      kind: "default" as const,
+      startTime: null,
+      targetDurationMinutes: null,
+      targetEndTime: null,
+      targetMethod: null,
+      triggerKind: null,
+      strategyMode: "self-consumption" as const,
+      manualState: null,
+      manualPowerW: null,
+      manualChargeTargetSoc: 100,
+      manualDischargeTargetSoc: 20,
+      manualTargetSoc: 100,
+    },
+    {
+      enabled: true,
+      id: "export-1",
+      kind: "daily" as const,
+      startTime: null,
+      targetDurationMinutes: null,
+      targetEndTime: null,
+      targetMethod: "auto" as const,
+      triggerKind: BatteryStrategyTriggerKind.ExportSurplus,
+      strategyMode: "manual" as const,
+      manualState: "discharging" as const,
+      manualPowerW: null,
+      manualChargeTargetSoc: null,
+      manualDischargeTargetSoc: null,
+      manualTargetSoc: null,
+    },
+    {
+      enabled: true,
+      id: "prep-1",
+      kind: "daily" as const,
+      startTime: null,
+      targetDurationMinutes: null,
+      targetEndTime: null,
+      targetMethod: "auto" as const,
+      triggerKind: BatteryStrategyTriggerKind.DelayedChargePrep,
+      strategyMode: "manual" as const,
+      manualState: "idle" as const,
+      manualPowerW: null,
+      manualChargeTargetSoc: null,
+      manualDischargeTargetSoc: null,
+      manualTargetSoc: null,
+    },
+    {
+      enabled: true,
+      id: "charge-1",
+      kind: "daily" as const,
+      startTime: null,
+      targetDurationMinutes: null,
+      targetEndTime: null,
+      targetMethod: "auto" as const,
+      triggerKind: BatteryStrategyTriggerKind.DelayedCharging,
+      strategyMode: "manual" as const,
+      manualState: "charging" as const,
+      manualPowerW: null,
+      manualChargeTargetSoc: null,
+      manualDischargeTargetSoc: null,
+      manualTargetSoc: null,
+    },
+  ];
+
+  const base = {
+    minimumDischargePercent: 20,
+    strategy: {
+      strategyMode: "self-consumption" as const,
+      manualState: null,
+      manualPowerW: null,
+      manualChargeTargetSoc: 100,
+      manualDischargeTargetSoc: 20,
+      manualTargetSoc: 100,
+    },
+  };
+
+  const first = normalizeBatteryStrategyPlan({
+    ...base,
+    value: legacy4ItemPlan,
+  });
+  const second = normalizeBatteryStrategyPlan({
+    ...base,
+    value: legacy4ItemPlan,
+  });
+
+  expect(first[4]?.triggerKind).toBe(
+    BatteryStrategyTriggerKind.SolarProductionControl,
+  );
+  expect(second[4]?.triggerKind).toBe(
+    BatteryStrategyTriggerKind.SolarProductionControl,
+  );
+  expect(first[4]?.id).toBe("migrated-solar-production-control");
+  expect(first[4]?.id).toBe(second[4]?.id);
+  expect(first[4]?.enabled).toBe(true);
 });
 
 test("isBatteryStrategyTriggerNeedingPriceSamples includes delayed-charge-prep", () => {
@@ -617,6 +721,7 @@ test("normalizeBatteryStrategyPlan defaults enabled to true", () => {
   expect(normalized[1]?.enabled).toBe(true);
   expect(normalized[2]?.enabled).toBe(true);
   expect(normalized[3]?.enabled).toBe(true);
+  expect(normalized[4]?.enabled).toBe(true);
 });
 
 test("buildPredictedSolarGenerationSeries uses the current v2 predictor over preceding days", () => {

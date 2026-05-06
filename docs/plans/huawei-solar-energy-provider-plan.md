@@ -8,7 +8,14 @@ Add a Huawei solar energy provider to EMSD with a clear first supported scope:
 - initial capabilities: discovery, normalized production telemetry, and coarse production enable or disable
 - non-goal for the first implementation: high-frequency demand-matching or export-limiting control loops
 
-This plan is implementation planning only.
+This plan started as implementation planning and now also records what shipped.
+
+## Current Implementation Status
+
+- Phase 1 is implemented: Huawei SUN2000 Modbus discovery is live.
+- Phase 2 is implemented: discovered Huawei providers can be added and their production control can be changed from `Settings -> Devices`.
+- Phase 3 is implemented in the first shipped form: a built-in strategy item can drive provider production control from dynamic price state.
+- Remaining work is real-hardware validation, refinement, and documentation of exact tested models and firmware.
 
 ## Current EMSD Baseline
 
@@ -46,15 +53,33 @@ Reason:
 
 ### Phase 1
 
-Discovery.
+Implemented.
+
+- discovery uses the plugin custom `probe()` path over Modbus-TCP
+- discovered Huawei devices are reported as `huawei-sun2000-modbus`
+- discovery payloads include `port: 6607`
 
 ### Phase 2
 
-Enable or disable in `Settings -> Devices` after adding the discovered provider.
+Implemented.
+
+- managed solar provider records persist `port`
+- the daemon queues provider production-control requests
+- the Settings UI can request provider production enable or disable
+- Huawei writes the fixed active power derate register over Modbus-TCP
 
 ### Phase 3
 
-The new built-in strategy item that can drive provider production control.
+Implemented in the first version as an independent built-in item.
+
+- built-in item name: `Solar production control`
+- current behavior: disable solar production when normalized export price is non-positive, enable it when normalized export price is positive
+- placement in the strategy plan: after `Delayed charging`
+- execution model: independent of the battery strategy priority system
+- default mode: opt-out; the built-in item starts enabled unless the user disables it
+- runtime model: it does not claim `activeItemId`, does not preempt battery items, and still runs while other scheduled battery items such as delayed charging are active
+- manual-mode rule: it does not run while battery manual strategy mode is active, so device Settings plus manual strategy can be used to fully disable production
+- first-version scope: provider-wide enable or disable only; no closed-loop export limiting
 
 ### Out Of Scope
 
@@ -62,7 +87,7 @@ The new built-in strategy item that can drive provider production control.
 - broader export-limiting controls
 - zero-export closed-loop behavior
 
-## Planned Changes
+## Planned And Implemented Changes
 
 ## 1. Shared Provider Model And Persistence
 
@@ -73,7 +98,7 @@ Files:
 - `apps/daemon/src/database.ts`
 - related tests
 
-Plan:
+Implemented:
 
 1. Add enough persisted connection data for Modbus providers.
 2. Keep the first change minimal.
@@ -109,7 +134,7 @@ Current blocker:
 - discovery is HTTP text-response driven today
 - Huawei should be probed over Modbus-TCP rather than HTTP
 
-Plan:
+Implemented:
 
 1. Extend the discovery system so a plugin can perform a custom probe instead of only an HTTP request.
 2. Keep existing HTTP plugins unchanged.
@@ -146,7 +171,7 @@ Files:
 - `apps/ems/src/plugins/solar-energy-provider/huawei.ts`
 - `apps/ems/src/solar-energy-provider-plugin.test.ts`
 
-Plan:
+Implemented:
 
 Implement a small TypeScript Modbus-TCP client that covers only what EMSD needs.
 
@@ -178,7 +203,7 @@ Files:
 - `apps/ems/src/plugins/solar-energy-provider/index.ts`
 - `packages/core/src/index.ts` if new shared normalized fields become necessary
 
-Plan:
+Implemented:
 
 Add a Huawei plugin that reads normalized production telemetry.
 
@@ -240,7 +265,7 @@ Files:
 - `apps/web/components/settings-panel.tsx`
 - any server-action or bridge paths already used for solar providers
 
-Plan:
+Implemented:
 
 1. Make discovery the primary add path for Huawei.
 2. Let the discovered device be added through the existing managed-device flow.
@@ -248,7 +273,7 @@ Plan:
 
 Do not add advanced Huawei-only fields until real-device testing proves they are needed.
 
-## 7. Testing Plan
+## 7. Testing And Validation
 
 ### Unit tests
 
@@ -258,15 +283,16 @@ Files:
 - `apps/ems/src/discover.test.ts`
 - `apps/daemon/src/database.test.ts` if record schema changes
 
-Plan:
+Implemented coverage includes:
 
 - decode 32-bit register values correctly
 - map `32080` to normalized current power
 - map Huawei permission failure `0x80` to actionable errors
 - verify disable writes `40126` to `0 W`
-- verify enable restores prior limit or `Pmax`
+- verify enable restores a non-zero limit using `Pmax` when readable and a fallback limit otherwise
 - verify discovery reads manufacturer and product identity
 - verify unsupported or unreadable control surfaces return `productionControlStatus: "unavailable"`
+- verify the built-in solar production control item disables on non-positive normalized export price and enables on positive normalized export price
 
 ### Real-device validation
 
@@ -290,13 +316,20 @@ Do not include these in the Huawei provider delivery plan:
 - broad claims about non-SUN2000 Huawei families
 - demand-matching control loops
 
-## Recommended Delivery Order
+## Delivered Order
 
-1. Add provider record support for `port` and the Modbus discovery path.
-2. Implement Huawei discovery first.
-3. Implement Huawei production enable or disable in the device Settings flow after add.
-4. Implement the built-in strategy item afterward.
-5. Validate on real hardware and then document the exact tested models and firmware.
+1. Added provider record support for `port` and the Modbus discovery path.
+2. Implemented Huawei discovery.
+3. Implemented Huawei production enable or disable in the device Settings flow after add.
+4. Implemented the built-in strategy item afterward.
+5. Real-hardware validation and exact tested-model documentation still remain.
+
+## Next Steps
+
+1. Validate the shipped Huawei flow on real SUN2000 hardware end to end: discovery, telemetry, disable, enable, and post-restart behavior.
+2. Confirm whether `40126` alone is sufficient on supported firmware or whether EMSD must also set `47415` control mode.
+3. Document the exact tested models, firmware versions, account or installer prerequisites, and any required Modbus enablement steps.
+4. Revisit whether the plugin name should stay narrowly scoped to `huawei-sun2000-modbus` or expand only after broader model validation.
 
 ## Open Questions
 

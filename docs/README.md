@@ -35,9 +35,7 @@ This folder collects product notes, operator docs, plugin guides, implementation
 ## Plans
 
 - `plans/README.md`: plan index
-- `plans/huawei-solar-energy-provider-plan.md`: Huawei SUN2000 Modbus provider support and discovery plan
-- `plans/solar-production-control-strategy-plan.md`: built-in strategy plan for automatic solar production control
-- `plans/solar-energy-provider-production-control-plan.md`: follow-up plan for solar provider production control after the first baseline implementation
+- `plans/huawei-solar-energy-provider-plan.md`: Huawei SUN2000 Modbus provider support, shipped status, and remaining next steps
 
 ## Reference
 
