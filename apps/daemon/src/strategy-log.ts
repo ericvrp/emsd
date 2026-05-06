@@ -633,8 +633,12 @@ function describeActionWithTarget(
   let targetLabel: string | null = null;
 
   if (input.targetMethod === "auto") {
-    targetLabel =
-      input.defaultTargetSoc === null
+    targetLabel = isDelayedChargePrepIdle({
+      action,
+      triggerKind: input.triggerKind,
+    })
+      ? null
+      : input.defaultTargetSoc === null
         ? "with a dynamic target"
         : shouldOmitTargetSocLabel(
               input.defaultTargetSoc,
@@ -689,7 +693,9 @@ function describeActionWithTarget(
       ? "Export surplus: "
       : input.triggerKind === BatteryStrategyTriggerKind.DelayedCharging
         ? "Delayed charging: "
-        : "";
+        : input.triggerKind === BatteryStrategyTriggerKind.DelayedChargePrep
+          ? "Delayed-charge prep: "
+          : "";
 
   if (
     input.preferPowerWhenAvailable &&
@@ -705,6 +711,16 @@ function describeActionWithTarget(
   return targetLabel
     ? `${prefix}${action} ${targetLabel}`
     : `${prefix}${action}`;
+}
+
+function isDelayedChargePrepIdle(input: {
+  action: "Charging" | "Discharging" | "Idle" | "Self-consumption";
+  triggerKind: BatteryStrategyPlanItem["triggerKind"] | undefined;
+}): boolean {
+  return (
+    input.action === "Idle" &&
+    input.triggerKind === BatteryStrategyTriggerKind.DelayedChargePrep
+  );
 }
 
 function shouldOmitTargetSocLabel(

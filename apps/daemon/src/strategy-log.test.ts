@@ -563,6 +563,33 @@ test("strategy status summary prefixes delayed-charging trigger kind", () => {
   ).toBe("Delayed charging: Charging");
 });
 
+test("strategy status summary reports delayed-charge prep as idle", () => {
+  expect(
+    formatBatteryStrategyStatusSummary(
+      buildBattery({
+        strategyRuntime: buildRuntime({
+          activeItemId: "daily-2",
+          activeStartedAt: "2026-04-21T16:00:00.000Z",
+        }),
+        strategyPlan: [
+          buildDefaultItem(),
+          buildDailyItem({
+            id: "daily-2",
+            triggerKind: BatteryStrategyTriggerKind.DelayedChargePrep,
+            manualState: "idle",
+            manualPowerW: null,
+            manualChargeTargetSoc: null,
+            manualDischargeTargetSoc: null,
+            manualTargetSoc: null,
+            targetMethod: "auto",
+          }),
+        ],
+      }),
+      new Date("2026-04-21T16:15:00.000Z"),
+    ),
+  ).toBe("Delayed-charge prep: Idle");
+});
+
 test("strategy status summary omits a full-charge auto target even with a target time", () => {
   expect(
     formatBatteryStrategyStatusSummary(
