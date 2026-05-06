@@ -6,6 +6,7 @@ import {
   BatteryStrategyTriggerKind,
 } from "@emsd/core";
 import {
+  formatAutomaticStrategyAppliedSummary,
   describeCurrentBatteryStrategyHuman,
   describeStrategyPlanItemHuman,
   formatBatteryStrategyStatusSummary,
@@ -343,10 +344,10 @@ test("summarizes a temporary manual override", () => {
         manualDischargeTargetSoc: 80,
         manualTargetSoc: 80,
         manualModeActive: true,
-      }),
-    ),
-  ).toBe(
-    "temporary manual override applied for battery-1: discharge manually to 80% at 2400W",
+        }),
+      ),
+    ).toBe(
+    "temporary manual override applied for battery-1: scheduled automation is paused; battery will discharge manually to 80% at 2400W until the override is cleared or its target is reached",
   );
 });
 
@@ -360,9 +361,27 @@ test("summarizes a self-consumption manual override without a discharge target",
         manualDischargeTargetSoc: 11,
         manualTargetSoc: 100,
         manualModeActive: true,
+        }),
+      ),
+  ).toBe(
+    "temporary manual override applied for battery-1: scheduled automation is paused; battery is now in self-consumption until the override is cleared",
+  );
+});
+
+test("summarizes a resumed automatic strategy", () => {
+  expect(
+    formatAutomaticStrategyAppliedSummary(
+      buildBattery({
+        strategyMode: "self-consumption",
+        manualState: null,
+        manualPowerW: null,
+        manualDischargeTargetSoc: 10,
+        manualTargetSoc: 100,
       }),
     ),
-  ).toBe("temporary manual override applied for battery-1: self-consumption");
+  ).toBe(
+    "scheduled automation applied for battery-1: self-consumption",
+  );
 });
 
 test("strategy status summary returns default strategy without active item", () => {
@@ -588,6 +607,34 @@ test("strategy status summary reports delayed-charge prep as idle", () => {
       new Date("2026-04-21T16:15:00.000Z"),
     ),
   ).toBe("Delayed-charge prep: Idle");
+});
+
+test("scheduled start summary names the delayed-charge prep schedule", () => {
+  expect(
+    formatScheduledStrategyStartedSummary(
+      "battery-1",
+      buildDailyItem({
+        id: "prep-1",
+        triggerKind: BatteryStrategyTriggerKind.DelayedChargePrep,
+        manualState: "idle",
+        manualPowerW: null,
+        manualChargeTargetSoc: null,
+        manualDischargeTargetSoc: null,
+        manualTargetSoc: null,
+        targetMethod: "auto",
+      }),
+      "",
+      {
+        reasoning: "paired delayed charging remains in the future",
+        reserveSocPercent: 0,
+        resolvedManualState: "idle",
+        targetSocPercent: 0,
+        targetTime: null,
+      },
+    ),
+  ).toBe(
+    "the delayed-charge prep schedule is now active for battery-1: hold the battery idle",
+  );
 });
 
 test("strategy status summary omits a full-charge auto target even with a target time", () => {

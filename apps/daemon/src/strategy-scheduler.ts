@@ -774,6 +774,45 @@ export function isDelayedChargePrepItem(
   );
 }
 
+export function getDelayedChargePrepSkipReason(input: {
+  delayedChargingItemId: string;
+  delayedChargingSkipReason: string | null;
+  delayedChargingStartTime: string | null;
+  now: Date;
+  prepItemId: string;
+  runtime: BatteryStrategyRuntimeRecord;
+}): string | null {
+  if (input.delayedChargingSkipReason !== null) {
+    return input.delayedChargingSkipReason;
+  }
+
+  if (input.delayedChargingStartTime === null) {
+    return `skipped: no delayed charging start resolved for delayed-charge prep item ${input.prepItemId}`;
+  }
+
+  const delayedChargingTriggerAt = new Date(input.delayedChargingStartTime);
+
+  if (Number.isNaN(delayedChargingTriggerAt.getTime())) {
+    return `skipped: invalid delayed charging start ${input.delayedChargingStartTime} for delayed-charge prep item ${input.prepItemId}`;
+  }
+
+  if (
+    isItemAlreadyTriggeredToday({
+      runtime: input.runtime,
+      itemId: input.delayedChargingItemId,
+      triggerAt: delayedChargingTriggerAt,
+    })
+  ) {
+    return `skipped: delayed charging item ${input.delayedChargingItemId} already triggered for ${input.delayedChargingStartTime} while evaluating delayed-charge prep item ${input.prepItemId}`;
+  }
+
+  if (input.now.getTime() >= delayedChargingTriggerAt.getTime()) {
+    return `skipped: delayed charging start ${input.delayedChargingStartTime} is already due for delayed-charge prep item ${input.prepItemId}`;
+  }
+
+  return null;
+}
+
 function getDelayedChargePrepTriggerAt(input: {
   now: Date;
   dynamicPriceSamples: DynamicPriceSampleRecord[];

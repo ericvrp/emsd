@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -190,9 +190,8 @@ test("battery-set-power-limits persists battery-level charge and discharge caps"
   });
 });
 
-test("solar-energy-provider-set-production-enabled queues a daemon request", async () => {
+test("solar-energy-provider-set-production-enabled queues a control request", async () => {
   createTempDatabase();
-  const originalKill = process.kill;
 
   createSite({
     id: "home",
@@ -211,9 +210,6 @@ test("solar-energy-provider-set-production-enabled queues a daemon request", asy
     },
     "home",
   );
-
-  writeFileSync(getDaemonLockPath(), `${process.pid}\n`, "utf8");
-  process.kill = (() => true) as typeof process.kill;
 
   try {
     const queued = await runApiAction(
@@ -245,7 +241,6 @@ test("solar-energy-provider-set-production-enabled queues a daemon request", asy
       db.close();
     }
   } finally {
-    process.kill = originalKill;
     rmSync(getDaemonLockPath(), { force: true });
   }
 });

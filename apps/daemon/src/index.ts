@@ -66,10 +66,9 @@ import {
 } from "./database";
 import {
   estimateDynamicPriceTarget,
-  formatDelayedChargingLowPriceMarkerSkipReason,
-  resolveDelayedChargingLowPriceMarkerEligibility,
 } from "./dynamic-price-target";
 import {
+  formatAutomaticStrategyAppliedSummary,
   formatFallbackStrategyRestoreSummary,
   formatManualStrategyAppliedSummary,
   formatScheduledStrategyCompletionSummary,
@@ -81,6 +80,7 @@ import {
   formatDaemonLogTimestamp,
   formatScheduledItemCompletion,
   getDaemonTimeZoneLabel,
+  getDelayedChargePrepSkipReason,
   getNextStrategyTriggerAt,
   getScheduledItemCompletion,
   getStrategyTriggerAt,
@@ -106,6 +106,7 @@ const FORECAST_PERIOD_MINUTES = 15;
 class DaemonStartupError extends Error {}
 
 interface BatteryControlSnapshot {
+  manualModeActive: boolean;
   manualSignature: string;
   strategyPlanSignature: string;
 }
@@ -181,6 +182,29 @@ function main(): void {
     ]),
   );
 
+  function observeBatteryControlChanges(
+    currentBatteries: BatteryRecord[],
+    now: Date,
+    verbose = options.verbose,
+  ): void {
+    for (const battery of currentBatteries) {
+      logAppliedBatteryControlChanges(
+        db,
+        observedBatteryControls.get(battery.id),
+        battery,
+        now,
+        verbose,
+      );
+      observedBatteryControls.set(battery.id, createBatteryControlSnapshot(battery));
+    }
+
+    for (const batteryId of observedBatteryControls.keys()) {
+      if (!currentBatteries.some((battery) => battery.id === batteryId)) {
+        observedBatteryControls.delete(batteryId);
+      }
+    }
+  }
+
   async function refreshSiteData(forceRefresh = false): Promise<void> {
     if (refreshInFlight) {
       return;
@@ -230,25 +254,7 @@ function main(): void {
       const pollStartedAt = new Date();
       const polledSolarEnergyProviders = readSolarEnergyProviders(db);
 
-      for (const battery of polledBatteries) {
-        logAppliedBatteryControlChanges(
-          db,
-          observedBatteryControls.get(battery.id),
-          battery,
-          pollStartedAt,
-          options.verbose,
-        );
-        observedBatteryControls.set(
-          battery.id,
-          createBatteryControlSnapshot(battery),
-        );
-      }
-
-      for (const batteryId of observedBatteryControls.keys()) {
-        if (!polledBatteries.some((battery) => battery.id === batteryId)) {
-          observedBatteryControls.delete(batteryId);
-        }
-      }
+      observeBatteryControlChanges(polledBatteries, pollStartedAt);
 
       await refreshSiteData();
 
@@ -435,12 +441,6 @@ function main(): void {
   const pricePoller = setInterval(() => {
     void refreshSiteData();
   }, DYNAMIC_PRICE_REFRESH_INTERVAL_MS);
-
-  process.on("SIGUSR1", () => {
-    logInfo("received on-demand refresh request");
-    void refreshSiteData(true);
-    void pollTelemetry();
-  });
 
   function shutdown(signal: string): void {
     // clearInterval(heartbeat);
@@ -823,9 +823,11 @@ async function runScheduledStrategy(
   > | null = null;
   let solarForecastSamples: ReturnType<typeof readSolarForecastSamples> | null =
     null;
-  let delayedChargingMarkerEligibility: ReturnType<
-    typeof resolveDelayedChargingLowPriceMarkerEligibility
-  > | null = null;
+  const dynamicPriceTargetEstimates = new Map<
+    string,
+    ReturnType<typeof estimateDynamicPriceTarget>
+  >();
+  const warnedDynamicPriceItems = new Set<string>();
 
   const getBatteryPowerSamples = () => {
     if (batteryPowerSamples === null) {
@@ -858,20 +860,70 @@ async function runScheduledStrategy(
 
     return solarForecastSamples;
   };
-  const getDelayedChargingMarkerEligibility = () => {
-    if (delayedChargingMarkerEligibility === null) {
-      delayedChargingMarkerEligibility =
-        resolveDelayedChargingLowPriceMarkerEligibility({
-          batteryPowerSamples: getBatteryPowerSamples(),
-          dynamicPriceSamples,
-          now,
-          p1MeterSamples: getP1MeterSamples(),
-          solarEnergyProviderSamples: getSolarEnergyProviderSamples(),
-          solarForecastSamples: getSolarForecastSamples(),
-        });
+  const getDynamicPriceTargetEstimate = (item: BatteryStrategyPlanItem) => {
+    if (item.targetMethod !== "auto" || isDelayedChargePrepItem(item)) {
+      return null;
     }
 
-    return delayedChargingMarkerEligibility;
+    const cachedEstimate = dynamicPriceTargetEstimates.get(item.id);
+
+    if (cachedEstimate) {
+      return cachedEstimate;
+    }
+
+    const estimate = estimateDynamicPriceTarget({
+      battery,
+      batteryPowerSamples: getBatteryPowerSamples(),
+      dynamicPriceSamples,
+      item,
+      items: battery.strategyPlan,
+      now,
+      normalizedImportExportSpread: resolveNormalizedImportExportSpread(
+        dynamicPriceSources,
+        battery.siteId,
+      ),
+      p1MeterSamples: getP1MeterSamples(),
+      sample,
+      solarEnergyProviderSamples: getSolarEnergyProviderSamples(),
+      solarForecastSamples: getSolarForecastSamples(),
+    });
+
+    dynamicPriceTargetEstimates.set(item.id, estimate);
+
+    if (estimate.warning && !warnedDynamicPriceItems.has(item.id)) {
+      warnedDynamicPriceItems.add(item.id);
+      logWarn(estimate.warning);
+    }
+
+    return estimate;
+  };
+  const getDelayedChargePrepActivationSkipReason = (
+    item: BatteryStrategyPlanItem,
+    index: number,
+  ): string | null => {
+    const delayedChargingItem = battery.strategyPlan
+      .slice(index + 1)
+      .find(
+        (candidate) =>
+          candidate.enabled && isDelayedChargingAutoDischargeItem(candidate),
+      );
+
+    if (!delayedChargingItem) {
+      return `skipped: no paired delayed charging item resolved for delayed-charge prep item ${item.id}`;
+    }
+
+    const delayedChargingEstimate = getDynamicPriceTargetEstimate(
+      delayedChargingItem,
+    );
+
+    return getDelayedChargePrepSkipReason({
+      delayedChargingItemId: delayedChargingItem.id,
+      delayedChargingSkipReason: delayedChargingEstimate?.skipReason ?? null,
+      delayedChargingStartTime: delayedChargingEstimate?.startTime ?? null,
+      now,
+      prepItemId: item.id,
+      runtime,
+    });
   };
 
   const resolveScheduledActivationCandidate = (
@@ -916,27 +968,8 @@ async function runScheduledStrategy(
 
       let dynamicPriceTargetEstimate =
         item.targetMethod === "auto" && isDelayedChargingAutoDischargeItem(item)
-          ? estimateDynamicPriceTarget({
-              battery,
-              batteryPowerSamples: getBatteryPowerSamples(),
-              dynamicPriceSamples,
-              item,
-              items: battery.strategyPlan,
-              now,
-              normalizedImportExportSpread: resolveNormalizedImportExportSpread(
-                dynamicPriceSources,
-                battery.siteId,
-              ),
-              p1MeterSamples: getP1MeterSamples(),
-              sample,
-              solarEnergyProviderSamples: getSolarEnergyProviderSamples(),
-              solarForecastSamples: getSolarForecastSamples(),
-            })
+          ? getDynamicPriceTargetEstimate(item)
           : null;
-
-      if (dynamicPriceTargetEstimate?.warning) {
-        logWarn(dynamicPriceTargetEstimate.warning);
-      }
 
       if (dynamicPriceTargetEstimate?.startTime) {
         const delayedChargingStartTime = new Date(
@@ -1029,12 +1062,9 @@ async function runScheduledStrategy(
       }
 
       if (isDelayedChargePrepItem(item)) {
-        const markerEligibility = getDelayedChargingMarkerEligibility();
+        const skipReason = getDelayedChargePrepActivationSkipReason(item, index);
 
-        if (!markerEligibility.eligible) {
-          const skipReason =
-            formatDelayedChargingLowPriceMarkerSkipReason(markerEligibility);
-
+        if (skipReason !== null) {
           logInfoWithVerboseDetails(
             verbose,
             skipReason,
@@ -1056,32 +1086,7 @@ async function runScheduledStrategy(
         }
       }
 
-      dynamicPriceTargetEstimate ??=
-        item.targetMethod === "auto" && !isDelayedChargePrepItem(item)
-          ? estimateDynamicPriceTarget({
-              battery,
-              batteryPowerSamples: getBatteryPowerSamples(),
-              dynamicPriceSamples,
-              item,
-              items: battery.strategyPlan,
-              now,
-              normalizedImportExportSpread: resolveNormalizedImportExportSpread(
-                dynamicPriceSources,
-                battery.siteId,
-              ),
-              p1MeterSamples: getP1MeterSamples(),
-              sample,
-              solarEnergyProviderSamples: getSolarEnergyProviderSamples(),
-              solarForecastSamples: getSolarForecastSamples(),
-            })
-          : null;
-
-      if (
-        dynamicPriceTargetEstimate?.warning &&
-        !isDelayedChargingAutoDischargeItem(item)
-      ) {
-        logWarn(dynamicPriceTargetEstimate.warning);
-      }
+      dynamicPriceTargetEstimate ??= getDynamicPriceTargetEstimate(item);
 
       if (dynamicPriceTargetEstimate?.skipReason) {
         if (
@@ -1650,6 +1655,7 @@ function createBatteryControlSnapshot(
   battery: BatteryRecord,
 ): BatteryControlSnapshot {
   return {
+    manualModeActive: battery.manualModeActive,
     manualSignature: JSON.stringify({
       strategyMode: battery.strategyMode,
       manualState: battery.manualState,
@@ -1702,6 +1708,14 @@ function logAppliedBatteryControlChanges(
       verbose,
       formatManualStrategyAppliedSummary(battery),
       `manual strategy applied for ${battery.id}: ${describeCurrentBatteryStrategy(battery)}`,
+    );
+  }
+
+  if (manualChanged && !battery.manualModeActive && previous.manualModeActive) {
+    logInfoWithVerboseDetails(
+      verbose,
+      formatAutomaticStrategyAppliedSummary(battery),
+      `scheduled automation applied for ${battery.id}: ${describeCurrentBatteryStrategy(battery)}`,
     );
   }
 }

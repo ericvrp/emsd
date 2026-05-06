@@ -60,7 +60,6 @@ export function describeCurrentBatteryStrategyHuman(
     | "manualChargeTargetSoc"
     | "manualDischargeTargetSoc"
     | "manualTargetSoc"
-    | "manualModeActive"
   >,
 ): string {
   if (battery.strategyMode === "self-consumption") {
@@ -115,6 +114,10 @@ export function formatScheduledStrategyStartedSummary(
   )}`;
 
   if (!estimate) {
+    return base;
+  }
+
+  if (item.triggerKind === BatteryStrategyTriggerKind.DelayedChargePrep) {
     return base;
   }
 
@@ -177,11 +180,51 @@ export function formatManualStrategyAppliedSummary(
     | "manualModeActive"
   >,
 ): string {
-  const prefix = battery.manualModeActive
-    ? "temporary manual override applied"
-    : "manual strategy applied";
+  if (battery.manualModeActive) {
+    return `temporary manual override applied for ${battery.id}: scheduled automation is paused; ${describeManualOverrideOutcomeHuman(battery)}`;
+  }
 
-  return `${prefix} for ${battery.id}: ${describeCurrentBatteryStrategyHuman(battery)}`;
+  return `manual strategy applied for ${battery.id}: ${describeCurrentBatteryStrategyHuman(battery)}`;
+}
+
+export function formatAutomaticStrategyAppliedSummary(
+  battery: Pick<
+    BatteryRecord,
+    | "id"
+    | "strategyMode"
+    | "manualState"
+    | "manualPowerW"
+    | "maximumChargePowerW"
+    | "maximumDischargePowerW"
+    | "manualChargeTargetSoc"
+    | "manualDischargeTargetSoc"
+    | "manualTargetSoc"
+  >,
+): string {
+  return `scheduled automation applied for ${battery.id}: ${describeCurrentBatteryStrategyHuman(battery)}`;
+}
+
+function describeManualOverrideOutcomeHuman(
+  battery: Pick<
+    BatteryRecord,
+    | "strategyMode"
+    | "manualState"
+    | "manualPowerW"
+    | "maximumChargePowerW"
+    | "maximumDischargePowerW"
+    | "manualChargeTargetSoc"
+    | "manualDischargeTargetSoc"
+    | "manualTargetSoc"
+    | "manualModeActive"
+  >,
+): string {
+  const strategySummary = describeCurrentBatteryStrategyHuman(battery);
+
+  if (battery.strategyMode === "self-consumption") {
+    return `battery is now in ${strategySummary} until the override is cleared`;
+  }
+
+  return `battery will ${strategySummary} until the override is cleared or its target is reached`;
 }
 
 export function formatBatteryStrategyStatusSummary(
@@ -773,6 +816,10 @@ function formatMinuteCount(value: number): string {
 function describeScheduledTargetHuman(
   item: BatteryStrategyPlanItem,
 ): string | null {
+  if (item.triggerKind === BatteryStrategyTriggerKind.DelayedChargePrep) {
+    return null;
+  }
+
   if (item.targetMethod === "auto") {
     return "with a dynamic target";
   }
@@ -821,6 +868,10 @@ function describeStrategyScheduleHuman(item: BatteryStrategyPlanItem): string {
     item.startTime
   ) {
     return `the ${item.startTime} schedule`;
+  }
+
+  if (item.triggerKind === BatteryStrategyTriggerKind.DelayedChargePrep) {
+    return "the delayed-charge prep schedule";
   }
 
   if (item.triggerKind && isBatteryStrategyPriceTrigger(item.triggerKind)) {

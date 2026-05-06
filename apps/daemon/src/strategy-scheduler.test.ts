@@ -9,6 +9,7 @@ import {
 import {
   formatDaemonLogTimestamp,
   formatScheduledItemCompletion,
+  getDelayedChargePrepSkipReason,
   getLowPriceAutoTriggerAtForMarker,
   getScheduledItemCompletion,
   getStrategyTriggerAt,
@@ -702,6 +703,40 @@ test("shouldSkipScheduledItem expires price-triggered items after 30 minutes", (
       new Date("2026-04-09T10:30:00.000Z"),
     ),
   ).toBe(true);
+});
+
+test("getDelayedChargePrepSkipReason reuses the paired delayed-charging skip reason", () => {
+  expect(
+    getDelayedChargePrepSkipReason({
+      delayedChargingItemId: "delayed-charging-1",
+      delayedChargingSkipReason:
+        "skipped: low-price marker 2026-04-10T02:00:00.000Z needs expected solar above expected house load, but predicted solar is 0W and expected house load is 181W for item delayed-charging-1",
+      delayedChargingStartTime: null,
+      now: new Date("2026-04-09T13:58:15.000Z"),
+      prepItemId: "prep-1",
+      runtime: createBattery().strategyRuntime,
+    }),
+  ).toContain("needs expected solar above expected house load");
+});
+
+test("getDelayedChargePrepSkipReason blocks prep when the paired delayed charging already triggered", () => {
+  expect(
+    getDelayedChargePrepSkipReason({
+      delayedChargingItemId: "delayed-charging-1",
+      delayedChargingSkipReason: null,
+      delayedChargingStartTime: "2026-04-09T13:45:00.000Z",
+      now: new Date("2026-04-09T13:58:15.000Z"),
+      prepItemId: "prep-1",
+      runtime: {
+        ...createBattery().strategyRuntime,
+        lastTriggeredAtByItemId: {
+          "delayed-charging-1": "2026-04-09T13:45:00.000Z",
+        },
+      },
+    }),
+  ).toBe(
+    "skipped: delayed charging item delayed-charging-1 already triggered for 2026-04-09T13:45:00.000Z while evaluating delayed-charge prep item prep-1",
+  );
 });
 
 function createBattery(overrides: Partial<BatteryRecord> = {}): BatteryRecord {

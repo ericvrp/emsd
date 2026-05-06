@@ -50,6 +50,8 @@ import {
   readSolarForecastSamples,
   readWeatherForecast,
   readWeatherForecastSources,
+  upsertDynamicPriceSnapshot,
+  upsertWeatherForecast,
 } from "../../daemon/src/database";
 import { estimateDynamicPriceTarget } from "../../daemon/src/dynamic-price-target";
 import { formatBatteryStrategyStatusSummary } from "../../daemon/src/strategy-log";
@@ -61,6 +63,8 @@ import {
   discoverHostDevices,
   getPreferredDiscoveryTarget,
 } from "./discover";
+import { getDynamicPriceSnapshot } from "./plugins/price";
+import { getWeatherForecast } from "./plugins/solar-forecast";
 import {
   SINGLE_BATTERY_LIMIT_ERROR,
   createBattery,
@@ -539,74 +543,69 @@ function buildLiveStatus(): LiveStatusSnapshot {
   };
 }
 
-function requestDaemonRefresh(): void {
-  const daemon = readDaemonState();
-
-  if (!daemon.running || daemon.pid === null) {
-    throw new Error("EMSD daemon is not running.");
-  }
-
-  process.kill(daemon.pid, "SIGUSR1");
-}
-
-function sleep(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, milliseconds);
-  });
-}
-
-async function waitForWeatherForecastRefresh(
+async function refreshWeatherForecastNow(
   siteId: string,
-  previousGeneratedAt: string | null,
 ): Promise<WeatherForecastRecord> {
-  const deadline = Date.now() + 12_000;
+  const db = openDaemonDatabase();
 
-  while (Date.now() < deadline) {
-    const db = openDaemonDatabase();
+  try {
+    const site = readSites(db).find((entry) => entry.id === siteId);
 
-    try {
-      const forecast = readWeatherForecast(db, siteId);
-
-      if (forecast && forecast.generatedAt !== previousGeneratedAt) {
-        return forecast;
-      }
-    } finally {
-      db.close();
+    if (!site) {
+      throw new Error(`Managed site not found: ${siteId}`);
     }
 
-    await sleep(250);
-  }
+    const source =
+      readWeatherForecastSources(db).find((entry) => entry.siteId === siteId) ??
+      null;
 
-  throw new Error(
-    `Timed out waiting for the daemon to refresh the solar forecast for site ${siteId}.`,
-  );
+    if (source === null) {
+      deleteWeatherForecast(db, siteId);
+      throw new Error(
+        `No forecast source is configured for site ${siteId}. Select a provider and save to fetch a forecast.`,
+      );
+    }
+
+    const forecast = await getWeatherForecast({
+      hours: 48,
+      periodMinutes: 15,
+      site,
+      source,
+    });
+
+    upsertWeatherForecast(db, siteId, forecast);
+    return forecast;
+  } finally {
+    db.close();
+  }
 }
 
-async function waitForDynamicPriceRefresh(
+async function refreshDynamicPriceSnapshotNow(
   siteId: string,
-  previousGeneratedAt: string | null,
 ): Promise<DynamicPriceSnapshotRecord> {
-  const deadline = Date.now() + 12_000;
+  const db = openDaemonDatabase();
 
-  while (Date.now() < deadline) {
-    const db = openDaemonDatabase();
+  try {
+    const site = readSites(db).find((entry) => entry.id === siteId);
 
-    try {
-      const snapshot = readDynamicPriceSnapshot(db, siteId);
-
-      if (snapshot && snapshot.generatedAt !== previousGeneratedAt) {
-        return snapshot;
-      }
-    } finally {
-      db.close();
+    if (!site) {
+      throw new Error(`Managed site not found: ${siteId}`);
     }
 
-    await sleep(250);
-  }
+    const source =
+      readDynamicPriceSources(db).find((entry) => entry.siteId === siteId) ??
+      null;
 
-  throw new Error(
-    `Timed out waiting for the daemon to refresh the dynamic price snapshot for site ${siteId}.`,
-  );
+    if (source === null) {
+      throw new Error(`No dynamic price source is configured for site ${siteId}.`);
+    }
+
+    const snapshot = await getDynamicPriceSnapshot({ site, source });
+    upsertDynamicPriceSnapshot(db, siteId, snapshot);
+    return snapshot;
+  } finally {
+    db.close();
+  }
 }
 
 function resolveManualTargetSoc(input: {
@@ -1059,12 +1058,6 @@ export async function runApiAction(
         siteId,
       );
 
-      const daemon = readDaemonState();
-
-      if (daemon.running && daemon.pid !== null) {
-        process.kill(daemon.pid, "SIGUSR1");
-      }
-
       return updated.map((record) => toManagedDeviceRecord(record, now));
     }
 
@@ -1295,8 +1288,8 @@ export async function runApiAction(
         db.close();
       }
 
-      requestDaemonRefresh();
-      return waitForWeatherForecastRefresh(siteId, previousGeneratedAt);
+      void previousGeneratedAt;
+      return refreshWeatherForecastNow(siteId);
     }
 
     case "weather-request-refresh": {
@@ -1325,7 +1318,7 @@ export async function runApiAction(
         db.close();
       }
 
-      requestDaemonRefresh();
+      await refreshWeatherForecastNow(siteId);
       return { requested: true };
     }
 
@@ -1429,8 +1422,8 @@ export async function runApiAction(
         db.close();
       }
 
-      requestDaemonRefresh();
-      return waitForDynamicPriceRefresh(siteId, previousGeneratedAt);
+      void previousGeneratedAt;
+      return refreshDynamicPriceSnapshotNow(siteId);
     }
 
     case "price-request-refresh": {
@@ -1458,7 +1451,7 @@ export async function runApiAction(
         db.close();
       }
 
-      requestDaemonRefresh();
+      await refreshDynamicPriceSnapshotNow(siteId);
       return { requested: true };
     }
 
@@ -1504,12 +1497,6 @@ export async function runApiAction(
         );
       }
 
-      const daemon = readDaemonState();
-
-      if (!daemon.running || daemon.pid === null) {
-        throw new Error("EMSD daemon is not running.");
-      }
-
       const db = openDaemonDatabase();
 
       try {
@@ -1521,7 +1508,6 @@ export async function runApiAction(
         });
       } finally {
         db.close();
-        process.kill(daemon.pid, "SIGUSR1");
       }
     }
 
