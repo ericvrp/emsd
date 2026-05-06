@@ -6,9 +6,14 @@ Add support for a site-local solar production source that EMSD can discover, per
 
 The current real-world target is Enphase residential systems with microinverters, where the LAN-visible device is the `IQ Gateway` or older `Envoy` gateway rather than each inverter individually.
 
-## Current Supported Provider
+## Current Supported Providers
 
 - `enphase-local`
+- `solaredge-local`
+
+Planned next candidate:
+
+- `huawei-sun2000-modbus`
 
 ## Current Touchpoints
 
@@ -19,6 +24,8 @@ The current real-world target is Enphase residential systems with microinverters
 - `apps/daemon/src/index.ts`: daemon-owned polling and sample persistence
 - `apps/ems/src/api.ts`: CLI-backed create from discovery, read normalized info, and delete flows for the web backend
 
+Production-control support already exists in the current plugin contract and daemon bridge path. Unsupported providers should return `productionControlStatus: "unavailable"`.
+
 ## Enphase Notes
 
 - Discovery currently identifies the gateway from `/info.xml` and supplements it with `/api/v1/production`.
@@ -28,6 +35,21 @@ The current real-world target is Enphase residential systems with microinverters
 - The normalized output currently focuses on current power, today energy, lifetime energy, serial number, firmware version, and connection status.
 
 For implementation details and endpoint notes, see `docs/reference/solar-energy-provider/enphase.md`.
+
+## SolarEdge Notes
+
+- Discovery and telemetry are already implemented.
+- EMSD currently treats production control as unavailable.
+
+For implementation details and endpoint notes, see `docs/reference/solar-energy-provider/solaredge.md`.
+
+## Huawei Notes
+
+- The strongest current research lead is local Modbus-TCP, not HTTP.
+- Discovery will likely need a custom Modbus-native probe instead of the current HTTP-only discovery shape.
+- The local Huawei source bundle shows a working write path by changing Huawei active-power limit registers over Modbus-TCP.
+
+For extracted research and register notes, see `docs/reference/solar-energy-provider/huawei.md`.
 
 ## Implementation Steps
 

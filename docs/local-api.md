@@ -218,7 +218,7 @@ Each device kind (batteries, meters, solarEnergyProviders) is an array of record
 | `connected` | boolean | Whether the provider is currently reachable |
 | `state` | string | Current operational state |
 | `powerW` | number \| null | Current measured production |
-| `productionControlStatus` | string \| null | Production control status ("enabled" or "disabled") |
+| `productionControlStatus` | string \| null | Production control status (`enabled`, `disabled`, or `unavailable`) |
 
 ## Behavior Under Degraded Conditions
 
