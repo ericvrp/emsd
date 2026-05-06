@@ -2,11 +2,13 @@
 
 import {
   BatteryCharging,
+  CircleHelp,
   Gauge,
   LoaderCircle,
   Plus,
   ScanSearch,
   SunMedium,
+  X,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
@@ -19,6 +21,9 @@ import {
 } from "../app/actions";
 import type { SignedDiscoveredDevice } from "../lib/discovery-proof";
 import { UI_STYLES } from "../lib/ui-colors";
+import { cn } from "../lib/utils";
+import { Button } from "./ui/button";
+import { DialogPortal } from "./ui/dialog-portal";
 import { SubmitButton } from "./submit-button";
 import { useFormActionToast } from "./use-form-action-toast";
 
@@ -35,6 +40,86 @@ const primaryButtonClass = UI_STYLES.buttonPrimary;
 
 const secondaryButtonClass = UI_STYLES.buttonSecondary;
 const DEFAULT_BATTERY_BACKUP_RESERVE_PERCENT = 10;
+
+type SupportedPluginStatus =
+  | "working"
+  | "untested"
+  | "incomplete"
+  | "issues";
+
+interface SupportedPluginEntry {
+  type: (typeof SUPPORTED_PLUGIN_TYPES)[number];
+  plugin: string;
+  status: SupportedPluginStatus;
+  notes: string;
+}
+
+const SUPPORTED_PLUGIN_TYPES = [
+  "Battery",
+  "Meter",
+  "Solar",
+  "Price",
+  "Forecast",
+] as const;
+
+const SUPPORTED_DISCOVERY_PLUGINS: readonly SupportedPluginEntry[] = [
+  {
+    type: "Battery",
+    plugin: "Indevolt Battery",
+    status: "working",
+    notes: "Discovery, telemetry, and strategy control are implemented.",
+  },
+  {
+    type: "Battery",
+    plugin: "sonnenBatterie",
+    status: "untested",
+    notes: "Discovery, telemetry, and strategy control are implemented, but field validation is still limited.",
+  },
+  {
+    type: "Battery",
+    plugin: "HomeWizard Battery",
+    status: "untested",
+    notes:
+      "Uses the controller battery group API, so per-battery SoC and direct setpoints stay limited.",
+  },
+  {
+    type: "Meter",
+    plugin: "HomeWizard P1",
+    status: "working",
+    notes: "Discovery and live meter telemetry are implemented.",
+  },
+  {
+    type: "Solar",
+    plugin: "Enphase IQ Gateway",
+    status: "incomplete",
+    notes:
+      "Telemetry works, but some gateways need owner auth and production control can depend on hardware or firmware.",
+  },
+  {
+    type: "Solar",
+    plugin: "SolarEdge Inverter",
+    status: "untested",
+    notes: "Discovery and telemetry are implemented. Production control is unavailable.",
+  },
+  {
+    type: "Solar",
+    plugin: "Huawei SUN2000",
+    status: "untested",
+    notes: "Modbus-based discovery and runtime support exist, but field validation is still limited.",
+  },
+  {
+    type: "Price",
+    plugin: "Tibber",
+    status: "working",
+    notes: "Dynamic price provider integration is implemented.",
+  },
+  {
+    type: "Forecast",
+    plugin: "Open-Meteo",
+    status: "working",
+    notes: "Solar forecast provider integration is implemented.",
+  },
+];
 
 export function DiscoveryPanel({
   existingDeviceIds,
@@ -207,27 +292,29 @@ export function DiscoveryPanel({
           />
         </label>
 
-        <button
-          className={primaryButtonClass}
-          disabled={isLoading || !selectedSiteId}
-          onClick={runDiscovery}
-          type="button"
-        >
-          {isLoading ? (
-            <>
-              <LoaderCircle
-                aria-hidden="true"
-                className="h-4 w-4 animate-spin"
-              />
-              Scanning...
-            </>
-          ) : (
-            <>
-              <ScanSearch aria-hidden="true" className="h-4 w-4" />
-              {host.trim() ? "Probe host" : "Scan network"}
-            </>
-          )}
-        </button>
+        <div className="flex flex-wrap items-end gap-3 lg:justify-end">
+          <button
+            className={primaryButtonClass}
+            disabled={isLoading || !selectedSiteId}
+            onClick={runDiscovery}
+            type="button"
+          >
+            {isLoading ? (
+              <>
+                <LoaderCircle
+                  aria-hidden="true"
+                  className="h-4 w-4 animate-spin"
+                />
+                Scanning...
+              </>
+            ) : (
+              <>
+                <ScanSearch aria-hidden="true" className="h-4 w-4" />
+                {host.trim() ? "Probe host" : "Scan network"}
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
       {!selectedSiteId ? (
@@ -314,6 +401,142 @@ export function DiscoveryPanel({
         </div>
       )}
     </div>
+  );
+}
+
+export function SupportedPluginsButton() {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <>
+      <Button
+        className={secondaryButtonClass}
+        onClick={() => setIsOpen(true)}
+        title="Current discovery and device integration coverage in EMSD."
+        type="button"
+      >
+        <CircleHelp aria-hidden="true" className="h-4 w-4" />
+        Plugins
+      </Button>
+
+      {isOpen ? <SupportedPluginsDialog onClose={() => setIsOpen(false)} /> : null}
+    </>
+  );
+}
+
+function SupportedPluginsDialog({ onClose }: { onClose: () => void }) {
+  const [activeTab, setActiveTab] = useState<
+    (typeof SUPPORTED_PLUGIN_TYPES)[number]
+  >("Battery");
+
+  useEffect(() => {
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key !== "Escape") {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      onClose();
+    }
+
+    document.addEventListener("keydown", handleEscape, true);
+
+    return () => {
+      document.removeEventListener("keydown", handleEscape, true);
+    };
+  }, [onClose]);
+
+  const visiblePlugins = SUPPORTED_DISCOVERY_PLUGINS.filter(
+    (plugin) => plugin.type === activeTab,
+  );
+
+  return (
+    <DialogPortal>
+      <div className="fixed inset-0 z-[110] overflow-y-auto bg-slate-950/80 p-4 backdrop-blur-sm">
+        <div className="flex min-h-full items-start justify-center py-6">
+          <div className="w-full max-w-4xl rounded-3xl border border-white/10 bg-slate-950 p-4 shadow-[0_30px_120px_rgba(0,0,0,0.45)] sm:p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm font-semibold uppercase tracking-[0.22em] text-cyan-300">
+                  Discover
+                </p>
+                <h2 className="mt-3 text-2xl font-semibold text-white">
+                  Supported plugins
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-slate-300">
+                  Current discovery and device integration coverage in EMSD.
+                </p>
+              </div>
+              <button
+                aria-label="Close supported plugins dialog"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/5 text-slate-200 transition hover:bg-white/10"
+                onClick={onClose}
+                type="button"
+              >
+                <X aria-hidden="true" className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-6 overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/5">
+              <div className={`${UI_STYLES.tabBar} justify-start px-3 pt-3 sm:px-4`}>
+                <div className="flex flex-wrap items-center gap-6">
+                  {SUPPORTED_PLUGIN_TYPES.map((pluginType) => (
+                    <button
+                      className={cn(
+                        UI_STYLES.tabItem,
+                        pluginType === activeTab
+                          ? UI_STYLES.tabItemActive
+                          : UI_STYLES.tabItemInactive,
+                      )}
+                      key={pluginType}
+                      onClick={() => setActiveTab(pluginType)}
+                      type="button"
+                    >
+                      {pluginType}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-white/10 text-left text-sm text-slate-200">
+                  <thead className="bg-white/5 text-xs uppercase tracking-[0.18em] text-slate-400">
+                    <tr>
+                      <th className="px-4 py-3 font-medium">Plugin</th>
+                      <th className="px-4 py-3 font-medium">Status</th>
+                      <th className="px-4 py-3 font-medium">Notes</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/10">
+                    {visiblePlugins.map((plugin) => {
+                      const status = formatPluginStatus(plugin.status);
+
+                      return (
+                        <tr key={`${plugin.type}-${plugin.plugin}`}>
+                          <td className="px-4 py-3 font-medium text-white">
+                            {plugin.plugin}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={status.className}>
+                              <span aria-hidden="true">{status.emoji}</span>
+                              {status.label}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 leading-6 text-slate-300">
+                            {plugin.notes}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </DialogPortal>
   );
 }
 
@@ -573,4 +796,40 @@ function formatDiscoveryEmptyLabel(
   }
 
   return "meters";
+}
+
+function formatPluginStatus(status: SupportedPluginStatus) {
+  if (status === "working") {
+    return {
+      emoji: "✅",
+      label: "Working",
+      className:
+        "inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-100",
+    };
+  }
+
+  if (status === "untested") {
+    return {
+      emoji: "❓",
+      label: "Untested",
+      className:
+        "inline-flex items-center gap-2 rounded-full border border-amber-400/20 bg-amber-500/10 px-2.5 py-1 text-xs font-semibold text-amber-100",
+    };
+  }
+
+  if (status === "incomplete") {
+    return {
+      emoji: "🚧",
+      label: "Incomplete",
+      className:
+        "inline-flex items-center gap-2 rounded-full border border-yellow-400/20 bg-yellow-500/10 px-2.5 py-1 text-xs font-semibold text-yellow-100",
+    };
+  }
+
+  return {
+    emoji: "❌",
+    label: "Issues",
+    className:
+      "inline-flex items-center gap-2 rounded-full border border-rose-400/20 bg-rose-500/10 px-2.5 py-1 text-xs font-semibold text-rose-100",
+  };
 }

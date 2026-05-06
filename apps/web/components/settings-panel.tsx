@@ -43,7 +43,7 @@ import {
 import { formatKilowattHoursFromWh } from "../lib/energy-format";
 import { UI_COLORS, UI_STYLES } from "../lib/ui-colors";
 import { cn } from "../lib/utils";
-import { DiscoveryPanel } from "./discovery-panel";
+import { DiscoveryPanel, SupportedPluginsButton } from "./discovery-panel";
 import { LocalApiPanel } from "./local-api-panel";
 import { MeasuredChartContainer } from "./measured-chart-container";
 import { SectionSummaryCard } from "./section-summary-card";
@@ -210,9 +210,12 @@ export function SettingsPanel({
                   <ScanSearch size={13} />
                   Discover
                 </p>
-                <h2 className="mt-2 text-2xl font-semibold text-white">
-                  Find and add batteries, solar providers, and meters
-                </h2>
+                <div className="mt-2 flex items-center justify-between gap-3">
+                  <h2 className="text-2xl font-semibold text-white">
+                    Find and add batteries, solar providers, and meters
+                  </h2>
+                  <SupportedPluginsButton />
+                </div>
                 <p className="mt-2 text-sm leading-6 text-slate-400">
                   Scan once and add devices one by one or all at once.
                 </p>
