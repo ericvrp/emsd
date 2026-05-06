@@ -118,6 +118,7 @@ export interface DiscoverReportDevice {
   model: string;
   name: string;
   ipAddress: string;
+  port: number | null;
   details: string;
 }
 
@@ -243,6 +244,7 @@ export const discoverReportJsonSchema = {
           "model",
           "name",
           "ipAddress",
+          "port",
           "details",
         ],
         properties: {
@@ -265,6 +267,9 @@ export const discoverReportJsonSchema = {
           ipAddress: {
             type: "string",
             format: "ipv4",
+          },
+          port: {
+            type: ["integer", "null"],
           },
           details: {
             type: "string",
@@ -313,6 +318,7 @@ export interface SolarEnergyProviderRecord {
   name: string;
   plugin: string;
   ipAddress: string;
+  port: number | null;
   enabled: boolean;
   connected: boolean;
   serialNumber: string | null;
@@ -594,8 +600,7 @@ export function normalizeBatteryStrategyPlan(input: {
       value: exportSurplusSource,
     }),
     normalizeFixedBatteryStrategyPlanItem({
-      fallback:
-        fallback[2] ?? createDelayedChargePrepBatteryStrategyPlanItem(),
+      fallback: fallback[2] ?? createDelayedChargePrepBatteryStrategyPlanItem(),
       value: delayedChargePrepSource,
       ...(delayedChargePrepSource
         ? {}

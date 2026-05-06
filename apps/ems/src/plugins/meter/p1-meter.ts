@@ -78,6 +78,7 @@ export const p1MeterPlugin: DiscoveryPlugin = {
       model: "homewizard-p1",
       name: "HomeWizard P1",
       ipAddress,
+      port: 80,
       details: detailsParts.join(", "),
       powerW: parseNullableNumber(supplemental?.active_power_w),
       socPercent: null,

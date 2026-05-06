@@ -22,30 +22,26 @@ import {
 } from "../lib/price-format";
 import { UI_CHART_STYLES, UI_COLORS } from "../lib/ui-colors";
 import {
-  HISTORY_STEP_MS,
-  LEFT_Y_AXIS_WIDTH,
-  RIGHT_Y_AXIS_WIDTH,
-  STANDARD_LEFT_AXIS_MARGIN,
-  STANDARD_RIGHT_AXIS_MARGIN,
-} from "./history/constants";
-import {
   LegendChip,
   aggregatePowerSamples,
   buildMirroredYAxis,
   buildNowLabel,
   buildResponsiveDayTicks,
   buildYAxisLabel,
-  formatDayTick,
   fillSingleValueDay,
+  formatDayTick,
   invertSingleValueSeries,
   splitSingleValueSeriesByTime,
 } from "./history";
-import type { TooltipPayloadEntry } from "./history/types";
 import {
-  TooltipCard,
-  TooltipMarker,
-  TooltipRow,
-} from "./history/tooltips";
+  HISTORY_STEP_MS,
+  LEFT_Y_AXIS_WIDTH,
+  RIGHT_Y_AXIS_WIDTH,
+  STANDARD_LEFT_AXIS_MARGIN,
+  STANDARD_RIGHT_AXIS_MARGIN,
+} from "./history/constants";
+import { TooltipCard, TooltipMarker, TooltipRow } from "./history/tooltips";
+import type { TooltipPayloadEntry } from "./history/types";
 import {
   deduplicateTooltipEntries,
   formatTooltipTimestamp,
@@ -58,8 +54,8 @@ import {
   TopLevelDaySelect,
   useTopLevelDaySelection,
 } from "./top-level-day-select";
-import { type SiteCurrentResponse, useLiveJsonSWR } from "./use-live-json-swr";
 import { useChartSeriesVisibility } from "./use-chart-series-visibility";
+import { type SiteCurrentResponse, useLiveJsonSWR } from "./use-live-json-swr";
 
 type GridPageProps = {
   archive: HistoryArchive;
@@ -253,12 +249,13 @@ function GridOverviewChart({
     const actualSiteLoadPoint = actualSiteLoadPoints[index];
     const expectedSiteLoadPoint = expectedSiteLoadPoints[index];
     const importPrice =
-      getActivePricePointAtOrBefore(
-        importPricePoints,
-        gridPoint.periodStart,
-      )?.value ?? null;
+      getActivePricePointAtOrBefore(importPricePoints, gridPoint.periodStart)
+        ?.value ?? null;
 
-    if (typeof gridPoint.value === "number" && typeof importPrice === "number") {
+    if (
+      typeof gridPoint.value === "number" &&
+      typeof importPrice === "number"
+    ) {
       const energyKwh =
         (Math.abs(gridPoint.value) * (HISTORY_STEP_MS / (60 * 60 * 1_000))) /
         1_000;

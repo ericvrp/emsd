@@ -1,7 +1,7 @@
+import { deriveBatteryStatusFromPower } from "@emsd/core/client";
 import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { deriveBatteryStatusFromPower } from "@emsd/core/client";
 import { authOptions } from "../../../../auth";
 import { getLiveStatus } from "../../../../lib/ems-bridge";
 

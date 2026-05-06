@@ -50,14 +50,12 @@ test("battery strategy legend keeps self-consumption distinct from delayed charg
     {
       color: "#b9ad5a",
       label: "Self-consumption",
-      seriesId:
-        "strategy:automatic:self-consumption:self-consumption",
+      seriesId: "strategy:automatic:self-consumption:self-consumption",
     },
     {
       color: "#f59e0b",
       label: "Delayed charging",
-      seriesId:
-        "strategy:automatic:self-consumption:delayed%20charging",
+      seriesId: "strategy:automatic:self-consumption:delayed%20charging",
     },
   ]);
 });

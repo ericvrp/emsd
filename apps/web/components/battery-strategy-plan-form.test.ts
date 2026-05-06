@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import {
-  BatteryStrategyTriggerKind,
   type BatteryStrategyPlanItem,
+  BatteryStrategyTriggerKind,
 } from "@emsd/core/client";
 import { applyStrategyAction } from "./battery-strategy-plan-logic";
 

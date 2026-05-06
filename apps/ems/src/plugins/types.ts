@@ -30,18 +30,23 @@ export interface DiscoverySignatureDefinition {
   model: string;
   name: string;
   port: number;
+  transport?: "http" | "modbus";
   schemes?: Array<"https" | "http">;
-  request: DiscoveryRequestDefinition;
-  response: DiscoveryResponseDefinition;
+  request?: DiscoveryRequestDefinition;
+  response?: DiscoveryResponseDefinition;
 }
 
 export interface DiscoveryPlugin extends DiscoverySignatureDefinition {
   supplementalRequest?: DiscoveryRequestDefinition;
-  buildDiscoveredDevice(args: {
+  buildDiscoveredDevice?(args: {
     ipAddress: string;
     responseText: string;
     supplementalResponseText: string | null;
   }): Omit<DiscoveredDevice, "discoveryId">;
+  probe?: (args: {
+    ipAddress: string;
+    verbose: boolean;
+  }) => Promise<Omit<DiscoveredDevice, "discoveryId"> | null>;
   parseTelemetry?: (
     responseText: string,
   ) => BatteryTelemetrySample | MeterTelemetrySample;

@@ -1,8 +1,8 @@
-import type { ValueType } from "recharts/types/component/DefaultTooltipContent";
 import type {
   BatteryStrategyHistoryDisplayState,
   BatteryStrategyHistorySource,
 } from "@emsd/core/client";
+import type { ValueType } from "recharts/types/component/DefaultTooltipContent";
 
 export type SingleValuePoint = {
   periodStart: string;

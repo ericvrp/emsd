@@ -11,8 +11,8 @@ import {
   readSolarForecastSamples,
 } from "../apps/daemon/src/database";
 import {
-  estimateDynamicPriceTarget,
   type DynamicPriceTargetEstimate,
+  estimateDynamicPriceTarget,
 } from "../apps/daemon/src/dynamic-price-target";
 import { getNextStrategyTriggerAt } from "../apps/daemon/src/strategy-scheduler";
 import type {

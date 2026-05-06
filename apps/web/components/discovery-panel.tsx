@@ -29,7 +29,7 @@ interface DiscoveryCachePayload {
 }
 
 const DISCOVERY_CACHE_PREFIX = "emsd-discovery:";
-const DISCOVERY_CACHE_VERSION = 3;
+const DISCOVERY_CACHE_VERSION = 4;
 
 const primaryButtonClass = UI_STYLES.buttonPrimary;
 
@@ -430,7 +430,10 @@ function DiscoveryDeviceCard({
 
       <dl className="mt-4 grid flex-1 content-start gap-3 text-sm text-slate-300 sm:grid-cols-2">
         <DiscoveryMetaItem label="Model" value={device.model} />
-        <DiscoveryMetaItem label="Address" value={device.ipAddress} />
+        <DiscoveryMetaItem
+          label="Address"
+          value={formatDiscoveryAddress(device)}
+        />
         {device.category === "battery" ? (
           <DiscoveryMetaItem
             label="SoC"
@@ -550,6 +553,12 @@ function compareDiscoveryDevices(
   }
 
   return left.name.localeCompare(right.name);
+}
+
+function formatDiscoveryAddress(device: SignedDiscoveredDevice): string {
+  return typeof device.port === "number"
+    ? `${device.ipAddress}:${device.port}`
+    : device.ipAddress;
 }
 
 function formatDiscoveryEmptyLabel(

@@ -22,12 +22,12 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { formatEnergyValue } from "../lib/energy-format";
 import {
   formatAbsolutePowerValue,
   formatPowerValue,
   formatShortPowerValue,
 } from "../lib/power-format";
-import { formatEnergyValue } from "../lib/energy-format";
 import { UI_CHART_STYLES, UI_COLORS } from "../lib/ui-colors";
 import {
   LegendChip,
@@ -60,12 +60,12 @@ import {
   TopLevelDaySelect,
   useTopLevelDaySelection,
 } from "./top-level-day-select";
+import { useChartSeriesVisibility } from "./use-chart-series-visibility";
 import {
   type SolarCurrentResponse,
   type SolarGraphResponse,
   useLiveJsonSWR,
 } from "./use-live-json-swr";
-import { useChartSeriesVisibility } from "./use-chart-series-visibility";
 
 const LIVE_SOLAR_REFRESH_INTERVAL_MS = 5_000;
 const GRAPH_REFRESH_INTERVAL_MS = 60 * 1_000;
@@ -413,7 +413,11 @@ function ForecastPredictionChart({
                       formatter={(value, key, payload) =>
                         key?.startsWith("predicted") ||
                         key?.startsWith("generated")
-                          ? formatPowerTooltipWithRunningTotal(value, key, payload)
+                          ? formatPowerTooltipWithRunningTotal(
+                              value,
+                              key,
+                              payload,
+                            )
                           : formatForecastValue(value, forecastUnitLabel)
                       }
                       labelFormatter={formatTooltipTimestamp}

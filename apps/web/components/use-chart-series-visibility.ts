@@ -11,10 +11,9 @@ export function useChartSeriesVisibility({
   seriesIds: string[];
   storageKey: string | undefined;
 }) {
-  const seriesSignature = useMemo(() => seriesIds.join("|"), [seriesIds]);
   const defaultVisibility = useMemo(
     () => buildDefaultVisibility(seriesIds),
-    [seriesSignature],
+    [seriesIds],
   );
   const [visibility, setVisibility] = useState<VisibilityState | null>(null);
 

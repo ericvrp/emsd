@@ -93,6 +93,7 @@ Reason:
 
 - the current record cannot express a non-default network port
 - Huawei support should not depend on hidden environment variables once the device is managed in EMSD
+- keep discovery payloads free to include `port`, but do not change the existing `discoveryId` identity for already-supported HTTP devices just because the payload now carries more connection detail
 
 ## 2. Discovery Architecture For Modbus
 
@@ -162,6 +163,7 @@ Requirements:
 - surface Huawei exception `0x80` as an actionable permission error
 - include port and register context in errors
 - avoid Python and avoid shelling out to external tools
+- destroy sockets cleanly on connection failure or timeout so `/24` discovery scans do not accumulate dangling Modbus connections
 
 Implementation note:
 

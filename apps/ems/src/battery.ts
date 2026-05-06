@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import {
-  normalizeBatteryStrategyPlan,
   type BatteryStrategyPlanRecord,
+  normalizeBatteryStrategyPlan,
 } from "@emsd/core";
 import type {
   BatteryManualState,

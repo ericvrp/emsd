@@ -17,6 +17,7 @@ import {
   readPendingSolarEnergyProviderControlRequests,
   readSites,
   readSolarEnergyProviderSamples,
+  readSolarEnergyProviders,
   readSolarForecastSamples,
   readWeatherForecast,
   upsertDynamicPriceSnapshot,
@@ -232,6 +233,72 @@ test("openDaemonDatabase adds telemetry columns for older schemas", () => {
 
   expect(columns).toContain("capacity_wh");
   expect(columns).toContain("production_control_status");
+
+  rmSync(tempDir, { recursive: true, force: true });
+});
+
+test("openDaemonDatabase adds solar provider port support for older schemas", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "emsd-daemon-test-"));
+  const databasePath = join(tempDir, "emsd.sqlite");
+  const db = openDaemonDatabase(databasePath);
+
+  db.exec("DROP TABLE solar_energy_providers;");
+  db.exec(`
+    CREATE TABLE solar_energy_providers (
+      id TEXT PRIMARY KEY,
+      site_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      plugin TEXT NOT NULL,
+      ip_address TEXT NOT NULL,
+      enabled INTEGER NOT NULL,
+      connected INTEGER NOT NULL,
+      serial_number TEXT,
+      updated_at TEXT NOT NULL
+    );
+  `);
+  db.close();
+
+  const migratedDb = openDaemonDatabase(databasePath);
+  migratedDb
+    .query(
+      "INSERT INTO solar_energy_providers (id, site_id, name, plugin, ip_address, port, enabled, connected, serial_number, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+    )
+    .run(
+      "solar-1",
+      "home",
+      "Huawei SUN2000",
+      "huawei-sun2000-modbus",
+      "192.168.1.60",
+      6607,
+      1,
+      1,
+      "HV1234567890",
+      "2026-04-07T00:00:00.000Z",
+    );
+
+  const providers = readSolarEnergyProviders(migratedDb);
+  const columns = migratedDb
+    .query<{ name: string }, []>("PRAGMA table_info(solar_energy_providers)")
+    .all()
+    .map((column) => column.name);
+
+  migratedDb.close();
+
+  expect(columns).toContain("port");
+  expect(providers).toEqual([
+    {
+      id: "solar-1",
+      siteId: "home",
+      name: "Huawei SUN2000",
+      plugin: "huawei-sun2000-modbus",
+      ipAddress: "192.168.1.60",
+      port: 6607,
+      enabled: true,
+      connected: true,
+      serialNumber: "HV1234567890",
+      updatedAt: "2026-04-07T00:00:00.000Z",
+    },
+  ]);
 
   rmSync(tempDir, { recursive: true, force: true });
 });

@@ -375,7 +375,9 @@ function combineBatteryHistorySeries(input: {
             source: strategyEntry.source,
           })
         : null;
-    const overlay = buildStrategyOverlayStyle(strategyLegendItem?.color ?? null);
+    const overlay = buildStrategyOverlayStyle(
+      strategyLegendItem?.color ?? null,
+    );
 
     return {
       currentChargePercent: chargePoint?.currentValue ?? null,

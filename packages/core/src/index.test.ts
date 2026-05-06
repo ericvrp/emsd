@@ -1,9 +1,9 @@
 import { afterEach, expect, test } from "bun:test";
 import {
-  acknowledgePendingBatteryStrategyPlan,
   BatteryStrategyTriggerKind,
   MAX_SOLAR_PREDICTION_PRECEDING_DAYS,
   SOLAR_PREDICTION_MATCH_TOLERANCE_MS,
+  acknowledgePendingBatteryStrategyPlan,
   buildPredictedSolarGenerationSeries,
   createBatteryStrategyRuntime,
   createBatteryStrategyRuntimeForPlanApply,
@@ -488,12 +488,8 @@ test("isBatteryStrategyTriggerNeedingPriceSamples includes delayed-charge-prep",
       BatteryStrategyTriggerKind.DailyTime,
     ),
   ).toBe(false);
-  expect(
-    isBatteryStrategyTriggerNeedingPriceSamples(null),
-  ).toBe(false);
-  expect(
-    isBatteryStrategyTriggerNeedingPriceSamples(undefined),
-  ).toBe(false);
+  expect(isBatteryStrategyTriggerNeedingPriceSamples(null)).toBe(false);
+  expect(isBatteryStrategyTriggerNeedingPriceSamples(undefined)).toBe(false);
 });
 
 test("normalizeBatteryStrategyPlan disables prep when delayed charging is disabled", () => {

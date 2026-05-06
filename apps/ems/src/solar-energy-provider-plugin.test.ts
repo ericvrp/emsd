@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
+import { createServer } from "node:net";
 import type { SolarEnergyProviderRecord } from "@emsd/core";
 import {
   getSolarEnergyProviderNormalizedInfo,
@@ -561,6 +562,42 @@ test("SolarEdge local solar energy provider fetches current production", async (
   });
 });
 
+test("Huawei SUN2000 Modbus provider reads production and control state", async () => {
+  const mock = await startHuaweiModbusServer();
+
+  try {
+    await expect(
+      getSolarEnergyProviderNormalizedInfo(buildHuaweiProvider(mock.port)),
+    ).resolves.toEqual({
+      currentPowerW: 2450,
+      productionControlStatus: "enabled",
+      status: "connected",
+    });
+  } finally {
+    mock.server.close();
+  }
+});
+
+test("Huawei SUN2000 Modbus provider writes fixed power derate for disable", async () => {
+  const mock = await startHuaweiModbusServer();
+
+  try {
+    await expect(
+      setSolarEnergyProviderProductionEnabled(
+        buildHuaweiProvider(mock.port),
+        false,
+      ),
+    ).resolves.toEqual({
+      currentPowerW: 2450,
+      productionControlStatus: "disabled",
+      status: "connected",
+    });
+    expect(mock.getControlLimit()).toBe(0);
+  } finally {
+    mock.server.close();
+  }
+});
+
 function buildProvider(ipAddress = "192.168.1.40"): SolarEnergyProviderRecord {
   return {
     id: "solar-provider-1",
@@ -568,6 +605,7 @@ function buildProvider(ipAddress = "192.168.1.40"): SolarEnergyProviderRecord {
     name: "Enphase IQ Gateway",
     plugin: "enphase-local",
     ipAddress,
+    port: null,
     enabled: true,
     connected: true,
     serialNumber: "123456789012",
@@ -582,9 +620,161 @@ function buildSolarEdgeProvider(): SolarEnergyProviderRecord {
     name: "SolarEdge Inverter",
     plugin: "solaredge-local",
     ipAddress: "192.168.1.50",
+    port: null,
     enabled: true,
     connected: true,
     serialNumber: "SE3000H-123456",
     updatedAt: "2026-04-09T00:00:00.000Z",
   };
+}
+
+function buildHuaweiProvider(port: number): SolarEnergyProviderRecord {
+  return {
+    id: "solar-provider-3",
+    siteId: "home",
+    name: "Huawei SUN2000",
+    plugin: "huawei-sun2000-modbus",
+    ipAddress: "127.0.0.1",
+    port,
+    enabled: true,
+    connected: true,
+    serialNumber: "HV1234567890",
+    updatedAt: "2026-04-09T00:00:00.000Z",
+  };
+}
+
+async function startHuaweiModbusServer() {
+  let controlLimitW = 5000;
+  const server = createServer((socket) => {
+    socket.on("data", (data) => {
+      const transactionId = data.readUInt16BE(0);
+      const unitId = data.readUInt8(6);
+      const functionCode = data.readUInt8(7);
+
+      if (functionCode === 0x2b) {
+        socket.write(
+          buildModbusFrame(
+            transactionId,
+            unitId,
+            Buffer.concat([
+              Buffer.from([0x2b, 0x0e, 0x01, 0x01, 0x00, 0x00, 0x03]),
+              encodeDeviceIdObject(0x00, "HUAWEI"),
+              encodeDeviceIdObject(0x01, "SUN2000"),
+              encodeDeviceIdObject(0x02, "V100R001"),
+            ]),
+          ),
+        );
+        return;
+      }
+
+      if (functionCode === 0x03) {
+        const address = data.readUInt16BE(8);
+        const quantity = data.readUInt16BE(10);
+        const registers =
+          address === 30000
+            ? encodeStringRegisters("SUN2000-5KTL-L1", quantity)
+            : address === 30015
+              ? encodeStringRegisters("HV1234567890", quantity)
+              : address === 31025
+                ? encodeStringRegisters("V100R001", quantity)
+                : address === 32080
+                  ? encodeInt32Registers(2450)
+                  : address === 30075
+                    ? encodeUint32Registers(5000)
+                    : address === 40126
+                      ? encodeUint32Registers(controlLimitW)
+                      : new Array(quantity).fill(0);
+        const body = Buffer.allocUnsafe(registers.length * 2);
+
+        for (let index = 0; index < registers.length; index += 1) {
+          body.writeUInt16BE(registers[index] ?? 0, index * 2);
+        }
+
+        socket.write(
+          buildModbusFrame(
+            transactionId,
+            unitId,
+            Buffer.concat([Buffer.from([0x03, body.length]), body]),
+          ),
+        );
+        return;
+      }
+
+      if (functionCode === 0x10) {
+        const address = data.readUInt16BE(8);
+        const quantity = data.readUInt16BE(10);
+
+        if (address === 40126 && quantity === 2) {
+          controlLimitW = data.readUInt32BE(13);
+        }
+
+        socket.write(
+          buildModbusFrame(
+            transactionId,
+            unitId,
+            Buffer.from([
+              0x10,
+              data[8] ?? 0,
+              data[9] ?? 0,
+              data[10] ?? 0,
+              data[11] ?? 0,
+            ]),
+          ),
+        );
+      }
+    });
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+
+  if (!address || typeof address === "string") {
+    throw new Error("Failed to resolve mock Huawei Modbus port.");
+  }
+
+  return {
+    server,
+    port: address.port,
+    getControlLimit: () => controlLimitW,
+  };
+}
+
+function buildModbusFrame(
+  transactionId: number,
+  unitId: number,
+  pdu: Buffer,
+): Buffer {
+  const header = Buffer.allocUnsafe(7);
+  header.writeUInt16BE(transactionId, 0);
+  header.writeUInt16BE(0, 2);
+  header.writeUInt16BE(pdu.length + 1, 4);
+  header.writeUInt8(unitId, 6);
+  return Buffer.concat([header, pdu]);
+}
+
+function encodeDeviceIdObject(objectId: number, value: string): Buffer {
+  const text = Buffer.from(value, "utf8");
+  return Buffer.concat([Buffer.from([objectId, text.length]), text]);
+}
+
+function encodeStringRegisters(value: string, quantity: number): number[] {
+  const buffer = Buffer.alloc(quantity * 2);
+  Buffer.from(value, "utf8").copy(buffer, 0, 0, quantity * 2);
+  const registers: number[] = [];
+
+  for (let index = 0; index < quantity; index += 1) {
+    registers.push(buffer.readUInt16BE(index * 2));
+  }
+
+  return registers;
+}
+
+function encodeUint32Registers(value: number): number[] {
+  return [(value >> 16) & 0xffff, value & 0xffff];
+}
+
+function encodeInt32Registers(value: number): number[] {
+  const buffer = Buffer.allocUnsafe(4);
+  buffer.writeInt32BE(value, 0);
+  return [buffer.readUInt16BE(0), buffer.readUInt16BE(2)];
 }

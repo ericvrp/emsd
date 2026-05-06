@@ -10,7 +10,7 @@ import {
   RefreshCw,
   Trash2,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   createLocalApiTokenAction,
@@ -163,15 +163,15 @@ export function LocalApiPanel() {
     (id) => !selectedEntities.has(id),
   );
 
-  function buildExcludeQuery(): string {
+  const excludeQuery = useMemo(() => {
     if (excludedEntities.length === 0) {
       return "";
     }
 
     return `?exclude=${excludedEntities.join(",")}`;
-  }
+  }, [excludedEntities]);
 
-  async function checkStatus() {
+  const checkStatus = useCallback(async () => {
     try {
       const result = await getLocalApiTokenStatusAction();
       setTokenConfigured(result.configured);
@@ -180,11 +180,11 @@ export function LocalApiPanel() {
       setTokenConfigured(false);
       setEnvConfigured(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     checkStatus();
-  }, []);
+  }, [checkStatus]);
 
   async function handleGenerateToken() {
     setLoading(true);
@@ -273,66 +273,70 @@ export function LocalApiPanel() {
     });
   }
 
-  async function handleFetchApi(silent = false) {
-    if (!activeToken) {
-      return;
-    }
+  const handleFetchApi = useCallback(
+    async (silent = false) => {
+      if (!activeToken) {
+        return;
+      }
 
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
 
-    if (!silent) {
-      setFetchingApi(true);
-    }
+      if (!silent) {
+        setFetchingApi(true);
+      }
 
-    try {
-      const response = await fetch(
-        `http://${host}${ROUTE_PATH}${buildExcludeQuery()}`,
-        {
-          headers: { Authorization: `Bearer ${activeToken}` },
-          signal: controller.signal,
-        },
-      );
-
-      const text = await response.text();
-
-      let parsed: unknown;
       try {
-        parsed = JSON.parse(text);
-      } catch {
+        const response = await fetch(
+          `http://${host}${ROUTE_PATH}${excludeQuery}`,
+          {
+            headers: { Authorization: `Bearer ${activeToken}` },
+            signal: controller.signal,
+          },
+        );
+
+        const text = await response.text();
+
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(text);
+        } catch {
+          if (!controller.signal.aborted) {
+            setApiPreview({
+              data: "",
+              error: `HTTP ${response.status}: ${text.slice(0, 500)}`,
+            });
+          }
+          return;
+        }
+
+        if (!controller.signal.aborted) {
+          setApiPreview({
+            data: JSON.stringify(parsed, null, 2),
+            error: "",
+          });
+        }
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+
         if (!controller.signal.aborted) {
           setApiPreview({
             data: "",
-            error: `HTTP ${response.status}: ${text.slice(0, 500)}`,
+            error:
+              error instanceof Error ? error.message : "Failed to fetch API",
           });
         }
-        return;
+      } finally {
+        if (!controller.signal.aborted && !silent) {
+          setFetchingApi(false);
+        }
       }
-
-      if (!controller.signal.aborted) {
-        setApiPreview({
-          data: JSON.stringify(parsed, null, 2),
-          error: "",
-        });
-      }
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") {
-        return;
-      }
-
-      if (!controller.signal.aborted) {
-        setApiPreview({
-          data: "",
-          error: error instanceof Error ? error.message : "Failed to fetch API",
-        });
-      }
-    } finally {
-      if (!controller.signal.aborted && !silent) {
-        setFetchingApi(false);
-      }
-    }
-  }
+    },
+    [activeToken, excludeQuery, host],
+  );
 
   useEffect(() => {
     return () => {
@@ -376,7 +380,7 @@ export function LocalApiPanel() {
 
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [outputTab, activeToken, host, scanInterval, selectedEntities]);
+  }, [activeToken, handleFetchApi, outputTab, scanInterval]);
 
   function generateYaml(): string {
     const entities = ENTITY_DEFAULTS.filter(

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import {
-  BatteryStrategyTriggerKind,
   type BatteryStrategyHistoryRecord,
+  BatteryStrategyTriggerKind,
 } from "@emsd/core/client";
 import {
   buildBatteryHistoryPoints,
@@ -63,8 +63,7 @@ test("buildExactBatteryStrategySegments preserves exact mid-bucket strategy boun
     {
       color: "#b9ad5a",
       endMs: new Date("2026-04-17T19:45:05.000Z").getTime(),
-      seriesId:
-        "strategy:automatic:self-consumption:self-consumption",
+      seriesId: "strategy:automatic:self-consumption:self-consumption",
       startMs: new Date("2026-04-17T19:30:00.000Z").getTime(),
       state: "self-consumption",
     },
@@ -189,8 +188,7 @@ test("buildExactBatteryStrategySegments uses resolved plan item labels for serie
     {
       color: "#f59e0b",
       endMs: new Date("2026-04-17T13:00:00.000Z").getTime(),
-      seriesId:
-        "strategy:automatic:self-consumption:delayed%20charging",
+      seriesId: "strategy:automatic:self-consumption:delayed%20charging",
       startMs: new Date("2026-04-17T12:00:00.000Z").getTime(),
       state: "self-consumption",
     },

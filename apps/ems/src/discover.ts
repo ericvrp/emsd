@@ -97,19 +97,24 @@ export function getDiscoverySignatures(): DiscoverySignatureDefinition[] {
     ({
       buildDiscoveredDevice,
       parseTelemetry,
+      probe,
       supplementalRequest,
       ...signature
     }) => ({
       ...signature,
-      request: {
-        path: signature.request.path,
-        method: signature.request.method,
-        ...(typeof signature.request.headers === "function"
-          ? {}
-          : signature.request.headers
-            ? { headers: signature.request.headers }
-            : {}),
-      },
+      ...(signature.request
+        ? {
+            request: {
+              path: signature.request.path,
+              method: signature.request.method,
+              ...(typeof signature.request.headers === "function"
+                ? {}
+                : signature.request.headers
+                  ? { headers: signature.request.headers }
+                  : {}),
+            },
+          }
+        : {}),
     }),
   );
 }
@@ -118,12 +123,11 @@ export async function fetchBatteryTelemetry(
   ipAddress: string,
 ): Promise<BatteryTelemetrySample | null> {
   const plugin = requirePlugin("indevolt-battery");
-  const response = await fetchDiscoveryResponse(
-    ipAddress,
-    plugin,
-    plugin.request,
-    { host: ipAddress, verbose: false },
-  );
+  const request = requirePluginRequest(plugin);
+  const response = await fetchDiscoveryResponse(ipAddress, plugin, request, {
+    host: ipAddress,
+    verbose: false,
+  });
 
   if (!response || !plugin.parseTelemetry) {
     return null;
@@ -501,10 +505,31 @@ async function probeTarget(
   options: DiscoverCommandOptions,
 ): Promise<DiscoveredDevice | null> {
   for (const plugin of discoveryPlugins) {
+    if (plugin.probe) {
+      const device = await plugin.probe({
+        ipAddress,
+        verbose: options.verbose,
+      });
+
+      if (device) {
+        if (options.verbose) {
+          console.error(`Matched ${plugin.model} at ${ipAddress}`);
+        }
+
+        return {
+          ...device,
+          discoveryId: getDiscoveryId(device),
+        };
+      }
+
+      continue;
+    }
+
+    const request = requirePluginRequest(plugin);
     const primaryResponse = await fetchDiscoveryResponse(
       ipAddress,
       plugin,
-      plugin.request,
+      request,
       options,
     );
 
@@ -694,12 +719,26 @@ function requirePlugin(model: string): DiscoveryPlugin {
   return plugin;
 }
 
+function requirePluginRequest(
+  plugin: DiscoveryPlugin,
+): DiscoveryRequestDefinition {
+  if (!plugin.request) {
+    throw new Error(
+      `Discovery plugin ${plugin.model} does not define an HTTP request.`,
+    );
+  }
+
+  return plugin.request;
+}
+
 function matchesSignatureResponse(
   plugin: DiscoveryPlugin,
   responseText: string,
 ): boolean {
-  return plugin.response.match.every((pattern) =>
-    new RegExp(pattern).test(responseText),
+  return (
+    plugin.response?.match.every((pattern) =>
+      new RegExp(pattern).test(responseText),
+    ) ?? false
   );
 }
 
@@ -709,6 +748,12 @@ function buildDiscoveredDevice(
   responseText: string,
   supplementalPayload: DiscoverySupplementalPayload | null,
 ): DiscoveredDevice {
+  if (!plugin.buildDiscoveredDevice) {
+    throw new Error(
+      `Discovery plugin ${plugin.model} did not provide a discovered-device builder.`,
+    );
+  }
+
   const device = plugin.buildDiscoveredDevice({
     ipAddress,
     responseText,
@@ -764,6 +809,7 @@ function buildDiscoverReport(
         model: device.model,
         name: device.name,
         ipAddress: device.ipAddress,
+        port: device.port,
         details: device.details,
       }),
     ),

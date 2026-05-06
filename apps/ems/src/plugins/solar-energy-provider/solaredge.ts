@@ -62,6 +62,7 @@ export const solaredgeSolarEnergyProviderDiscoveryPlugin: DiscoveryPlugin = {
       ipAddress,
       model: SOLAREDGE_DISCOVERY_MODEL,
       name: SOLAREDGE_DISCOVERY_NAME,
+      port: 80,
       powerW,
       socPercent: null,
       state: powerW === null ? null : "connected",

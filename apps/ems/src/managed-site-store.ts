@@ -82,6 +82,7 @@ const SOLAR_ENERGY_PROVIDER_REQUIRED_COLUMNS = [
   "name",
   "plugin",
   "ip_address",
+  "port",
   "enabled",
   "connected",
   "serial_number",
@@ -157,6 +158,7 @@ interface SolarEnergyProviderRow {
   name: string;
   plugin: string;
   ip_address: string;
+  port: number | null;
   enabled: number;
   connected: number;
   serial_number: string | null;
@@ -245,6 +247,7 @@ interface CreateSolarEnergyProviderInput {
   name: string;
   plugin: string;
   ipAddress: string;
+  port?: number | null;
   enabled?: boolean;
   connected?: boolean;
   serialNumber?: string | null;
@@ -664,12 +667,13 @@ export function createSolarEnergyProvider(
             plugin,
             model,
             ip_address,
+            port,
             enabled,
             connected,
             details,
             serial_number,
             updated_at
-          ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+          ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
         `,
       ).run(
         input.id,
@@ -678,6 +682,7 @@ export function createSolarEnergyProvider(
         input.plugin,
         input.plugin,
         input.ipAddress,
+        getSolarEnergyProviderPort(input),
         input.enabled === false ? 0 : 1,
         input.connected === false ? 0 : 1,
         input.serialNumber ? `serial ${input.serialNumber}` : "",
@@ -693,11 +698,12 @@ export function createSolarEnergyProvider(
             name,
             plugin,
             ip_address,
+            port,
             enabled,
             connected,
             serial_number,
             updated_at
-          ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+          ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
         `,
       ).run(
         input.id,
@@ -705,6 +711,7 @@ export function createSolarEnergyProvider(
         input.name,
         input.plugin,
         input.ipAddress,
+        getSolarEnergyProviderPort(input),
         input.enabled === false ? 0 : 1,
         input.connected === false ? 0 : 1,
         input.serialNumber ?? null,
@@ -1617,6 +1624,7 @@ function ensureSchema(db: Database): void {
       name TEXT NOT NULL,
       plugin TEXT NOT NULL,
       ip_address TEXT NOT NULL,
+      port INTEGER,
       enabled INTEGER NOT NULL,
       connected INTEGER NOT NULL,
       serial_number TEXT,
@@ -1859,6 +1867,10 @@ function ensureSolarEnergyProviderColumns(db: Database): void {
         WHERE details LIKE '%serial %' AND (serial_number IS NULL OR serial_number = '')
       `);
     }
+  }
+
+  if (!columns.includes("port")) {
+    db.exec("ALTER TABLE solar_energy_providers ADD COLUMN port INTEGER;");
   }
 }
 
@@ -2213,7 +2225,7 @@ function readSolarEnergyProviders(
   return db
     .query<SolarEnergyProviderRow, [string]>(
       `
-        SELECT id, site_id, name, plugin, ip_address, enabled, connected, serial_number, updated_at
+        SELECT id, site_id, name, plugin, ip_address, port, enabled, connected, serial_number, updated_at
         FROM solar_energy_providers
         WHERE site_id = ?1
         ORDER BY name ASC, id ASC
@@ -2331,7 +2343,7 @@ function getSolarEnergyProviderById(
   const row = db
     .query<SolarEnergyProviderRow, [string, string]>(
       `
-        SELECT id, site_id, name, plugin, ip_address, enabled, connected, serial_number, updated_at
+        SELECT id, site_id, name, plugin, ip_address, port, enabled, connected, serial_number, updated_at
         FROM solar_energy_providers
         WHERE id = ?1 AND site_id = ?2
       `,
@@ -2507,11 +2519,22 @@ function mapSolarEnergyProviderRow(
     name: row.name,
     plugin: row.plugin,
     ipAddress: row.ip_address,
+    port: row.port,
     enabled: row.enabled === 1,
     connected: row.connected === 1,
     serialNumber: row.serial_number,
     updatedAt: row.updated_at,
   };
+}
+
+function getSolarEnergyProviderPort(
+  input: CreateSolarEnergyProviderInput,
+): number | null {
+  if (typeof input.port === "number") {
+    return input.port;
+  }
+
+  return input.plugin === "huawei-sun2000-modbus" ? 6607 : null;
 }
 
 function mapSourceRow(

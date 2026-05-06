@@ -445,7 +445,7 @@ export async function buildLocalApiCurrent(
 
   let currentImportPriceIsNegative = false;
 
-  if (pricing && pricing.current && pricing.current.importPrice < 0) {
+  if (pricing?.current && pricing.current.importPrice < 0) {
     currentImportPriceIsNegative = true;
   }
 

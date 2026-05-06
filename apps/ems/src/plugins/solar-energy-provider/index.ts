@@ -7,6 +7,10 @@ import {
   enphaseSolarEnergyProviderDiscoveryPlugin,
 } from "./enphase";
 import {
+  HuaweiSun2000SolarEnergyProviderPlugin,
+  huaweiSolarEnergyProviderDiscoveryPlugin,
+} from "./huawei";
+import {
   SolarEdgeSolarEnergyProviderPlugin,
   solaredgeSolarEnergyProviderDiscoveryPlugin,
 } from "./solaredge";
@@ -20,11 +24,13 @@ export interface SolarEnergyProviderPlugin {
 
 export const solarEnergyProviderDiscoveryPlugins = [
   enphaseSolarEnergyProviderDiscoveryPlugin,
+  huaweiSolarEnergyProviderDiscoveryPlugin,
   solaredgeSolarEnergyProviderDiscoveryPlugin,
 ];
 
 export const solarEnergyProviderPlugins = [
   "enphase-local",
+  "huawei-sun2000-modbus",
   "solaredge-local",
 ] as const;
 
@@ -37,6 +43,10 @@ export function createSolarEnergyProviderPlugin(
 
   if (provider.plugin === "solaredge-local") {
     return new SolarEdgeSolarEnergyProviderPlugin(provider);
+  }
+
+  if (provider.plugin === "huawei-sun2000-modbus") {
+    return new HuaweiSun2000SolarEnergyProviderPlugin(provider);
   }
 
   throw new Error(

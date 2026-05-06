@@ -7,10 +7,7 @@ export function computeExportPrice(
 
 export function getActivePricePointAtOrBefore<
   T extends { periodStart: string } | { startsAt: string },
->(
-  points: T[],
-  timestamp: number | string,
-): T | null {
+>(points: T[], timestamp: number | string): T | null {
   const targetTime =
     typeof timestamp === "number" ? timestamp : new Date(timestamp).getTime();
   let activePoint: T | null = null;

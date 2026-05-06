@@ -6,6 +6,7 @@ export interface DiscoveredDevice {
   model: string;
   name: string;
   ipAddress: string;
+  port: number | null;
   details: string;
   powerW: number | null;
   socPercent: number | null;

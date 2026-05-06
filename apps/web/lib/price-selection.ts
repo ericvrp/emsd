@@ -1,7 +1,7 @@
 import {
+  type HistoryArchive,
   PRICE_SELECTION_WINDOW_MS,
   findPriceSelections,
-  type HistoryArchive,
 } from "@emsd/core";
 
 export function buildPriceMarkerPeriodStarts(archive: HistoryArchive): {

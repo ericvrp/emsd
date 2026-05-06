@@ -1,23 +1,23 @@
 import { expect, test } from "bun:test";
 import {
-  BatteryStrategyTriggerKind,
   type BatteryRecord,
   type BatteryStrategyPlanItem,
+  BatteryStrategyTriggerKind,
   type DynamicPriceSampleRecord,
   type NormalizedBatteryInfo,
 } from "@emsd/core";
 import {
   formatDaemonLogTimestamp,
-  getLowPriceAutoTriggerAtForMarker,
   formatScheduledItemCompletion,
+  getLowPriceAutoTriggerAtForMarker,
   getScheduledItemCompletion,
   getStrategyTriggerAt,
   getTodayTriggerAt,
   needsCompletionTracking,
   shouldCompleteScheduledItem,
   shouldMarkScheduledItemObserved,
-  shouldSkipScheduledItem,
   shouldSkipDelayedSocItemBecauseLaterItemIsDue,
+  shouldSkipScheduledItem,
   shouldWaitForObservedStart,
 } from "./strategy-scheduler";
 

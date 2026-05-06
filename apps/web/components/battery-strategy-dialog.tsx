@@ -10,9 +10,9 @@ import type { ComponentType } from "react";
 import { useEffect, useState } from "react";
 import { BatteryStrategyForm } from "./battery-strategy-form";
 import { BatteryStrategyPlanForm } from "./battery-strategy-plan-form";
-import { type SiteCurrentResponse, useLiveJsonSWR } from "./use-live-json-swr";
 import { Button } from "./ui/button";
 import { DialogPortal } from "./ui/dialog-portal";
+import { type SiteCurrentResponse, useLiveJsonSWR } from "./use-live-json-swr";
 
 const STRATEGY_REFRESH_INTERVAL_MS = 5_000;
 

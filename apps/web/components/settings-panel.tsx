@@ -23,7 +23,6 @@ import { usePathname, useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { formatKilowattHoursFromWh } from "../lib/energy-format";
 import {
   createDynamicPriceSourceAction,
   createSiteAction,
@@ -41,6 +40,7 @@ import {
   updateSiteAction,
   updateWeatherForecastSourceAction,
 } from "../app/actions";
+import { formatKilowattHoursFromWh } from "../lib/energy-format";
 import { UI_COLORS, UI_STYLES } from "../lib/ui-colors";
 import { cn } from "../lib/utils";
 import { DiscoveryPanel } from "./discovery-panel";
@@ -48,10 +48,10 @@ import { LocalApiPanel } from "./local-api-panel";
 import { MeasuredChartContainer } from "./measured-chart-container";
 import { SectionSummaryCard } from "./section-summary-card";
 import { SubmitButton } from "./submit-button";
-import { useFormActionToast } from "./use-form-action-toast";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader } from "./ui/card";
 import { DialogPortal } from "./ui/dialog-portal";
+import { useFormActionToast } from "./use-form-action-toast";
 
 type SettingsTab =
   | "devices"

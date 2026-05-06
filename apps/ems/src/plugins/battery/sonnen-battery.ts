@@ -1,6 +1,6 @@
 import {
-  deriveBatteryStatusFromPower,
   type ManagedDeviceState,
+  deriveBatteryStatusFromPower,
 } from "@emsd/core";
 import type { BatteryTelemetrySample } from "../../discovery-types";
 import {
@@ -75,6 +75,7 @@ export const sonnenBatteryPlugin: DiscoveryPlugin = {
       model: "sonnenbatterie",
       name: "sonnenBatterie",
       ipAddress,
+      port: 80,
       details: detailsParts.join(", "),
       powerW: batteryPower,
       socPercent: batterySoc,

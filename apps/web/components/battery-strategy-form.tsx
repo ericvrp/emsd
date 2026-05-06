@@ -11,7 +11,6 @@ import { setHouseStrategyAction } from "../app/actions";
 import { logBrowserIntervalHeartbeat } from "../lib/browser-heartbeat";
 import { formatKilowattHoursFromWh } from "../lib/energy-format";
 import { SubmitButton } from "./submit-button";
-import { useFormActionToast } from "./use-form-action-toast";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import {
@@ -21,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select";
+import { useFormActionToast } from "./use-form-action-toast";
 
 interface BatteryStrategyFormProps {
   action?: (formData: FormData) => Promise<ActionResult>;
@@ -208,9 +208,6 @@ export function BatteryStrategyForm({
     endTimeDurationMinutes,
     minimumDischargePercent,
     parsedDurationMinutes,
-    parsedManualChargeTargetSoc,
-    parsedManualDischargeTargetSoc,
-    parsedManualTargetSoc,
     resolvedManualPowerW,
     selectedAction,
     storedManualTargetSoc,

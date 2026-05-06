@@ -7,6 +7,7 @@ export interface DiscoveredDevice {
   ipAddress: string;
   model: string;
   name: string;
+  port: number | null;
   powerW: number | null;
   socPercent: number | null;
   state: "idle" | "charging" | "discharging" | "connected" | "offline" | null;
@@ -112,6 +113,7 @@ export function isDiscoveredDevice(value: unknown): value is DiscoveredDevice {
     typeof candidate.ipAddress === "string" &&
     typeof candidate.model === "string" &&
     typeof candidate.name === "string" &&
+    (typeof candidate.port === "number" || candidate.port === null) &&
     (typeof candidate.powerW === "number" || candidate.powerW === null) &&
     (typeof candidate.socPercent === "number" ||
       candidate.socPercent === null) &&
@@ -159,6 +161,7 @@ function serializeDiscoveredDevice(device: DiscoveredDevice) {
     ipAddress: device.ipAddress,
     model: device.model,
     name: device.name,
+    port: device.port,
     powerW: device.powerW,
     socPercent: device.socPercent,
     state: device.state,

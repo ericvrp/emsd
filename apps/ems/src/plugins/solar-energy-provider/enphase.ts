@@ -137,6 +137,7 @@ export const enphaseSolarEnergyProviderDiscoveryPlugin: DiscoveryPlugin = {
       ipAddress,
       model: ENPHASE_DISCOVERY_MODEL,
       name: ENPHASE_DISCOVERY_NAME,
+      port: 80,
       powerW: production.currentPowerW,
       socPercent: null,
       state: production.currentPowerW === null ? null : "connected",
@@ -675,7 +676,6 @@ function applyControlBooleanUpdate(value: unknown, enabled: boolean): boolean {
     if (isDisabledKey(normalizedKey) && typeof entry === "boolean") {
       (value as Record<string, unknown>)[key] = !enabled;
       changed = true;
-      continue;
     }
   }
 
@@ -704,7 +704,6 @@ function applyControlStringUpdate(value: unknown, enabled: boolean): boolean {
         ? "enabled"
         : "disabled";
       changed = true;
-      continue;
     }
   }
 

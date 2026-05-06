@@ -493,7 +493,10 @@ export function resolveDelayedChargingLowPriceMarkerEligibility(input: {
     p1MeterSamples: input.p1MeterSamples,
     solarEnergyProviderSamples: input.solarEnergyProviderSamples,
   });
-  const sharedLoadProfile = buildExpectedSiteLoadProfile(historySeries, input.now);
+  const sharedLoadProfile = buildExpectedSiteLoadProfile(
+    historySeries,
+    input.now,
+  );
   const loadProfile: LoadProfile = {
     expectedLoadBySlot: sharedLoadProfile.expectedLoadBySlot,
     fallbackLoadW: sharedLoadProfile.fallbackLoadW,

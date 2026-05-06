@@ -30,6 +30,7 @@ import {
   createSite,
   createSolarEnergyProvider,
   getBattery,
+  getSolarEnergyProvider,
 } from "./managed-site-store";
 
 const originalDatabasePath = process.env.EMSD_DB_PATH;
@@ -295,6 +296,50 @@ test("only one battery can be created for a site", () => {
   ).toThrow(SINGLE_BATTERY_LIMIT_ERROR);
 });
 
+test("solar-energy-provider-create preserves discovered port for managed settings", async () => {
+  const databasePath = createTempDatabase();
+
+  createSite(
+    {
+      id: "home",
+      location: "52.367600, 4.904100",
+      name: "Home",
+    },
+    databasePath,
+  );
+
+  const created = await runApiAction("solar-energy-provider-create", {
+    siteId: "home",
+    device: {
+      discoveryId: "solar-huawei-1",
+      category: "solar-energy-provider",
+      details: "model SUN2000-5KTL-L1, serial HV1234567890, port 6607",
+      ipAddress: "192.168.1.60",
+      model: "huawei-sun2000-modbus",
+      name: "Huawei SUN2000",
+      port: 6607,
+      powerW: 2450,
+      socPercent: null,
+      state: "connected",
+    },
+  });
+
+  expect(created).toMatchObject({
+    id: "solar-huawei-1",
+    kind: "solar-energy-provider",
+    address: "192.168.1.60:6607",
+    name: "Huawei SUN2000",
+  });
+  expect(
+    getSolarEnergyProvider("solar-huawei-1", "home", databasePath),
+  ).toMatchObject({
+    ipAddress: "192.168.1.60",
+    plugin: "huawei-sun2000-modbus",
+    port: 6607,
+    serialNumber: "HV1234567890",
+  });
+});
+
 test("discovery add all rejects selecting multiple new batteries", async () => {
   createTempDatabase();
 
@@ -314,6 +359,7 @@ test("discovery add all rejects selecting multiple new batteries", async () => {
           ipAddress: "192.168.1.10",
           model: "indevolt-battery",
           name: "Battery 1",
+          port: 8080,
           powerW: 800,
           socPercent: 60,
           state: "charging",
@@ -325,6 +371,7 @@ test("discovery add all rejects selecting multiple new batteries", async () => {
           ipAddress: "192.168.1.11",
           model: "indevolt-battery",
           name: "Battery 2",
+          port: 8080,
           powerW: 0,
           socPercent: 65,
           state: "idle",
@@ -1172,6 +1219,10 @@ test("house-strategy-plan-set does not mark unchanged plans as pending", async (
   expect(updated).not.toBeNull();
   expect(updated?.strategyRuntime.pendingPlanSavedAt).not.toBeNull();
 
+  if (!updated) {
+    throw new Error("Expected battery-1 to exist after saving strategy plan");
+  }
+
   const db = openDaemonDatabase(databasePath);
 
   try {
@@ -1179,7 +1230,7 @@ test("house-strategy-plan-set does not mark unchanged plans as pending", async (
       batteryId: "battery-1",
       siteId: "home",
       strategyRuntime: {
-        ...updated!.strategyRuntime,
+        ...updated.strategyRuntime,
         lastPlanAcknowledgedAt: new Date().toISOString(),
         pendingPlanSavedAt: null,
       },

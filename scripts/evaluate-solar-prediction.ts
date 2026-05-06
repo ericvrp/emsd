@@ -1,24 +1,24 @@
 import {
-  applySolarSeriesSmoothing,
-  buildPredictedSolarGenerationSeries,
-  buildSolarPredictionAccuracySummary,
-  DEFAULT_SOLAR_PREDICTION_SMOOTHING_MODE,
-  formatSolarPredictionSmoothingMode,
-  getDatabasePath,
-  isFlagArg,
-  parseIntegerArg,
-  parseStringArg,
-  SOLAR_PREDICTION_SMOOTHING_MODES,
-  type SolarEnergyProviderSampleRecord,
-  type SolarForecastSampleRecord,
-  type SolarPredictionSmoothingMode,
-} from "../packages/core/src/index";
-import {
   openDaemonDatabase,
   readSites,
   readSolarEnergyProviderSamples,
   readSolarForecastSamples,
 } from "../apps/daemon/src/database";
+import {
+  DEFAULT_SOLAR_PREDICTION_SMOOTHING_MODE,
+  SOLAR_PREDICTION_SMOOTHING_MODES,
+  type SolarEnergyProviderSampleRecord,
+  type SolarForecastSampleRecord,
+  type SolarPredictionSmoothingMode,
+  applySolarSeriesSmoothing,
+  buildPredictedSolarGenerationSeries,
+  buildSolarPredictionAccuracySummary,
+  formatSolarPredictionSmoothingMode,
+  getDatabasePath,
+  isFlagArg,
+  parseIntegerArg,
+  parseStringArg,
+} from "../packages/core/src/index";
 
 const DEFAULT_DAY_COUNT = 7;
 const DEFAULT_TOP_COMBINATIONS = 10;

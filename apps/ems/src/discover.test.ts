@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
+import { createServer } from "node:net";
 import type { NetworkInterfaceInfo } from "node:os";
 import {
   buildSubnetTargets,
@@ -7,6 +8,7 @@ import {
   formatDiscoveredDevices,
   formatDiscoveryTarget,
   formatHelpText,
+  getDiscoveryId,
   getDiscoverySignatures,
   getLocalIpv4Subnets,
   getPreferredDiscoveryTarget,
@@ -128,6 +130,14 @@ test("getDiscoverySignatures exposes the discovery plugin catalog", () => {
     {
       pluginType: "solar-energy-provider",
       category: "solar-energy-provider",
+      model: "huawei-sun2000-modbus",
+      name: "Huawei SUN2000",
+      port: 6607,
+      transport: "modbus",
+    },
+    {
+      pluginType: "solar-energy-provider",
+      category: "solar-energy-provider",
       model: "solaredge-local",
       name: "SolarEdge Inverter",
       port: 80,
@@ -148,8 +158,8 @@ test("fetchMeterTelemetry surfaces endpoint-specific connection errors", async (
     throw new Error("Was there a typo in the url or port?");
   }) as unknown as typeof fetch;
 
-  await expect(fetchMeterTelemetry("192.168.1.27")).rejects.toThrow(
-    "Meter telemetry request could not connect to http://192.168.1.27:80/api/v1/data",
+  await expect(fetchMeterTelemetry("127.0.0.1")).rejects.toThrow(
+    "Meter telemetry request could not connect to http://127.0.0.1:80/api/v1/data",
   );
 });
 
@@ -275,6 +285,7 @@ test("formatDiscoveredDevices renders concise one-line summaries", () => {
       model: "homewizard-p1",
       name: "HomeWizard P1",
       ipAddress: "192.168.1.27",
+      port: 80,
       details: "SMR 50",
       powerW: -16,
       socPercent: null,
@@ -286,6 +297,7 @@ test("formatDiscoveredDevices renders concise one-line summaries", () => {
       model: "indevolt-battery",
       name: "Indevolt Battery",
       ipAddress: "192.168.1.15",
+      port: 8080,
       details: "SOC 48%",
       powerW: -900,
       socPercent: 48,
@@ -300,6 +312,34 @@ test("formatDiscoveredDevices renders concise one-line summaries", () => {
 test("formatDiscoveredDevices renders the empty state", () => {
   expect(formatDiscoveredDevices([])).toBe(
     "No supported devices are reachable right now.",
+  );
+});
+
+test("getDiscoveryId stays stable when discovery payloads include port", () => {
+  expect(
+    getDiscoveryId({
+      category: "solar-energy-provider",
+      details: "serial 123456789012, port 6607",
+      ipAddress: "192.168.1.40",
+      model: "enphase-local",
+      name: "Enphase IQ Gateway",
+      port: 80,
+      powerW: 2550,
+      socPercent: null,
+      state: "connected",
+    }),
+  ).toBe(
+    getDiscoveryId({
+      category: "solar-energy-provider",
+      details: "serial 123456789012, port 6607",
+      ipAddress: "192.168.1.40",
+      model: "enphase-local",
+      name: "Enphase IQ Gateway",
+      port: null,
+      powerW: 2550,
+      socPercent: null,
+      state: "connected",
+    }),
   );
 });
 
@@ -349,6 +389,7 @@ test("discoverHostDevices enriches HomeWizard P1 matches with measurement detail
       model: "homewizard-p1",
       name: "HomeWizard P1",
       ipAddress: "192.168.1.27",
+      port: 80,
     });
     expect(devices[0]?.discoveryId).toMatch(/^[a-f0-9]{12}$/);
     expect(devices[0]?.details).toContain("SMR 50");
@@ -414,6 +455,7 @@ test("discoverHostDevices matches a sonnen battery from the status endpoint", as
       model: "sonnenbatterie",
       name: "sonnenBatterie",
       ipAddress: "192.168.1.88",
+      port: 80,
       powerW: 1300,
       socPercent: 61,
       state: "discharging",
@@ -472,6 +514,7 @@ test("discoverHostDevices matches an Enphase IQ Gateway from info.xml", async ()
       model: "enphase-local",
       name: "Enphase IQ Gateway",
       ipAddress: "192.168.1.40",
+      port: 80,
       powerW: 2550,
       state: "connected",
     });
@@ -559,6 +602,7 @@ test("discoverHostDevices matches a HomeWizard battery controller", async () => 
       model: "homewizard-battery",
       name: "HomeWizard Battery",
       ipAddress: "192.168.1.44",
+      port: 443,
       powerW: 404,
       socPercent: null,
       state: "discharging",
@@ -630,8 +674,163 @@ test("runDiscoverCommand prints concise output by default and JSON with --verbos
     });
     expect(verboseReport.devices).toHaveLength(1);
     expect(verboseReport.devices[0]?.discoveryId).toMatch(/^[a-f0-9]{12}$/);
+    expect(verboseReport.devices[0]?.port).toBe(80);
   } finally {
     globalThis.fetch = originalFetch;
     console.log = originalLog;
   }
 });
+
+test("discoverHostDevices matches a Huawei SUN2000 over Modbus", async () => {
+  const mock = await startHuaweiModbusServer();
+
+  try {
+    const devices = await discoverHostDevices("127.0.0.1", {
+      verbose: false,
+      host: "127.0.0.1",
+    });
+
+    expect(devices).toHaveLength(1);
+    expect(devices[0]).toMatchObject({
+      category: "solar-energy-provider",
+      model: "huawei-sun2000-modbus",
+      name: "Huawei SUN2000",
+      ipAddress: "127.0.0.1",
+      port: 6607,
+      powerW: 2450,
+      state: "connected",
+    });
+    expect(devices[0]?.details).toContain("model SUN2000-5KTL-L1");
+    expect(devices[0]?.details).toContain("port 6607");
+  } finally {
+    mock.server.close();
+  }
+});
+
+async function startHuaweiModbusServer() {
+  let controlLimitW = 5000;
+  const server = createServer((socket) => {
+    socket.on("data", (data) => {
+      const transactionId = data.readUInt16BE(0);
+      const unitId = data.readUInt8(6);
+      const functionCode = data.readUInt8(7);
+
+      if (functionCode === 0x2b) {
+        socket.write(
+          buildModbusFrame(
+            transactionId,
+            unitId,
+            Buffer.concat([
+              Buffer.from([0x2b, 0x0e, 0x01, 0x01, 0x00, 0x00, 0x03]),
+              encodeDeviceIdObject(0x00, "HUAWEI"),
+              encodeDeviceIdObject(0x01, "SUN2000"),
+              encodeDeviceIdObject(0x02, "V100R001"),
+            ]),
+          ),
+        );
+        return;
+      }
+
+      if (functionCode === 0x03) {
+        const address = data.readUInt16BE(8);
+        const quantity = data.readUInt16BE(10);
+        const registers =
+          address === 30000
+            ? encodeStringRegisters("SUN2000-5KTL-L1", quantity)
+            : address === 30015
+              ? encodeStringRegisters("HV1234567890", quantity)
+              : address === 31025
+                ? encodeStringRegisters("V100R001", quantity)
+                : address === 32080
+                  ? encodeUint32Registers(2450)
+                  : address === 30075
+                    ? encodeUint32Registers(5000)
+                    : address === 40126
+                      ? encodeUint32Registers(controlLimitW)
+                      : new Array(quantity).fill(0);
+        const body = Buffer.allocUnsafe(registers.length * 2);
+
+        for (let index = 0; index < registers.length; index += 1) {
+          body.writeUInt16BE(registers[index] ?? 0, index * 2);
+        }
+
+        socket.write(
+          buildModbusFrame(
+            transactionId,
+            unitId,
+            Buffer.concat([Buffer.from([0x03, body.length]), body]),
+          ),
+        );
+        return;
+      }
+
+      if (functionCode === 0x10) {
+        const address = data.readUInt16BE(8);
+        const quantity = data.readUInt16BE(10);
+
+        if (address === 40126 && quantity === 2) {
+          controlLimitW = data.readUInt32BE(13);
+        }
+
+        socket.write(
+          buildModbusFrame(
+            transactionId,
+            unitId,
+            Buffer.from([
+              0x10,
+              data[8] ?? 0,
+              data[9] ?? 0,
+              data[10] ?? 0,
+              data[11] ?? 0,
+            ]),
+          ),
+        );
+      }
+    });
+  });
+
+  await new Promise<void>((resolve) =>
+    server.listen(6607, "127.0.0.1", resolve),
+  );
+  const address = server.address();
+
+  if (!address || typeof address === "string") {
+    throw new Error("Failed to resolve mock Huawei Modbus port.");
+  }
+
+  return { port: address.port, server };
+}
+
+function buildModbusFrame(
+  transactionId: number,
+  unitId: number,
+  pdu: Buffer,
+): Buffer {
+  const header = Buffer.allocUnsafe(7);
+  header.writeUInt16BE(transactionId, 0);
+  header.writeUInt16BE(0, 2);
+  header.writeUInt16BE(pdu.length + 1, 4);
+  header.writeUInt8(unitId, 6);
+  return Buffer.concat([header, pdu]);
+}
+
+function encodeDeviceIdObject(objectId: number, value: string): Buffer {
+  const text = Buffer.from(value, "utf8");
+  return Buffer.concat([Buffer.from([objectId, text.length]), text]);
+}
+
+function encodeStringRegisters(value: string, quantity: number): number[] {
+  const buffer = Buffer.alloc(quantity * 2);
+  Buffer.from(value, "utf8").copy(buffer, 0, 0, quantity * 2);
+  const registers: number[] = [];
+
+  for (let index = 0; index < quantity; index += 1) {
+    registers.push(buffer.readUInt16BE(index * 2));
+  }
+
+  return registers;
+}
+
+function encodeUint32Registers(value: number): number[] {
+  return [(value >> 16) & 0xffff, value & 0xffff];
+}

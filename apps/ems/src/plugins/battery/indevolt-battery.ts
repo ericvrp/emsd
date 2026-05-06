@@ -72,6 +72,7 @@ export const indevoltBatteryPlugin: DiscoveryPlugin = {
       model: "indevolt-battery",
       name: "Indevolt Battery",
       ipAddress,
+      port: 8080,
       details: detailsParts.join(", "),
       powerW: telemetryPowerW,
       socPercent: parseNullableNumber(payload?.["6002"]),

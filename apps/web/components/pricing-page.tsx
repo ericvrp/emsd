@@ -82,10 +82,7 @@ export function PricingSection({
     ? formatPriceCoverageSummary(snapshot.points)
     : null;
   const currentPricePoint =
-    getActivePricePointAtOrBefore(
-      snapshot?.points ?? [],
-      Date.now(),
-    ) ??
+    getActivePricePointAtOrBefore(snapshot?.points ?? [], Date.now()) ??
     snapshot?.points[0] ??
     null;
   const priceCurrency = snapshot?.currency ?? "EUR";
@@ -168,9 +165,7 @@ export function PricingSection({
                 }
               />
             }
-            valueFormatter={(value) =>
-              formatPricePerKwh(value, priceCurrency)
-            }
+            valueFormatter={(value) => formatPricePerKwh(value, priceCurrency)}
             visibilitySeriesId={PRICE_CHART_SERIES_ID}
             visibilityStorageKey={PRICE_CHART_VISIBILITY_STORAGE_KEY}
             {...(priceAxisDomain ? { yAxisDomain: priceAxisDomain } : {})}

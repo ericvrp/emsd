@@ -1,6 +1,5 @@
 import { openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import {
-  acknowledgePendingBatteryStrategyPlan,
   type BatteryRecord,
   type BatteryStrategyPlanItem,
   BatteryStrategyTriggerKind,
@@ -12,6 +11,7 @@ import {
   type SiteRecord,
   type WeatherForecastRecord,
   type WeatherForecastSourceRecord,
+  acknowledgePendingBatteryStrategyPlan,
   clearActiveBatteryStrategyRuntime,
   ensureParentDirectory,
   formatBatteryStrategyDisplayState,
@@ -24,8 +24,8 @@ import {
   isBatteryStrategyPriceTrigger,
   isBatteryStrategyTriggerNeedingPriceSamples,
   isDelayedChargingAutoDischargeItem,
-  resolveEstimatedManualState,
   resolveBatteryStrategyFromPlanItem,
+  resolveEstimatedManualState,
 } from "@emsd/core";
 import { createBatteryPlugin } from "../../ems/src/battery-plugins";
 import { fetchMeterTelemetry } from "../../ems/src/discover";
@@ -827,27 +827,52 @@ async function runScheduledStrategy(
     typeof resolveDelayedChargingLowPriceMarkerEligibility
   > | null = null;
 
-  const getBatteryPowerSamples = () =>
-    (batteryPowerSamples ??= readBatteryPowerSamples(db, battery.siteId));
-  const getP1MeterSamples = () =>
-    (p1MeterSamples ??= readP1MeterSamples(db, battery.siteId));
-  const getSolarEnergyProviderSamples = () =>
-    (solarEnergyProviderSamples ??= readSolarEnergyProviderSamples(
-      db,
-      battery.siteId,
-    ));
-  const getSolarForecastSamples = () =>
-    (solarForecastSamples ??= readSolarForecastSamples(db, battery.siteId));
-  const getDelayedChargingMarkerEligibility = () =>
-    (delayedChargingMarkerEligibility ??=
-      resolveDelayedChargingLowPriceMarkerEligibility({
-        batteryPowerSamples: getBatteryPowerSamples(),
-        dynamicPriceSamples,
-        now,
-        p1MeterSamples: getP1MeterSamples(),
-        solarEnergyProviderSamples: getSolarEnergyProviderSamples(),
-        solarForecastSamples: getSolarForecastSamples(),
-      }));
+  const getBatteryPowerSamples = () => {
+    if (batteryPowerSamples === null) {
+      batteryPowerSamples = readBatteryPowerSamples(db, battery.siteId);
+    }
+
+    return batteryPowerSamples;
+  };
+  const getP1MeterSamples = () => {
+    if (p1MeterSamples === null) {
+      p1MeterSamples = readP1MeterSamples(db, battery.siteId);
+    }
+
+    return p1MeterSamples;
+  };
+  const getSolarEnergyProviderSamples = () => {
+    if (solarEnergyProviderSamples === null) {
+      solarEnergyProviderSamples = readSolarEnergyProviderSamples(
+        db,
+        battery.siteId,
+      );
+    }
+
+    return solarEnergyProviderSamples;
+  };
+  const getSolarForecastSamples = () => {
+    if (solarForecastSamples === null) {
+      solarForecastSamples = readSolarForecastSamples(db, battery.siteId);
+    }
+
+    return solarForecastSamples;
+  };
+  const getDelayedChargingMarkerEligibility = () => {
+    if (delayedChargingMarkerEligibility === null) {
+      delayedChargingMarkerEligibility =
+        resolveDelayedChargingLowPriceMarkerEligibility({
+          batteryPowerSamples: getBatteryPowerSamples(),
+          dynamicPriceSamples,
+          now,
+          p1MeterSamples: getP1MeterSamples(),
+          solarEnergyProviderSamples: getSolarEnergyProviderSamples(),
+          solarForecastSamples: getSolarForecastSamples(),
+        });
+    }
+
+    return delayedChargingMarkerEligibility;
+  };
 
   const resolveScheduledActivationCandidate = (
     minimumPlanIndex: number,
@@ -1007,9 +1032,8 @@ async function runScheduledStrategy(
         const markerEligibility = getDelayedChargingMarkerEligibility();
 
         if (!markerEligibility.eligible) {
-          const skipReason = formatDelayedChargingLowPriceMarkerSkipReason(
-            markerEligibility,
-          );
+          const skipReason =
+            formatDelayedChargingLowPriceMarkerSkipReason(markerEligibility);
 
           logInfoWithVerboseDetails(
             verbose,

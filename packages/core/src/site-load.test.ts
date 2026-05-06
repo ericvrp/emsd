@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
 import {
-  buildHouseLoadHistorySeries,
+  type SiteLoadPoint,
   buildExpectedSiteLoadProfile,
   buildExpectedSiteLoadSeriesForLocalDay,
+  buildHouseLoadHistorySeries,
   fillSiteLoadSeriesForLocalDay,
   resolveExpectedSiteLoadW,
-  type SiteLoadPoint,
 } from "./index";
 
 test("resolveExpectedSiteLoadW uses a fallback profile value for missing slots", () => {

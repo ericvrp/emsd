@@ -1,7 +1,7 @@
 "use client";
 
 import type { HistoryArchive, WeatherForecastRecord } from "@emsd/core/client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
 
 const DEFAULT_RETRY_INTERVAL_MS = 5_000;
@@ -93,12 +93,19 @@ export function useLiveJsonSWR<T>(
   },
 ) {
   const [consecutiveFailureCount, setConsecutiveFailureCount] = useState(0);
+  const requestKey = enabled ? url : null;
+  const previousRequestKeyRef = useRef(requestKey);
 
   useEffect(() => {
-    setConsecutiveFailureCount(0);
-  }, [url]);
+    if (previousRequestKeyRef.current === requestKey) {
+      return;
+    }
 
-  const swr = useSWR<T>(enabled ? url : null, fetchJson<T>, {
+    previousRequestKeyRef.current = requestKey;
+    setConsecutiveFailureCount(0);
+  });
+
+  const swr = useSWR<T>(requestKey, fetchJson<T>, {
     dedupingInterval: dedupingIntervalMs,
     onError: (error) => {
       if (error instanceof ClientRequestError && error.status === 401) {

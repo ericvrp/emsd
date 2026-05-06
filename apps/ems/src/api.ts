@@ -189,6 +189,7 @@ function isDiscoveredDevice(value: unknown): value is DiscoveredDevice {
     typeof candidate.ipAddress === "string" &&
     typeof candidate.model === "string" &&
     typeof candidate.name === "string" &&
+    (typeof candidate.port === "number" || candidate.port === null) &&
     (typeof candidate.powerW === "number" || candidate.powerW === null) &&
     (typeof candidate.socPercent === "number" ||
       candidate.socPercent === null) &&
@@ -241,7 +242,7 @@ function inferBatteryPowerW(details: string): number | null {
 }
 
 function parseDiscoverySerialNumber(details: string): string | null {
-  const matched = details.match(/serial\s+(\d{6,})/i)?.[1] ?? null;
+  const matched = details.match(/serial\s+([^,]+)/i)?.[1]?.trim() ?? null;
   return matched && matched.length > 0 ? matched : null;
 }
 
@@ -333,6 +334,7 @@ function createManagedSolarEnergyProviderFromDiscovered(
       ipAddress: discovered.ipAddress,
       name: discovered.name,
       plugin: discovered.model,
+      port: discovered.port,
       serialNumber: parseDiscoverySerialNumber(discovered.details),
     },
     siteId,
@@ -351,7 +353,10 @@ function toManagedDeviceRecord(
         kind: "solar-energy-provider",
         name: record.name,
         model: record.name,
-        address: record.ipAddress,
+        address:
+          typeof record.port === "number"
+            ? `${record.ipAddress}:${record.port}`
+            : record.ipAddress,
         enabled: record.enabled,
         connected: record.connected,
         state: record.connected ? "connected" : "offline",

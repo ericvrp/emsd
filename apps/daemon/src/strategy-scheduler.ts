@@ -1,6 +1,6 @@
 import {
-  PRICE_SELECTION_WINDOW_MS,
   BatteryStrategyTriggerKind,
+  PRICE_SELECTION_WINDOW_MS,
   findPriceSelections,
   isBatteryStrategyPriceTrigger,
   isDelayedChargingAutoDischargeItem,

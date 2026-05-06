@@ -1,6 +1,6 @@
 import {
-  deriveBatteryStatusFromPower,
   type ManagedDeviceState,
+  deriveBatteryStatusFromPower,
 } from "@emsd/core";
 import type { BatteryTelemetrySample } from "../../discovery-types";
 import {
@@ -74,6 +74,7 @@ export const homeWizardBatteryPlugin: DiscoveryPlugin = {
       model: "homewizard-battery",
       name: "HomeWizard Battery",
       ipAddress,
+      port: 443,
       details: detailsParts.join(", "),
       powerW,
       socPercent: null,

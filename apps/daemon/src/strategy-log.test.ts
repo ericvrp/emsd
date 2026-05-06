@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import {
-  BatteryStrategyTriggerKind,
   type BatteryRecord,
   type BatteryStrategyPlanItem,
   type BatteryStrategyRuntimeRecord,
+  BatteryStrategyTriggerKind,
 } from "@emsd/core";
 import {
   describeCurrentBatteryStrategyHuman,

@@ -77,6 +77,7 @@ interface SolarEnergyProviderRow {
   name: string;
   plugin: string;
   ip_address: string;
+  port: number | null;
   enabled: number;
   connected: number;
   serial_number: string | null;
@@ -282,6 +283,7 @@ export function openDaemonDatabase(databasePath = getDatabasePath()): Database {
       name TEXT NOT NULL,
       plugin TEXT NOT NULL,
       ip_address TEXT NOT NULL,
+      port INTEGER,
       enabled INTEGER NOT NULL,
       connected INTEGER NOT NULL,
       serial_number TEXT,
@@ -550,7 +552,7 @@ export function readSolarEnergyProviders(
   const rows = db
     .query<SolarEnergyProviderRow, []>(
       `
-        SELECT id, site_id, name, plugin, ip_address, enabled, connected, serial_number, updated_at
+        SELECT id, site_id, name, plugin, ip_address, port, enabled, connected, serial_number, updated_at
         FROM solar_energy_providers
         ORDER BY name ASC, id ASC
       `,
@@ -563,6 +565,7 @@ export function readSolarEnergyProviders(
     name: row.name,
     plugin: row.plugin,
     ipAddress: row.ip_address,
+    port: row.port,
     enabled: row.enabled === 1,
     connected: row.connected === 1,
     serialNumber: row.serial_number,
@@ -860,6 +863,10 @@ function ensureSolarEnergyProviderColumns(db: Database): void {
         WHERE details LIKE '%serial %' AND (serial_number IS NULL OR serial_number = '')
       `);
     }
+  }
+
+  if (!columns.includes("port")) {
+    db.exec("ALTER TABLE solar_energy_providers ADD COLUMN port INTEGER;");
   }
 }
 
