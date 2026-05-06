@@ -17,9 +17,7 @@ test("ModbusTcpClient can reconnect after an initial connection failure", async 
     /Modbus connection failed|Modbus connection timed out/,
   );
 
-  await new Promise<void>((resolve) =>
-    server.listen(port, "127.0.0.1", resolve),
-  );
+  await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", resolve));
 
   try {
     await expect(client.connect()).resolves.toBeUndefined();

@@ -605,13 +605,6 @@ function GridOverviewTooltip({
         <div className="mt-2 border-t border-white/10 pt-2">
           <div className="space-y-1.5">
             <TooltipDetailRow
-              label="Net Energy Earnings"
-              value={formatCurrencyAmount(
-                -point.cumulativeNetCost,
-                priceCurrency,
-              )}
-            />
-            <TooltipDetailRow
               label="Import Cost"
               value={formatCurrencyAmount(
                 point.cumulativeImportCost,
@@ -622,6 +615,13 @@ function GridOverviewTooltip({
               label="Export Earnings"
               value={formatCurrencyAmount(
                 point.cumulativeExportEarnings,
+                priceCurrency,
+              )}
+            />
+            <TooltipDetailRow
+              label="Net Energy Earnings"
+              value={formatCurrencyAmount(
+                -point.cumulativeNetCost,
                 priceCurrency,
               )}
             />

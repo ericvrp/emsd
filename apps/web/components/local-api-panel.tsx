@@ -464,7 +464,7 @@ export function LocalApiPanel() {
     }
 
     const yaml = `rest:
-  - resource: http://${host}${ROUTE_PATH}${buildExcludeQuery()}
+  - resource: http://${host}${ROUTE_PATH}${excludeQuery}
     scan_interval: ${scanInterval}
     timeout: 10
     headers:

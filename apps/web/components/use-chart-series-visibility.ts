@@ -11,9 +11,11 @@ export function useChartSeriesVisibility({
   seriesIds: string[];
   storageKey: string | undefined;
 }) {
+  const seriesIdsKey = seriesIds.join(",");
   const defaultVisibility = useMemo(
     () => buildDefaultVisibility(seriesIds),
-    [seriesIds],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [seriesIdsKey],
   );
   const [visibility, setVisibility] = useState<VisibilityState | null>(null);
 
