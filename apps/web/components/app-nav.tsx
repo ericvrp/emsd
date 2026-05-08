@@ -18,7 +18,7 @@ export function AppNav() {
   ];
 
   return (
-    <nav className="flex flex-wrap items-center gap-6" aria-label="Primary">
+    <nav className="flex flex-wrap items-center gap-4 md:gap-5" aria-label="Primary">
       {navItems.map(({ href, icon: Icon, label }) => {
         const params = new URLSearchParams();
 
@@ -36,6 +36,7 @@ export function AppNav() {
             key={href}
             className={cn(
               UI_STYLES.tabItem,
+              "px-1 py-1",
               pathname === href
                 ? UI_STYLES.appNavActive
                 : UI_STYLES.appNavInactive,

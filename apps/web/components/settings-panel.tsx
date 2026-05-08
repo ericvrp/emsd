@@ -48,6 +48,7 @@ import { LocalApiPanel } from "./local-api-panel";
 import { MeasuredChartContainer } from "./measured-chart-container";
 import { SectionSummaryCard } from "./section-summary-card";
 import { SubmitButton } from "./submit-button";
+import { useMatchedCardHeights } from "./use-matched-card-heights";
 import { useLiveJsonSWR } from "./use-live-json-swr";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader } from "./ui/card";
@@ -124,6 +125,9 @@ export function SettingsPanel({
           ...currentSite,
           devices: liveDevices.data?.devices ?? currentSite.devices,
         };
+  const matchedDeviceCardsRef = useMatchedCardHeights(
+    deviceSite?.devices.map((device) => device.id) ?? [],
+  );
 
   return (
     <Card className="overflow-hidden border-white/10 bg-slate-950/75">
@@ -189,10 +193,18 @@ export function SettingsPanel({
         </div>
       </CardHeader>
 
-      <CardContent className="space-y-5 pt-5">
+      <CardContent
+        className={cn(
+          "space-y-5 pt-5",
+          activeTab === "discover" ? "pb-2 sm:pb-3" : undefined,
+        )}
+      >
         {activeTab === "devices" ? (
           deviceSite ? (
-            <section className="grid gap-4 xl:grid-cols-3">
+            <section
+              className="grid gap-4 xl:grid-cols-3"
+              ref={matchedDeviceCardsRef}
+            >
               <ResourceSection title="Batteries">
                 <DeviceList
                   kind="battery"
@@ -758,254 +770,241 @@ function DeviceList({
       {devices.map((device) => {
         return (
           <article
+            data-matched-card
             key={device.id}
-            className={`flex min-h-[440px] flex-col rounded-[1.4rem] border border-white/10 bg-white/5 p-4 ${kind === "battery" ? "ring-1 ring-cyan-300/5" : kind === "meter" ? "ring-1 ring-violet-300/5" : "ring-1 ring-amber-300/5"}`}
+            className={`rounded-[1.4rem] border border-white/10 bg-white/5 p-4 ${kind === "battery" ? "ring-1 ring-cyan-300/5" : kind === "meter" ? "ring-1 ring-violet-300/5" : "ring-1 ring-amber-300/5"}`}
           >
-            <div className="min-w-0">
-              <h4 className="truncate text-base font-semibold text-white">
-                {device.name}
-              </h4>
-              <p className="mt-1 truncate text-xs text-slate-400">
-                {device.id}
-              </p>
-            </div>
-            <dl className="mt-4 grid flex-1 content-start gap-3 text-sm text-slate-300 sm:grid-cols-2">
-              <MetaItem label="Model" value={device.model} />
-              <MetaItem label="Address" value={device.address} />
-              {kind === "battery" ? (
+            <div className="flex h-full flex-col" data-matched-card-content>
+              <div className="min-w-0">
+                <h4 className="truncate text-base font-semibold text-white">
+                  {device.name}
+                </h4>
+                <p className="mt-1 truncate text-xs text-slate-400">
+                  {device.id}
+                </p>
+              </div>
+              <dl className="mt-4 grid flex-1 content-start gap-3 text-sm text-slate-300 sm:grid-cols-2">
+                <MetaItem label="Model" value={device.model} />
+                <MetaItem label="Address" value={device.address} />
+                {kind === "battery" ? (
+                  <MetaItem
+                    label="SoC"
+                    value={
+                      device.telemetry?.socPercent !== null &&
+                      device.telemetry?.socPercent !== undefined
+                        ? `${Math.round(device.telemetry.socPercent)}%`
+                        : "Unavailable"
+                    }
+                  />
+                ) : null}
+                {kind === "battery" ? (
+                  <MetaItem
+                    label="Capacity"
+                    value={formatCapacity(device.telemetry?.capacityWh)}
+                  />
+                ) : null}
                 <MetaItem
-                  label="SoC"
+                  label="Power"
                   value={
-                    device.telemetry?.socPercent !== null &&
-                    device.telemetry?.socPercent !== undefined
-                      ? `${Math.round(device.telemetry.socPercent)}%`
+                    device.telemetry?.powerW !== null &&
+                    device.telemetry?.powerW !== undefined
+                      ? `${Math.round(device.telemetry.powerW)} W`
                       : "Unavailable"
                   }
                 />
-              ) : null}
-              {kind === "battery" ? (
-                <MetaItem
-                  label="Capacity"
-                  value={formatCapacity(device.telemetry?.capacityWh)}
-                />
-              ) : null}
-              <MetaItem
-                label="Power"
-                value={
-                  device.telemetry?.powerW !== null &&
-                  device.telemetry?.powerW !== undefined
-                    ? `${Math.round(device.telemetry.powerW)} W`
-                    : "Unavailable"
-                }
-              />
-              {kind === "solar-energy-provider" ? (
-                <MetaItem
-                  label="Production control"
-                  value={formatProductionControlStatus(
-                    device.telemetry?.productionControlStatus,
-                  )}
-                />
-              ) : null}
-              {kind === "battery" ? (
-                <form
-                  action={updateBatterySettingsFormAction}
-                  className="rounded-2xl border border-white/8 bg-slate-950/55 px-3 py-2"
-                  id={`battery-settings-${device.id}`}
-                >
-                  <input type="hidden" name="returnPath" value={returnPath} />
-                  <input type="hidden" name="siteId" value={site.id} />
-                  <input type="hidden" name="batteryId" value={device.id} />
-                  <input type="hidden" name="batteryName" value={device.name} />
-                  <div className="space-y-3">
-                    <label className="block space-y-2">
-                      <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                        Maximum charge power
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <input
-                          className="w-full rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-cyan-400/50"
-                          defaultValue={device.maximumChargePowerW ?? 800}
-                          max={2400}
-                          min={800}
-                          name="maximumChargePowerW"
-                          step={10}
-                          type="number"
-                        />
-                        <span className="text-sm text-slate-400">W</span>
-                      </div>
-                    </label>
-                    <label className="block space-y-2">
-                      <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                        Maximum discharge power
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <input
-                          className="w-full rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-cyan-400/50"
-                          defaultValue={device.maximumDischargePowerW ?? 800}
-                          max={2400}
-                          min={800}
-                          name="maximumDischargePowerW"
-                          step={10}
-                          type="number"
-                        />
-                        <span className="text-sm text-slate-400">W</span>
-                      </div>
-                    </label>
-                    <label className="block space-y-2">
-                      <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                        Backup reserve
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <input
-                          className="w-full rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-cyan-400/50"
-                          defaultValue={device.minimumDischargePercent ?? 10}
-                          max={100}
-                          min={10}
-                          name="minimumDischargePercent"
-                          step={1}
-                          type="number"
-                        />
-                        <span className="text-sm text-slate-400">%</span>
-                      </div>
-                    </label>
-                  </div>
-                </form>
-              ) : null}
-              {kind === "solar-energy-provider" ? (
-                <form
-                  action={setSolarProductionFormAction}
-                  className="rounded-2xl border border-white/8 bg-slate-950/55 px-3 py-3 sm:col-span-2"
-                  id={`solar-provider-settings-${device.id}`}
-                >
-                  <input type="hidden" name="returnPath" value={returnPath} />
-                  <input type="hidden" name="siteId" value={site.id} />
-                  <input
-                    type="hidden"
-                    name="solarEnergyProviderId"
-                    value={device.id}
+                {kind === "solar-energy-provider" ? (
+                  <MetaItem
+                    label="Production control"
+                    value={formatProductionControlStatus(
+                      device.telemetry?.productionControlStatus,
+                    )}
                   />
-                  <input
-                    type="hidden"
-                    name="solarEnergyProviderName"
-                    value={device.name}
-                  />
-                  <input
-                    type="hidden"
-                    name="solarEnergyProviderModel"
-                    value={device.model}
-                  />
-                  <div className="space-y-3">
-                    <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                        Solar production
-                      </p>
-                      <p className="mt-1 text-sm text-slate-100">
-                        Provider-reported state:{" "}
-                        {formatProductionControlStatus(
-                          device.telemetry?.productionControlStatus,
-                        )}
-                      </p>
-                      {device.telemetry?.productionControlStatus ===
-                        "unavailable" ||
-                      device.telemetry?.productionControlStatus === null ||
-                      device.telemetry?.productionControlStatus ===
-                        undefined ? (
-                        <p className="mt-1 text-xs leading-5 text-slate-400">
-                          Not supported by this provider or the current account.
-                        </p>
-                      ) : null}
+                ) : null}
+                {kind === "battery" ? (
+                  <form
+                    action={updateBatterySettingsFormAction}
+                    className="rounded-2xl border border-white/8 bg-slate-950/55 px-3 py-2"
+                    id={`battery-settings-${device.id}`}
+                  >
+                    <input type="hidden" name="returnPath" value={returnPath} />
+                    <input type="hidden" name="siteId" value={site.id} />
+                    <input type="hidden" name="batteryId" value={device.id} />
+                    <input type="hidden" name="batteryName" value={device.name} />
+                    <div className="space-y-3">
+                      <label className="block space-y-2">
+                        <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                          Maximum charge power
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <input
+                            className="w-full rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-cyan-400/50"
+                            defaultValue={device.maximumChargePowerW ?? 800}
+                            max={2400}
+                            min={800}
+                            name="maximumChargePowerW"
+                            step={10}
+                            type="number"
+                          />
+                          <span className="text-sm text-slate-400">W</span>
+                        </div>
+                      </label>
+                      <label className="block space-y-2">
+                        <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                          Maximum discharge power
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <input
+                            className="w-full rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-cyan-400/50"
+                            defaultValue={device.maximumDischargePowerW ?? 800}
+                            max={2400}
+                            min={800}
+                            name="maximumDischargePowerW"
+                            step={10}
+                            type="number"
+                          />
+                          <span className="text-sm text-slate-400">W</span>
+                        </div>
+                      </label>
+                      <label className="block space-y-2">
+                        <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                          Backup reserve
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <input
+                            className="w-full rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-cyan-400/50"
+                            defaultValue={device.minimumDischargePercent ?? 10}
+                            max={100}
+                            min={10}
+                            name="minimumDischargePercent"
+                            step={1}
+                            type="number"
+                          />
+                          <span className="text-sm text-slate-400">%</span>
+                        </div>
+                      </label>
                     </div>
-                    <label className="block space-y-2">
-                      <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                        Desired state
-                      </span>
-                      <select
-                        className="w-full rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-cyan-400/50 disabled:cursor-not-allowed disabled:opacity-60"
-                        defaultValue={
-                          device.telemetry?.productionControlStatus ===
-                          "disabled"
-                            ? "disabled"
-                            : "enabled"
-                        }
-                        disabled={
-                          device.telemetry?.productionControlStatus ===
-                            "unavailable" ||
-                          device.telemetry?.productionControlStatus === null ||
-                          device.telemetry?.productionControlStatus ===
-                            undefined
-                        }
-                        name="productionControlStatus"
-                      >
-                        <option value="enabled">Enabled</option>
-                        <option value="disabled">Disabled</option>
-                      </select>
-                    </label>
-                  </div>
-                </form>
-              ) : null}
-            </dl>
-            <div className="mt-auto pt-4 flex flex-wrap gap-2">
-              {kind === "battery" ? (
-                <Button
-                  className={secondaryButtonClass}
-                  form={`battery-settings-${device.id}`}
-                  type="submit"
-                >
-                  <Save size={14} />
-                  Save
-                </Button>
-              ) : null}
-              {kind === "solar-energy-provider" ? (
-                <Button
-                  className={secondaryButtonClass}
-                  disabled={
-                    device.telemetry?.productionControlStatus ===
-                      "unavailable" ||
-                    device.telemetry?.productionControlStatus === null ||
-                    device.telemetry?.productionControlStatus === undefined
+                  </form>
+                ) : null}
+                {kind === "solar-energy-provider" &&
+                device.telemetry?.productionControlStatus !== "unavailable" &&
+                device.telemetry?.productionControlStatus !== null &&
+                device.telemetry?.productionControlStatus !== undefined ? (
+                  <form
+                    action={setSolarProductionFormAction}
+                    className="rounded-2xl border border-white/8 bg-slate-950/55 px-3 py-3 sm:col-span-2"
+                    id={`solar-provider-settings-${device.id}`}
+                  >
+                    <input type="hidden" name="returnPath" value={returnPath} />
+                    <input type="hidden" name="siteId" value={site.id} />
+                    <input
+                      type="hidden"
+                      name="solarEnergyProviderId"
+                      value={device.id}
+                    />
+                    <input
+                      type="hidden"
+                      name="solarEnergyProviderName"
+                      value={device.name}
+                    />
+                    <input
+                      type="hidden"
+                      name="solarEnergyProviderModel"
+                      value={device.model}
+                    />
+                    <div className="space-y-3">
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                          Solar production
+                        </p>
+                        <p className="mt-1 text-sm text-slate-100">
+                          Provider-reported state:{" "}
+                          {formatProductionControlStatus(
+                            device.telemetry?.productionControlStatus,
+                          )}
+                        </p>
+                      </div>
+                      <label className="block space-y-2">
+                        <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                          Desired state
+                        </span>
+                        <select
+                          className="w-full rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-cyan-400/50 disabled:cursor-not-allowed disabled:opacity-60"
+                          defaultValue={
+                            device.telemetry?.productionControlStatus ===
+                            "disabled"
+                              ? "disabled"
+                              : "enabled"
+                          }
+                          name="productionControlStatus"
+                        >
+                          <option value="enabled">Enabled</option>
+                          <option value="disabled">Disabled</option>
+                        </select>
+                      </label>
+                    </div>
+                  </form>
+                ) : null}
+              </dl>
+              <div className="mt-auto flex flex-wrap gap-2 pt-4">
+                {kind === "battery" ? (
+                  <Button
+                    className={secondaryButtonClass}
+                    form={`battery-settings-${device.id}`}
+                    type="submit"
+                  >
+                    <Save size={14} />
+                    Save
+                  </Button>
+                ) : null}
+                {kind === "solar-energy-provider" &&
+                device.telemetry?.productionControlStatus !== "unavailable" &&
+                device.telemetry?.productionControlStatus !== null &&
+                device.telemetry?.productionControlStatus !== undefined ? (
+                  <Button
+                    className={secondaryButtonClass}
+                    form={`solar-provider-settings-${device.id}`}
+                    type="submit"
+                  >
+                    <Save size={14} />
+                    Save
+                  </Button>
+                ) : null}
+                <DestructiveConfirmButton
+                  action={
+                    kind === "battery"
+                      ? deleteBatteryFormAction
+                      : kind === "meter"
+                        ? deleteMeterFormAction
+                        : deleteSolarProviderFormAction
                   }
-                  form={`solar-provider-settings-${device.id}`}
-                  type="submit"
+                  confirmLabel={
+                    kind === "battery"
+                      ? "Delete battery"
+                      : kind === "meter"
+                        ? "Delete meter"
+                        : "Delete solar provider"
+                  }
+                  description={`This deletes ${device.name}. This cannot be undone.`}
+                  hiddenFields={[
+                    { name: "returnPath", value: returnPath },
+                    { name: "siteId", value: site.id },
+                    {
+                      name:
+                        kind === "battery"
+                          ? "batteryId"
+                          : kind === "meter"
+                            ? "meterId"
+                            : "solarEnergyProviderId",
+                      value: device.id,
+                    },
+                  ]}
+                  title={`Delete ${device.name}?`}
+                  triggerClassName={dangerButtonClass}
                 >
-                  <Save size={14} />
-                  Save
-                </Button>
-              ) : null}
-              <DestructiveConfirmButton
-                action={
-                  kind === "battery"
-                    ? deleteBatteryFormAction
-                    : kind === "meter"
-                      ? deleteMeterFormAction
-                      : deleteSolarProviderFormAction
-                }
-                confirmLabel={
-                  kind === "battery"
-                    ? "Delete battery"
-                    : kind === "meter"
-                      ? "Delete meter"
-                      : "Delete solar provider"
-                }
-                description={`This deletes ${device.name}. This cannot be undone.`}
-                hiddenFields={[
-                  { name: "returnPath", value: returnPath },
-                  { name: "siteId", value: site.id },
-                  {
-                    name:
-                      kind === "battery"
-                        ? "batteryId"
-                        : kind === "meter"
-                          ? "meterId"
-                          : "solarEnergyProviderId",
-                    value: device.id,
-                  },
-                ]}
-                title={`Delete ${device.name}?`}
-                triggerClassName={dangerButtonClass}
-              >
-                <Trash2 size={14} />
-                Delete
-              </DestructiveConfirmButton>
+                  <Trash2 size={14} />
+                  Delete
+                </DestructiveConfirmButton>
+              </div>
             </div>
           </article>
         );

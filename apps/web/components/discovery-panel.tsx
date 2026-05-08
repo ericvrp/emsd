@@ -25,6 +25,7 @@ import { formatKilowattHoursFromWh } from "../lib/energy-format";
 import { UI_STYLES } from "../lib/ui-colors";
 import { cn } from "../lib/utils";
 import { SubmitButton } from "./submit-button";
+import { useMatchedCardHeights } from "./use-matched-card-heights";
 import { Button } from "./ui/button";
 import { DialogPortal } from "./ui/dialog-portal";
 import { useFormActionToast } from "./use-form-action-toast";
@@ -157,6 +158,9 @@ export function DiscoveryPanel({
   const orderedDevices = useMemo(
     () => [...devices].sort(compareDiscoveryDevices),
     [devices],
+  );
+  const matchedDiscoveryCardsRef = useMatchedCardHeights(
+    orderedDevices.map((device) => device.discoveryId),
   );
   const batteries = orderedDevices.filter(
     (device) => device.category === "battery",
@@ -361,7 +365,10 @@ export function DiscoveryPanel({
             <></>
           )}
 
-          <section className="grid gap-4 xl:grid-cols-3">
+          <section
+            className="grid gap-4 xl:grid-cols-3"
+            ref={matchedDiscoveryCardsRef}
+          >
             <DiscoveryResourceSection title="Batteries" type="Battery">
               <DiscoveryDeviceList
                 batteryAction={createBatteryFormAction}
@@ -566,13 +573,13 @@ function DiscoveryResourceSection({
   children: ReactNode;
 }) {
   return (
-    <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
+    <section className="relative flex h-full flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 px-5 pb-4 pt-5 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-violet-300/30 to-transparent" />
       <h3 className="mb-4 inline-flex items-center gap-2 text-xl font-semibold text-white">
         <PluginTypeIcon aria-hidden="true" className="h-5 w-5" type={type} />
         {title}
       </h3>
-      {children}
+      <div className="flex-1">{children}</div>
     </section>
   );
 }
@@ -643,7 +650,7 @@ function DiscoveryDeviceCard({
 
   return (
     <article
-      className={`relative flex min-h-[440px] flex-col overflow-hidden rounded-[1.4rem] border border-white/10 bg-white/5 p-4 ${
+      className={`relative overflow-hidden rounded-[1.4rem] border border-white/10 bg-white/5 p-4 ${
         alreadyAdded
           ? "opacity-60"
           : device.category === "battery"
@@ -652,95 +659,98 @@ function DiscoveryDeviceCard({
               ? "ring-1 ring-violet-300/5"
               : "ring-1 ring-amber-300/5"
       }`}
+      data-matched-card
     >
       <div
         className={`pointer-events-none absolute inset-x-0 top-0 h-px ${device.category === "battery" ? "bg-gradient-to-r from-transparent via-cyan-300/40 to-transparent" : device.category === "meter" ? "bg-gradient-to-r from-transparent via-violet-300/40 to-transparent" : "bg-gradient-to-r from-transparent via-amber-300/40 to-transparent"}`}
       />
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="break-words text-base font-semibold text-white">
-            {device.name}
-          </h3>
-          <p className="mt-1 break-all text-xs text-slate-400">
-            {device.discoveryId}
-          </p>
+      <div className="flex h-full flex-col" data-matched-card-content>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h3 className="break-words text-base font-semibold text-white">
+              {device.name}
+            </h3>
+            <p className="mt-1 break-all text-xs text-slate-400">
+              {device.discoveryId}
+            </p>
+          </div>
         </div>
-      </div>
 
-      <dl className="mt-4 grid flex-1 content-start gap-3 text-sm text-slate-300 sm:grid-cols-2">
-        <DiscoveryMetaItem label="Model" value={device.model} />
-        <DiscoveryMetaItem
-          label="Address"
-          value={formatDiscoveryAddress(device)}
-        />
-        {device.category === "battery" ? (
+        <dl className="mt-4 grid flex-1 content-start gap-3 text-sm text-slate-300 sm:grid-cols-2">
+          <DiscoveryMetaItem label="Model" value={device.model} />
           <DiscoveryMetaItem
-            label="SoC"
+            label="Address"
+            value={formatDiscoveryAddress(device)}
+          />
+          {device.category === "battery" ? (
+            <DiscoveryMetaItem
+              label="SoC"
+              value={
+                isFiniteNumber(device.socPercent)
+                  ? `${Math.round(device.socPercent)}%`
+                  : "Unavailable"
+              }
+            />
+          ) : null}
+          {device.category === "battery" ? (
+            <DiscoveryMetaItem
+              label="Capacity"
+              value={formatDiscoveryCapacity(device.capacityWh)}
+            />
+          ) : null}
+          <DiscoveryMetaItem
+            label="Power"
             value={
-              isFiniteNumber(device.socPercent)
-                ? `${Math.round(device.socPercent)}%`
+              isFiniteNumber(device.powerW)
+                ? `${Math.round(device.powerW)} W`
                 : "Unavailable"
             }
           />
-        ) : null}
-        {device.category === "battery" ? (
-          <DiscoveryMetaItem
-            label="Capacity"
-            value={formatDiscoveryCapacity(device.capacityWh)}
-          />
-        ) : null}
-        <DiscoveryMetaItem
-          label="Power"
-          value={
-            isFiniteNumber(device.powerW)
-              ? `${Math.round(device.powerW)} W`
-              : "Unavailable"
-          }
-        />
-        {device.category === "battery" ? (
-          <DiscoveryMetaItem
-            label="Backup reserve"
-            value={`${DEFAULT_BATTERY_BACKUP_RESERVE_PERCENT}%`}
-          />
-        ) : null}
-      </dl>
-
-      <div className="mt-4">
-        {!alreadyAdded && selectedSiteId ? (
-          <form
-            action={
-              device.category === "battery"
-                ? batteryAction
-                : device.category === "meter"
-                  ? meterAction
-                  : solarProviderAction
-            }
-          >
-            <input type="hidden" name="siteId" value={selectedSiteId} />
-            <input
-              type="hidden"
-              name="discoveryDevice"
-              value={JSON.stringify(device)}
+          {device.category === "battery" ? (
+            <DiscoveryMetaItem
+              label="Backup reserve"
+              value={`${DEFAULT_BATTERY_BACKUP_RESERVE_PERCENT}%`}
             />
-            <SubmitButton className={secondaryButtonClass}>
-              {device.category === "battery" ? (
-                <>
-                  <BatteryCharging aria-hidden="true" className="h-4 w-4" />
-                  Add battery
-                </>
-              ) : device.category === "meter" ? (
-                <>
-                  <Gauge aria-hidden="true" className="h-4 w-4" />
-                  Add meter
-                </>
-              ) : (
-                <>
-                  <SunMedium aria-hidden="true" className="h-4 w-4" />
-                  Add solar energy provider
-                </>
-              )}
-            </SubmitButton>
-          </form>
+          ) : null}
+        </dl>
+
+        {!alreadyAdded && selectedSiteId ? (
+          <div className="mt-auto pt-4">
+            <form
+              action={
+                device.category === "battery"
+                  ? batteryAction
+                  : device.category === "meter"
+                    ? meterAction
+                    : solarProviderAction
+              }
+            >
+              <input type="hidden" name="siteId" value={selectedSiteId} />
+              <input
+                type="hidden"
+                name="discoveryDevice"
+                value={JSON.stringify(device)}
+              />
+              <SubmitButton className={secondaryButtonClass}>
+                {device.category === "battery" ? (
+                  <>
+                    <BatteryCharging aria-hidden="true" className="h-4 w-4" />
+                    Add battery
+                  </>
+                ) : device.category === "meter" ? (
+                  <>
+                    <Gauge aria-hidden="true" className="h-4 w-4" />
+                    Add meter
+                  </>
+                ) : (
+                  <>
+                    <SunMedium aria-hidden="true" className="h-4 w-4" />
+                    Add solar energy provider
+                  </>
+                )}
+              </SubmitButton>
+            </form>
+          </div>
         ) : null}
       </div>
     </article>
