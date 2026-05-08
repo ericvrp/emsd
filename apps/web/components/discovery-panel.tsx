@@ -4,13 +4,14 @@ import {
   BatteryCharging,
   CircleHelp,
   Gauge,
+  HandCoins,
   LoaderCircle,
   Plus,
   ScanSearch,
   SunMedium,
   X,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -362,7 +363,7 @@ export function DiscoveryPanel({
           )}
 
           <section className="grid gap-4 xl:grid-cols-3">
-            <DiscoveryResourceSection title="Batteries">
+            <DiscoveryResourceSection title="Batteries" type="Battery">
               <DiscoveryDeviceList
                 batteryAction={createBatteryFormAction}
                 devices={batteries}
@@ -374,7 +375,7 @@ export function DiscoveryPanel({
                 solarProviderAction={createSolarProviderFormAction}
               />
             </DiscoveryResourceSection>
-            <DiscoveryResourceSection title="Solar Providers">
+            <DiscoveryResourceSection title="Solar Providers" type="Solar">
               <DiscoveryDeviceList
                 batteryAction={createBatteryFormAction}
                 devices={solarProviders}
@@ -386,7 +387,7 @@ export function DiscoveryPanel({
                 solarProviderAction={createSolarProviderFormAction}
               />
             </DiscoveryResourceSection>
-            <DiscoveryResourceSection title="Meters">
+            <DiscoveryResourceSection title="Meters" type="Meter">
               <DiscoveryDeviceList
                 batteryAction={createBatteryFormAction}
                 devices={meters}
@@ -494,6 +495,7 @@ function SupportedPluginsDialog({ onClose }: { onClose: () => void }) {
                       onClick={() => setActiveTab(pluginType)}
                       type="button"
                     >
+                      <PluginTypeIcon aria-hidden="true" className="h-4 w-4" type={pluginType} />
                       {pluginType}
                     </button>
                   ))}
@@ -513,11 +515,18 @@ function SupportedPluginsDialog({ onClose }: { onClose: () => void }) {
                     {visiblePlugins.map((plugin) => {
                       const status = formatPluginStatus(plugin.status);
 
-                      return (
-                        <tr key={`${plugin.type}-${plugin.plugin}`}>
-                          <td className="px-4 py-3 font-medium text-white">
-                            {plugin.plugin}
-                          </td>
+                        return (
+                          <tr key={`${plugin.type}-${plugin.plugin}`}>
+                            <td className="px-4 py-3 font-medium text-white">
+                              <span className="inline-flex items-center gap-2">
+                                <PluginTypeIcon
+                                  aria-hidden="true"
+                                  className="h-4 w-4 text-slate-300"
+                                  type={plugin.type}
+                                />
+                                {plugin.plugin}
+                              </span>
+                            </td>
                           <td className="px-4 py-3">
                             <span className={status.className}>
                               <span aria-hidden="true">{status.emoji}</span>
@@ -542,16 +551,21 @@ function SupportedPluginsDialog({ onClose }: { onClose: () => void }) {
 }
 
 function DiscoveryResourceSection({
+  type,
   title,
   children,
 }: {
+  type: (typeof SUPPORTED_PLUGIN_TYPES)[number];
   title: string;
   children: ReactNode;
 }) {
   return (
     <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-violet-300/30 to-transparent" />
-      <h3 className="mb-4 text-xl font-semibold text-white">{title}</h3>
+      <h3 className="mb-4 inline-flex items-center gap-2 text-xl font-semibold text-white">
+        <PluginTypeIcon aria-hidden="true" className="h-5 w-5" type={type} />
+        {title}
+      </h3>
       {children}
     </section>
   );
@@ -645,11 +659,6 @@ function DiscoveryDeviceCard({
             {device.discoveryId}
           </p>
         </div>
-        <span
-          className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${device.category === "battery" ? "border-cyan-400/20 bg-cyan-500/10 text-cyan-100" : device.category === "meter" ? "border-violet-400/20 bg-violet-500/10 text-violet-100" : "border-amber-400/20 bg-amber-500/10 text-amber-100"}`}
-        >
-          {formatDiscoveryCategoryLabel(device.category)}
-        </span>
       </div>
 
       <dl className="mt-4 grid flex-1 content-start gap-3 text-sm text-slate-300 sm:grid-cols-2">
@@ -759,6 +768,25 @@ function formatDiscoveryCapacity(capacityWh: number | null): string {
   }
 
   return formatKilowattHoursFromWh(capacityWh);
+}
+
+function PluginTypeIcon({
+  className,
+  type,
+  ...props
+}: ComponentProps<"svg"> & {
+  type: (typeof SUPPORTED_PLUGIN_TYPES)[number];
+}) {
+  const Icon =
+    type === "Battery"
+      ? BatteryCharging
+      : type === "Meter"
+        ? Gauge
+        : type === "Price"
+          ? HandCoins
+          : SunMedium;
+
+  return <Icon className={className} {...props} />;
 }
 
 function formatDiscoveryCategoryLabel(
