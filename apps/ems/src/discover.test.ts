@@ -17,33 +17,44 @@ import {
 } from "./discover";
 
 const originalFetch = globalThis.fetch;
+const originalSkipPortPrecheck = process.env.EMSD_SKIP_DISCOVERY_PORT_PRECHECK;
+
+process.env.EMSD_SKIP_DISCOVERY_PORT_PRECHECK = "1";
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  process.env.EMSD_SKIP_DISCOVERY_PORT_PRECHECK = "1";
+});
+
+process.on("exit", () => {
+  if (originalSkipPortPrecheck === undefined) {
+    delete process.env.EMSD_SKIP_DISCOVERY_PORT_PRECHECK;
+    return;
+  }
+
+  process.env.EMSD_SKIP_DISCOVERY_PORT_PRECHECK = originalSkipPortPrecheck;
 });
 
 test("getDiscoverySignatures exposes the discovery plugin catalog", () => {
   expect(getDiscoverySignatures()).toEqual([
     {
-      pluginType: "battery",
-      category: "battery",
-      model: "indevolt-battery",
-      name: "Indevolt Battery",
-      port: 8080,
+      pluginType: "meter",
+      category: "meter",
+      model: "homewizard-p1",
+      name: "HomeWizard P1",
+      port: 80,
       schemes: ["http"],
       request: {
-        path: "/rpc/Indevolt.GetData?config=%7B%22t%22%3A%5B0%2C1118%2C142%2C6000%2C6001%2C6002%2C7101%5D%7D",
-        method: "POST",
+        path: "/api",
+        method: "GET",
         headers: {
           accept: "application/json",
         },
       },
       response: {
         match: [
-          '"0"\\s*:',
-          '"6002"\\s*:',
-          '"6001"\\s*:',
-          '"Indevolt"|"1118"\\s*:',
+          '"product_type"\\s*:\\s*"HWE-P1"',
+          '"api_version"\\s*:\\s*"v1"',
         ],
       },
     },
@@ -74,6 +85,29 @@ test("getDiscoverySignatures exposes the discovery plugin catalog", () => {
     {
       pluginType: "battery",
       category: "battery",
+      model: "indevolt-battery",
+      name: "Indevolt Battery",
+      port: 8080,
+      schemes: ["http"],
+      request: {
+        path: "/rpc/Indevolt.GetData?config=%7B%22t%22%3A%5B0%2C1118%2C142%2C6000%2C6001%2C6002%2C7101%5D%7D",
+        method: "POST",
+        headers: {
+          accept: "application/json",
+        },
+      },
+      response: {
+        match: [
+          '"0"\\s*:',
+          '"6002"\\s*:',
+          '"6001"\\s*:',
+          '"Indevolt"|"1118"\\s*:',
+        ],
+      },
+    },
+    {
+      pluginType: "battery",
+      category: "battery",
       model: "homewizard-battery",
       name: "HomeWizard Battery",
       port: 443,
@@ -90,35 +124,6 @@ test("getDiscoverySignatures exposes the discovery plugin catalog", () => {
           '"power_w"\\s*:',
         ],
       },
-    },
-    {
-      pluginType: "meter",
-      category: "meter",
-      model: "homewizard-p1",
-      name: "HomeWizard P1",
-      port: 80,
-      schemes: ["http"],
-      request: {
-        path: "/api",
-        method: "GET",
-        headers: {
-          accept: "application/json",
-        },
-      },
-      response: {
-        match: [
-          '"product_type"\\s*:\\s*"HWE-P1"',
-          '"api_version"\\s*:\\s*"v1"',
-        ],
-      },
-    },
-    {
-      pluginType: "solar-energy-provider",
-      category: "solar-energy-provider",
-      model: "enphase-local",
-      name: "Enphase IQ Gateway",
-      port: 80,
-      schemes: ["http"],
     },
     {
       pluginType: "solar-energy-provider",
@@ -142,6 +147,14 @@ test("getDiscoverySignatures exposes the discovery plugin catalog", () => {
       response: {
         match: ["SolarEdge", "SetApp"],
       },
+    },
+    {
+      pluginType: "solar-energy-provider",
+      category: "solar-energy-provider",
+      model: "enphase-local",
+      name: "Enphase IQ Gateway",
+      port: 80,
+      schemes: ["http"],
     },
   ]);
 });
@@ -537,14 +550,7 @@ test("discoverHostDevices matches an Enphase IQ Gateway from info.xml", async ()
     }
 
     if (url === "http://192.168.1.40/api/v1/production") {
-      return new Response(
-        JSON.stringify({
-          wattHoursLifetime: 1100000,
-          wattHoursToday: 12400,
-          wattsNow: 2550,
-        }),
-        { status: 200 },
-      );
+      throw new Error(`Discovery should not fetch production from ${url}`);
     }
 
     throw new Error(`Unexpected URL: ${url}`);
@@ -564,7 +570,7 @@ test("discoverHostDevices matches an Enphase IQ Gateway from info.xml", async ()
       name: "Enphase IQ Gateway",
       ipAddress: "192.168.1.40",
       port: 80,
-      powerW: 2550,
+      powerW: null,
       state: "connected",
     });
     expect(devices[0]?.details).toContain("serial 123456789012");
@@ -587,19 +593,11 @@ test("discoverHostDevices reads Enphase power from production.json fallback", as
     }
 
     if (url === "http://192.168.1.41/api/v1/production") {
-      return new Response(JSON.stringify({ wattsNow: null }), { status: 200 });
+      throw new Error(`Discovery should not fetch production from ${url}`);
     }
 
     if (url === "http://192.168.1.41/production.json?details=1") {
-      return new Response(
-        JSON.stringify({
-          production: [
-            { type: "inverters", wNow: 2620 },
-            { measurementType: "production", type: "eim", wNow: 2550 },
-          ],
-        }),
-        { status: 200 },
-      );
+      throw new Error(`Discovery should not fetch production from ${url}`);
     }
 
     throw new Error(`Unexpected URL: ${url}`);
@@ -619,7 +617,7 @@ test("discoverHostDevices reads Enphase power from production.json fallback", as
       name: "Enphase IQ Gateway",
       ipAddress: "192.168.1.41",
       port: 80,
-      powerW: 2550,
+      powerW: null,
       state: "connected",
     });
   } finally {
@@ -636,6 +634,14 @@ test("discoverHostDevices reads Enphase power from HTTPS discovery endpoints", a
   ) => {
     const url = String(input);
 
+    if (url === "http://192.168.1.42/info.xml") {
+      throw new Error(`HTTP fallback should not succeed for ${url}`);
+    }
+
+    if (url === "http://192.168.1.42/api/v1/production") {
+      throw new Error(`HTTP fallback should not succeed for ${url}`);
+    }
+
     if (url === "https://192.168.1.42/info.xml") {
       expect(
         (init as RequestInit & { tls?: { rejectUnauthorized?: boolean } })?.tls,
@@ -647,10 +653,7 @@ test("discoverHostDevices reads Enphase power from HTTPS discovery endpoints", a
     }
 
     if (url === "https://192.168.1.42/api/v1/production") {
-      expect(
-        (init as RequestInit & { tls?: { rejectUnauthorized?: boolean } })?.tls,
-      ).toEqual({ rejectUnauthorized: false });
-      return new Response(JSON.stringify({ wattsNow: 1930 }), { status: 200 });
+      throw new Error(`Discovery should not fetch production from ${url}`);
     }
 
     if (url.startsWith("http://192.168.1.42:80/")) {
@@ -674,7 +677,7 @@ test("discoverHostDevices reads Enphase power from HTTPS discovery endpoints", a
       name: "Enphase IQ Gateway",
       ipAddress: "192.168.1.42",
       port: 80,
-      powerW: 1930,
+      powerW: null,
       state: "connected",
     });
   } finally {
@@ -696,6 +699,14 @@ test("discoverHostDevices reads Enphase power through owner-auth discovery when 
   ) => {
     const url = String(input);
 
+    if (url === "http://192.168.1.43/info.xml") {
+      throw new Error(`HTTP fallback should not succeed for ${url}`);
+    }
+
+    if (url === "http://192.168.1.43/production.json?details=1") {
+      throw new Error(`HTTP fallback should not succeed for ${url}`);
+    }
+
     if (url === "https://192.168.1.43/info.xml") {
       expect(
         (init as RequestInit & { tls?: { rejectUnauthorized?: boolean } })?.tls,
@@ -707,27 +718,7 @@ test("discoverHostDevices reads Enphase power through owner-auth discovery when 
     }
 
     if (url === "https://192.168.1.43/production.json?details=1") {
-      expect(
-        (init as RequestInit & { tls?: { rejectUnauthorized?: boolean } })?.tls,
-      ).toEqual({ rejectUnauthorized: false });
-
-      const headers = init?.headers as Record<string, string> | undefined;
-
-      if (!headers?.Authorization) {
-        return new Response("unauthorized", { status: 401 });
-      }
-
-      expect(headers).toMatchObject({
-        Authorization: "Bearer owner-token",
-        Cookie: "sessionId=abc123",
-      });
-
-      return new Response(
-        JSON.stringify({
-          production: [{ measurementType: "production", type: "eim", wNow: 2210 }],
-        }),
-        { status: 200 },
-      );
+      throw new Error(`Discovery should not fetch production from ${url}`);
     }
 
     if (url === "https://enlighten.enphaseenergy.com/login/login.json") {
@@ -770,7 +761,7 @@ test("discoverHostDevices reads Enphase power through owner-auth discovery when 
       name: "Enphase IQ Gateway",
       ipAddress: "192.168.1.43",
       port: 80,
-      powerW: 2210,
+      powerW: null,
       state: "connected",
     });
   } finally {

@@ -19,6 +19,7 @@ const ENLIGHTEN_AUTH_URL =
 const ENLIGHTEN_TOKEN_URL = "https://entrez.enphaseenergy.com/tokens";
 const ENPHASE_LOCAL_REQUEST_TIMEOUT_MS = 2_000;
 const ENPHASE_CLOUD_REQUEST_TIMEOUT_MS = 5_000;
+const ENPHASE_DISCOVERY_LOCAL_REQUEST_TIMEOUT_MS = 750;
 
 class EnphaseTerminalError extends Error {
   constructor(message: string) {
@@ -64,6 +65,8 @@ type EnphaseRequestOptions = {
   body?: string;
   headers?: Record<string, string>;
   method?: "GET" | "POST";
+  preferredSchemes?: Array<"https" | "http">;
+  requestTimeoutMs?: number;
   serialHint?: string | null;
 };
 
@@ -102,16 +105,13 @@ export const enphaseSolarEnergyProviderDiscoveryPlugin: DiscoveryPlugin = {
   port: 80,
   schemes: ["http"],
   async probe({ ipAddress }) {
-    const gatewayInfo = await fetchGatewayInfo(ipAddress);
+    const gatewayInfo = await fetchGatewayInfo(ipAddress, ["http", "https"], {
+      requestTimeoutMs: ENPHASE_DISCOVERY_LOCAL_REQUEST_TIMEOUT_MS,
+    });
 
     if (!matchesGatewayInfo(gatewayInfo)) {
       return null;
     }
-
-    const production = await fetchProductionInfoForHost(
-      ipAddress,
-      gatewayInfo.serialNumber,
-    );
     const details: string[] = [];
 
     if (gatewayInfo.serialNumber) {
@@ -122,10 +122,6 @@ export const enphaseSolarEnergyProviderDiscoveryPlugin: DiscoveryPlugin = {
       details.push(`firmware ${gatewayInfo.firmwareVersion}`);
     }
 
-    if (production.currentPowerW !== null) {
-      details.push(`power ${Math.round(production.currentPowerW)} W`);
-    }
-
     return {
       category: "solar-energy-provider",
       capacityWh: null,
@@ -134,16 +130,22 @@ export const enphaseSolarEnergyProviderDiscoveryPlugin: DiscoveryPlugin = {
       model: ENPHASE_DISCOVERY_MODEL,
       name: ENPHASE_DISCOVERY_NAME,
       port: 80,
-      powerW: production.currentPowerW,
+      powerW: null,
       socPercent: null,
-      state: production.currentPowerW === null ? null : "connected",
+      state: "connected",
     };
   },
 };
 
-async function fetchGatewayInfo(host: string): Promise<EnphaseGatewayInfo> {
+async function fetchGatewayInfo(
+  host: string,
+  preferredSchemes?: Array<"https" | "http">,
+  requestOptions: Pick<EnphaseRequestOptions, "requestTimeoutMs"> = {},
+): Promise<EnphaseGatewayInfo> {
   const responseText = await fetchEnphaseText(host, "/info.xml", {
     allowAuthentication: false,
+    ...(preferredSchemes ? { preferredSchemes } : {}),
+    ...requestOptions,
   }).catch(() => null);
 
   return responseText ? parseInfoXml(responseText) : emptyGatewayInfo();
@@ -158,11 +160,17 @@ async function fetchProductionInfo(
 async function fetchProductionInfoForHost(
   host: string,
   serialHint: string | null,
+  preferredSchemes?: Array<"https" | "http">,
+  requestOptions: Pick<EnphaseRequestOptions, "requestTimeoutMs"> = {},
 ): Promise<EnphaseProductionInfo> {
   const detailedText = await fetchEnphaseText(
     host,
     "/production.json?details=1",
-    { serialHint },
+    {
+      ...(preferredSchemes ? { preferredSchemes } : {}),
+      ...requestOptions,
+      serialHint,
+    },
   ).catch((error: unknown) => {
     if (isEnphaseTerminalError(error)) {
       throw error;
@@ -184,6 +192,8 @@ async function fetchProductionInfoForHost(
     host,
     "/api/v1/production",
     {
+      ...(preferredSchemes ? { preferredSchemes } : {}),
+      ...requestOptions,
       serialHint,
     },
   );
@@ -208,7 +218,9 @@ async function fetchEnphaseResponse(
   path: string,
   options: EnphaseRequestOptions = {},
 ): Promise<Response> {
-  const schemes: Array<"https" | "http"> = ["https", "http"];
+  const schemes = options.preferredSchemes?.length
+    ? options.preferredSchemes
+    : (["https", "http"] as Array<"https" | "http">);
   let lastError: unknown = null;
 
   for (const scheme of schemes) {
@@ -242,7 +254,9 @@ async function fetchEnphaseResponseForScheme(
       body: options.body,
       headers: buildEnphaseRequestHeaders(options.headers),
       method,
-      signal: AbortSignal.timeout(ENPHASE_LOCAL_REQUEST_TIMEOUT_MS),
+      signal: AbortSignal.timeout(
+        options.requestTimeoutMs ?? ENPHASE_LOCAL_REQUEST_TIMEOUT_MS,
+      ),
       ...buildEnphaseTlsOptions(scheme),
     },
     "Enphase local request",
@@ -281,7 +295,9 @@ async function fetchEnphaseResponseForScheme(
       body: options.body,
       headers: buildAuthenticatedLocalHeaders(session, options.headers),
       method,
-      signal: AbortSignal.timeout(ENPHASE_LOCAL_REQUEST_TIMEOUT_MS),
+      signal: AbortSignal.timeout(
+        options.requestTimeoutMs ?? ENPHASE_LOCAL_REQUEST_TIMEOUT_MS,
+      ),
       ...buildEnphaseTlsOptions(scheme),
     },
     "Enphase local request",

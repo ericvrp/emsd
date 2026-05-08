@@ -1,8 +1,14 @@
-import { batteryPlugins } from "./battery";
+import {
+  homeWizardBatteryPlugin,
+  indevoltBatteryPlugin,
+  sonnenBatteryPlugin,
+} from "./battery";
 import { meterPlugins } from "./meter";
 import { pricePlugins } from "./price";
 import {
-  solarEnergyProviderDiscoveryPlugins,
+  enphaseSolarEnergyProviderDiscoveryPlugin,
+  huaweiSolarEnergyProviderDiscoveryPlugin,
+  solaredgeSolarEnergyProviderDiscoveryPlugin,
   solarEnergyProviderPlugins,
 } from "./solar-energy-provider";
 import { weatherPlugins } from "./solar-forecast";
@@ -16,13 +22,16 @@ export const pluginTypes = [
 ] as const;
 
 export const discoveryPlugins = [
-  ...batteryPlugins,
   ...meterPlugins,
-  ...solarEnergyProviderDiscoveryPlugins,
+  sonnenBatteryPlugin,
+  indevoltBatteryPlugin,
+  homeWizardBatteryPlugin,
+  huaweiSolarEnergyProviderDiscoveryPlugin,
+  solaredgeSolarEnergyProviderDiscoveryPlugin,
+  enphaseSolarEnergyProviderDiscoveryPlugin,
 ];
 
 export {
-  batteryPlugins,
   meterPlugins,
   pricePlugins,
   solarEnergyProviderPlugins,

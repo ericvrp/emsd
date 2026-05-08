@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { Socket } from "node:net";
 import { type NetworkInterfaceInfo, networkInterfaces } from "node:os";
 import type { DiscoverReport, DiscoverReportDevice } from "@emsd/core";
 import type {
@@ -42,14 +43,27 @@ const HOST_SCAN_END = 254;
 const REQUEST_TIMEOUT_MS = 2000;
 const DEFAULT_HOST_CONCURRENCY = 32;
 const DISCOVERY_PROGRESS_INTERVAL_MS = 1000;
+const PORT_PRECHECK_TIMEOUT_MS = 350;
 
 interface DiscoveryProgressLogger {
+  hostPortSkipped(ipAddress: string, model: string, port: number): void;
   hostMatched(ipAddress: string, model: string): void;
+  hostPluginFinished(model: string, durationMs: number, outcome: string): void;
   hostStarted(ipAddress: string): void;
   hostStage(ipAddress: string, stage: string): void;
   hostFinished(ipAddress: string): void;
   stop(): void;
 }
+
+interface DiscoveryPluginStats {
+  attempts: number;
+  matches: number;
+  skipped: number;
+  totalDurationMs: number;
+  outcomes: Map<string, number>;
+}
+
+const portAvailabilityCache = new Map<string, Promise<boolean>>();
 
 export function formatHelpText(): string {
   return [
@@ -359,6 +373,7 @@ export async function discoverDevices(
   subnets = getDefaultDiscoverySubnets(),
   options: DiscoverCommandOptions = { verbose: false, host: null },
 ): Promise<DiscoveredDevice[]> {
+  portAvailabilityCache.clear();
   const targets = buildSubnetTargets(subnets);
   const hostConcurrency = Math.max(
     1,
@@ -449,6 +464,7 @@ export async function discoverHostDevices(
   host: string,
   options: DiscoverCommandOptions = { verbose: false, host: null },
 ): Promise<DiscoveredDevice[]> {
+  portAvailabilityCache.clear();
   const progressLogger = createDiscoveryProgressLogger([host], 1, options);
   progressLogger.hostStarted(host);
   const device = await probeTarget(host, options, progressLogger).finally(() => {
@@ -542,6 +558,17 @@ async function probeTarget(
   for (const plugin of discoveryPlugins) {
     progressLogger.hostStage(ipAddress, plugin.model);
 
+    if (
+      !shouldSkipDiscoveryPortPrecheck() &&
+      !(await isDiscoveryPortReachable(ipAddress, plugin.port))
+    ) {
+      progressLogger.hostPortSkipped(ipAddress, plugin.model, plugin.port);
+      progressLogger.hostPluginFinished(plugin.model, 0, "port-unreachable");
+      continue;
+    }
+
+    const startedAt = performance.now();
+
     if (plugin.probe) {
       const device = await plugin.probe({
         ipAddress,
@@ -550,6 +577,11 @@ async function probeTarget(
 
       if (device) {
         progressLogger.hostMatched(ipAddress, plugin.model);
+        progressLogger.hostPluginFinished(
+          plugin.model,
+          performance.now() - startedAt,
+          "matched",
+        );
 
         if (options.verbose) {
           console.error(`Matched ${plugin.model} at ${ipAddress}`);
@@ -560,6 +592,12 @@ async function probeTarget(
           discoveryId: getDiscoveryId(device),
         };
       }
+
+      progressLogger.hostPluginFinished(
+        plugin.model,
+        performance.now() - startedAt,
+        "no-match",
+      );
 
       continue;
     }
@@ -573,10 +611,21 @@ async function probeTarget(
     );
 
     if (primaryResponse === null) {
+      progressLogger.hostPluginFinished(
+        plugin.model,
+        performance.now() - startedAt,
+        "no-response",
+      );
       continue;
     }
 
     if (!matchesSignatureResponse(plugin, primaryResponse.responseText)) {
+      progressLogger.hostPluginFinished(
+        plugin.model,
+        performance.now() - startedAt,
+        "signature-mismatch",
+      );
+
       if (options.verbose) {
         console.error(
           `Response from ${primaryResponse.url} did not match ${plugin.model}`,
@@ -586,6 +635,11 @@ async function probeTarget(
     }
 
     progressLogger.hostMatched(ipAddress, plugin.model);
+    progressLogger.hostPluginFinished(
+      plugin.model,
+      performance.now() - startedAt,
+      "matched",
+    );
 
     if (options.verbose) {
       console.error(`Matched ${plugin.model} at ${ipAddress}`);
@@ -609,6 +663,51 @@ async function probeTarget(
   return null;
 }
 
+async function isDiscoveryPortReachable(
+  ipAddress: string,
+  port: number,
+): Promise<boolean> {
+  const cacheKey = `${ipAddress}:${port}`;
+  const cached = portAvailabilityCache.get(cacheKey);
+
+  if (cached) {
+    return cached;
+  }
+
+  const probePromise = probeTcpPort(ipAddress, port);
+
+  portAvailabilityCache.set(cacheKey, probePromise);
+  return probePromise;
+}
+
+function shouldSkipDiscoveryPortPrecheck(): boolean {
+  return process.env.EMSD_SKIP_DISCOVERY_PORT_PRECHECK === "1";
+}
+
+async function probeTcpPort(ipAddress: string, port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = new Socket();
+    let settled = false;
+
+    const finish = (reachable: boolean) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      socket.destroy();
+      resolve(reachable);
+    };
+
+    socket.setNoDelay(true);
+    socket.setTimeout(PORT_PRECHECK_TIMEOUT_MS);
+    socket.once("connect", () => finish(true));
+    socket.once("timeout", () => finish(false));
+    socket.once("error", () => finish(false));
+    socket.connect(port, ipAddress);
+  });
+}
+
 function createDiscoveryProgressLogger(
   targets: string[],
   hostConcurrency: number,
@@ -621,7 +720,9 @@ function createDiscoveryProgressLogger(
   const activeStages = new Map<string, string>();
   let completedHosts = 0;
   let matchedHosts = 0;
+  let skippedPorts = 0;
   const startedHosts = new Set<string>();
+  const pluginStats = new Map<string, DiscoveryPluginStats>();
 
   console.error(
     `Discovery scan starting for ${targets.length} host${targets.length === 1 ? "" : "s"} with host concurrency ${hostConcurrency}. ${discoveryPlugins.length} plugin fingerprint${discoveryPlugins.length === 1 ? "" : "s"} will be checked sequentially per host.`,
@@ -642,15 +743,52 @@ function createDiscoveryProgressLogger(
       .join(", ");
 
     console.error(
-      `Discovery progress: started ${startedHosts.size}/${targets.length}, completed ${completedHosts}/${targets.length}, active ${activeCount}, matched ${matchedHosts}.${activeSummary ? ` Active stages: ${activeSummary}.` : ""}`,
+      `Discovery progress: started ${startedHosts.size}/${targets.length}, completed ${completedHosts}/${targets.length}, active ${activeCount}, matched ${matchedHosts}, port skips ${skippedPorts}.${activeSummary ? ` Active stages: ${activeSummary}.` : ""}`,
     );
   }, DISCOVERY_PROGRESS_INTERVAL_MS);
   interval.unref?.();
 
+  const getPluginStats = (model: string): DiscoveryPluginStats => {
+    const existing = pluginStats.get(model);
+
+    if (existing) {
+      return existing;
+    }
+
+    const created: DiscoveryPluginStats = {
+      attempts: 0,
+      matches: 0,
+      skipped: 0,
+      totalDurationMs: 0,
+      outcomes: new Map<string, number>(),
+    };
+    pluginStats.set(model, created);
+    return created;
+  };
+
   return {
+    hostPortSkipped() {
+      skippedPorts += 1;
+    },
     hostStarted(ipAddress) {
       startedHosts.add(ipAddress);
       activeStages.set(ipAddress, "starting");
+    },
+    hostPluginFinished(model, durationMs, outcome) {
+      const stats = getPluginStats(model);
+      stats.outcomes.set(outcome, (stats.outcomes.get(outcome) ?? 0) + 1);
+
+      if (outcome === "port-unreachable") {
+        stats.skipped += 1;
+        return;
+      }
+
+      stats.attempts += 1;
+      stats.totalDurationMs += durationMs;
+
+      if (outcome === "matched") {
+        stats.matches += 1;
+      }
     },
     hostStage(ipAddress, stage) {
       activeStages.set(ipAddress, stage);
@@ -667,15 +805,32 @@ function createDiscoveryProgressLogger(
     stop() {
       clearInterval(interval);
       console.error(
-        `Discovery scan finished. Completed ${completedHosts}/${targets.length} host${targets.length === 1 ? "" : "s"} with ${matchedHosts} match${matchedHosts === 1 ? "" : "es"}.`,
+        `Discovery scan finished. Completed ${completedHosts}/${targets.length} host${targets.length === 1 ? "" : "s"} with ${matchedHosts} match${matchedHosts === 1 ? "" : "es"} and ${skippedPorts} port skip${skippedPorts === 1 ? "" : "s"}.`,
       );
+
+      for (const [model, stats] of [...pluginStats.entries()].sort(
+        (left, right) => right[1].totalDurationMs - left[1].totalDurationMs,
+      )) {
+        const averageMs =
+          stats.attempts > 0 ? Math.round(stats.totalDurationMs / stats.attempts) : 0;
+        const outcomes = [...stats.outcomes.entries()]
+          .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+          .map(([outcome, count]) => `${count} ${outcome}`)
+          .join(", ");
+
+        console.error(
+          `Discovery plugin summary ${model}: attempts ${stats.attempts}, matches ${stats.matches}, skipped ${stats.skipped}, avg ${averageMs}ms, total ${Math.round(stats.totalDurationMs)}ms.${outcomes ? ` Outcomes: ${outcomes}.` : ""}`,
+        );
+      }
     },
   };
 }
 
 function createNoopDiscoveryProgressLogger(): DiscoveryProgressLogger {
   return {
+    hostPortSkipped() {},
     hostMatched() {},
+    hostPluginFinished() {},
     hostStarted() {},
     hostStage() {},
     hostFinished() {},

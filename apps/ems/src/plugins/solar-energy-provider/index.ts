@@ -28,6 +28,12 @@ export const solarEnergyProviderDiscoveryPlugins = [
   solaredgeSolarEnergyProviderDiscoveryPlugin,
 ];
 
+export {
+  enphaseSolarEnergyProviderDiscoveryPlugin,
+  huaweiSolarEnergyProviderDiscoveryPlugin,
+  solaredgeSolarEnergyProviderDiscoveryPlugin,
+};
+
 export const solarEnergyProviderPlugins = [
   "enphase-local",
   "huawei-sun2000-modbus",
