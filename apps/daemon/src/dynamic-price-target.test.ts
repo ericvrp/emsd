@@ -12,6 +12,7 @@ import {
 } from "@emsd/core";
 import {
   estimateDynamicPriceTarget,
+  estimateImportShortage,
   resolveDelayedChargingLowPriceMarkerEligibility,
 } from "./dynamic-price-target";
 
@@ -312,6 +313,43 @@ test("delayed-charge prep uses the same low-price marker solar-surplus gate", ()
   expect(allowed.predictedSolarW).toBeGreaterThan(allowed.expectedHouseLoadW);
 });
 
+test("estimateImportShortage projects solar surplus and shortage from a low-price trigger", () => {
+  const history = createConstantUsageHistory({
+    end: "2026-04-19T03:00:00.000Z",
+    siteLoadW: 200,
+    start: "2026-04-12T00:00:00.000Z",
+  });
+
+  const estimate = estimateImportShortage({
+    battery: createBattery(),
+    batteryPowerSamples: history.batteryPowerSamples,
+    now: new Date("2026-04-19T03:00:00.000Z"),
+    p1MeterSamples: history.p1MeterSamples,
+    sample: createSample({ capacityWh: 10000, socPercent: 40 }),
+    solarEnergyProviderSamples: history.solarEnergyProviderSamples,
+    solarForecastSamples: createSolarWindowForecastSamples({
+      daytimePowerW: 600,
+      end: "2026-04-19T21:00:00.000Z",
+      solarEnd: "2026-04-19T19:00:00.000Z",
+      solarStart: "2026-04-19T07:00:00.000Z",
+      start: "2026-04-19T03:00:00.000Z",
+    }),
+    triggerAt: new Date("2026-04-19T03:00:00.000Z"),
+  });
+
+  expect(estimate.currentSocPercent).toBe(40);
+  expect(estimate.chargeStartTime).toBe("2026-04-19T07:00:00.000Z");
+  expect(estimate.surplusEndTime).toBe("2026-04-19T19:00:00.000Z");
+  expect(estimate.expectedSolarGenerationWh).toBe(7200);
+  expect(estimate.expectedHouseLoadDuringSurplusWh).toBe(2400);
+  expect(estimate.expectedSurplusEnergyWh).toBe(4800);
+  expect(estimate.expectedHouseLoadUntilChargeStartWh).toBe(800);
+  expect(estimate.projectedChargeStartSocPercent).toBe(32);
+  expect(estimate.projectedEndSocPercent).toBe(80);
+  expect(estimate.shortageToFullPercent).toBe(20);
+  expect(estimate.expectedFullAt).toBeNull();
+});
+
 function createAutoLowPriceItem(): BatteryStrategyPlanItem {
   return {
     enabled: true,
@@ -403,6 +441,72 @@ function createDaytimeUsageHistory(siteLoadW: number): {
         siteId: "site-1",
       });
     }
+  }
+
+  return { batteryPowerSamples, p1MeterSamples, solarEnergyProviderSamples };
+}
+
+function createSolarWindowForecastSamples(input: {
+  daytimePowerW: number;
+  end: string;
+  solarEnd: string;
+  solarStart: string;
+  start: string;
+}): SolarForecastSampleRecord[] {
+  return createPeriodRange(input.start, input.end).map((periodStart) => {
+    const value =
+      periodStart >= input.solarStart && periodStart < input.solarEnd
+        ? input.daytimePowerW
+        : 0;
+
+    return {
+      airTempC: null,
+      cloudOpacityPercent: null,
+      generatedAt: "2026-04-19T02:50:00.000Z",
+      ghiWm2: value,
+      periodStart,
+      siteId: "site-1",
+      value,
+    };
+  });
+}
+
+function createConstantUsageHistory(input: {
+  end: string;
+  siteLoadW: number;
+  start: string;
+}): {
+  batteryPowerSamples: BatteryPowerSampleRecord[];
+  p1MeterSamples: P1MeterSampleRecord[];
+  solarEnergyProviderSamples: SolarEnergyProviderSampleRecord[];
+} {
+  const batteryPowerSamples: BatteryPowerSampleRecord[] = [];
+  const p1MeterSamples: P1MeterSampleRecord[] = [];
+  const solarEnergyProviderSamples: SolarEnergyProviderSampleRecord[] = [];
+
+  for (const periodStart of createPeriodRange(input.start, input.end)) {
+    batteryPowerSamples.push({
+      batteryId: "battery-1",
+      observedAt: periodStart,
+      periodStart,
+      powerW: 0,
+      siteId: "site-1",
+      socPercent: 40,
+    });
+    p1MeterSamples.push({
+      meterId: "meter-1",
+      observedAt: periodStart,
+      periodStart,
+      powerW: input.siteLoadW,
+      siteId: "site-1",
+    });
+    solarEnergyProviderSamples.push({
+      observedAt: periodStart,
+      periodStart,
+      powerW: 0,
+      providerId: "solar-1",
+      siteId: "site-1",
+    });
   }
 
   return { batteryPowerSamples, p1MeterSamples, solarEnergyProviderSamples };

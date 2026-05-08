@@ -143,6 +143,29 @@ export interface DelayedChargingLowPriceMarkerEligibility {
   predictedSolarW: number | null;
 }
 
+export interface ImportShortageEstimate {
+  availability: "full" | "partial" | "unavailable";
+  chargeStartTime: string | null;
+  currentSocPercent: number | null;
+  expectedFullAt: string | null;
+  expectedHouseLoadDuringSurplusWh: number;
+  expectedHouseLoadUntilChargeStartWh: number;
+  expectedSolarGenerationWh: number;
+  expectedSurplusEnergyWh: number;
+  historyStats: {
+    historicalPeriodsUsed: number;
+    sameWeekdayPeriodsUsed: number;
+    slotCount: number;
+  };
+  projectedChargeStartSocPercent: number | null;
+  projectedEndSocPercent: number | null;
+  reasoning: string;
+  shortageToFullPercent: number | null;
+  surplusEndTime: string | null;
+  triggerAt: string;
+  warning: string | null;
+}
+
 export interface EnergyBucket {
   time: string;
   durationMinutes: number;
@@ -471,6 +494,34 @@ function buildPredictedSolarSeries(
   );
 }
 
+function buildPredictedSolarSeriesWithForecastFallback(
+  solarForecastSamples: SolarForecastSampleRecord[],
+  solarEnergyProviderSamples: SolarEnergyProviderSampleRecord[],
+): PredictedPoint[] {
+  const forecastByPeriodStart = new Map(
+    solarForecastSamples.map((sample) => [sample.periodStart, sample.value]),
+  );
+
+  return buildPredictedSolarSeries(
+    solarForecastSamples,
+    solarEnergyProviderSamples,
+  ).map((point) => {
+    const forecastValue = forecastByPeriodStart.get(point.periodStart);
+    const fallbackValue =
+      typeof forecastValue === "number" ? Math.max(0, forecastValue) : null;
+
+    return {
+      ...point,
+      value:
+        point.value === null
+          ? fallbackValue
+          : fallbackValue === null
+            ? point.value
+            : Math.max(point.value, fallbackValue),
+    };
+  });
+}
+
 export function resolveDelayedChargingLowPriceMarkerEligibility(input: {
   batteryPowerSamples: BatteryPowerSampleRecord[];
   dynamicPriceSamples: DynamicPriceSampleRecord[];
@@ -484,7 +535,7 @@ export function resolveDelayedChargingLowPriceMarkerEligibility(input: {
     now: input.now,
     dynamicPriceSamples: input.dynamicPriceSamples,
   });
-  const predictedSeries = buildPredictedSolarSeries(
+  const predictedSeries = buildPredictedSolarSeriesWithForecastFallback(
     input.solarForecastSamples,
     input.solarEnergyProviderSamples,
   );
@@ -525,6 +576,169 @@ export function formatDelayedChargingLowPriceMarkerSkipReason(
       : String(Math.round(eligibility.predictedSolarW));
 
   return `skipped: low-price marker ${eligibility.lowPriceMarkerTime.toISOString()} needs expected solar above expected house load, but predicted solar is ${predictedSolarText}W and expected house load is ${Math.round(eligibility.expectedHouseLoadW)}W`;
+}
+
+export function estimateImportShortage(input: {
+  battery: BatteryRecord;
+  batteryPowerSamples: BatteryPowerSampleRecord[];
+  now: Date;
+  p1MeterSamples: P1MeterSampleRecord[];
+  sample: NormalizedBatteryInfo;
+  solarEnergyProviderSamples: SolarEnergyProviderSampleRecord[];
+  solarForecastSamples: SolarForecastSampleRecord[];
+  triggerAt: Date;
+}): ImportShortageEstimate {
+  const predictedSeries = buildPredictedSolarSeriesWithForecastFallback(
+    input.solarForecastSamples,
+    input.solarEnergyProviderSamples,
+  );
+  const historySeries = buildHouseLoadHistorySeries({
+    batteryPowerSamples: input.batteryPowerSamples,
+    p1MeterSamples: input.p1MeterSamples,
+    solarEnergyProviderSamples: input.solarEnergyProviderSamples,
+  });
+  const sharedLoadProfile = buildExpectedSiteLoadProfile(
+    historySeries,
+    input.now,
+  );
+  const loadProfile: LoadProfile = {
+    expectedLoadBySlot: sharedLoadProfile.expectedLoadBySlot,
+    fallbackLoadW: sharedLoadProfile.fallbackLoadW,
+    historicalPeriodsUsed: sharedLoadProfile.historicalPeriodsUsed,
+    sameWeekdayPeriodsUsed: sharedLoadProfile.sameWeekdayPeriodsUsed,
+  };
+  const historyStats = {
+    historicalPeriodsUsed: loadProfile.historicalPeriodsUsed,
+    sameWeekdayPeriodsUsed: loadProfile.sameWeekdayPeriodsUsed,
+    slotCount: loadProfile.expectedLoadBySlot.size,
+  };
+  const capacityWh = input.sample.capacityWh;
+  const currentSocPercent = input.sample.socPercent;
+
+  if (capacityWh === null || capacityWh <= 0 || currentSocPercent === null) {
+    return {
+      availability: "unavailable",
+      chargeStartTime: null,
+      currentSocPercent,
+      expectedFullAt: null,
+      expectedHouseLoadDuringSurplusWh: 0,
+      expectedHouseLoadUntilChargeStartWh: 0,
+      expectedSolarGenerationWh: 0,
+      expectedSurplusEnergyWh: 0,
+      historyStats,
+      projectedChargeStartSocPercent: null,
+      projectedEndSocPercent: null,
+      reasoning: "battery capacity or current charge was unavailable",
+      shortageToFullPercent: null,
+      surplusEndTime: null,
+      triggerAt: input.triggerAt.toISOString(),
+      warning: null,
+    };
+  }
+
+  const chargeStart = findSolarSurplusStart({
+    loadProfile,
+    predictedSeries,
+    triggerAt: input.triggerAt,
+  });
+
+  if (chargeStart === null) {
+    return {
+      availability: predictedSeries.length === 0 ? "unavailable" : "partial",
+      chargeStartTime: null,
+      currentSocPercent,
+      expectedFullAt: null,
+      expectedHouseLoadDuringSurplusWh: 0,
+      expectedHouseLoadUntilChargeStartWh: 0,
+      expectedSolarGenerationWh: 0,
+      expectedSurplusEnergyWh: 0,
+      historyStats,
+      projectedChargeStartSocPercent: null,
+      projectedEndSocPercent: currentSocPercent,
+      reasoning: "no expected solar surplus window was found",
+      shortageToFullPercent: round2(100 - currentSocPercent),
+      surplusEndTime: null,
+      triggerAt: input.triggerAt.toISOString(),
+      warning: null,
+    };
+  }
+
+  const surplusEnd = findSolarSurplusEnd({
+    chargeStart,
+    loadProfile,
+    predictedSeries,
+    triggerAt: input.triggerAt,
+  });
+  const periodHours = resolvePeriodHours(input.solarForecastSamples);
+  const preChargeEnergyEstimate = buildIntervalEnergyEstimate({
+    integrationEnd: chargeStart,
+    integrationStart: input.triggerAt,
+    loadProfile,
+    mode: "load-minus-solar",
+    periodHours,
+    predictedSeries,
+  });
+  const surplusEnergyEstimate = buildIntervalEnergyEstimate({
+    integrationEnd: surplusEnd,
+    integrationStart: chargeStart,
+    loadProfile,
+    mode: "solar-minus-load",
+    periodHours,
+    predictedSeries,
+  });
+  const currentEnergyWh = capacityWh * (currentSocPercent / 100);
+  const chargeStartEnergyWh = Math.max(
+    0,
+    currentEnergyWh - preChargeEnergyEstimate.estimatedRemainingEnergyWh,
+  );
+  const projectedChargeStartSocPercent = round2(
+    (chargeStartEnergyWh / capacityWh) * 100,
+  );
+  const projectedEndEnergyWh = Math.min(
+    capacityWh,
+    chargeStartEnergyWh + surplusEnergyEstimate.estimatedRemainingEnergyWh,
+  );
+  const projectedEndSocPercent = round2(
+    (projectedEndEnergyWh / capacityWh) * 100,
+  );
+  const shortageToFullPercent = round2(100 - projectedEndSocPercent);
+
+  return {
+    availability:
+      loadProfile.expectedLoadBySlot.size === 0 ? "partial" : "full",
+    chargeStartTime: chargeStart.toISOString(),
+    currentSocPercent,
+    expectedFullAt:
+      resolveExpectedFullAt({
+        capacityWh,
+        chargeStartEnergyWh,
+        energyBuckets: surplusEnergyEstimate.energyBuckets,
+      })?.toISOString() ?? null,
+    expectedHouseLoadDuringSurplusWh: surplusEnergyEstimate.expectedHouseLoadWh,
+    expectedHouseLoadUntilChargeStartWh:
+      preChargeEnergyEstimate.estimatedRemainingEnergyWh,
+    expectedSolarGenerationWh: surplusEnergyEstimate.predictedSolarGenerationWh,
+    expectedSurplusEnergyWh: surplusEnergyEstimate.estimatedRemainingEnergyWh,
+    historyStats,
+    projectedChargeStartSocPercent,
+    projectedEndSocPercent,
+    reasoning: "expected solar surplus recovery after low-price trigger",
+    shortageToFullPercent,
+    surplusEndTime: surplusEnd.toISOString(),
+    triggerAt: input.triggerAt.toISOString(),
+    warning: null,
+  };
+}
+
+export function formatImportShortageEstimateForLog(input: {
+  batteryId: string;
+  estimate: ImportShortageEstimate;
+}): string {
+  const expectedFullAt = input.estimate.expectedFullAt
+    ? ` expectedFullAt=${input.estimate.expectedFullAt}`
+    : "";
+
+  return `import-shortage estimate for battery ${input.batteryId}: triggerAt=${input.estimate.triggerAt} currentSoc=${formatNullablePercent(input.estimate.currentSocPercent)} chargeStart=${input.estimate.chargeStartTime ?? "unknown"} surplusEnd=${input.estimate.surplusEndTime ?? "unknown"} solarEnergy=${formatWhAsKwh(input.estimate.expectedSolarGenerationWh)} houseEnergyDuringSurplus=${formatWhAsKwh(input.estimate.expectedHouseLoadDuringSurplusWh)} surplusEnergy=${formatWhAsKwh(input.estimate.expectedSurplusEnergyWh)} houseEnergyUntilChargeStart=${formatWhAsKwh(input.estimate.expectedHouseLoadUntilChargeStartWh)} projectedChargeStartSoc=${formatNullablePercent(input.estimate.projectedChargeStartSocPercent)} projectedEndSoc=${formatNullablePercent(input.estimate.projectedEndSocPercent)} shortageToFull=${formatNullablePercent(input.estimate.shortageToFullPercent)} availability=${input.estimate.availability}${expectedFullAt}`;
 }
 
 function findSolarRecoveryTime(input: {
@@ -1192,6 +1406,113 @@ function resolveDelayedChargingMarkerEligibility(input: {
   };
 }
 
+function findSolarSurplusStart(input: {
+  loadProfile: LoadProfile;
+  predictedSeries: PredictedPoint[];
+  triggerAt: Date;
+}): Date | null {
+  for (const point of input.predictedSeries) {
+    const pointDate = new Date(point.periodStart);
+
+    if (
+      Number.isNaN(pointDate.getTime()) ||
+      pointDate.getTime() < input.triggerAt.getTime()
+    ) {
+      continue;
+    }
+
+    const predictedSolarW =
+      typeof point.value === "number" ? Math.max(0, point.value) : null;
+    const expectedHouseLoadW = resolveExpectedSiteLoadW(
+      pointDate,
+      input.loadProfile,
+    );
+
+    if (predictedSolarW !== null && predictedSolarW > expectedHouseLoadW) {
+      return pointDate;
+    }
+  }
+
+  return null;
+}
+
+function findSolarSurplusEnd(input: {
+  chargeStart: Date;
+  loadProfile: LoadProfile;
+  predictedSeries: PredictedPoint[];
+  triggerAt: Date;
+}): Date {
+  for (const point of input.predictedSeries) {
+    const pointDate = new Date(point.periodStart);
+
+    if (
+      Number.isNaN(pointDate.getTime()) ||
+      pointDate.getTime() <= input.chargeStart.getTime()
+    ) {
+      continue;
+    }
+
+    const predictedSolarW =
+      typeof point.value === "number" ? Math.max(0, point.value) : null;
+    const expectedHouseLoadW = resolveExpectedSiteLoadW(
+      pointDate,
+      input.loadProfile,
+    );
+
+    if (predictedSolarW === null || predictedSolarW <= expectedHouseLoadW) {
+      return pointDate;
+    }
+  }
+
+  return endOfDay(input.triggerAt);
+}
+
+function resolveExpectedFullAt(input: {
+  capacityWh: number;
+  chargeStartEnergyWh: number;
+  energyBuckets: EnergyBucket[];
+}): Date | null {
+  if (input.chargeStartEnergyWh >= input.capacityWh) {
+    const firstBucket = input.energyBuckets[0];
+
+    return firstBucket ? new Date(firstBucket.time) : null;
+  }
+
+  let priorCumulativeSurplusWh = 0;
+
+  for (const bucket of input.energyBuckets) {
+    const currentEnergyWh =
+      input.chargeStartEnergyWh + bucket.cumulativeNetBatteryEnergyNeededWh;
+
+    if (currentEnergyWh < input.capacityWh) {
+      priorCumulativeSurplusWh = bucket.cumulativeNetBatteryEnergyNeededWh;
+      continue;
+    }
+
+    const bucketSurplusWh = Math.max(
+      0,
+      bucket.cumulativeNetBatteryEnergyNeededWh - priorCumulativeSurplusWh,
+    );
+    const remainingWh = Math.max(
+      0,
+      input.capacityWh - input.chargeStartEnergyWh - priorCumulativeSurplusWh,
+    );
+    const fraction = bucketSurplusWh > 0 ? remainingWh / bucketSurplusWh : 1;
+    const bucketStart = new Date(bucket.time);
+
+    if (Number.isNaN(bucketStart.getTime())) {
+      return null;
+    }
+
+    return new Date(
+      bucketStart.getTime() +
+        Math.min(1, Math.max(0, fraction)) * bucket.durationMinutes * 60_000,
+    );
+  }
+
+  return null;
+}
+
 function resolveDelayedChargingChargePowerW(
   battery: BatteryRecord,
 ): number | null {
@@ -1494,6 +1815,14 @@ function clampPercent(value: number, minimum: number): number {
 
 function round2(value: number): number {
   return Number(value.toFixed(2));
+}
+
+function formatNullablePercent(value: number | null): string {
+  return value === null ? "unknown" : `${round2(value)}%`;
+}
+
+function formatWhAsKwh(value: number): string {
+  return `${round2(value / 1000)}kWh`;
 }
 
 function endOfDay(now: Date): Date {

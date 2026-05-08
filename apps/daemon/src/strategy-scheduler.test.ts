@@ -70,6 +70,25 @@ test("getStrategyTriggerAt uses the latest due delayed-charging and export-surpl
   expect(highPriceTriggerAt?.toISOString()).toBe("2026-04-09T08:00:00.000Z");
 });
 
+test("getStrategyTriggerAt uses the low-price marker for import-shortage", () => {
+  const triggerAt = getStrategyTriggerAt({
+    item: createDailyItem({
+      targetMethod: "auto",
+      triggerKind: BatteryStrategyTriggerKind.ImportShortage,
+    }),
+    now: new Date("2026-04-09T14:30:00.000Z"),
+    dynamicPriceSamples: createDynamicPriceSamples([
+      ["2026-04-09T00:00:00.000Z", 20],
+      ["2026-04-09T04:00:00.000Z", 10],
+      ["2026-04-09T08:00:00.000Z", 30],
+      ["2026-04-09T12:00:00.000Z", 10],
+      ["2026-04-09T16:00:00.000Z", 20],
+    ]),
+  });
+
+  expect(triggerAt?.toISOString()).toBe("2026-04-09T12:00:00.000Z");
+});
+
 test("getStrategyTriggerAt returns the next upcoming price marker when none are due yet", () => {
   const triggerAt = getStrategyTriggerAt({
     item: createDailyItem({

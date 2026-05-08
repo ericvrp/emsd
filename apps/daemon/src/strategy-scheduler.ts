@@ -702,7 +702,8 @@ function getNextLowPriceAutoTriggerAt(input: {
 function getPriceMarkerTriggerAt(input: {
   triggerKind:
     | BatteryStrategyTriggerKind.DelayedCharging
-    | BatteryStrategyTriggerKind.ExportSurplus;
+    | BatteryStrategyTriggerKind.ExportSurplus
+    | BatteryStrategyTriggerKind.ImportShortage;
   now: Date;
   dynamicPriceSamples: DynamicPriceSampleRecord[];
 }): Date | null {
@@ -730,14 +731,14 @@ function getPriceMarkerTriggerAt(input: {
 export function getNextPriceMarkerTriggerAt(input: {
   triggerKind:
     | BatteryStrategyTriggerKind.DelayedCharging
-    | BatteryStrategyTriggerKind.ExportSurplus;
+    | BatteryStrategyTriggerKind.ExportSurplus
+    | BatteryStrategyTriggerKind.ImportShortage;
   now: Date;
   dynamicPriceSamples: DynamicPriceSampleRecord[];
 }): Date | null {
-  const upcomingMarkers =
-    input.triggerKind === BatteryStrategyTriggerKind.DelayedCharging
-      ? getPriceMarkersOnOrAfterDay(input)
-      : getPriceMarkersForToday(input);
+  const upcomingMarkers = isLowPriceTriggerKind(input.triggerKind)
+    ? getPriceMarkersOnOrAfterDay(input)
+    : getPriceMarkersForToday(input);
 
   for (const markerAt of upcomingMarkers) {
     if (markerAt.getTime() >= input.now.getTime()) {
@@ -759,7 +760,8 @@ export function getLowPriceAutoTriggerAtForMarker(input: {
 export function getPriceMarkersForToday(input: {
   triggerKind:
     | BatteryStrategyTriggerKind.DelayedCharging
-    | BatteryStrategyTriggerKind.ExportSurplus;
+    | BatteryStrategyTriggerKind.ExportSurplus
+    | BatteryStrategyTriggerKind.ImportShortage;
   now: Date;
   dynamicPriceSamples: DynamicPriceSampleRecord[];
 }): Date[] {
@@ -770,10 +772,9 @@ export function getPriceMarkersForToday(input: {
     })),
     PRICE_SELECTION_WINDOW_MS,
   );
-  const markerPeriodStarts =
-    input.triggerKind === BatteryStrategyTriggerKind.DelayedCharging
-      ? selections.lowest.map((point) => point.periodStart)
-      : selections.highest.map((point) => point.periodStart);
+  const markerPeriodStarts = isLowPriceTriggerKind(input.triggerKind)
+    ? selections.lowest.map((point) => point.periodStart)
+    : selections.highest.map((point) => point.periodStart);
 
   return markerPeriodStarts
     .map((periodStart) => new Date(periodStart))
@@ -788,7 +789,8 @@ export function getPriceMarkersForToday(input: {
 function getPriceMarkersOnOrAfterDay(input: {
   triggerKind:
     | BatteryStrategyTriggerKind.DelayedCharging
-    | BatteryStrategyTriggerKind.ExportSurplus;
+    | BatteryStrategyTriggerKind.ExportSurplus
+    | BatteryStrategyTriggerKind.ImportShortage;
   now: Date;
   dynamicPriceSamples: DynamicPriceSampleRecord[];
 }): Date[] {
@@ -802,7 +804,8 @@ function getPriceMarkersOnOrAfterDay(input: {
 function getAllPriceMarkers(input: {
   triggerKind:
     | BatteryStrategyTriggerKind.DelayedCharging
-    | BatteryStrategyTriggerKind.ExportSurplus;
+    | BatteryStrategyTriggerKind.ExportSurplus
+    | BatteryStrategyTriggerKind.ImportShortage;
   dynamicPriceSamples: DynamicPriceSampleRecord[];
 }): Date[] {
   const selections = findPriceSelections(
@@ -812,15 +815,23 @@ function getAllPriceMarkers(input: {
     })),
     PRICE_SELECTION_WINDOW_MS,
   );
-  const markerPeriodStarts =
-    input.triggerKind === BatteryStrategyTriggerKind.DelayedCharging
-      ? selections.lowest.map((point) => point.periodStart)
-      : selections.highest.map((point) => point.periodStart);
+  const markerPeriodStarts = isLowPriceTriggerKind(input.triggerKind)
+    ? selections.lowest.map((point) => point.periodStart)
+    : selections.highest.map((point) => point.periodStart);
 
   return markerPeriodStarts
     .map((periodStart) => new Date(periodStart))
     .filter((markerAt) => !Number.isNaN(markerAt.getTime()))
     .sort((left, right) => left.getTime() - right.getTime());
+}
+
+function isLowPriceTriggerKind(
+  triggerKind: BatteryStrategyTriggerKind,
+): boolean {
+  return (
+    triggerKind === BatteryStrategyTriggerKind.DelayedCharging ||
+    triggerKind === BatteryStrategyTriggerKind.ImportShortage
+  );
 }
 
 function getActiveDynamicPriceSampleAtOrBefore(

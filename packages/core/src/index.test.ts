@@ -382,10 +382,37 @@ test("normalizeBatteryStrategyPlan accepts low and high price triggers and drops
     BatteryStrategyTriggerKind.DelayedCharging,
   );
   expect(normalized[4]?.triggerKind).toBe(
+    BatteryStrategyTriggerKind.ImportShortage,
+  );
+  expect(normalized[5]?.triggerKind).toBe(
     BatteryStrategyTriggerKind.SolarProductionControl,
   );
-  expect(normalized[4]?.enabled).toBe(true);
-  expect(normalized[5]?.triggerKind).toBe(BatteryStrategyTriggerKind.DailyTime);
+  expect(normalized[5]?.enabled).toBe(true);
+  expect(normalized[6]?.triggerKind).toBe(BatteryStrategyTriggerKind.DailyTime);
+});
+
+test("normalizeBatteryStrategyPlan places import-shortage before solar production control", () => {
+  const normalized = normalizeBatteryStrategyPlan({
+    minimumDischargePercent: 20,
+    strategy: {
+      strategyMode: "self-consumption",
+      manualState: null,
+      manualPowerW: null,
+      manualChargeTargetSoc: 100,
+      manualDischargeTargetSoc: 20,
+      manualTargetSoc: 100,
+    },
+    value: null,
+  });
+
+  expect(normalized.map((item) => item.triggerKind)).toEqual([
+    null,
+    BatteryStrategyTriggerKind.ExportSurplus,
+    BatteryStrategyTriggerKind.DelayedChargePrep,
+    BatteryStrategyTriggerKind.DelayedCharging,
+    BatteryStrategyTriggerKind.ImportShortage,
+    BatteryStrategyTriggerKind.SolarProductionControl,
+  ]);
 });
 
 test("normalizeBatteryStrategyPlan assigns a stable migration id to legacy delayed-charge-prep", () => {
@@ -560,15 +587,22 @@ test("normalizeBatteryStrategyPlan assigns a stable migration id to legacy solar
     value: legacy4ItemPlan,
   });
 
-  expect(first[4]?.triggerKind).toBe(
-    BatteryStrategyTriggerKind.SolarProductionControl,
-  );
+  expect(first[4]?.triggerKind).toBe(BatteryStrategyTriggerKind.ImportShortage);
   expect(second[4]?.triggerKind).toBe(
-    BatteryStrategyTriggerKind.SolarProductionControl,
+    BatteryStrategyTriggerKind.ImportShortage,
   );
-  expect(first[4]?.id).toBe("migrated-solar-production-control");
+  expect(first[4]?.id).toBe("migrated-import-shortage");
   expect(first[4]?.id).toBe(second[4]?.id);
   expect(first[4]?.enabled).toBe(true);
+  expect(first[5]?.triggerKind).toBe(
+    BatteryStrategyTriggerKind.SolarProductionControl,
+  );
+  expect(second[5]?.triggerKind).toBe(
+    BatteryStrategyTriggerKind.SolarProductionControl,
+  );
+  expect(first[5]?.id).toBe("migrated-solar-production-control");
+  expect(first[5]?.id).toBe(second[5]?.id);
+  expect(first[5]?.enabled).toBe(true);
 });
 
 test("isBatteryStrategyTriggerNeedingPriceSamples includes delayed-charge-prep", () => {
@@ -585,6 +619,11 @@ test("isBatteryStrategyTriggerNeedingPriceSamples includes delayed-charge-prep",
   expect(
     isBatteryStrategyTriggerNeedingPriceSamples(
       BatteryStrategyTriggerKind.DelayedChargePrep,
+    ),
+  ).toBe(true);
+  expect(
+    isBatteryStrategyTriggerNeedingPriceSamples(
+      BatteryStrategyTriggerKind.ImportShortage,
     ),
   ).toBe(true);
   expect(

@@ -222,6 +222,7 @@ test("uses self-consumption wording in the scheduled start summary for delayed-c
       "",
       {
         reasoning: "expected net solar fill power at the low-price marker",
+        recoveryTime: "2026-04-13T11:20:00.000Z",
         resolvedManualState: null,
         targetSocPercent: 100,
         reserveSocPercent: 100,
@@ -229,7 +230,7 @@ test("uses self-consumption wording in the scheduled start summary for delayed-c
       },
     ),
   ).toBe(
-    "the delayed charging schedule is now active for battery-1: self-consumption with a dynamic target; switching to self-consumption ahead of 10:00 based on expected net solar fill power at the low-price marker",
+    "the delayed charging schedule is now active for battery-1: self-consumption with a dynamic target; switched to self-consumption because solar surplus is expected around the low-price point at 10:00; battery should be full again around 11:20",
   );
 });
 
@@ -788,6 +789,7 @@ function buildRuntime(
 ): BatteryStrategyRuntimeRecord {
   return {
     activeItemId: null,
+    activeRecoveryTime: null,
     activeStartedAt: null,
     activeObservedAt: null,
     activeStartSocPercent: null,

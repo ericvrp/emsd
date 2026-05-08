@@ -73,6 +73,7 @@ export interface BatteryStrategyRuntimeRecord {
   activeTargetSocPercent?: number | null;
   activeReserveSocPercent?: number | null;
   activeTargetTime?: string | null;
+  activeRecoveryTime?: string | null;
   activeStartedAt: string | null;
   activeObservedAt: string | null;
   activeStartSocPercent: number | null;
@@ -377,6 +378,7 @@ export function createBatteryStrategyRuntime(): BatteryStrategyRuntimeRecord {
     activeTargetSocPercent: null,
     activeReserveSocPercent: null,
     activeTargetTime: null,
+    activeRecoveryTime: null,
     activeStartedAt: null,
     activeObservedAt: null,
     activeStartSocPercent: null,
@@ -401,6 +403,7 @@ export function clearActiveBatteryStrategyRuntime(
     activeTargetSocPercent: null,
     activeReserveSocPercent: null,
     activeTargetTime: null,
+    activeRecoveryTime: null,
     activeStartedAt: null,
     activeObservedAt: null,
     activeStartSocPercent: null,
@@ -451,6 +454,7 @@ export function createBatteryStrategyRuntimeForPlanApply(
     activeTargetSocPercent: null,
     activeReserveSocPercent: null,
     activeTargetTime: null,
+    activeRecoveryTime: null,
     activeStartedAt: null,
     activeObservedAt: null,
     activeStartSocPercent: null,
@@ -516,6 +520,7 @@ export function createDefaultBatteryStrategyPlan(
     createExportSurplusBatteryStrategyPlanItem(),
     createDelayedChargePrepBatteryStrategyPlanItem(),
     createDelayedChargingBatteryStrategyPlanItem(),
+    createImportShortageBatteryStrategyPlanItem(),
     createSolarProductionControlBatteryStrategyPlanItem(),
   ];
 }
@@ -595,11 +600,23 @@ export function normalizeBatteryStrategyPlan(input: {
     delayedChargingSourceIndex === -1
       ? null
       : (restItems[delayedChargingSourceIndex] ?? null);
+  const importShortageSourceIndex = restItems.findIndex(
+    (item, index) =>
+      index !== exportSurplusSourceIndex &&
+      index !== delayedChargePrepSourceIndex &&
+      index !== delayedChargingSourceIndex &&
+      item.triggerKind === BatteryStrategyTriggerKind.ImportShortage,
+  );
+  const importShortageSource =
+    importShortageSourceIndex === -1
+      ? null
+      : (restItems[importShortageSourceIndex] ?? null);
   const solarProductionControlSourceIndex = restItems.findIndex(
     (item, index) =>
       index !== exportSurplusSourceIndex &&
       index !== delayedChargePrepSourceIndex &&
       index !== delayedChargingSourceIndex &&
+      index !== importShortageSourceIndex &&
       item.triggerKind === BatteryStrategyTriggerKind.SolarProductionControl,
   );
   const solarProductionControlSource =
@@ -623,8 +640,15 @@ export function normalizeBatteryStrategyPlan(input: {
       value: delayedChargingSource,
     }),
     normalizeFixedBatteryStrategyPlanItem({
+      fallback: fallback[4] ?? createImportShortageBatteryStrategyPlanItem(),
+      value: importShortageSource,
+      ...(importShortageSource
+        ? {}
+        : { migrationId: "migrated-import-shortage" }),
+    }),
+    normalizeFixedBatteryStrategyPlanItem({
       fallback:
-        fallback[4] ?? createSolarProductionControlBatteryStrategyPlanItem(),
+        fallback[5] ?? createSolarProductionControlBatteryStrategyPlanItem(),
       value: solarProductionControlSource,
       ...(solarProductionControlSource
         ? {}
@@ -661,8 +685,9 @@ export function normalizeBatteryStrategyPlan(input: {
         index !== exportSurplusSourceIndex &&
         index !== delayedChargePrepSourceIndex &&
         index !== delayedChargingSourceIndex &&
+        index !== importShortageSourceIndex &&
         index !== solarProductionControlSourceIndex,
-     );
+    );
 
   return [normalizedFirstItem, ...normalizedFixedItems, ...normalizedRestItems];
 }
@@ -899,6 +924,11 @@ function normalizeBatteryStrategyRuntime(
       candidate.activeTargetTime.length > 0
         ? candidate.activeTargetTime
         : null,
+    activeRecoveryTime:
+      typeof candidate.activeRecoveryTime === "string" &&
+      candidate.activeRecoveryTime.length > 0
+        ? candidate.activeRecoveryTime
+        : null,
     activeStartedAt:
       typeof candidate.activeStartedAt === "string" &&
       candidate.activeStartedAt.length > 0
@@ -982,6 +1012,10 @@ function normalizeTriggerKind(
 
   if (value === BatteryStrategyTriggerKind.DelayedCharging) {
     return BatteryStrategyTriggerKind.DelayedCharging;
+  }
+
+  if (value === BatteryStrategyTriggerKind.ImportShortage) {
+    return BatteryStrategyTriggerKind.ImportShortage;
   }
 
   if (value === BatteryStrategyTriggerKind.SolarProductionControl) {
@@ -1073,6 +1107,28 @@ function createDelayedChargePrepBatteryStrategyPlanItem(): BatteryStrategyPlanIt
     targetEndTime: null,
     targetMethod: "auto",
     triggerKind: BatteryStrategyTriggerKind.DelayedChargePrep,
+    strategyMode: "manual",
+    manualState: "idle",
+    manualPowerW: null,
+    manualChargeTargetSoc: null,
+    manualDischargeTargetSoc: null,
+    manualTargetSoc: null,
+  };
+}
+
+function createImportShortageBatteryStrategyPlanItem(): BatteryStrategyPlanItem {
+  return {
+    enabled: true,
+    id: createBatteryStrategyPlanId(),
+    kind: "daily",
+    name: formatBatteryStrategyBuiltinItemLabel(
+      BatteryStrategyBuiltinItemKey.ImportShortage,
+    ),
+    startTime: null,
+    targetDurationMinutes: null,
+    targetEndTime: null,
+    targetMethod: "auto",
+    triggerKind: BatteryStrategyTriggerKind.ImportShortage,
     strategyMode: "manual",
     manualState: "idle",
     manualPowerW: null,

@@ -102,6 +102,7 @@ export function formatScheduledStrategyStartedSummary(
     targetSocPercent: number;
     reserveSocPercent: number;
     targetTime: string | null;
+    recoveryTime?: string | null;
     reasoning: string;
   } | null,
 ): string {
@@ -130,12 +131,14 @@ export function formatScheduledStrategyStartedSummary(
     isDelayedChargingAutoDischargeItem(item) &&
     estimate.resolvedManualState === null
   ) {
-    const markerTimeLabel =
-      estimate.targetTime === null
-        ? ""
-        : ` ahead of ${formatHumanClockTime(estimate.targetTime)}`;
+    const markerTimeLabel = estimate.targetTime
+      ? ` around the low-price point at ${formatHumanClockTime(estimate.targetTime)}`
+      : " around the low-price point";
+    const recoveryTimeLabel = estimate.recoveryTime
+      ? `; battery should be full again around ${formatHumanClockTime(estimate.recoveryTime)}`
+      : "";
 
-    return `${base}; switching to self-consumption${markerTimeLabel} based on ${estimate.reasoning}`;
+    return `${base}; switched to self-consumption because solar surplus is expected${markerTimeLabel}${recoveryTimeLabel}`;
   }
 
   if (estimate.resolvedManualState === "charging") {
