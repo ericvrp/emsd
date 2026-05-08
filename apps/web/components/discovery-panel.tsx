@@ -105,9 +105,9 @@ const SUPPORTED_DISCOVERY_PLUGINS: readonly SupportedPluginEntry[] = [
   {
     type: "Solar",
     plugin: "Huawei SUN2000",
-    status: "untested",
+    status: "working",
     notes:
-      "Modbus-based discovery and runtime support exist, but field validation is still limited.",
+      "Modbus-based discovery and runtime support with full production control via register writes.",
   },
   {
     type: "Price",

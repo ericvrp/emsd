@@ -1648,9 +1648,11 @@ async function runIndependentSolarProductionControlStrategy(
     const currentStatus = providerTelemetry?.productionControlStatus ?? null;
 
     if (currentStatus === null || currentStatus === "unavailable") {
-      logVerbose(
+      const desiredLabel = decision.desiredEnabled ? "enable" : "disable";
+      logInfoWithVerboseDetails(
         verbose,
-        `solar production control skipped for ${provider.id}: provider state is unavailable`,
+        `solar production control not possible for ${provider.id}: ${desiredLabel} not supported by this provider`,
+        `solar production control skipped for ${provider.id}: desired=${desiredLabel} currentStatus=${currentStatus}`,
       );
       continue;
     }
