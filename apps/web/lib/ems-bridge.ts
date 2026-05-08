@@ -1,8 +1,7 @@
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { promisify } from "node:util";
 import type {
   BatteryPowerSampleRecord,
   BatteryStrategyPlanRecord,
@@ -24,7 +23,6 @@ import type {
 import { getRepoRoot as resolveRepoRoot } from "@emsd/core";
 import type { DiscoveredDevice } from "./discovery-proof";
 
-const execFileAsync = promisify(execFile);
 const repoRootPath = resolveRepoRoot();
 const BRIDGE_MAX_BUFFER_BYTES = 10 * 1024 * 1024;
 const daemonEnvFilePath = join(repoRootPath, "apps", "daemon", ".env");
@@ -40,6 +38,11 @@ interface BridgeFailure {
 }
 
 type BridgeResponse<T> = BridgeSuccess<T> | BridgeFailure;
+
+interface BridgeProcessResult {
+  stderr: string;
+  stdout: string;
+}
 
 export type {
   BatteryPowerSampleRecord,
@@ -65,8 +68,7 @@ async function runBridge<T>(
 
   try {
     try {
-      const result = await execFileAsync(
-        "bun",
+      const result = await runBridgeProcess(
         [
           "run",
           "ems",
@@ -76,11 +78,7 @@ async function runBridge<T>(
           JSON.stringify(input),
           outputFilePath,
         ],
-        {
-          cwd: repoRootPath,
-          env: buildBridgeEnv(),
-          maxBuffer: BRIDGE_MAX_BUFFER_BYTES,
-        },
+        shouldForwardBridgeStderr(action),
       );
 
       stdout = result.stdout;
@@ -130,6 +128,98 @@ async function runBridge<T>(
   } finally {
     rmSync(tempDirectoryPath, { recursive: true, force: true });
   }
+}
+
+function runBridgeProcess(
+  args: string[],
+  forwardStderr: boolean,
+): Promise<BridgeProcessResult> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("bun", args, {
+      cwd: repoRootPath,
+      env: buildBridgeEnv(),
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+    let stdoutBytes = 0;
+    let stderrBytes = 0;
+    let settled = false;
+
+    const finishWithError = (error: Error & { stderr?: string; stdout?: string }) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      error.stdout = Buffer.concat(stdoutChunks).toString("utf8");
+      error.stderr = Buffer.concat(stderrChunks).toString("utf8");
+      reject(error);
+    };
+
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdoutBytes += chunk.length;
+
+      if (stdoutBytes > BRIDGE_MAX_BUFFER_BYTES) {
+        child.kill();
+        finishWithError(new Error("Bridge stdout exceeded max buffer."));
+        return;
+      }
+
+      stdoutChunks.push(chunk);
+    });
+
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderrBytes += chunk.length;
+
+      if (stderrBytes > BRIDGE_MAX_BUFFER_BYTES) {
+        child.kill();
+        finishWithError(new Error("Bridge stderr exceeded max buffer."));
+        return;
+      }
+
+      stderrChunks.push(chunk);
+
+      if (forwardStderr) {
+        process.stderr.write(chunk);
+      }
+    });
+
+    child.once("error", (error) => {
+      finishWithError(error as Error & { stderr?: string; stdout?: string });
+    });
+
+    child.once("close", (code, signal) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+
+      const stdout = Buffer.concat(stdoutChunks).toString("utf8");
+      const stderr = Buffer.concat(stderrChunks).toString("utf8");
+
+      if (code === 0) {
+        resolve({ stderr, stdout });
+        return;
+      }
+
+      const reason = signal
+        ? `Bridge process exited from signal ${signal}.`
+        : `Bridge process exited with code ${code ?? "unknown"}.`;
+      const error = new Error(reason) as Error & {
+        stderr?: string;
+        stdout?: string;
+      };
+      error.stdout = stdout;
+      error.stderr = stderr;
+      reject(error);
+    });
+  });
+}
+
+function shouldForwardBridgeStderr(action: string): boolean {
+  return action === "discover";
 }
 
 function buildBridgeEnv(): NodeJS.ProcessEnv {

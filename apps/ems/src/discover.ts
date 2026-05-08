@@ -28,6 +28,8 @@ export interface DiscoveryScanTarget {
 export interface DiscoverCommandOptions {
   verbose: boolean;
   host: string | null;
+  logProgress?: boolean;
+  hostConcurrency?: number;
 }
 
 interface DiscoverySupplementalPayload {
@@ -38,6 +40,16 @@ interface DiscoverySupplementalPayload {
 const HOST_SCAN_START = 1;
 const HOST_SCAN_END = 254;
 const REQUEST_TIMEOUT_MS = 2000;
+const DEFAULT_HOST_CONCURRENCY = 32;
+const DISCOVERY_PROGRESS_INTERVAL_MS = 1000;
+
+interface DiscoveryProgressLogger {
+  hostMatched(ipAddress: string, model: string): void;
+  hostStarted(ipAddress: string): void;
+  hostStage(ipAddress: string, stage: string): void;
+  hostFinished(ipAddress: string): void;
+  stop(): void;
+}
 
 export function formatHelpText(): string {
   return [
@@ -348,9 +360,26 @@ export async function discoverDevices(
   options: DiscoverCommandOptions = { verbose: false, host: null },
 ): Promise<DiscoveredDevice[]> {
   const targets = buildSubnetTargets(subnets);
-  const results = await Promise.all(
-    targets.map((target) => probeTarget(target, options)),
+  const hostConcurrency = Math.max(
+    1,
+    Math.min(options.hostConcurrency ?? DEFAULT_HOST_CONCURRENCY, targets.length),
   );
+  const progressLogger = createDiscoveryProgressLogger(
+    targets,
+    hostConcurrency,
+    options,
+  );
+  const results = await mapWithConcurrency(targets, hostConcurrency, async (target) => {
+    progressLogger.hostStarted(target);
+
+    try {
+      return await probeTarget(target, options, progressLogger);
+    } finally {
+      progressLogger.hostFinished(target);
+    }
+  }).finally(() => {
+    progressLogger.stop();
+  });
 
   return results.filter(
     (result): result is DiscoveredDevice => result !== null,
@@ -420,7 +449,12 @@ export async function discoverHostDevices(
   host: string,
   options: DiscoverCommandOptions = { verbose: false, host: null },
 ): Promise<DiscoveredDevice[]> {
-  const device = await probeTarget(host, options);
+  const progressLogger = createDiscoveryProgressLogger([host], 1, options);
+  progressLogger.hostStarted(host);
+  const device = await probeTarget(host, options, progressLogger).finally(() => {
+    progressLogger.hostFinished(host);
+    progressLogger.stop();
+  });
   return device ? [device] : [];
 }
 
@@ -503,8 +537,11 @@ function compareDiscoveryTargets(
 async function probeTarget(
   ipAddress: string,
   options: DiscoverCommandOptions,
+  progressLogger: DiscoveryProgressLogger,
 ): Promise<DiscoveredDevice | null> {
   for (const plugin of discoveryPlugins) {
+    progressLogger.hostStage(ipAddress, plugin.model);
+
     if (plugin.probe) {
       const device = await plugin.probe({
         ipAddress,
@@ -512,6 +549,8 @@ async function probeTarget(
       });
 
       if (device) {
+        progressLogger.hostMatched(ipAddress, plugin.model);
+
         if (options.verbose) {
           console.error(`Matched ${plugin.model} at ${ipAddress}`);
         }
@@ -546,6 +585,8 @@ async function probeTarget(
       continue;
     }
 
+    progressLogger.hostMatched(ipAddress, plugin.model);
+
     if (options.verbose) {
       console.error(`Matched ${plugin.model} at ${ipAddress}`);
     }
@@ -566,6 +607,107 @@ async function probeTarget(
   }
 
   return null;
+}
+
+function createDiscoveryProgressLogger(
+  targets: string[],
+  hostConcurrency: number,
+  options: DiscoverCommandOptions,
+): DiscoveryProgressLogger {
+  if (!options.logProgress) {
+    return createNoopDiscoveryProgressLogger();
+  }
+
+  const activeStages = new Map<string, string>();
+  let completedHosts = 0;
+  let matchedHosts = 0;
+  const startedHosts = new Set<string>();
+
+  console.error(
+    `Discovery scan starting for ${targets.length} host${targets.length === 1 ? "" : "s"} with host concurrency ${hostConcurrency}. ${discoveryPlugins.length} plugin fingerprint${discoveryPlugins.length === 1 ? "" : "s"} will be checked sequentially per host.`,
+  );
+
+  const interval = setInterval(() => {
+    const activeCount = activeStages.size;
+    const activeStageCounts = new Map<string, number>();
+
+    for (const stage of activeStages.values()) {
+      activeStageCounts.set(stage, (activeStageCounts.get(stage) ?? 0) + 1);
+    }
+
+    const activeSummary = [...activeStageCounts.entries()]
+      .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+      .slice(0, 4)
+      .map(([stage, count]) => `${count}x ${stage}`)
+      .join(", ");
+
+    console.error(
+      `Discovery progress: started ${startedHosts.size}/${targets.length}, completed ${completedHosts}/${targets.length}, active ${activeCount}, matched ${matchedHosts}.${activeSummary ? ` Active stages: ${activeSummary}.` : ""}`,
+    );
+  }, DISCOVERY_PROGRESS_INTERVAL_MS);
+  interval.unref?.();
+
+  return {
+    hostStarted(ipAddress) {
+      startedHosts.add(ipAddress);
+      activeStages.set(ipAddress, "starting");
+    },
+    hostStage(ipAddress, stage) {
+      activeStages.set(ipAddress, stage);
+    },
+    hostMatched(ipAddress, model) {
+      matchedHosts += 1;
+      activeStages.set(ipAddress, `${model} matched`);
+      console.error(`Discovery matched ${model} at ${ipAddress}.`);
+    },
+    hostFinished(ipAddress) {
+      completedHosts += 1;
+      activeStages.delete(ipAddress);
+    },
+    stop() {
+      clearInterval(interval);
+      console.error(
+        `Discovery scan finished. Completed ${completedHosts}/${targets.length} host${targets.length === 1 ? "" : "s"} with ${matchedHosts} match${matchedHosts === 1 ? "" : "es"}.`,
+      );
+    },
+  };
+}
+
+function createNoopDiscoveryProgressLogger(): DiscoveryProgressLogger {
+  return {
+    hostMatched() {},
+    hostStarted() {},
+    hostStage() {},
+    hostFinished() {},
+    stop() {},
+  };
+}
+
+async function mapWithConcurrency<TItem, TResult>(
+  items: TItem[],
+  concurrency: number,
+  worker: (item: TItem, index: number) => Promise<TResult>,
+): Promise<TResult[]> {
+  if (items.length === 0) {
+    return [];
+  }
+
+  const results = new Array<TResult>(items.length);
+  let nextIndex = 0;
+
+  const runners = Array.from(
+    { length: Math.min(concurrency, items.length) },
+    async () => {
+      while (nextIndex < items.length) {
+        const currentIndex = nextIndex;
+        nextIndex += 1;
+        results[currentIndex] = await worker(items[currentIndex] as TItem, currentIndex);
+      }
+    },
+  );
+
+  await Promise.all(runners);
+  return results;
 }
 
 async function fetchDiscoveryResponse(

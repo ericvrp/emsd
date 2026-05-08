@@ -449,7 +449,7 @@ async function discoverForSelection(
   host: string | null,
 ): Promise<DiscoveredDevice[]> {
   if (host) {
-    return discoverHostDevices(host, { host, verbose: false });
+    return discoverHostDevices(host, { host, logProgress: true, verbose: false });
   }
 
   const target = getPreferredDiscoveryTarget();
@@ -458,7 +458,11 @@ async function discoverForSelection(
     return [];
   }
 
-  return discoverDevices([target.subnet], { host: null, verbose: false });
+  return discoverDevices([target.subnet], {
+    host: null,
+    logProgress: true,
+    verbose: false,
+  });
 }
 
 function loadTelemetryByDeviceId(): Map<string, ManagedDeviceTelemetryRecord> {
