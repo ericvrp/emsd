@@ -435,8 +435,9 @@ export function LocalApiPanel() {
 
     for (const sensor of allSensors) {
       const prefix = entityPrefix || "ems";
-      sensorLines += `      - name: "${sensor.label}"\n`;
-      sensorLines += `        unique_id: ${prefix}_${sensor.id}\n`;
+      const cleanId = sensor.id.replace(/^ems_/, "");
+      sensorLines += `      - name: "EMS ${sensor.label}"\n`;
+      sensorLines += `        unique_id: ${prefix}_${cleanId}\n`;
       sensorLines += `        value_template: "${sensor.template}"\n`;
 
       if (sensor.unit) {
@@ -458,8 +459,9 @@ export function LocalApiPanel() {
 
     for (const bs of allBinaries) {
       const prefix = entityPrefix || "ems";
-      binaryLines += `      - name: "${bs.label}"\n`;
-      binaryLines += `        unique_id: ${prefix}_${bs.id}\n`;
+      const cleanId = bs.id.replace(/^ems_/, "");
+      binaryLines += `      - name: "EMS ${bs.label}"\n`;
+      binaryLines += `        unique_id: ${prefix}_${cleanId}\n`;
       binaryLines += `        value_template: "${bs.template}"\n\n`;
     }
 
@@ -744,15 +746,12 @@ ${binaryLines.trimEnd() || "      []"}
                 How to use this YAML
               </p>
               <p className="mb-1">
-                <span className="font-medium text-white">
-                  Option 1 — Package file
-                </span>{" "}
-                (recommended): save as{" "}
+                Save as{" "}
                 <code className="rounded bg-cyan-400/10 px-1 py-0.5 text-cyan-200">
                   packages/ems.yaml
                 </code>{" "}
-                in your Home Assistant config directory. If you haven&apos;t
-                enabled packages yet, add this to{" "}
+                in your Home Assistant config directory.
+                If packages are not yet enabled, add this to{" "}
                 <code className="rounded bg-cyan-400/10 px-1 py-0.5 text-cyan-200">
                   configuration.yaml
                 </code>
@@ -762,15 +761,38 @@ ${binaryLines.trimEnd() || "      []"}
                 homeassistant:{"\n"}
                 {"  "}packages: !include_dir_named packages
               </pre>
-              <p>
-                <span className="font-medium text-white">
-                  Option 2 — Direct
-                </span>
-                : paste the block directly into{" "}
+              <p className="mb-1">
+                Then add this line to{" "}
                 <code className="rounded bg-cyan-400/10 px-1 py-0.5 text-cyan-200">
-                  configuration.yaml
+                  secrets.yaml
                 </code>
-                .
+                :
+              </p>
+              <pre className="mb-2 ml-4 text-cyan-200/80">
+                {generateSecretsEntry()}
+              </pre>
+              <p className="mb-1">
+                <strong className="text-white">After saving, restart Home Assistant</strong>{" "}
+                (Settings &rarr; System &rarr; Restart, or{" "}
+                <code className="rounded bg-cyan-400/10 px-1 py-0.5 text-cyan-200">
+                  docker restart homeassistant
+                </code>
+                ). No manual RESTful integration setup is needed; the YAML is
+                auto-detected.
+              </p>
+              <p>
+                To verify, go to{" "}
+                <strong className="text-white">
+                  Developer Tools &rarr; States
+                </strong>{" "}
+                and search for <code className="rounded bg-cyan-400/10 px-1 py-0.5 text-cyan-200">ems</code>.
+                The entities will appear ungrouped under a single RESTful
+                integration (no device is created). To update the configuration,
+                replace{" "}
+                <code className="rounded bg-cyan-400/10 px-1 py-0.5 text-cyan-200">
+                  packages/ems.yaml
+                </code>{" "}
+                and restart HA again.
               </p>
             </div>
 
