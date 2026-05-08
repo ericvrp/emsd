@@ -82,6 +82,55 @@ test("managed device telemetry can be upserted and read back", () => {
   rmSync(tempDir, { recursive: true, force: true });
 });
 
+test("battery telemetry preserves last known capacity when a later update omits it", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "emsd-daemon-test-"));
+  const databasePath = join(tempDir, "emsd.sqlite");
+  const db = openDaemonDatabase(databasePath);
+
+  upsertManagedDeviceTelemetry(db, {
+    deviceId: "battery-1",
+    siteId: "main-house",
+    kind: "battery",
+    capacityWh: 9600,
+    powerW: -950,
+    productionControlStatus: null,
+    socPercent: 62,
+    state: "discharging",
+    observedAt: "2026-04-05T16:45:00.000Z",
+  });
+  upsertManagedDeviceTelemetry(db, {
+    deviceId: "battery-1",
+    siteId: "main-house",
+    kind: "battery",
+    capacityWh: null,
+    powerW: -900,
+    productionControlStatus: null,
+    socPercent: 61,
+    state: "discharging",
+    observedAt: "2026-04-05T16:50:00.000Z",
+  });
+
+  const telemetry = readManagedDeviceTelemetry(db);
+
+  db.close();
+
+  expect(telemetry).toEqual([
+    {
+      deviceId: "battery-1",
+      siteId: "main-house",
+      kind: "battery",
+      capacityWh: 9600,
+      powerW: -900,
+      productionControlStatus: null,
+      socPercent: 61,
+      state: null,
+      observedAt: "2026-04-05T16:50:00.000Z",
+    },
+  ]);
+
+  rmSync(tempDir, { recursive: true, force: true });
+});
+
 test("solar energy provider control requests can be queued and completed", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "emsd-daemon-test-"));
   const databasePath = join(tempDir, "emsd.sqlite");
@@ -307,20 +356,23 @@ test("dynamic price samples are stored per 15-minute period and trimmed to 30 da
   const tempDir = mkdtempSync(join(tmpdir(), "emsd-daemon-test-"));
   const databasePath = join(tempDir, "emsd.sqlite");
   const db = openDaemonDatabase(databasePath);
+  const expiredStartAt = createUtcTimestampDaysAgo(31, 11, 30);
+  const retainedStartAt = createUtcTimestampDaysAgo(1, 11, 45);
+  const generatedAt = createUtcTimestampDaysAgo(1, 11, 50);
 
   upsertDynamicPriceSnapshot(db, "main-house", {
     currency: "EUR",
-    generatedAt: "2026-04-07T11:50:00.000Z",
+    generatedAt,
     points: [
       {
         currency: "EUR",
         importPrice: 0.31,
-        startsAt: "2026-03-07T11:30:00.000Z",
+        startsAt: expiredStartAt,
       },
       {
         currency: "EUR",
         importPrice: 0.29,
-        startsAt: "2026-04-07T11:45:00.000Z",
+        startsAt: retainedStartAt,
       },
     ],
     provider: "tibber",
@@ -337,8 +389,8 @@ test("dynamic price samples are stored per 15-minute period and trimmed to 30 da
   expect(samples).toEqual([
     {
       siteId: "main-house",
-      periodStart: "2026-04-07T11:45:00.000Z",
-      generatedAt: "2026-04-07T11:50:00.000Z",
+      periodStart: retainedStartAt,
+      generatedAt,
       currency: "EUR",
       importPrice: 0.29,
     },
@@ -351,6 +403,10 @@ test("solar forecast samples use the beginning of the forecast period", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "emsd-daemon-test-"));
   const databasePath = join(tempDir, "emsd.sqlite");
   const db = openDaemonDatabase(databasePath);
+  const siteCreatedAt = createUtcTimestampDaysAgo(1, 0, 0);
+  const generatedAt = createUtcTimestampDaysAgo(1, 11, 50);
+  const periodStart = createUtcTimestampDaysAgo(1, 11, 45);
+  const periodEnd = createUtcTimestampDaysAgo(1, 12, 0);
 
   db.query(
     "INSERT INTO sites (id, name, location, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -358,12 +414,12 @@ test("solar forecast samples use the beginning of the forecast period", () => {
     "main-house",
     "Main House",
     "52.367600, 4.904100",
-    "2026-04-07T00:00:00.000Z",
-    "2026-04-07T00:00:00.000Z",
+    siteCreatedAt,
+    siteCreatedAt,
   );
 
   upsertWeatherForecast(db, "main-house", {
-    generatedAt: "2026-04-07T11:50:00.000Z",
+    generatedAt,
     hours: 48,
     location: "52.367600, 4.904100",
     metricLabel: "Solar irradiance",
@@ -374,7 +430,7 @@ test("solar forecast samples use the beginning of the forecast period", () => {
         cloudOpacityPercent: 35,
         ghiWm2: 410,
         period: "PT15M",
-        periodEnd: "2026-04-07T12:00:00.000Z",
+        periodEnd,
         value: 410,
       },
     ],
@@ -392,8 +448,8 @@ test("solar forecast samples use the beginning of the forecast period", () => {
   expect(samples).toEqual([
     {
       siteId: "main-house",
-      periodStart: "2026-04-07T11:45:00.000Z",
-      generatedAt: "2026-04-07T11:50:00.000Z",
+      periodStart,
+      generatedAt,
       value: 410,
       ghiWm2: 410,
       airTempC: 12.4,
@@ -408,6 +464,12 @@ test("meter and battery samples keep the latest bucket value while solar provide
   const tempDir = mkdtempSync(join(tmpdir(), "emsd-daemon-test-"));
   const databasePath = join(tempDir, "emsd.sqlite");
   const db = openDaemonDatabase(databasePath);
+  const meterObservedAt1 = createUtcTimestampDaysAgo(1, 16, 46);
+  const meterObservedAt2 = createUtcTimestampDaysAgo(1, 16, 59);
+  const batteryObservedAt = createUtcTimestampDaysAgo(1, 16, 47);
+  const solarObservedAt1 = createUtcTimestampDaysAgo(1, 16, 52);
+  const solarObservedAt2 = createUtcTimestampDaysAgo(1, 16, 58);
+  const periodStart = createUtcTimestampDaysAgo(1, 16, 45);
 
   upsertManagedDeviceTelemetry(db, {
     deviceId: "meter-1",
@@ -418,7 +480,7 @@ test("meter and battery samples keep the latest bucket value while solar provide
     productionControlStatus: null,
     socPercent: null,
     state: null,
-    observedAt: "2026-04-05T16:46:00.000Z",
+    observedAt: meterObservedAt1,
   });
   upsertManagedDeviceTelemetry(db, {
     deviceId: "meter-1",
@@ -429,7 +491,7 @@ test("meter and battery samples keep the latest bucket value while solar provide
     productionControlStatus: null,
     socPercent: null,
     state: null,
-    observedAt: "2026-04-05T16:59:00.000Z",
+    observedAt: meterObservedAt2,
   });
   upsertManagedDeviceTelemetry(db, {
     deviceId: "battery-1",
@@ -440,7 +502,7 @@ test("meter and battery samples keep the latest bucket value while solar provide
     productionControlStatus: null,
     socPercent: 62,
     state: "charging",
-    observedAt: "2026-04-05T16:47:00.000Z",
+    observedAt: batteryObservedAt,
   });
   upsertManagedDeviceTelemetry(db, {
     deviceId: "solar-provider-1",
@@ -451,7 +513,7 @@ test("meter and battery samples keep the latest bucket value while solar provide
     productionControlStatus: "enabled",
     socPercent: null,
     state: null,
-    observedAt: "2026-04-05T16:52:00.000Z",
+    observedAt: solarObservedAt1,
   });
   upsertManagedDeviceTelemetry(db, {
     deviceId: "solar-provider-1",
@@ -462,7 +524,7 @@ test("meter and battery samples keep the latest bucket value while solar provide
     productionControlStatus: "enabled",
     socPercent: null,
     state: null,
-    observedAt: "2026-04-05T16:58:00.000Z",
+    observedAt: solarObservedAt2,
   });
 
   const meterSamples = readP1MeterSamples(db, "main-house");
@@ -478,8 +540,8 @@ test("meter and battery samples keep the latest bucket value while solar provide
     {
       siteId: "main-house",
       meterId: "meter-1",
-      periodStart: "2026-04-05T16:45:00.000Z",
-      observedAt: "2026-04-05T16:59:00.000Z",
+      periodStart,
+      observedAt: meterObservedAt2,
       powerW: -390,
     },
   ]);
@@ -487,8 +549,8 @@ test("meter and battery samples keep the latest bucket value while solar provide
     {
       siteId: "main-house",
       batteryId: "battery-1",
-      periodStart: "2026-04-05T16:45:00.000Z",
-      observedAt: "2026-04-05T16:47:00.000Z",
+      periodStart,
+      observedAt: batteryObservedAt,
       powerW: 950,
       socPercent: 62,
     },
@@ -497,11 +559,22 @@ test("meter and battery samples keep the latest bucket value while solar provide
     {
       siteId: "main-house",
       providerId: "solar-provider-1",
-      periodStart: "2026-04-05T16:45:00.000Z",
-      observedAt: "2026-04-05T16:58:00.000Z",
+      periodStart,
+      observedAt: solarObservedAt2,
       powerW: 1900,
     },
   ]);
 
   rmSync(tempDir, { recursive: true, force: true });
 });
+
+function createUtcTimestampDaysAgo(
+  daysAgo: number,
+  hours: number,
+  minutes: number,
+): string {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() - daysAgo);
+  date.setUTCHours(hours, minutes, 0, 0);
+  return date.toISOString();
+}

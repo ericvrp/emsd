@@ -1651,7 +1651,11 @@ export function upsertManagedDeviceTelemetry(
       ON CONFLICT(device_id) DO UPDATE SET
         site_id = excluded.site_id,
         kind = excluded.kind,
-        capacity_wh = excluded.capacity_wh,
+        capacity_wh = CASE
+          WHEN excluded.kind = 'battery'
+            THEN COALESCE(excluded.capacity_wh, device_telemetry.capacity_wh)
+          ELSE excluded.capacity_wh
+        END,
         power_w = excluded.power_w,
         production_control_status = excluded.production_control_status,
         soc_percent = excluded.soc_percent,

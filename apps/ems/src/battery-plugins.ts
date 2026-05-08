@@ -13,6 +13,7 @@ const INDEVOLT_CAPACITY_POINT = 142;
 const INDEVOLT_TELEMETRY_POINTS = [6000, 6001, 6002, 7101];
 const HOMEWIZARD_PORT = 443;
 const SONNEN_MAX_POWER_W = 3300;
+const indevoltCapacityWhByHost = new Map<string, number>();
 
 interface BatteryStrategyCommand {
   strategyMode: BatteryStrategyMode;
@@ -57,9 +58,7 @@ class IndevoltBatteryPlugin extends BatteryPlugin {
     const currentW = parseIndevoltSignedPower(payload);
 
     return {
-      capacityWh: parseNullableKiloWattHours(
-        payload?.[String(INDEVOLT_CAPACITY_POINT)],
-      ),
+      capacityWh: resolveIndevoltCapacityWh(this.battery.ipAddress, payload),
       currentW,
       manualChargeTargetSoc: this.battery.manualChargeTargetSoc,
       manualDischargeTargetSoc: this.battery.manualDischargeTargetSoc,
@@ -221,11 +220,13 @@ class HomeWizardBatteryPlugin extends BatteryPlugin {
 async function fetchIndevoltTelemetry(
   host: string,
 ): Promise<Record<string, unknown> | null> {
+  const pointsWithCapacity = [
+    INDEVOLT_CAPACITY_POINT,
+    ...INDEVOLT_TELEMETRY_POINTS,
+  ];
+
   try {
-    return await fetchIndevoltData(host, [
-      INDEVOLT_CAPACITY_POINT,
-      ...INDEVOLT_TELEMETRY_POINTS,
-    ]);
+    return await fetchIndevoltData(host, pointsWithCapacity);
   } catch (error) {
     if (!isBatteryTelemetryTimeout(error)) {
       throw error;
@@ -512,6 +513,22 @@ function parseNullableKiloWattHours(value: unknown): number | null {
   }
 
   return Math.round(parsed * 1000);
+}
+
+function resolveIndevoltCapacityWh(
+  host: string,
+  payload: Record<string, unknown> | null,
+): number | null {
+  const parsed = parseNullableKiloWattHours(
+    payload?.[String(INDEVOLT_CAPACITY_POINT)],
+  );
+
+  if (parsed !== null) {
+    indevoltCapacityWhByHost.set(host, parsed);
+    return parsed;
+  }
+
+  return indevoltCapacityWhByHost.get(host) ?? null;
 }
 
 function parseSonnenSignedPower(

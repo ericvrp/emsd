@@ -67,6 +67,8 @@ import {
 } from "./database";
 import {
   estimateDynamicPriceTarget,
+  estimateImportShortage,
+  formatImportShortageEstimateForLog,
 } from "./dynamic-price-target";
 import {
   formatAutomaticStrategyAppliedSummary,
@@ -197,7 +199,10 @@ function main(): void {
         now,
         verbose,
       );
-      observedBatteryControls.set(battery.id, createBatteryControlSnapshot(battery));
+      observedBatteryControls.set(
+        battery.id,
+        createBatteryControlSnapshot(battery),
+      );
     }
 
     for (const batteryId of observedBatteryControls.keys()) {
@@ -328,6 +333,18 @@ function main(): void {
 
           const scheduledBattery =
             readBatteryById(db, battery.siteId, battery.id) ?? battery;
+          const scheduledSample =
+            sample.capacityWh === null
+              ? {
+                  ...sample,
+                  capacityWh:
+                    readManagedDeviceTelemetry(db).find(
+                      (telemetry) =>
+                        telemetry.kind === "battery" &&
+                        telemetry.deviceId === battery.id,
+                    )?.capacityWh ?? null,
+                }
+              : sample;
 
           if (!scheduledBattery.manualModeActive) {
             await runIndependentSolarProductionControlStrategy(
@@ -347,7 +364,7 @@ function main(): void {
             await runScheduledStrategy(
               db,
               scheduledBattery,
-              sample,
+              scheduledSample,
               new Date(),
               options.verbose,
             );
@@ -937,9 +954,8 @@ async function runScheduledStrategy(
       return `skipped: no paired delayed charging item resolved for delayed-charge prep item ${item.id}`;
     }
 
-    const delayedChargingEstimate = getDynamicPriceTargetEstimate(
-      delayedChargingItem,
-    );
+    const delayedChargingEstimate =
+      getDynamicPriceTargetEstimate(delayedChargingItem);
 
     return getDelayedChargePrepSkipReason({
       delayedChargingItemId: delayedChargingItem.id,
@@ -1086,8 +1102,44 @@ async function runScheduledStrategy(
         continue;
       }
 
+      if (item.triggerKind === BatteryStrategyTriggerKind.ImportShortage) {
+        logInfoWithVerboseDetails(
+          verbose,
+          formatImportShortageEstimateForLog({
+            batteryId: battery.id,
+            estimate: estimateImportShortage({
+              battery,
+              batteryPowerSamples: getBatteryPowerSamples(),
+              now,
+              p1MeterSamples: getP1MeterSamples(),
+              sample,
+              solarEnergyProviderSamples: getSolarEnergyProviderSamples(),
+              solarForecastSamples: getSolarForecastSamples(),
+              triggerAt,
+            }),
+          }),
+          `processed import-shortage estimate for ${battery.id}: ${describeStrategyPlanItemWithIndex(battery, item)} triggerAt=${formatDaemonLogTimestamp(triggerAt)} now=${formatDaemonLogTimestamp(now)}`,
+        );
+        runtime = {
+          ...runtime,
+          lastTriggeredAtByItemId: {
+            ...runtime.lastTriggeredAtByItemId,
+            [item.id]: triggerAt.toISOString(),
+          },
+        };
+        updateBatteryStrategyRuntime(db, {
+          batteryId: battery.id,
+          siteId: battery.siteId,
+          strategyRuntime: runtime,
+        });
+        continue;
+      }
+
       if (isDelayedChargePrepItem(item)) {
-        const skipReason = getDelayedChargePrepActivationSkipReason(item, index);
+        const skipReason = getDelayedChargePrepActivationSkipReason(
+          item,
+          index,
+        );
 
         if (skipReason !== null) {
           logInfoWithVerboseDetails(
@@ -1203,14 +1255,15 @@ async function runScheduledStrategy(
           observedDelay,
           activeItem.targetMethod === "auto" &&
             typeof runtime.activeTargetSocPercent === "number"
-            ? {
-                reasoning: describeEstimatedRuntimeReasoning(runtime),
-                resolvedManualState: runtime.activeResolvedManualState ?? null,
-                targetSocPercent: runtime.activeTargetSocPercent,
-                reserveSocPercent: runtime.activeReserveSocPercent ?? 0,
-                targetTime: runtime.activeTargetTime ?? null,
-              }
-            : null,
+              ? {
+                  reasoning: describeEstimatedRuntimeReasoning(runtime),
+                  resolvedManualState: runtime.activeResolvedManualState ?? null,
+                  targetSocPercent: runtime.activeTargetSocPercent,
+                  reserveSocPercent: runtime.activeReserveSocPercent ?? 0,
+                  recoveryTime: runtime.activeRecoveryTime ?? null,
+                  targetTime: runtime.activeTargetTime ?? null,
+                }
+              : null,
         ),
         `strategy item started for ${battery.id}: ${describeStrategyPlanItemWithIndex(battery, activeItem)}${observedDelay}`,
       );
@@ -1445,6 +1498,18 @@ async function runScheduledStrategy(
         needsCompletionTracking(item) && item.targetMethod === "auto"
           ? (dynamicPriceTargetEstimate?.targetTime ?? null)
           : null,
+      activeRecoveryTime:
+        needsCompletionTracking(item) && item.targetMethod === "auto"
+          ? (dynamicPriceTargetEstimate?.delayedChargingDetails
+              ? new Date(
+                  new Date(
+                    dynamicPriceTargetEstimate.delayedChargingDetails.lowPriceMarkerTime,
+                  ).getTime() +
+                    dynamicPriceTargetEstimate.delayedChargingDetails.timeToFullMinutes *
+                      60_000,
+                ).toISOString()
+              : null)
+          : null,
       activeStartedAt: needsCompletionTracking(item) ? now.toISOString() : null,
       activeObservedAt: null,
       activeStartSocPercent: needsCompletionTracking(item)
@@ -1479,13 +1544,22 @@ async function runScheduledStrategy(
         item,
         "",
         dynamicPriceTargetEstimate
-          ? {
-              reasoning: dynamicPriceTargetEstimate.reasoning,
-              resolvedManualState:
-                dynamicPriceTargetEstimate.resolvedManualState ?? null,
-              targetSocPercent:
-                dynamicPriceTargetEstimate.estimatedTargetPercent,
-              reserveSocPercent:
+            ? {
+                reasoning: dynamicPriceTargetEstimate.reasoning,
+                resolvedManualState:
+                  dynamicPriceTargetEstimate.resolvedManualState ?? null,
+                recoveryTime: dynamicPriceTargetEstimate.delayedChargingDetails
+                  ? new Date(
+                      new Date(
+                        dynamicPriceTargetEstimate.delayedChargingDetails.lowPriceMarkerTime,
+                      ).getTime() +
+                        dynamicPriceTargetEstimate.delayedChargingDetails.timeToFullMinutes *
+                          60_000,
+                    ).toISOString()
+                  : null,
+                targetSocPercent:
+                  dynamicPriceTargetEstimate.estimatedTargetPercent,
+                reserveSocPercent:
                 dynamicPriceTargetEstimate.estimatedReservePercentAtTargetTime,
               targetTime: dynamicPriceTargetEstimate.targetTime,
             }
@@ -1564,7 +1638,8 @@ async function runIndependentSolarProductionControlStrategy(
     const providerTelemetry =
       telemetry.find(
         (entry) =>
-          entry.kind === "solar-energy-provider" && entry.deviceId === provider.id,
+          entry.kind === "solar-energy-provider" &&
+          entry.deviceId === provider.id,
       ) ?? null;
     const currentStatus = providerTelemetry?.productionControlStatus ?? null;
 
