@@ -188,6 +188,7 @@ function isDiscoveredDevice(value: unknown): value is DiscoveredDevice {
     (candidate.category === "battery" ||
       candidate.category === "meter" ||
       candidate.category === "solar-energy-provider") &&
+    (typeof candidate.capacityWh === "number" || candidate.capacityWh === null) &&
     typeof candidate.details === "string" &&
     typeof candidate.discoveryId === "string" &&
     typeof candidate.ipAddress === "string" &&

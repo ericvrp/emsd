@@ -20,6 +20,7 @@ import {
   createSolarEnergyProviderFromDiscoveryAction,
 } from "../app/actions";
 import type { SignedDiscoveredDevice } from "../lib/discovery-proof";
+import { formatKilowattHoursFromWh } from "../lib/energy-format";
 import { UI_STYLES } from "../lib/ui-colors";
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
@@ -34,7 +35,7 @@ interface DiscoveryCachePayload {
 }
 
 const DISCOVERY_CACHE_PREFIX = "emsd-discovery:";
-const DISCOVERY_CACHE_VERSION = 4;
+const DISCOVERY_CACHE_VERSION = 5;
 
 const primaryButtonClass = UI_STYLES.buttonPrimary;
 
@@ -637,10 +638,10 @@ function DiscoveryDeviceCard({
       />
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="truncate text-base font-semibold text-white">
+          <h3 className="break-words text-base font-semibold text-white">
             {device.name}
           </h3>
-          <p className="mt-1 truncate text-xs text-slate-400">
+          <p className="mt-1 break-all text-xs text-slate-400">
             {device.discoveryId}
           </p>
         </div>
@@ -668,7 +669,10 @@ function DiscoveryDeviceCard({
           />
         ) : null}
         {device.category === "battery" ? (
-          <DiscoveryMetaItem label="Capacity" value="Unavailable" />
+          <DiscoveryMetaItem
+            label="Capacity"
+            value={formatDiscoveryCapacity(device.capacityWh)}
+          />
         ) : null}
         <DiscoveryMetaItem
           label="Power"
@@ -740,13 +744,21 @@ function DiscoveryMetaItem({
   value: string;
 }) {
   return (
-    <div className="rounded-2xl border border-white/8 bg-slate-950/55 px-3 py-2">
+    <div className="min-w-0 rounded-2xl border border-white/8 bg-slate-950/55 px-3 py-2">
       <dt className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
         {label}
       </dt>
-      <dd className="mt-1 text-sm text-slate-100">{value}</dd>
+      <dd className="mt-1 break-all text-sm text-slate-100">{value}</dd>
     </div>
   );
+}
+
+function formatDiscoveryCapacity(capacityWh: number | null): string {
+  if (!isFiniteNumber(capacityWh)) {
+    return "Unavailable";
+  }
+
+  return formatKilowattHoursFromWh(capacityWh);
 }
 
 function formatDiscoveryCategoryLabel(

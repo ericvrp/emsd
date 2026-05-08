@@ -27,6 +27,7 @@ import type { DiscoveredDevice } from "./discovery-proof";
 const execFileAsync = promisify(execFile);
 const repoRootPath = resolveRepoRoot();
 const BRIDGE_MAX_BUFFER_BYTES = 10 * 1024 * 1024;
+const daemonEnvFilePath = join(repoRootPath, "apps", "daemon", ".env");
 
 interface BridgeSuccess<T> {
   ok: true;
@@ -77,7 +78,7 @@ async function runBridge<T>(
         ],
         {
           cwd: repoRootPath,
-          env: process.env,
+          env: buildBridgeEnv(),
           maxBuffer: BRIDGE_MAX_BUFFER_BYTES,
         },
       );
@@ -129,6 +130,60 @@ async function runBridge<T>(
   } finally {
     rmSync(tempDirectoryPath, { recursive: true, force: true });
   }
+}
+
+function buildBridgeEnv(): NodeJS.ProcessEnv {
+  const daemonEnv = readDotEnvFile(daemonEnvFilePath);
+
+  return {
+    ...daemonEnv,
+    ...process.env,
+  };
+}
+
+function readDotEnvFile(filePath: string): Record<string, string> {
+  if (!existsSync(filePath)) {
+    return {};
+  }
+
+  const parsed: Record<string, string> = {};
+  const lines = readFileSync(filePath, "utf8").split(/\r?\n/);
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    if (!trimmed || trimmed.startsWith("#")) {
+      continue;
+    }
+
+    const separatorIndex = trimmed.indexOf("=");
+
+    if (separatorIndex <= 0) {
+      continue;
+    }
+
+    const key = trimmed.slice(0, separatorIndex).trim();
+    const rawValue = trimmed.slice(separatorIndex + 1).trim();
+
+    if (!key) {
+      continue;
+    }
+
+    parsed[key] = unquoteEnvValue(rawValue);
+  }
+
+  return parsed;
+}
+
+function unquoteEnvValue(value: string): string {
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    return value.slice(1, -1);
+  }
+
+  return value;
 }
 
 export function getDashboardSnapshot(): Promise<DashboardSnapshot> {

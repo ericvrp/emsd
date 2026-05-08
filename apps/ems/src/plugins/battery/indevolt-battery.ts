@@ -15,6 +15,7 @@ const responseMatch = [
   '"6001"\\s*:',
   '"Indevolt"|"1118"\\s*:',
 ];
+const INDEVOLT_CAPACITY_POINT = "142";
 
 export const indevoltBatteryPlugin: DiscoveryPlugin = {
   pluginType: "battery",
@@ -24,7 +25,7 @@ export const indevoltBatteryPlugin: DiscoveryPlugin = {
   port: 8080,
   schemes: ["http"],
   request: {
-    path: "/rpc/Indevolt.GetData?config=%7B%22t%22%3A%5B0%2C1118%2C6000%2C6001%2C6002%2C7101%5D%7D",
+    path: "/rpc/Indevolt.GetData?config=%7B%22t%22%3A%5B0%2C1118%2C142%2C6000%2C6001%2C6002%2C7101%5D%7D",
     method: "POST",
     headers: {
       accept: "application/json",
@@ -38,6 +39,7 @@ export const indevoltBatteryPlugin: DiscoveryPlugin = {
     const serial = getStringValue(payload?.["0"]);
     const firmwareVersion = getStringValue(payload?.["1118"]);
     const telemetryPowerW = parseIndevoltSignedPower(payload);
+    const capacityWh = parseIndevoltCapacityWh(payload?.[INDEVOLT_CAPACITY_POINT]);
     const batteryPower =
       telemetryPowerW === null ? null : Math.round(telemetryPowerW);
     const batteryState = formatDefaultBatteryState(payload?.["6001"]);
@@ -67,8 +69,13 @@ export const indevoltBatteryPlugin: DiscoveryPlugin = {
       detailsParts.push(`serial ${serial}`);
     }
 
+    if (capacityWh !== null) {
+      detailsParts.push(`capacity ${(capacityWh / 1000).toFixed(1)} kWh`);
+    }
+
     return {
       category: "battery",
+      capacityWh,
       model: "indevolt-battery",
       name: "Indevolt Battery",
       ipAddress,
@@ -93,6 +100,16 @@ export const indevoltBatteryPlugin: DiscoveryPlugin = {
 
 export function matchesIndevoltBatteryResponse(responseText: string): boolean {
   return matchesPatterns(responseMatch, responseText);
+}
+
+function parseIndevoltCapacityWh(value: unknown): number | null {
+  const capacityKwh = parseNullableNumber(value);
+
+  if (capacityKwh === null) {
+    return null;
+  }
+
+  return Math.round(capacityKwh * 1000);
 }
 
 function parseIndevoltSignedPower(

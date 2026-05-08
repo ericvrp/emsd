@@ -17,6 +17,8 @@ const ENPHASE_PRODUCTION_CONTROL_PATH = "/ivp/ss/dpel";
 const ENLIGHTEN_AUTH_URL =
   "https://enlighten.enphaseenergy.com/login/login.json";
 const ENLIGHTEN_TOKEN_URL = "https://entrez.enphaseenergy.com/tokens";
+const ENPHASE_LOCAL_REQUEST_TIMEOUT_MS = 2_000;
+const ENPHASE_CLOUD_REQUEST_TIMEOUT_MS = 5_000;
 
 class EnphaseTerminalError extends Error {
   constructor(message: string) {
@@ -99,24 +101,17 @@ export const enphaseSolarEnergyProviderDiscoveryPlugin: DiscoveryPlugin = {
   name: ENPHASE_DISCOVERY_NAME,
   port: 80,
   schemes: ["http"],
-  request: {
-    path: "/info.xml",
-    method: "GET",
-  },
-  supplementalRequest: {
-    path: "/api/v1/production",
-    method: "GET",
-    headers: {
-      accept: "application/json",
-    },
-  },
-  response: {
-    match: ["<sn>\\d+</sn>", "<(software|pn)>"],
-  },
-  buildDiscoveredDevice({ ipAddress, responseText, supplementalResponseText }) {
-    const gatewayInfo = parseInfoXml(responseText);
-    const productionPayload = parseJsonObject(supplementalResponseText ?? "");
-    const production = parseApiV1ProductionPayload(productionPayload);
+  async probe({ ipAddress }) {
+    const gatewayInfo = await fetchGatewayInfo(ipAddress);
+
+    if (!matchesGatewayInfo(gatewayInfo)) {
+      return null;
+    }
+
+    const production = await fetchProductionInfoForHost(
+      ipAddress,
+      gatewayInfo.serialNumber,
+    );
     const details: string[] = [];
 
     if (gatewayInfo.serialNumber) {
@@ -133,6 +128,7 @@ export const enphaseSolarEnergyProviderDiscoveryPlugin: DiscoveryPlugin = {
 
     return {
       category: "solar-energy-provider",
+      capacityWh: null,
       details: details.join(", "),
       ipAddress,
       model: ENPHASE_DISCOVERY_MODEL,
@@ -156,9 +152,15 @@ async function fetchGatewayInfo(host: string): Promise<EnphaseGatewayInfo> {
 async function fetchProductionInfo(
   provider: SolarEnergyProviderRecord,
 ): Promise<EnphaseProductionInfo> {
-  const serialHint = provider.serialNumber;
+  return fetchProductionInfoForHost(provider.ipAddress, provider.serialNumber);
+}
+
+async function fetchProductionInfoForHost(
+  host: string,
+  serialHint: string | null,
+): Promise<EnphaseProductionInfo> {
   const detailedText = await fetchEnphaseText(
-    provider.ipAddress,
+    host,
     "/production.json?details=1",
     { serialHint },
   ).catch((error: unknown) => {
@@ -179,13 +181,17 @@ async function fetchProductionInfo(
   }
 
   const fallbackText = await fetchEnphaseText(
-    provider.ipAddress,
+    host,
     "/api/v1/production",
     {
       serialHint,
     },
   );
   return parseApiV1ProductionPayload(parseJsonObject(fallbackText));
+}
+
+function matchesGatewayInfo(gatewayInfo: EnphaseGatewayInfo): boolean {
+  return Boolean(gatewayInfo.serialNumber && gatewayInfo.model);
 }
 
 async function fetchEnphaseText(
@@ -236,6 +242,7 @@ async function fetchEnphaseResponseForScheme(
       body: options.body,
       headers: buildEnphaseRequestHeaders(options.headers),
       method,
+      signal: AbortSignal.timeout(ENPHASE_LOCAL_REQUEST_TIMEOUT_MS),
       ...buildEnphaseTlsOptions(scheme),
     },
     "Enphase local request",
@@ -274,6 +281,7 @@ async function fetchEnphaseResponseForScheme(
       body: options.body,
       headers: buildAuthenticatedLocalHeaders(session, options.headers),
       method,
+      signal: AbortSignal.timeout(ENPHASE_LOCAL_REQUEST_TIMEOUT_MS),
       ...buildEnphaseTlsOptions(scheme),
     },
     "Enphase local request",
@@ -302,8 +310,8 @@ async function getAuthenticatedEnphaseSession(
     return cached;
   }
 
-  const gatewayInfo = await fetchGatewayInfo(host);
-  const serialNumber = gatewayInfo.serialNumber ?? serialHint ?? null;
+  const serialNumber =
+    serialHint ?? (await fetchGatewayInfo(host)).serialNumber ?? null;
 
   if (!serialNumber) {
     throw new Error(
@@ -347,6 +355,7 @@ async function fetchEnphaseOwnerToken(input: {
         "content-type": "application/x-www-form-urlencoded",
       },
       method: "POST",
+      signal: AbortSignal.timeout(ENPHASE_CLOUD_REQUEST_TIMEOUT_MS),
     },
     "Enphase Enlighten login request",
   );
@@ -379,6 +388,7 @@ async function fetchEnphaseOwnerToken(input: {
         "content-type": "application/json",
       },
       method: "POST",
+      signal: AbortSignal.timeout(ENPHASE_CLOUD_REQUEST_TIMEOUT_MS),
     },
     "Enphase owner token request",
   );
@@ -410,6 +420,7 @@ async function createLocalEnphaseSession(
         Authorization: `Bearer ${token}`,
       },
       method: "GET",
+      signal: AbortSignal.timeout(ENPHASE_LOCAL_REQUEST_TIMEOUT_MS),
       ...buildEnphaseTlsOptions("https"),
     },
     "Enphase local token exchange",

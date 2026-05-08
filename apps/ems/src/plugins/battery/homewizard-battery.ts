@@ -71,6 +71,7 @@ export const homeWizardBatteryPlugin: DiscoveryPlugin = {
 
     return {
       category: "battery",
+      capacityWh: null,
       model: "homewizard-battery",
       name: "HomeWizard Battery",
       ipAddress,

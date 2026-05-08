@@ -105,6 +105,7 @@ export const huaweiSolarEnergyProviderDiscoveryPlugin: DiscoveryPlugin = {
 
     return {
       category: "solar-energy-provider",
+      capacityWh: null,
       details: details.join(", "),
       ipAddress,
       model: HUAWEI_DISCOVERY_MODEL,

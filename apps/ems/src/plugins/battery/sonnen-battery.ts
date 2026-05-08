@@ -72,6 +72,7 @@ export const sonnenBatteryPlugin: DiscoveryPlugin = {
 
     return {
       category: "battery",
+      capacityWh: null,
       model: "sonnenbatterie",
       name: "sonnenBatterie",
       ipAddress,

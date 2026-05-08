@@ -58,6 +58,7 @@ export const solaredgeSolarEnergyProviderDiscoveryPlugin: DiscoveryPlugin = {
 
     return {
       category: "solar-energy-provider",
+      capacityWh: null,
       details: details.join(", "),
       ipAddress,
       model: SOLAREDGE_DISCOVERY_MODEL,

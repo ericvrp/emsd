@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 export interface DiscoveredDevice {
   category: "battery" | "meter" | "solar-energy-provider";
+  capacityWh: number | null;
   details: string;
   discoveryId: string;
   ipAddress: string;
@@ -108,6 +109,7 @@ export function isDiscoveredDevice(value: unknown): value is DiscoveredDevice {
     (candidate.category === "battery" ||
       candidate.category === "meter" ||
       candidate.category === "solar-energy-provider") &&
+    (typeof candidate.capacityWh === "number" || candidate.capacityWh === null) &&
     typeof candidate.details === "string" &&
     typeof candidate.discoveryId === "string" &&
     typeof candidate.ipAddress === "string" &&
@@ -156,6 +158,7 @@ function getDiscoveryProofSecret(): string {
 function serializeDiscoveredDevice(device: DiscoveredDevice) {
   return {
     category: device.category,
+    capacityWh: device.capacityWh,
     details: device.details,
     discoveryId: device.discoveryId,
     ipAddress: device.ipAddress,

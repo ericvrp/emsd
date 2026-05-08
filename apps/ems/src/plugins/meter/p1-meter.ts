@@ -75,6 +75,7 @@ export const p1MeterPlugin: DiscoveryPlugin = {
 
     return {
       category: "meter",
+      capacityWh: null,
       model: "homewizard-p1",
       name: "HomeWizard P1",
       ipAddress,
