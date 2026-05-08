@@ -204,15 +204,8 @@ async function setHuaweiProductionEnabled(
 ): Promise<void> {
   let lastError: unknown = null;
 
-  console.info(
-    `Huawei production control request for ${provider.id} at ${provider.ipAddress}: targetState=${enabled ? "enabled" : "disabled"}`,
-  );
-
   for (const port of getHuaweiPorts(provider)) {
     try {
-      console.info(
-        `Huawei production control attempting port ${port} for provider ${provider.id}`,
-      );
       await withModbusClient(
         getConnectionOptions(provider, port),
         async (client) => {
@@ -227,17 +220,10 @@ async function setHuaweiProductionEnabled(
               : HUAWEI_DEFAULT_ENABLE_LIMIT_W;
           const targetPowerW = enabled ? Math.max(fallbackLimit, 1) : 0;
 
-          console.info(
-            `Huawei production control resolved target for provider ${provider.id} on port ${port}: pmax=${pmaxRegisters !== null ? fallbackLimit : "unavailable"} targetPowerW=${targetPowerW}`,
-          );
-
           try {
             await client.writeMultipleRegisters(
               HUAWEI_FIXED_POWER_LIMIT_REGISTER,
               [(targetPowerW >> 16) & 0xffff, targetPowerW & 0xffff],
-            );
-            console.info(
-              `Huawei production control write succeeded for provider ${provider.id} on port ${port}: register=${HUAWEI_FIXED_POWER_LIMIT_REGISTER} targetPowerW=${targetPowerW}`,
             );
           } catch (error) {
             if (error instanceof ModbusPermissionError) {
@@ -252,16 +238,9 @@ async function setHuaweiProductionEnabled(
       );
       return;
     } catch (error) {
-      console.warn(
-        `Huawei production control attempt failed for provider ${provider.id} on port ${port}: ${error instanceof Error ? error.message : String(error)}`,
-      );
       lastError = error;
     }
   }
-
-  console.warn(
-    `Huawei production control failed for provider ${provider.id} at ${provider.ipAddress}: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
-  );
 
   throw lastError;
 }

@@ -48,6 +48,7 @@ import { LocalApiPanel } from "./local-api-panel";
 import { MeasuredChartContainer } from "./measured-chart-container";
 import { SectionSummaryCard } from "./section-summary-card";
 import { SubmitButton } from "./submit-button";
+import { useLiveJsonSWR } from "./use-live-json-swr";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader } from "./ui/card";
 import { DialogPortal } from "./ui/dialog-portal";
@@ -89,6 +90,11 @@ function formatProductionControlStatus(
 const primaryButtonClass = UI_STYLES.buttonPrimary;
 const secondaryButtonClass = UI_STYLES.buttonSecondary;
 const dangerButtonClass = UI_STYLES.buttonDanger;
+const DEVICE_REFRESH_INTERVAL_MS = 5_000;
+
+interface SettingsDevicesResponse {
+  devices: ManagedDeviceStatusRecord[];
+}
 
 export function SettingsPanel({
   currentSite,
@@ -103,6 +109,21 @@ export function SettingsPanel({
   const [activeTab, setActiveTab] = useState<SettingsTab>(
     resolveTab({ hasDevices, hasSite }),
   );
+  const liveDevices = useLiveJsonSWR<SettingsDevicesResponse>(
+    currentSite ? `/api/settings/devices?siteId=${currentSite.id}` : null,
+    {
+      enabled: activeTab === "devices" && currentSite !== null,
+      failureMessage: "Failed to refresh device telemetry.",
+      refreshIntervalMs: DEVICE_REFRESH_INTERVAL_MS,
+    },
+  );
+  const deviceSite =
+    currentSite === null
+      ? null
+      : {
+          ...currentSite,
+          devices: liveDevices.data?.devices ?? currentSite.devices,
+        };
 
   return (
     <Card className="overflow-hidden border-white/10 bg-slate-950/75">
@@ -170,28 +191,24 @@ export function SettingsPanel({
 
       <CardContent className="space-y-5 pt-5">
         {activeTab === "devices" ? (
-          currentSite ? (
+          deviceSite ? (
             <section className="grid gap-4 xl:grid-cols-3">
               <ResourceSection title="Batteries">
                 <DeviceList
                   kind="battery"
                   returnPath={returnPath}
-                  site={currentSite}
+                  site={deviceSite}
                 />
               </ResourceSection>
               <ResourceSection title="Solar Providers">
                 <DeviceList
                   kind="solar-energy-provider"
                   returnPath={returnPath}
-                  site={currentSite}
+                  site={deviceSite}
                 />
               </ResourceSection>
               <ResourceSection title="Meters">
-                <DeviceList
-                  kind="meter"
-                  returnPath={returnPath}
-                  site={currentSite}
-                />
+                <DeviceList kind="meter" returnPath={returnPath} site={deviceSite} />
               </ResourceSection>
             </section>
           ) : (
