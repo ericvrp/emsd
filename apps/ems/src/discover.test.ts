@@ -28,7 +28,7 @@ afterEach(() => {
 
 process.on("exit", () => {
   if (originalSkipPortPrecheck === undefined) {
-    delete process.env.EMSD_SKIP_DISCOVERY_PORT_PRECHECK;
+    process.env.EMSD_SKIP_DISCOVERY_PORT_PRECHECK = undefined;
     return;
   }
 
@@ -131,6 +131,14 @@ test("getDiscoverySignatures exposes the discovery plugin catalog", () => {
       model: "huawei-sun2000-modbus",
       name: "Huawei SUN2000",
       port: 6607,
+      transport: "modbus",
+    },
+    {
+      pluginType: "solar-energy-provider",
+      category: "solar-energy-provider",
+      model: "huawei-sun2000-modbus",
+      name: "Huawei SUN2000",
+      port: 502,
       transport: "modbus",
     },
     {
@@ -313,7 +321,7 @@ test("formatDiscoveredDevices renders concise one-line summaries", () => {
     },
   ]);
 
-    expect(output).toContain("Indevolt Battery [aaa111] 192.168.1.15: SOC 48%");
+  expect(output).toContain("Indevolt Battery [aaa111] 192.168.1.15: SOC 48%");
   expect(output).toContain("HomeWizard P1 [bbb222] 192.168.1.27: SMR 50");
 });
 
@@ -963,7 +971,7 @@ test("discoverHostDevices matches a Huawei SUN2000 over Modbus", async () => {
   }
 });
 
-async function startHuaweiModbusServer() {
+async function startHuaweiModbusServer(port = 6607) {
   let controlLimitW = 5000;
   const server = createServer((socket) => {
     socket.on("data", (data) => {
@@ -1046,7 +1054,7 @@ async function startHuaweiModbusServer() {
   });
 
   await new Promise<void>((resolve) =>
-    server.listen(6607, "127.0.0.1", resolve),
+    server.listen(port, "127.0.0.1", resolve),
   );
   const address = server.address();
 

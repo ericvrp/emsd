@@ -6,9 +6,9 @@ import {
   BatteryStrategyTriggerKind,
 } from "@emsd/core";
 import {
-  formatAutomaticStrategyAppliedSummary,
   describeCurrentBatteryStrategyHuman,
   describeStrategyPlanItemHuman,
+  formatAutomaticStrategyAppliedSummary,
   formatBatteryStrategyStatusSummary,
   formatFallbackStrategyRestoreSummary,
   formatManualStrategyAppliedSummary,
@@ -345,9 +345,9 @@ test("summarizes a temporary manual override", () => {
         manualDischargeTargetSoc: 80,
         manualTargetSoc: 80,
         manualModeActive: true,
-        }),
-      ),
-    ).toBe(
+      }),
+    ),
+  ).toBe(
     "temporary manual override applied for battery-1: scheduled automation is paused; battery will discharge manually to 80% at 2400W until the override is cleared or its target is reached",
   );
 });
@@ -362,8 +362,8 @@ test("summarizes a self-consumption manual override without a discharge target",
         manualDischargeTargetSoc: 11,
         manualTargetSoc: 100,
         manualModeActive: true,
-        }),
-      ),
+      }),
+    ),
   ).toBe(
     "temporary manual override applied for battery-1: scheduled automation is paused; battery is now in self-consumption until the override is cleared",
   );
@@ -380,9 +380,7 @@ test("summarizes a resumed automatic strategy", () => {
         manualTargetSoc: 100,
       }),
     ),
-  ).toBe(
-    "scheduled automation applied for battery-1: self-consumption",
-  );
+  ).toBe("scheduled automation applied for battery-1: self-consumption");
 });
 
 test("strategy status summary returns default strategy without active item", () => {

@@ -63,8 +63,6 @@ import {
   discoverHostDevices,
   getPreferredDiscoveryTarget,
 } from "./discover";
-import { getDynamicPriceSnapshot } from "./plugins/price";
-import { getWeatherForecast } from "./plugins/solar-forecast";
 import {
   SINGLE_BATTERY_LIMIT_ERROR,
   createBattery,
@@ -97,7 +95,9 @@ import {
   updateSite,
   updateWeatherForecastSource,
 } from "./managed-site-store";
+import { getDynamicPriceSnapshot } from "./plugins/price";
 import { getSolarEnergyProviderNormalizedInfo } from "./plugins/solar-energy-provider";
+import { getWeatherForecast } from "./plugins/solar-forecast";
 
 interface ApiSuccess<T> {
   ok: true;
@@ -188,7 +188,8 @@ function isDiscoveredDevice(value: unknown): value is DiscoveredDevice {
     (candidate.category === "battery" ||
       candidate.category === "meter" ||
       candidate.category === "solar-energy-provider") &&
-    (typeof candidate.capacityWh === "number" || candidate.capacityWh === null) &&
+    (typeof candidate.capacityWh === "number" ||
+      candidate.capacityWh === null) &&
     typeof candidate.details === "string" &&
     typeof candidate.discoveryId === "string" &&
     typeof candidate.ipAddress === "string" &&
@@ -449,7 +450,11 @@ async function discoverForSelection(
   host: string | null,
 ): Promise<DiscoveredDevice[]> {
   if (host) {
-    return discoverHostDevices(host, { host, logProgress: true, verbose: false });
+    return discoverHostDevices(host, {
+      host,
+      logProgress: true,
+      verbose: false,
+    });
   }
 
   const target = getPreferredDiscoveryTarget();
@@ -602,7 +607,9 @@ async function refreshDynamicPriceSnapshotNow(
       null;
 
     if (source === null) {
-      throw new Error(`No dynamic price source is configured for site ${siteId}.`);
+      throw new Error(
+        `No dynamic price source is configured for site ${siteId}.`,
+      );
     }
 
     const snapshot = await getDynamicPriceSnapshot({ site, source });

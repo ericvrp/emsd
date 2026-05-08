@@ -188,15 +188,11 @@ async function fetchProductionInfoForHost(
     }
   }
 
-  const fallbackText = await fetchEnphaseText(
-    host,
-    "/api/v1/production",
-    {
-      ...(preferredSchemes ? { preferredSchemes } : {}),
-      ...requestOptions,
-      serialHint,
-    },
-  );
+  const fallbackText = await fetchEnphaseText(host, "/api/v1/production", {
+    ...(preferredSchemes ? { preferredSchemes } : {}),
+    ...requestOptions,
+    serialHint,
+  });
   return parseApiV1ProductionPayload(parseJsonObject(fallbackText));
 }
 

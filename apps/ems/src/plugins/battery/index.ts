@@ -8,8 +8,4 @@ export const batteryPlugins = [
   homeWizardBatteryPlugin,
 ];
 
-export {
-  homeWizardBatteryPlugin,
-  indevoltBatteryPlugin,
-  sonnenBatteryPlugin,
-};
+export { homeWizardBatteryPlugin, indevoltBatteryPlugin, sonnenBatteryPlugin };

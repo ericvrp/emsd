@@ -643,13 +643,30 @@ function buildHuaweiProvider(port: number): SolarEnergyProviderRecord {
   };
 }
 
-async function startHuaweiModbusServer() {
+async function startHuaweiModbusServer({
+  expectedUnitId = 0,
+  ignoreFirstRequest = false,
+}: {
+  expectedUnitId?: number;
+  ignoreFirstRequest?: boolean;
+} = {}) {
   let controlLimitW = 5000;
+  let requestCount = 0;
   const server = createServer((socket) => {
     socket.on("data", (data) => {
+      requestCount += 1;
+
+      if (ignoreFirstRequest && requestCount === 1) {
+        return;
+      }
+
       const transactionId = data.readUInt16BE(0);
       const unitId = data.readUInt8(6);
       const functionCode = data.readUInt8(7);
+
+      if (unitId !== expectedUnitId) {
+        return;
+      }
 
       if (functionCode === 0x2b) {
         socket.write(

@@ -8,7 +8,7 @@ import {
 } from "./enphase";
 import {
   HuaweiSun2000SolarEnergyProviderPlugin,
-  huaweiSolarEnergyProviderDiscoveryPlugin,
+  huaweiSolarEnergyProviderDiscoveryPlugins,
 } from "./huawei";
 import {
   SolarEdgeSolarEnergyProviderPlugin,
@@ -24,13 +24,13 @@ export interface SolarEnergyProviderPlugin {
 
 export const solarEnergyProviderDiscoveryPlugins = [
   enphaseSolarEnergyProviderDiscoveryPlugin,
-  huaweiSolarEnergyProviderDiscoveryPlugin,
+  ...huaweiSolarEnergyProviderDiscoveryPlugins,
   solaredgeSolarEnergyProviderDiscoveryPlugin,
 ];
 
 export {
   enphaseSolarEnergyProviderDiscoveryPlugin,
-  huaweiSolarEnergyProviderDiscoveryPlugin,
+  huaweiSolarEnergyProviderDiscoveryPlugins,
   solaredgeSolarEnergyProviderDiscoveryPlugin,
 };
 

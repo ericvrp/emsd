@@ -24,9 +24,9 @@ import type { SignedDiscoveredDevice } from "../lib/discovery-proof";
 import { formatKilowattHoursFromWh } from "../lib/energy-format";
 import { UI_STYLES } from "../lib/ui-colors";
 import { cn } from "../lib/utils";
+import { SubmitButton } from "./submit-button";
 import { Button } from "./ui/button";
 import { DialogPortal } from "./ui/dialog-portal";
-import { SubmitButton } from "./submit-button";
 import { useFormActionToast } from "./use-form-action-toast";
 
 interface DiscoveryCachePayload {
@@ -43,11 +43,7 @@ const primaryButtonClass = UI_STYLES.buttonPrimary;
 const secondaryButtonClass = UI_STYLES.buttonSecondary;
 const DEFAULT_BATTERY_BACKUP_RESERVE_PERCENT = 10;
 
-type SupportedPluginStatus =
-  | "working"
-  | "untested"
-  | "incomplete"
-  | "issues";
+type SupportedPluginStatus = "working" | "untested" | "incomplete" | "issues";
 
 interface SupportedPluginEntry {
   type: (typeof SUPPORTED_PLUGIN_TYPES)[number];
@@ -75,7 +71,8 @@ const SUPPORTED_DISCOVERY_PLUGINS: readonly SupportedPluginEntry[] = [
     type: "Battery",
     plugin: "sonnenBatterie",
     status: "untested",
-    notes: "Discovery, telemetry, and strategy control are implemented, but field validation is still limited.",
+    notes:
+      "Discovery, telemetry, and strategy control are implemented, but field validation is still limited.",
   },
   {
     type: "Battery",
@@ -101,13 +98,15 @@ const SUPPORTED_DISCOVERY_PLUGINS: readonly SupportedPluginEntry[] = [
     type: "Solar",
     plugin: "SolarEdge Inverter",
     status: "untested",
-    notes: "Discovery and telemetry are implemented. Production control is unavailable.",
+    notes:
+      "Discovery and telemetry are implemented. Production control is unavailable.",
   },
   {
     type: "Solar",
     plugin: "Huawei SUN2000",
     status: "untested",
-    notes: "Modbus-based discovery and runtime support exist, but field validation is still limited.",
+    notes:
+      "Modbus-based discovery and runtime support exist, but field validation is still limited.",
   },
   {
     type: "Price",
@@ -421,15 +420,16 @@ export function SupportedPluginsButton() {
         Plugins
       </Button>
 
-      {isOpen ? <SupportedPluginsDialog onClose={() => setIsOpen(false)} /> : null}
+      {isOpen ? (
+        <SupportedPluginsDialog onClose={() => setIsOpen(false)} />
+      ) : null}
     </>
   );
 }
 
 function SupportedPluginsDialog({ onClose }: { onClose: () => void }) {
-  const [activeTab, setActiveTab] = useState<
-    (typeof SUPPORTED_PLUGIN_TYPES)[number]
-  >("Battery");
+  const [activeTab, setActiveTab] =
+    useState<(typeof SUPPORTED_PLUGIN_TYPES)[number]>("Battery");
 
   useEffect(() => {
     function handleEscape(event: KeyboardEvent) {
@@ -481,7 +481,9 @@ function SupportedPluginsDialog({ onClose }: { onClose: () => void }) {
             </div>
 
             <div className="mt-6 overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/5">
-              <div className={`${UI_STYLES.tabBar} justify-start px-3 pt-3 sm:px-4`}>
+              <div
+                className={`${UI_STYLES.tabBar} justify-start px-3 pt-3 sm:px-4`}
+              >
                 <div className="flex flex-wrap items-center gap-6">
                   {SUPPORTED_PLUGIN_TYPES.map((pluginType) => (
                     <button
@@ -495,7 +497,11 @@ function SupportedPluginsDialog({ onClose }: { onClose: () => void }) {
                       onClick={() => setActiveTab(pluginType)}
                       type="button"
                     >
-                      <PluginTypeIcon aria-hidden="true" className="h-4 w-4" type={pluginType} />
+                      <PluginTypeIcon
+                        aria-hidden="true"
+                        className="h-4 w-4"
+                        type={pluginType}
+                      />
                       {pluginType}
                     </button>
                   ))}
@@ -515,18 +521,18 @@ function SupportedPluginsDialog({ onClose }: { onClose: () => void }) {
                     {visiblePlugins.map((plugin) => {
                       const status = formatPluginStatus(plugin.status);
 
-                        return (
-                          <tr key={`${plugin.type}-${plugin.plugin}`}>
-                            <td className="px-4 py-3 font-medium text-white">
-                              <span className="inline-flex items-center gap-2">
-                                <PluginTypeIcon
-                                  aria-hidden="true"
-                                  className="h-4 w-4 text-slate-300"
-                                  type={plugin.type}
-                                />
-                                {plugin.plugin}
-                              </span>
-                            </td>
+                      return (
+                        <tr key={`${plugin.type}-${plugin.plugin}`}>
+                          <td className="px-4 py-3 font-medium text-white">
+                            <span className="inline-flex items-center gap-2">
+                              <PluginTypeIcon
+                                aria-hidden="true"
+                                className="h-4 w-4 text-slate-300"
+                                type={plugin.type}
+                              />
+                              {plugin.plugin}
+                            </span>
+                          </td>
                           <td className="px-4 py-3">
                             <span className={status.className}>
                               <span aria-hidden="true">{status.emoji}</span>

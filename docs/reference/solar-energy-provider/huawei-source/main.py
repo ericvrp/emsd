@@ -32,9 +32,9 @@ class Status(Enum):
     OFF = 0
 
 # collect and check the env variable
-DISCORD_WEBHOOK_URL_OPPORTUNITIES = os.environ.get("DISCORD_WEBHOOK_URL_OPPORTUNITIES", "")
-if not DISCORD_WEBHOOK_URL_OPPORTUNITIES:
-    raise Exception("DISCORD_WEBHOOK_URL_OPPORTUNITIES env var not set")
+# DISCORD_WEBHOOK_URL_OPPORTUNITIES = os.environ.get("DISCORD_WEBHOOK_URL_OPPORTUNITIES", "")
+# if not DISCORD_WEBHOOK_URL_OPPORTUNITIES:
+#     raise Exception("DISCORD_WEBHOOK_URL_OPPORTUNITIES env var not set")
 INVERTER_IP = os.environ.get("INVERTER_IP", "")
 if not INVERTER_IP:
     raise Exception("INVERTER_IP env var not set")
@@ -45,8 +45,8 @@ if not PORT:
 def log(text: str):
     """Logging to stdout and discord"""
     print(text)
-    data = { "content": text }
-    requests.request("POST", DISCORD_WEBHOOK_URL_OPPORTUNITIES,  data=data)
+    # data = { "content": text }
+    # requests.request("POST", DISCORD_WEBHOOK_URL_OPPORTUNITIES,  data=data)
 
 
 def get_current_price():

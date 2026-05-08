@@ -25,6 +25,9 @@ export interface HuaweiDeviceIdentification {
 export interface ModbusConnectionOptions {
   host: string;
   port: number;
+  requestRetryCount?: number;
+  requestRetryDelayMs?: number;
+  responseTimeoutMs?: number;
   unitId?: number;
 }
 
@@ -83,14 +86,28 @@ export function decodeUint32Registers(registers: number[]): number {
 export class ModbusTcpClient {
   private readonly host: string;
   private readonly port: number;
+  private readonly requestRetryCount: number;
+  private readonly requestRetryDelayMs: number;
+  private readonly responseTimeoutMs: number;
   private readonly unitId: number;
+  private hasReceivedResponse = false;
   private transactionId = 0;
   private socket: Socket | null = null;
   private buffer = Buffer.alloc(0);
 
-  constructor({ host, port, unitId = 0 }: ModbusConnectionOptions) {
+  constructor({
+    host,
+    port,
+    requestRetryCount = 0,
+    requestRetryDelayMs = 0,
+    responseTimeoutMs = MODBUS_TIMEOUT_MS,
+    unitId = 0,
+  }: ModbusConnectionOptions) {
     this.host = host;
     this.port = port;
+    this.requestRetryCount = requestRetryCount;
+    this.requestRetryDelayMs = requestRetryDelayMs;
+    this.responseTimeoutMs = responseTimeoutMs;
     this.unitId = unitId;
   }
 
@@ -280,9 +297,86 @@ export class ModbusTcpClient {
     header.writeUInt16BE(0, 2);
     header.writeUInt16BE(pdu.length + 1, 4);
     header.writeUInt8(this.unitId, 6);
+    const frame = Buffer.concat([header, pdu]);
+    const retryCount = this.hasReceivedResponse ? 0 : this.requestRetryCount;
 
+    let lastError: unknown = null;
+
+    for (let attempt = 0; attempt <= retryCount; attempt += 1) {
+      await this.writeFrame(socket, frame, action);
+
+      try {
+        const responseFrame = await this.readFrame(this.responseTimeoutMs);
+        const responseTransactionId = responseFrame.readUInt16BE(0);
+        const protocolId = responseFrame.readUInt16BE(2);
+        const responseUnitId = responseFrame.readUInt8(6);
+
+        if (responseTransactionId !== transactionId || protocolId !== 0) {
+          throw new ModbusError(
+            `Invalid Modbus response header from ${this.host}:${this.port}.`,
+          );
+        }
+
+        if (responseUnitId !== this.unitId) {
+          throw new ModbusError(
+            `Unexpected Modbus unit ${responseUnitId} from ${this.host}:${this.port}.`,
+          );
+        }
+
+        const responsePdu = responseFrame.subarray(7);
+        const functionCode = responsePdu[0] ?? 0;
+
+        if (functionCode === (expectedFunctionCode | 0x80)) {
+          const exceptionCode = responsePdu[1] ?? 0;
+
+          if (exceptionCode === 0x80) {
+            throw new ModbusPermissionError(
+              `Huawei Modbus permission denied for ${action} at ${this.host}:${this.port}.`,
+            );
+          }
+
+          throw new ModbusError(
+            `Modbus exception 0x${exceptionCode.toString(16).padStart(2, "0")} during ${action} at ${this.host}:${this.port}.`,
+          );
+        }
+
+        if (functionCode !== expectedFunctionCode) {
+          throw new ModbusError(
+            `Unexpected Modbus function 0x${functionCode.toString(16)} during ${action} at ${this.host}:${this.port}.`,
+          );
+        }
+
+        this.hasReceivedResponse = true;
+        return responsePdu;
+      } catch (error) {
+        lastError = error;
+
+        if (
+          attempt >= retryCount ||
+          !(error instanceof ModbusError) ||
+          !error.message.includes("timed out")
+        ) {
+          throw error;
+        }
+
+        if (this.requestRetryDelayMs > 0) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, this.requestRetryDelayMs),
+          );
+        }
+      }
+    }
+
+    throw lastError;
+  }
+
+  private async writeFrame(
+    socket: Socket,
+    frame: Buffer,
+    action: string,
+  ): Promise<void> {
     await new Promise<void>((resolve, reject) => {
-      socket.write(Buffer.concat([header, pdu]), (error) => {
+      socket.write(frame, (error) => {
         if (error) {
           reject(
             new ModbusError(
@@ -295,48 +389,6 @@ export class ModbusTcpClient {
         resolve();
       });
     });
-
-    const frame = await this.readFrame();
-    const responseTransactionId = frame.readUInt16BE(0);
-    const protocolId = frame.readUInt16BE(2);
-    const responseUnitId = frame.readUInt8(6);
-
-    if (responseTransactionId !== transactionId || protocolId !== 0) {
-      throw new ModbusError(
-        `Invalid Modbus response header from ${this.host}:${this.port}.`,
-      );
-    }
-
-    if (responseUnitId !== this.unitId) {
-      throw new ModbusError(
-        `Unexpected Modbus unit ${responseUnitId} from ${this.host}:${this.port}.`,
-      );
-    }
-
-    const responsePdu = frame.subarray(7);
-    const functionCode = responsePdu[0] ?? 0;
-
-    if (functionCode === (expectedFunctionCode | 0x80)) {
-      const exceptionCode = responsePdu[1] ?? 0;
-
-      if (exceptionCode === 0x80) {
-        throw new ModbusPermissionError(
-          `Huawei Modbus permission denied for ${action} at ${this.host}:${this.port}.`,
-        );
-      }
-
-      throw new ModbusError(
-        `Modbus exception 0x${exceptionCode.toString(16).padStart(2, "0")} during ${action} at ${this.host}:${this.port}.`,
-      );
-    }
-
-    if (functionCode !== expectedFunctionCode) {
-      throw new ModbusError(
-        `Unexpected Modbus function 0x${functionCode.toString(16)} during ${action} at ${this.host}:${this.port}.`,
-      );
-    }
-
-    return responsePdu;
   }
 
   private nextTransactionId(): number {
@@ -344,7 +396,7 @@ export class ModbusTcpClient {
     return this.transactionId;
   }
 
-  private async readFrame(): Promise<Buffer> {
+  private async readFrame(timeoutMs: number): Promise<Buffer> {
     const socket = this.socket;
 
     if (!socket) {
@@ -353,7 +405,7 @@ export class ModbusTcpClient {
 
     const start = Date.now();
 
-    while (Date.now() - start < MODBUS_TIMEOUT_MS) {
+    while (Date.now() - start < timeoutMs) {
       if (this.buffer.length >= 7) {
         const length = this.buffer.readUInt16BE(4);
         const frameLength = 6 + length;

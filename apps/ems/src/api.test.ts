@@ -307,12 +307,13 @@ test("solar-energy-provider-create preserves discovered port for managed setting
     siteId: "home",
     device: {
       discoveryId: "solar-huawei-1",
+      capacityWh: null,
       category: "solar-energy-provider",
-      details: "model SUN2000-5KTL-L1, serial HV1234567890, port 6607",
+      details: "model SUN2000-5KTL-L1, serial HV1234567890, port 502",
       ipAddress: "192.168.1.60",
       model: "huawei-sun2000-modbus",
       name: "Huawei SUN2000",
-      port: 6607,
+      port: 502,
       powerW: 2450,
       socPercent: null,
       state: "connected",
@@ -322,7 +323,7 @@ test("solar-energy-provider-create preserves discovered port for managed setting
   expect(created).toMatchObject({
     id: "solar-huawei-1",
     kind: "solar-energy-provider",
-    address: "192.168.1.60:6607",
+    address: "192.168.1.60:502",
     name: "Huawei SUN2000",
   });
   expect(
@@ -330,7 +331,7 @@ test("solar-energy-provider-create preserves discovered port for managed setting
   ).toMatchObject({
     ipAddress: "192.168.1.60",
     plugin: "huawei-sun2000-modbus",
-    port: 6607,
+    port: 502,
     serialNumber: "HV1234567890",
   });
 });
@@ -348,6 +349,7 @@ test("discovery add all rejects selecting multiple new batteries", async () => {
     runApiAction("discovery-add-all", {
       devices: [
         {
+          capacityWh: null,
           category: "battery",
           details: "status charging power 800W",
           discoveryId: "battery-1",
@@ -360,6 +362,7 @@ test("discovery add all rejects selecting multiple new batteries", async () => {
           state: "charging",
         },
         {
+          capacityWh: null,
           category: "battery",
           details: "status idle power 0W",
           discoveryId: "battery-2",

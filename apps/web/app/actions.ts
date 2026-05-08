@@ -575,6 +575,10 @@ export async function setSolarEnergyProviderProductionEnabledAction(
       const providerId = stringValue(formData, "solarEnergyProviderId");
       const providerName =
         optionalStringValue(formData, "solarEnergyProviderName") ?? providerId;
+      const providerModel = optionalStringValue(
+        formData,
+        "solarEnergyProviderModel",
+      );
       const enabled =
         optionalStringValue(formData, "productionControlStatus") === "enabled";
 
@@ -585,7 +589,10 @@ export async function setSolarEnergyProviderProductionEnabledAction(
       });
 
       return {
-        notice: `Saved production control request for ${providerName}. This may take up to 30 minutes depending on the provider.`,
+        notice:
+          providerModel === "enphase-local"
+            ? `Saved production control request for ${providerName}. This may take up to 30 minutes on Enphase.`
+            : `Saved production control request for ${providerName}.`,
         path: returnPath,
         tab: "devices",
       };

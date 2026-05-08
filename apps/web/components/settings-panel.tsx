@@ -872,6 +872,11 @@ function DeviceList({
                     name="solarEnergyProviderName"
                     value={device.name}
                   />
+                  <input
+                    type="hidden"
+                    name="solarEnergyProviderModel"
+                    value={device.model}
+                  />
                   <div className="space-y-3">
                     <div>
                       <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">

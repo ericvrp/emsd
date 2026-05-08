@@ -6,6 +6,14 @@ import { join } from "node:path";
 import { discoverHostDevices } from "./discover";
 import { runEms } from "./index";
 
+const originalSkipPortPrecheck = process.env.EMSD_SKIP_DISCOVERY_PORT_PRECHECK;
+
+process.env.EMSD_SKIP_DISCOVERY_PORT_PRECHECK = "1";
+
+process.on("exit", () => {
+  process.env.EMSD_SKIP_DISCOVERY_PORT_PRECHECK = originalSkipPortPrecheck;
+});
+
 test("meter commands require a persisted site and use it for CRUD", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "emsd-ems-meter-test-"));
   const originalDatabasePath = process.env.EMSD_DB_PATH;
@@ -317,12 +325,13 @@ function mockBatteryFetch(): typeof fetch {
 
     if (
       url ===
-      "http://192.168.1.15:8080/rpc/Indevolt.GetData?config=%7B%22t%22%3A%5B0%2C1118%2C6000%2C6001%2C6002%2C7101%5D%7D"
+      "http://192.168.1.15:8080/rpc/Indevolt.GetData?config=%7B%22t%22%3A%5B0%2C1118%2C142%2C6000%2C6001%2C6002%2C7101%5D%7D"
     ) {
       return new Response(
         JSON.stringify({
           0: "INV-BAT-123",
           1118: "1.2.3",
+          142: 4.8,
           6000: 900,
           6001: 1001,
           6002: 48,

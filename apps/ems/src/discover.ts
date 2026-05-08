@@ -377,22 +377,29 @@ export async function discoverDevices(
   const targets = buildSubnetTargets(subnets);
   const hostConcurrency = Math.max(
     1,
-    Math.min(options.hostConcurrency ?? DEFAULT_HOST_CONCURRENCY, targets.length),
+    Math.min(
+      options.hostConcurrency ?? DEFAULT_HOST_CONCURRENCY,
+      targets.length,
+    ),
   );
   const progressLogger = createDiscoveryProgressLogger(
     targets,
     hostConcurrency,
     options,
   );
-  const results = await mapWithConcurrency(targets, hostConcurrency, async (target) => {
-    progressLogger.hostStarted(target);
+  const results = await mapWithConcurrency(
+    targets,
+    hostConcurrency,
+    async (target) => {
+      progressLogger.hostStarted(target);
 
-    try {
-      return await probeTarget(target, options, progressLogger);
-    } finally {
-      progressLogger.hostFinished(target);
-    }
-  }).finally(() => {
+      try {
+        return await probeTarget(target, options, progressLogger);
+      } finally {
+        progressLogger.hostFinished(target);
+      }
+    },
+  ).finally(() => {
     progressLogger.stop();
   });
 
@@ -467,10 +474,12 @@ export async function discoverHostDevices(
   portAvailabilityCache.clear();
   const progressLogger = createDiscoveryProgressLogger([host], 1, options);
   progressLogger.hostStarted(host);
-  const device = await probeTarget(host, options, progressLogger).finally(() => {
-    progressLogger.hostFinished(host);
-    progressLogger.stop();
-  });
+  const device = await probeTarget(host, options, progressLogger).finally(
+    () => {
+      progressLogger.hostFinished(host);
+      progressLogger.stop();
+    },
+  );
   return device ? [device] : [];
 }
 
@@ -737,7 +746,9 @@ function createDiscoveryProgressLogger(
     }
 
     const activeSummary = [...activeStageCounts.entries()]
-      .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+      .sort(
+        (left, right) => right[1] - left[1] || left[0].localeCompare(right[0]),
+      )
       .slice(0, 4)
       .map(([stage, count]) => `${count}x ${stage}`)
       .join(", ");
@@ -812,9 +823,14 @@ function createDiscoveryProgressLogger(
         (left, right) => right[1].totalDurationMs - left[1].totalDurationMs,
       )) {
         const averageMs =
-          stats.attempts > 0 ? Math.round(stats.totalDurationMs / stats.attempts) : 0;
+          stats.attempts > 0
+            ? Math.round(stats.totalDurationMs / stats.attempts)
+            : 0;
         const outcomes = [...stats.outcomes.entries()]
-          .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+          .sort(
+            (left, right) =>
+              right[1] - left[1] || left[0].localeCompare(right[0]),
+          )
           .map(([outcome, count]) => `${count} ${outcome}`)
           .join(", ");
 
@@ -856,7 +872,10 @@ async function mapWithConcurrency<TItem, TResult>(
       while (nextIndex < items.length) {
         const currentIndex = nextIndex;
         nextIndex += 1;
-        results[currentIndex] = await worker(items[currentIndex] as TItem, currentIndex);
+        results[currentIndex] = await worker(
+          items[currentIndex] as TItem,
+          currentIndex,
+        );
       }
     },
   );

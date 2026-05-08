@@ -1255,15 +1255,15 @@ async function runScheduledStrategy(
           observedDelay,
           activeItem.targetMethod === "auto" &&
             typeof runtime.activeTargetSocPercent === "number"
-              ? {
-                  reasoning: describeEstimatedRuntimeReasoning(runtime),
-                  resolvedManualState: runtime.activeResolvedManualState ?? null,
-                  targetSocPercent: runtime.activeTargetSocPercent,
-                  reserveSocPercent: runtime.activeReserveSocPercent ?? 0,
-                  recoveryTime: runtime.activeRecoveryTime ?? null,
-                  targetTime: runtime.activeTargetTime ?? null,
-                }
-              : null,
+            ? {
+                reasoning: describeEstimatedRuntimeReasoning(runtime),
+                resolvedManualState: runtime.activeResolvedManualState ?? null,
+                targetSocPercent: runtime.activeTargetSocPercent,
+                reserveSocPercent: runtime.activeReserveSocPercent ?? 0,
+                recoveryTime: runtime.activeRecoveryTime ?? null,
+                targetTime: runtime.activeTargetTime ?? null,
+              }
+            : null,
         ),
         `strategy item started for ${battery.id}: ${describeStrategyPlanItemWithIndex(battery, activeItem)}${observedDelay}`,
       );
@@ -1500,15 +1500,17 @@ async function runScheduledStrategy(
           : null,
       activeRecoveryTime:
         needsCompletionTracking(item) && item.targetMethod === "auto"
-          ? (dynamicPriceTargetEstimate?.delayedChargingDetails
-              ? new Date(
-                  new Date(
-                    dynamicPriceTargetEstimate.delayedChargingDetails.lowPriceMarkerTime,
-                  ).getTime() +
-                    dynamicPriceTargetEstimate.delayedChargingDetails.timeToFullMinutes *
-                      60_000,
-                ).toISOString()
-              : null)
+          ? dynamicPriceTargetEstimate?.delayedChargingDetails
+            ? new Date(
+                new Date(
+                  dynamicPriceTargetEstimate.delayedChargingDetails
+                    .lowPriceMarkerTime,
+                ).getTime() +
+                  dynamicPriceTargetEstimate.delayedChargingDetails
+                    .timeToFullMinutes *
+                    60_000,
+              ).toISOString()
+            : null
           : null,
       activeStartedAt: needsCompletionTracking(item) ? now.toISOString() : null,
       activeObservedAt: null,
@@ -1544,22 +1546,24 @@ async function runScheduledStrategy(
         item,
         "",
         dynamicPriceTargetEstimate
-            ? {
-                reasoning: dynamicPriceTargetEstimate.reasoning,
-                resolvedManualState:
-                  dynamicPriceTargetEstimate.resolvedManualState ?? null,
-                recoveryTime: dynamicPriceTargetEstimate.delayedChargingDetails
-                  ? new Date(
-                      new Date(
-                        dynamicPriceTargetEstimate.delayedChargingDetails.lowPriceMarkerTime,
-                      ).getTime() +
-                        dynamicPriceTargetEstimate.delayedChargingDetails.timeToFullMinutes *
-                          60_000,
-                    ).toISOString()
-                  : null,
-                targetSocPercent:
-                  dynamicPriceTargetEstimate.estimatedTargetPercent,
-                reserveSocPercent:
+          ? {
+              reasoning: dynamicPriceTargetEstimate.reasoning,
+              resolvedManualState:
+                dynamicPriceTargetEstimate.resolvedManualState ?? null,
+              recoveryTime: dynamicPriceTargetEstimate.delayedChargingDetails
+                ? new Date(
+                    new Date(
+                      dynamicPriceTargetEstimate.delayedChargingDetails
+                        .lowPriceMarkerTime,
+                    ).getTime() +
+                      dynamicPriceTargetEstimate.delayedChargingDetails
+                        .timeToFullMinutes *
+                        60_000,
+                  ).toISOString()
+                : null,
+              targetSocPercent:
+                dynamicPriceTargetEstimate.estimatedTargetPercent,
+              reserveSocPercent:
                 dynamicPriceTargetEstimate.estimatedReservePercentAtTargetTime,
               targetTime: dynamicPriceTargetEstimate.targetTime,
             }

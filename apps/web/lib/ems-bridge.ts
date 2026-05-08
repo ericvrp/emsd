@@ -146,7 +146,9 @@ function runBridgeProcess(
     let stderrBytes = 0;
     let settled = false;
 
-    const finishWithError = (error: Error & { stderr?: string; stdout?: string }) => {
+    const finishWithError = (
+      error: Error & { stderr?: string; stdout?: string },
+    ) => {
       if (settled) {
         return;
       }

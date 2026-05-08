@@ -7,9 +7,9 @@ import { meterPlugins } from "./meter";
 import { pricePlugins } from "./price";
 import {
   enphaseSolarEnergyProviderDiscoveryPlugin,
-  huaweiSolarEnergyProviderDiscoveryPlugin,
-  solaredgeSolarEnergyProviderDiscoveryPlugin,
+  huaweiSolarEnergyProviderDiscoveryPlugins,
   solarEnergyProviderPlugins,
+  solaredgeSolarEnergyProviderDiscoveryPlugin,
 } from "./solar-energy-provider";
 import { weatherPlugins } from "./solar-forecast";
 
@@ -26,7 +26,7 @@ export const discoveryPlugins = [
   sonnenBatteryPlugin,
   indevoltBatteryPlugin,
   homeWizardBatteryPlugin,
-  huaweiSolarEnergyProviderDiscoveryPlugin,
+  ...huaweiSolarEnergyProviderDiscoveryPlugins,
   solaredgeSolarEnergyProviderDiscoveryPlugin,
   enphaseSolarEnergyProviderDiscoveryPlugin,
 ];

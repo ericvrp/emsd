@@ -39,7 +39,9 @@ export const indevoltBatteryPlugin: DiscoveryPlugin = {
     const serial = getStringValue(payload?.["0"]);
     const firmwareVersion = getStringValue(payload?.["1118"]);
     const telemetryPowerW = parseIndevoltSignedPower(payload);
-    const capacityWh = parseIndevoltCapacityWh(payload?.[INDEVOLT_CAPACITY_POINT]);
+    const capacityWh = parseIndevoltCapacityWh(
+      payload?.[INDEVOLT_CAPACITY_POINT],
+    );
     const batteryPower =
       telemetryPowerW === null ? null : Math.round(telemetryPowerW);
     const batteryState = formatDefaultBatteryState(payload?.["6001"]);
