@@ -8,6 +8,7 @@ import {
   markSolarEnergyProviderControlRequestRunning,
   openDaemonDatabase,
   queueSolarEnergyProviderControlRequest,
+  readLatestSolarEnergyProviderControlRequests,
   readBatteries,
   readBatteryPowerSamples,
   readDynamicPriceSamples,
@@ -180,6 +181,39 @@ test("solar energy provider control requests can be queued and completed", () =>
     status: "completed",
     updated_at: "2026-04-05T16:47:00.000Z",
   });
+
+  rmSync(tempDir, { recursive: true, force: true });
+});
+
+test("readLatestSolarEnergyProviderControlRequests returns the newest request per provider", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "emsd-daemon-test-"));
+  const databasePath = join(tempDir, "emsd.sqlite");
+  const db = openDaemonDatabase(databasePath);
+
+  queueSolarEnergyProviderControlRequest(db, {
+    providerId: "solar-1",
+    requestedAt: "2026-04-05T16:45:00.000Z",
+    requestedEnabled: true,
+    siteId: "main-house",
+  });
+  const newestForSolar1 = queueSolarEnergyProviderControlRequest(db, {
+    providerId: "solar-1",
+    requestedAt: "2026-04-05T16:55:00.000Z",
+    requestedEnabled: false,
+    siteId: "main-house",
+  });
+  const onlyForSolar2 = queueSolarEnergyProviderControlRequest(db, {
+    providerId: "solar-2",
+    requestedAt: "2026-04-05T16:50:00.000Z",
+    requestedEnabled: true,
+    siteId: "main-house",
+  });
+
+  const requests = readLatestSolarEnergyProviderControlRequests(db);
+
+  db.close();
+
+  expect(requests).toEqual([newestForSolar1, onlyForSolar2]);
 
   rmSync(tempDir, { recursive: true, force: true });
 });

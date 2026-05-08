@@ -47,6 +47,7 @@ import {
   readDynamicPriceSamples,
   readDynamicPriceSnapshot,
   readDynamicPriceSources,
+  readLatestSolarEnergyProviderControlRequests,
   readManagedDeviceTelemetry,
   readMeters,
   readP1MeterSamples,
@@ -70,6 +71,7 @@ import {
   estimateImportShortage,
   formatImportShortageEstimateForLog,
 } from "./dynamic-price-target";
+import { resolveEffectiveSolarProductionControlStatus } from "./solar-production-control";
 import {
   formatAutomaticStrategyAppliedSummary,
   formatFallbackStrategyRestoreSummary,
@@ -1636,6 +1638,12 @@ async function runIndependentSolarProductionControlStrategy(
   }
 
   const telemetry = readManagedDeviceTelemetry(db);
+  const latestControlRequestsByProvider = new Map(
+    readLatestSolarEnergyProviderControlRequests(db).map((request) => [
+      `${request.siteId}:${request.providerId}`,
+      request,
+    ]),
+  );
   let processedProviderCount = 0;
 
   for (const provider of providers) {
@@ -1645,17 +1653,13 @@ async function runIndependentSolarProductionControlStrategy(
           entry.kind === "solar-energy-provider" &&
           entry.deviceId === provider.id,
       ) ?? null;
-    const currentStatus = providerTelemetry?.productionControlStatus ?? null;
-
-    if (currentStatus === null || currentStatus === "unavailable") {
-      const desiredLabel = decision.desiredEnabled ? "enable" : "disable";
-      logInfoWithVerboseDetails(
-        verbose,
-        `solar production control not possible for ${provider.id}: ${desiredLabel} not supported by this provider`,
-        `solar production control skipped for ${provider.id}: desired=${desiredLabel} currentStatus=${currentStatus}`,
-      );
-      continue;
-    }
+    const latestControlRequest =
+      latestControlRequestsByProvider.get(`${provider.siteId}:${provider.id}`) ??
+      null;
+    const currentStatus = resolveEffectiveSolarProductionControlStatus(
+      providerTelemetry,
+      latestControlRequest,
+    );
 
     processedProviderCount += 1;
     const currentlyEnabled = currentStatus === "enabled";

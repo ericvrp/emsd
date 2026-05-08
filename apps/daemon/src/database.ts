@@ -1555,6 +1555,41 @@ export function readPendingSolarEnergyProviderControlRequests(
   return rows.map(mapSolarEnergyProviderControlRequestRow);
 }
 
+export function readLatestSolarEnergyProviderControlRequests(
+  db: Database,
+): SolarEnergyProviderControlRequestRecord[] {
+  const rows = db
+    .query<SolarEnergyProviderControlRequestRow, []>(
+      `
+        SELECT
+          id,
+          site_id,
+          provider_id,
+          requested_enabled,
+          status,
+          message,
+          requested_at,
+          updated_at
+        FROM solar_energy_provider_control_requests
+        ORDER BY requested_at DESC, id DESC
+      `,
+    )
+    .all();
+
+  const latestRequests = new Map<string, SolarEnergyProviderControlRequestRecord>();
+
+  for (const row of rows) {
+    const request = mapSolarEnergyProviderControlRequestRow(row);
+    const key = `${request.siteId}:${request.providerId}`;
+
+    if (!latestRequests.has(key)) {
+      latestRequests.set(key, request);
+    }
+  }
+
+  return [...latestRequests.values()];
+}
+
 export function queueSolarEnergyProviderControlRequest(
   db: Database,
   input: {
