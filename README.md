@@ -47,39 +47,56 @@ bun install
 
 ## Environment Setup
 
-Create real env files from the checked-in examples:
+Create a real root env file from the checked-in example:
 
 ```bash
-cp apps/daemon/.env.example apps/daemon/.env
-cp apps/web/.env.example apps/web/.env.local
+cp .env.example .env
 ```
 
-Then update them as needed.
+Then update it as needed.
 
-`apps/daemon/.env`
-
-- `TIBBER_ACCESS_TOKEN`: required if you want Tibber price data
-- `TIBBER_HOME_ID`: optional when your Tibber account has multiple homes
-- `ENPHASE_ENLIGHTEN_USERNAME`: required for some Enphase local API setups
-- `ENPHASE_ENLIGHTEN_PASSWORD`: required for some Enphase local API setups
-
-`apps/web/.env.local`
+`.env`
 
 - `PORT=3300`: default local web port
 - `NEXTAUTH_SECRET`: required for web auth and signed discovery payloads
 - `EMSD_ADMIN_PASSWORD`: required for the local admin login
 - `AUTH_TRUST_HOST=true`: keep the default unless you have a deployment reason to change it
 - `EMSD_LOCAL_API_TOKEN`: optional fixed bearer token for `/api/local/v1/current`
+- `TIBBER_ACCESS_TOKEN`: required if you want Tibber price data
+- `TIBBER_HOME_ID`: optional when your Tibber account has multiple homes
+- `ENPHASE_ENLIGHTEN_USERNAME`: required for some Enphase local API setups
+- `ENPHASE_ENLIGHTEN_PASSWORD`: required for some Enphase local API setups
+
+The root `bun run dev` and `bun run prod` commands load this file and pass it to both child processes.
+
+The older app-local env examples are still in `apps/daemon/.env.example` and `apps/web/.env.example` for reference, but the root `.env` is now the canonical setup.
 
 ## Quick Start
 
-Start the daemon first so it can initialize the database:
+### Development
+
+Start the daemon and web app together:
 
 ```bash
-bun run daemon:start
+bun run dev
 ```
 
-From there you can use either workflow.
+This starts:
+
+- the daemon in watch mode
+- the Next.js app in dev mode
+
+Then open `http://localhost:3300`, sign in with `EMSD_ADMIN_PASSWORD`, create a site, run discovery, and add devices from the Settings screens.
+
+### Production-Like Local Run
+
+Build everything, then run the built daemon and built Next.js app together:
+
+```bash
+bun run prod
+```
+
+This runs the fastest non-watch setup and is useful for checking the production runtime locally.
 
 ### CLI-First
 
@@ -98,26 +115,15 @@ bun run ems -- weather list --site-id home
 bun run ems -- battery strategy-plan get --site-id home
 ```
 
-### Web-First
-
-```bash
-bun run web:dev
-```
-
-Then open `http://localhost:3300`, sign in with `EMSD_ADMIN_PASSWORD`, create a site, run discovery, and add devices from the Settings screens.
-
-When you are done:
-
-```bash
-bun run daemon:stop
-```
+You can still run the daemon, EMS CLI, and web app separately if needed. The combined `dev` and `prod` flows are now the main entry points for local use.
 
 ## Troubleshooting
 
-- Missing `NEXTAUTH_SECRET` or `EMSD_ADMIN_PASSWORD`: confirm `apps/web/.env.local` exists and restart `bun run web:dev` after editing it.
-- Missing Tibber token: set `TIBBER_ACCESS_TOKEN` in `apps/daemon/.env` before using Tibber-backed price features.
-- Daemon does not start: check `var/log/emsd.error.log`, then stop any previous instance with `bun run daemon:stop`.
-- Database-dependent EMS commands fail on a fresh checkout: start the daemon once so it can create `data/emsd.sqlite`.
+- Missing `NEXTAUTH_SECRET` or `EMSD_ADMIN_PASSWORD`: confirm `.env` exists at the repo root and restart `bun run dev` after editing it.
+- Missing Tibber token: set `TIBBER_ACCESS_TOKEN` in `.env` before using Tibber-backed price features.
+- `bun run prod` fails during the build step: fix the reported build error and rerun the command.
+- Daemon does not start in the standalone flow: check `var/log/emsd.error.log`, then stop any previous instance with `bun run daemon:stop`.
+- Database-dependent EMS commands fail on a fresh checkout: start the daemon once with `bun run dev`, `bun run prod`, or `bun run daemon:start` so it can create `data/emsd.sqlite`.
 
 ## Common Commands
 
@@ -150,6 +156,16 @@ bun run daemon:logs:pm2
 
 The direct start flow writes logs under `var/log/` and a PID file under `var/run/`.
 
+### Combined Runtime
+
+```bash
+bun run dev
+bun run prod
+```
+
+- `bun run dev` starts the daemon in watch mode and Next.js in dev mode.
+- `bun run prod` builds everything and starts the built daemon plus the built Next.js app.
+
 ### EMS
 
 ```bash
@@ -175,6 +191,8 @@ bun run web:dev
 bun run web:build
 bun run web:start
 ```
+
+These separate commands still exist for focused debugging and manual control.
 
 ## Single-Test Commands
 

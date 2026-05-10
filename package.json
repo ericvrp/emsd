@@ -4,6 +4,8 @@
   "private": true,
   "workspaces": ["apps/*", "packages/*"],
   "scripts": {
+    "dev": "bun run scripts/dev.ts",
+    "prod": "bun run scripts/prod.ts",
     "build": "bun run build:core && bun run build:daemon && bun run build:ems && bun run web:build",
     "build:core": "bun run --cwd packages/core build",
     "build:daemon": "bun run --cwd apps/daemon build",
