@@ -1,10 +1,9 @@
-import { useEffect, useState, type RefCallback } from "react";
+import { type RefCallback, useEffect, useState } from "react";
 
 export function useMatchedCardHeights(cardIds: readonly string[]) {
   const [containerElement, setContainerElement] = useState<HTMLElement | null>(
     null,
   );
-  const cardIdsKey = cardIds.join("|");
 
   useEffect(() => {
     if (!containerElement) {
@@ -62,7 +61,7 @@ export function useMatchedCardHeights(cardIds: readonly string[]) {
         card.style.removeProperty("height");
       }
     };
-  }, [cardIdsKey, containerElement]);
+  }, [containerElement]);
 
   const containerRef: RefCallback<HTMLElement> = (node) => {
     setContainerElement(node);

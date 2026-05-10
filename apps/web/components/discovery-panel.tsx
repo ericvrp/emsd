@@ -25,10 +25,10 @@ import { formatKilowattHoursFromWh } from "../lib/energy-format";
 import { UI_STYLES } from "../lib/ui-colors";
 import { cn } from "../lib/utils";
 import { SubmitButton } from "./submit-button";
-import { useMatchedCardHeights } from "./use-matched-card-heights";
 import { Button } from "./ui/button";
 import { DialogPortal } from "./ui/dialog-portal";
 import { useFormActionToast } from "./use-form-action-toast";
+import { useMatchedCardHeights } from "./use-matched-card-heights";
 
 interface DiscoveryCachePayload {
   version: number;

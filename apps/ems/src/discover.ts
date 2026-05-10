@@ -7,6 +7,7 @@ import type {
   DiscoveredDevice,
   MeterTelemetrySample,
 } from "./discovery-types";
+import { logEmsError, logEmsInfo } from "./logging";
 import {
   type DiscoveryPlugin,
   type DiscoveryRequestDefinition,
@@ -414,7 +415,7 @@ export async function runDiscoverCommand(args: string[] = []): Promise<number> {
   try {
     options = parseDiscoverCommandOptions(args);
   } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error));
+    logEmsError(error instanceof Error ? error.message : String(error));
     console.log(formatHelpText());
     return 1;
   }
@@ -426,7 +427,7 @@ export async function runDiscoverCommand(args: string[] = []): Promise<number> {
 
   if (options.host) {
     if (options.verbose) {
-      console.error(
+      logEmsInfo(
         `Using ${discoveryPlugins.length} discovery fingerprint(s): ${discoveryPlugins.map((plugin) => plugin.model).join(", ")}`,
       );
     }
@@ -452,7 +453,7 @@ export async function runDiscoverCommand(args: string[] = []): Promise<number> {
   }
 
   if (options.verbose) {
-    console.error(
+    logEmsInfo(
       `Using ${discoveryPlugins.length} discovery fingerprint(s): ${discoveryPlugins.map((plugin) => plugin.model).join(", ")}`,
     );
   }
@@ -593,7 +594,7 @@ async function probeTarget(
         );
 
         if (options.verbose) {
-          console.error(`Matched ${plugin.model} at ${ipAddress}`);
+          logEmsInfo(`Matched ${plugin.model} at ${ipAddress}`);
         }
 
         return {
@@ -636,7 +637,7 @@ async function probeTarget(
       );
 
       if (options.verbose) {
-        console.error(
+        logEmsInfo(
           `Response from ${primaryResponse.url} did not match ${plugin.model}`,
         );
       }
@@ -651,7 +652,7 @@ async function probeTarget(
     );
 
     if (options.verbose) {
-      console.error(`Matched ${plugin.model} at ${ipAddress}`);
+      logEmsInfo(`Matched ${plugin.model} at ${ipAddress}`);
     }
 
     const supplementalPayload = await fetchSupplementalPayload(
@@ -733,7 +734,7 @@ function createDiscoveryProgressLogger(
   const startedHosts = new Set<string>();
   const pluginStats = new Map<string, DiscoveryPluginStats>();
 
-  console.error(
+  logEmsInfo(
     `Discovery scan starting for ${targets.length} host${targets.length === 1 ? "" : "s"} with host concurrency ${hostConcurrency}. ${discoveryPlugins.length} plugin fingerprint${discoveryPlugins.length === 1 ? "" : "s"} will be checked sequentially per host.`,
   );
 
@@ -753,7 +754,7 @@ function createDiscoveryProgressLogger(
       .map(([stage, count]) => `${count}x ${stage}`)
       .join(", ");
 
-    console.error(
+    logEmsInfo(
       `Discovery progress: started ${startedHosts.size}/${targets.length}, completed ${completedHosts}/${targets.length}, active ${activeCount}, matched ${matchedHosts}, port skips ${skippedPorts}.${activeSummary ? ` Active stages: ${activeSummary}.` : ""}`,
     );
   }, DISCOVERY_PROGRESS_INTERVAL_MS);
@@ -807,7 +808,7 @@ function createDiscoveryProgressLogger(
     hostMatched(ipAddress, model) {
       matchedHosts += 1;
       activeStages.set(ipAddress, `${model} matched`);
-      console.error(`Discovery matched ${model} at ${ipAddress}.`);
+      logEmsInfo(`Discovery matched ${model} at ${ipAddress}.`);
     },
     hostFinished(ipAddress) {
       completedHosts += 1;
@@ -815,7 +816,7 @@ function createDiscoveryProgressLogger(
     },
     stop() {
       clearInterval(interval);
-      console.error(
+      logEmsInfo(
         `Discovery scan finished. Completed ${completedHosts}/${targets.length} host${targets.length === 1 ? "" : "s"} with ${matchedHosts} match${matchedHosts === 1 ? "" : "es"} and ${skippedPorts} port skip${skippedPorts === 1 ? "" : "s"}.`,
       );
 
@@ -834,7 +835,7 @@ function createDiscoveryProgressLogger(
           .map(([outcome, count]) => `${count} ${outcome}`)
           .join(", ");
 
-        console.error(
+        logEmsInfo(
           `Discovery plugin summary ${model}: attempts ${stats.attempts}, matches ${stats.matches}, skipped ${stats.skipped}, avg ${averageMs}ms, total ${Math.round(stats.totalDurationMs)}ms.${outcomes ? ` Outcomes: ${outcomes}.` : ""}`,
         );
       }
@@ -908,7 +909,7 @@ async function fetchDiscoveryResponse(
     const headers = resolveRequestHeaders(request, ipAddress);
 
     if (options.verbose) {
-      console.error(`Probing ${requestUrl} for ${plugin.model}...`);
+      logEmsInfo(`Probing ${requestUrl} for ${plugin.model}...`);
     }
 
     const responseResult = await fetchWithLanFallback(requestUrl, {
@@ -924,7 +925,7 @@ async function fetchDiscoveryResponse(
 
     if (responseResult.response === null) {
       if (options.verbose) {
-        console.error(
+        logEmsInfo(
           `Request failed for ${requestUrl}: ${formatUnknownError(responseResult.error)}`,
         );
       }
@@ -935,7 +936,7 @@ async function fetchDiscoveryResponse(
 
     if (!response.ok) {
       if (options.verbose) {
-        console.error(`Received HTTP ${response.status} from ${requestUrl}`);
+        logEmsInfo(`Received HTTP ${response.status} from ${requestUrl}`);
       }
       continue;
     }
@@ -944,7 +945,7 @@ async function fetchDiscoveryResponse(
 
     if (responseText === null) {
       if (options.verbose) {
-        console.error(`Could not read response body from ${requestUrl}`);
+        logEmsInfo(`Could not read response body from ${requestUrl}`);
       }
       continue;
     }
@@ -995,7 +996,7 @@ async function fetchSupplementalPayload(
   }
 
   if (options.verbose) {
-    console.error(
+    logEmsInfo(
       `Supplemental probe returned data from ${supplementalResponse.url}`,
     );
   }

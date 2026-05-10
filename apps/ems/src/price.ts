@@ -1,4 +1,5 @@
 import type { DynamicPriceSourceRecord } from "@emsd/core";
+import { logEmsError } from "./logging";
 import {
   createDynamicPriceSource,
   deleteDynamicPriceSource,
@@ -123,7 +124,7 @@ export async function runPriceCommand(args: string[] = []): Promise<number> {
 
     throw new Error(`Unknown price command: ${args[0]}`);
   } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error));
+    logEmsError(error instanceof Error ? error.message : String(error));
     console.log(formatPriceHelpText());
     return 1;
   }

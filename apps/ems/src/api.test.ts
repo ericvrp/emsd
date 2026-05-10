@@ -381,135 +381,137 @@ test("discovery add all rejects selecting multiple new batteries", async () => {
 });
 
 test("api history archive returns stored battery, price, and forecast data", async () => {
-  const databasePath = createTempDatabase();
+  await withFrozenDate("2026-04-09T12:00:00.000Z", async () => {
+    const databasePath = createTempDatabase();
 
-  createSite(
-    {
-      id: "home",
-      location: "52.367600, 4.904100",
-      name: "Home",
-    },
-    databasePath,
-  );
+    createSite(
+      {
+        id: "home",
+        location: "52.367600, 4.904100",
+        name: "Home",
+      },
+      databasePath,
+    );
 
-  const db = openDaemonDatabase(databasePath);
+    const db = openDaemonDatabase(databasePath);
 
-  try {
-    upsertManagedDeviceTelemetry(db, {
-      capacityWh: 9600,
-      deviceId: "battery-1",
-      kind: "battery",
-      observedAt: "2026-04-09T08:30:00.000Z",
+    try {
+      upsertManagedDeviceTelemetry(db, {
+        capacityWh: 9600,
+        deviceId: "battery-1",
+        kind: "battery",
+        observedAt: "2026-04-09T08:30:00.000Z",
+        powerW: -950,
+        productionControlStatus: null,
+        siteId: "home",
+        socPercent: 62,
+        state: "discharging",
+      });
+
+      upsertManagedDeviceTelemetry(db, {
+        capacityWh: null,
+        deviceId: "meter-1",
+        kind: "meter",
+        observedAt: "2026-04-09T08:30:00.000Z",
+        powerW: 420,
+        productionControlStatus: null,
+        siteId: "home",
+        socPercent: null,
+        state: null,
+      });
+
+      upsertManagedDeviceTelemetry(db, {
+        capacityWh: null,
+        deviceId: "solar-1",
+        kind: "solar-energy-provider",
+        observedAt: "2026-04-09T08:30:00.000Z",
+        powerW: 1800,
+        productionControlStatus: "disabled",
+        siteId: "home",
+        socPercent: null,
+        state: "connected",
+      });
+      upsertBatteryStrategyHistoryState(db, {
+        activeItemId: null,
+        batteryId: "battery-1",
+        displayLabel: "Self-consumption",
+        displayState: "self-consumption",
+        endedAt: null,
+        manualState: null,
+        observedAt: "2026-04-09T08:30:00.000Z",
+        siteId: "home",
+        source: "automatic",
+        startedAt: "2026-04-09T08:25:00.000Z",
+        strategyMode: "self-consumption",
+      });
+
+      upsertWeatherForecast(db, "home", {
+        generatedAt: "2026-04-09T08:00:00.000Z",
+        hours: 48,
+        location: "52.367600, 4.904100",
+        metricLabel: "Solar irradiance",
+        periodMinutes: 15,
+        points: [
+          {
+            airTempC: 12.4,
+            cloudOpacityPercent: 35,
+            ghiWm2: 410,
+            period: "PT15M",
+            periodEnd: "2026-04-09T08:15:00.000Z",
+            value: 410,
+          },
+        ],
+        provider: "open-meteo",
+        providerLabel: "Open-Meteo",
+        sourceId: null,
+        sourceName: "Open-Meteo",
+        unitLabel: "W/m²",
+      });
+
+      upsertDynamicPriceSnapshot(db, "home", {
+        currency: "EUR",
+        generatedAt: "2026-04-09T08:00:00.000Z",
+        points: [
+          {
+            currency: "EUR",
+            importPrice: 0.31,
+            startsAt: "2026-04-09T08:00:00.000Z",
+          },
+        ],
+        provider: "tibber",
+        providerLabel: "Tibber",
+        siteId: "home",
+        sourceId: null,
+        sourceName: "Tibber",
+      });
+    } finally {
+      db.close();
+    }
+
+    const archive = (await runApiAction("history-get-archive", {
+      day: "2026-04-09",
+      siteId: "home",
+    })) as HistoryArchive;
+
+    expect(archive.siteId).toBe("home");
+    expect(archive.batteryPowerSamples).toHaveLength(1);
+    expect(archive.batteryPowerSamples[0]).toMatchObject({
       powerW: -950,
-      productionControlStatus: null,
-      siteId: "home",
       socPercent: 62,
-      state: "discharging",
     });
-
-    upsertManagedDeviceTelemetry(db, {
-      capacityWh: null,
-      deviceId: "meter-1",
-      kind: "meter",
-      observedAt: "2026-04-09T08:30:00.000Z",
-      powerW: 420,
-      productionControlStatus: null,
-      siteId: "home",
-      socPercent: null,
-      state: null,
-    });
-
-    upsertManagedDeviceTelemetry(db, {
-      capacityWh: null,
-      deviceId: "solar-1",
-      kind: "solar-energy-provider",
-      observedAt: "2026-04-09T08:30:00.000Z",
-      powerW: 1800,
-      productionControlStatus: "disabled",
-      siteId: "home",
-      socPercent: null,
-      state: "connected",
-    });
-    upsertBatteryStrategyHistoryState(db, {
-      activeItemId: null,
-      batteryId: "battery-1",
+    expect(archive.batteryStrategyHistory).toHaveLength(1);
+    expect(archive.batteryStrategyHistory[0]).toMatchObject({
       displayLabel: "Self-consumption",
-      displayState: "self-consumption",
-      endedAt: null,
-      manualState: null,
-      observedAt: "2026-04-09T08:30:00.000Z",
-      siteId: "home",
       source: "automatic",
-      startedAt: "2026-04-09T08:25:00.000Z",
-      strategyMode: "self-consumption",
     });
-
-    upsertWeatherForecast(db, "home", {
-      generatedAt: "2026-04-09T08:00:00.000Z",
-      hours: 48,
-      location: "52.367600, 4.904100",
-      metricLabel: "Solar irradiance",
-      periodMinutes: 15,
-      points: [
-        {
-          airTempC: 12.4,
-          cloudOpacityPercent: 35,
-          ghiWm2: 410,
-          period: "PT15M",
-          periodEnd: "2026-04-09T08:15:00.000Z",
-          value: 410,
-        },
-      ],
-      provider: "open-meteo",
-      providerLabel: "Open-Meteo",
-      sourceId: null,
-      sourceName: "Open-Meteo",
-      unitLabel: "W/m²",
-    });
-
-    upsertDynamicPriceSnapshot(db, "home", {
-      currency: "EUR",
-      generatedAt: "2026-04-09T08:00:00.000Z",
-      points: [
-        {
-          currency: "EUR",
-          importPrice: 0.31,
-          startsAt: "2026-04-09T08:00:00.000Z",
-        },
-      ],
-      provider: "tibber",
-      providerLabel: "Tibber",
-      siteId: "home",
-      sourceId: null,
-      sourceName: "Tibber",
-    });
-  } finally {
-    db.close();
-  }
-
-  const archive = (await runApiAction("history-get-archive", {
-    day: "2026-04-09",
-    siteId: "home",
-  })) as HistoryArchive;
-
-  expect(archive.siteId).toBe("home");
-  expect(archive.batteryPowerSamples).toHaveLength(1);
-  expect(archive.batteryPowerSamples[0]).toMatchObject({
-    powerW: -950,
-    socPercent: 62,
+    expect(archive.p1MeterSamples).toHaveLength(1);
+    expect(archive.selectedDayKey).toBe("2026-04-09");
+    expect(archive.selectedDaySiteLoadSamples).toHaveLength(96);
+    expect(archive.selectedDayExpectedSiteLoadSamples).toHaveLength(96);
+    expect(archive.solarEnergyProviderSamples).toHaveLength(1);
+    expect(archive.solarForecastSamples).toHaveLength(1);
+    expect(archive.dynamicPriceSamples).toHaveLength(1);
   });
-  expect(archive.batteryStrategyHistory).toHaveLength(1);
-  expect(archive.batteryStrategyHistory[0]).toMatchObject({
-    displayLabel: "Self-consumption",
-    source: "automatic",
-  });
-  expect(archive.p1MeterSamples).toHaveLength(1);
-  expect(archive.selectedDayKey).toBe("2026-04-09");
-  expect(archive.selectedDaySiteLoadSamples).toHaveLength(96);
-  expect(archive.selectedDayExpectedSiteLoadSamples).toHaveLength(96);
-  expect(archive.solarEnergyProviderSamples).toHaveLength(1);
-  expect(archive.solarForecastSamples).toHaveLength(1);
-  expect(archive.dynamicPriceSamples).toHaveLength(1);
 });
 
 test("house-strategy-set persists manual target method metadata", async () => {

@@ -5,6 +5,7 @@ import {
   discoverHostDevices,
   getPreferredDiscoveryTarget,
 } from "./discover";
+import { logEmsError } from "./logging";
 import {
   createMeter,
   deleteMeter,
@@ -173,7 +174,7 @@ export async function runMeterCommand(args: string[] = []): Promise<number> {
 
     throw new Error(`Unknown meter command: ${args[0]}`);
   } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error));
+    logEmsError(error instanceof Error ? error.message : String(error));
     console.log(formatMeterHelpText());
     return 1;
   }

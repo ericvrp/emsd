@@ -63,6 +63,7 @@ import {
   discoverHostDevices,
   getPreferredDiscoveryTarget,
 } from "./discover";
+import { logEmsError } from "./logging";
 import {
   SINGLE_BATTERY_LIMIT_ERROR,
   createBattery,
@@ -999,7 +1000,7 @@ export async function runApiAction(
           await createBatteryPlugin(battery).setStrategy(strategy);
         } catch (error) {
           // Log the error but continue with other batteries
-          console.error(
+          logEmsError(
             `Failed to apply strategy to battery ${battery.id}: ${error instanceof Error ? error.message : String(error)}`,
           );
         }

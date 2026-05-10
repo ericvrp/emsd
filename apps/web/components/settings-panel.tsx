@@ -48,12 +48,12 @@ import { LocalApiPanel } from "./local-api-panel";
 import { MeasuredChartContainer } from "./measured-chart-container";
 import { SectionSummaryCard } from "./section-summary-card";
 import { SubmitButton } from "./submit-button";
-import { useMatchedCardHeights } from "./use-matched-card-heights";
-import { useLiveJsonSWR } from "./use-live-json-swr";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader } from "./ui/card";
 import { DialogPortal } from "./ui/dialog-portal";
 import { useFormActionToast } from "./use-form-action-toast";
+import { useLiveJsonSWR } from "./use-live-json-swr";
+import { useMatchedCardHeights } from "./use-matched-card-heights";
 
 type SettingsTab =
   | "devices"
@@ -220,7 +220,11 @@ export function SettingsPanel({
                 />
               </ResourceSection>
               <ResourceSection title="Meters">
-                <DeviceList kind="meter" returnPath={returnPath} site={deviceSite} />
+                <DeviceList
+                  kind="meter"
+                  returnPath={returnPath}
+                  site={deviceSite}
+                />
               </ResourceSection>
             </section>
           ) : (
@@ -829,7 +833,11 @@ function DeviceList({
                     <input type="hidden" name="returnPath" value={returnPath} />
                     <input type="hidden" name="siteId" value={site.id} />
                     <input type="hidden" name="batteryId" value={device.id} />
-                    <input type="hidden" name="batteryName" value={device.name} />
+                    <input
+                      type="hidden"
+                      name="batteryName"
+                      value={device.name}
+                    />
                     <div className="space-y-3">
                       <label className="block space-y-2">
                         <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">

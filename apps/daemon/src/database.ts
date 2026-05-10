@@ -1576,7 +1576,10 @@ export function readLatestSolarEnergyProviderControlRequests(
     )
     .all();
 
-  const latestRequests = new Map<string, SolarEnergyProviderControlRequestRecord>();
+  const latestRequests = new Map<
+    string,
+    SolarEnergyProviderControlRequestRecord
+  >();
 
   for (const row of rows) {
     const request = mapSolarEnergyProviderControlRequestRow(row);

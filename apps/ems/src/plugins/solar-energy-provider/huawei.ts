@@ -3,6 +3,7 @@ import type {
   SolarEnergyProviderProductionControlStatus,
   SolarEnergyProviderRecord,
 } from "@emsd/core";
+import { logEmsWarn } from "../../logging";
 import type { DiscoveryPlugin } from "../types";
 import {
   ModbusPermissionError,
@@ -40,7 +41,7 @@ export class HuaweiSun2000SolarEnergyProviderPlugin {
 
   async getNormalizedInfo(): Promise<NormalizedSolarEnergyProviderInfo> {
     const snapshot = await readHuaweiSnapshot(this.provider).catch((error) => {
-      console.warn(
+      logEmsWarn(
         `Huawei provider query failed for ${this.provider.id}: ${error}`,
       );
 

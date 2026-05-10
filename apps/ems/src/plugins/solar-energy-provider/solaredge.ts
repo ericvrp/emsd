@@ -2,6 +2,7 @@ import type {
   NormalizedSolarEnergyProviderInfo,
   SolarEnergyProviderRecord,
 } from "@emsd/core";
+import { logEmsWarn } from "../../logging";
 import { fetchWithAction } from "../shared";
 import type { DiscoveryPlugin } from "../types";
 
@@ -101,7 +102,7 @@ async function fetchProductionInfo(
       currentPowerW: parsed.powerWatt ?? null,
     };
   } catch (error) {
-    console.warn(`SolarEdge local API query failed: ${error}`);
+    logEmsWarn(`SolarEdge local API query failed: ${error}`);
     return { currentPowerW: null };
   }
 }

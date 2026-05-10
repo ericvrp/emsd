@@ -1,4 +1,5 @@
 import type { SiteRecord } from "@emsd/core";
+import { logEmsError } from "./logging";
 import {
   createSite,
   deleteSite,
@@ -109,7 +110,7 @@ export async function runSiteCommand(args: string[] = []): Promise<number> {
 
     throw new Error(`Unknown site command: ${args[0]}`);
   } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error));
+    logEmsError(error instanceof Error ? error.message : String(error));
     console.log(formatSiteHelpText());
     return 1;
   }

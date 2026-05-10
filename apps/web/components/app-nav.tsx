@@ -18,7 +18,10 @@ export function AppNav() {
   ];
 
   return (
-    <nav className="flex flex-wrap items-center gap-4 md:gap-5" aria-label="Primary">
+    <nav
+      className="flex flex-wrap items-center gap-4 md:gap-5"
+      aria-label="Primary"
+    >
       {navItems.map(({ href, icon: Icon, label }) => {
         const params = new URLSearchParams();
 

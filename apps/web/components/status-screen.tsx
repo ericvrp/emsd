@@ -79,8 +79,8 @@ export async function StatusScreen({
         <Card className="border-white/12 bg-slate-950/70">
           <CardContent className="px-6 py-10 text-center sm:px-8 sm:py-12">
             <p className="text-xl font-medium text-white">
-              No batteries are assigned to this site. Go to Settings and
-              assign a battery to view battery status here.
+              No batteries are assigned to this site. Go to Settings and assign
+              a battery to view battery status here.
             </p>
           </CardContent>
         </Card>

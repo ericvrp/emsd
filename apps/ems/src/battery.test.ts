@@ -364,7 +364,9 @@ test("battery add requires a site id", async () => {
     await expect(
       runEms(["battery", "add", discoveryId ?? "", "--host", "192.168.1.15"]),
     ).resolves.toBe(1);
-    expect(errors).toContain("Missing required option: --site-id <site-id>");
+    expect(errors).toContain(
+      "[ems] Missing required option: --site-id <site-id>",
+    );
   } finally {
     globalThis.fetch = originalFetch;
     console.error = originalError;
@@ -410,7 +412,7 @@ test("battery add rejects an unknown site id", async () => {
       ]),
     ).resolves.toBe(1);
     expect(errors).toContain(
-      "Unknown site id: unknown-site. Known site ids: home",
+      "[ems] Unknown site id: unknown-site. Known site ids: home",
     );
   } finally {
     process.env.EMSD_DB_PATH = originalDatabasePath;
@@ -485,7 +487,7 @@ test("battery add reports an outdated battery table schema", async () => {
       ]),
     ).resolves.toBe(1);
     expect(errors).toContain(
-      `Database schema is outdated at ${databasePath}: table 'batteries' is missing 'site_id'. Remove the database file and let the daemon recreate it.`,
+      `[ems] Database schema is outdated at ${databasePath}: table 'batteries' is missing 'site_id'. Remove the database file and let the daemon recreate it.`,
     );
   } finally {
     process.env.EMSD_DB_PATH = originalDatabasePath;
@@ -534,7 +536,7 @@ test("battery add reports when the discovery id belongs to a meter", async () =>
       ]),
     ).resolves.toBe(1);
     expect(errors).toContain(
-      `Discovery id ${discoveryId} is a meter, not a battery; use 'meter add ${discoveryId}' instead`,
+      `[ems] Discovery id ${discoveryId} is a meter, not a battery; use 'meter add ${discoveryId}' instead`,
     );
   } finally {
     process.env.EMSD_DB_PATH = originalDatabasePath;

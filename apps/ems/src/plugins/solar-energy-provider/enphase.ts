@@ -3,6 +3,7 @@ import type {
   SolarEnergyProviderProductionControlStatus,
   SolarEnergyProviderRecord,
 } from "@emsd/core";
+import { logEmsInfo } from "../../logging";
 import {
   fetchWithAction,
   getStringValue,
@@ -481,7 +482,7 @@ async function readEnphaseProductionControlPayload(
   provider: SolarEnergyProviderRecord,
 ): Promise<EnphaseProductionControlPayload> {
   if (isVerboseEnphaseProductionControlLoggingEnabled()) {
-    console.log(
+    logEmsInfo(
       `Polling Enphase production control via GET https://${provider.ipAddress}${ENPHASE_PRODUCTION_CONTROL_PATH} for provider ${provider.id}`,
     );
   }
@@ -522,7 +523,7 @@ async function readEnphaseProductionControlPayload(
 
   const responseText = await response.text();
   if (isVerboseEnphaseProductionControlLoggingEnabled()) {
-    console.log(
+    logEmsInfo(
       `Enphase production control payload for provider ${provider.id} at ${provider.ipAddress}: ${responseText}`,
     );
   }
@@ -568,7 +569,7 @@ async function setEnphaseProductionEnabled(
     enabled,
     provider,
   );
-  console.log(
+  logEmsInfo(
     `Posting Enphase production control via POST https://${provider.ipAddress}${ENPHASE_PRODUCTION_CONTROL_PATH} for provider ${provider.id}: targetState=${formatProductionControlState(enabled)} payload=${JSON.stringify(nextPayload)}`,
   );
   const response = await fetchEnphaseResponse(

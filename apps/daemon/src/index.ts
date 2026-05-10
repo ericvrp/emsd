@@ -1654,8 +1654,9 @@ async function runIndependentSolarProductionControlStrategy(
           entry.deviceId === provider.id,
       ) ?? null;
     const latestControlRequest =
-      latestControlRequestsByProvider.get(`${provider.siteId}:${provider.id}`) ??
-      null;
+      latestControlRequestsByProvider.get(
+        `${provider.siteId}:${provider.id}`,
+      ) ?? null;
     const currentStatus = resolveEffectiveSolarProductionControlStatus(
       providerTelemetry,
       latestControlRequest,
@@ -2055,7 +2056,7 @@ function logVerbose(enabled: boolean, message: string): void {
     return;
   }
 
-  console.log(`[${formatDaemonLogTimestamp()}] ${message}`);
+  console.log(`[daemon] [${formatDaemonLogTimestamp()}] ${message}`);
 }
 
 function logInfoWithVerboseDetails(
@@ -2068,22 +2069,22 @@ function logInfoWithVerboseDetails(
 }
 
 function logInfo(message: string): void {
-  console.log(`[${formatDaemonLogTimestamp()}] ${message}`);
+  console.log(`[daemon] [${formatDaemonLogTimestamp()}] ${message}`);
 }
 
 function logWarn(message: string): void {
-  console.warn(`[${formatDaemonLogTimestamp()}] WARNING: ${message}`);
+  console.warn(`[daemon] [${formatDaemonLogTimestamp()}] WARNING: ${message}`);
 }
 
 function logError(message: string): void {
-  console.error(`[${formatDaemonLogTimestamp()}] ${message}`);
+  console.error(`[daemon] [${formatDaemonLogTimestamp()}] ${message}`);
 }
 
 try {
   main();
 } catch (error) {
   if (error instanceof DaemonStartupError) {
-    console.error(error.message);
+    console.error(`[daemon] ${error.message}`);
     process.exit(1);
   }
 

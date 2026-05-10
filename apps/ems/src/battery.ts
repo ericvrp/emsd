@@ -15,6 +15,7 @@ import {
   discoverHostDevices,
   getPreferredDiscoveryTarget,
 } from "./discover";
+import { logEmsError } from "./logging";
 import {
   createBattery,
   deleteBattery,
@@ -293,7 +294,7 @@ export async function runBatteryCommand(args: string[] = []): Promise<number> {
 
     throw new Error(`Unknown battery command: ${args[0]}`);
   } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error));
+    logEmsError(error instanceof Error ? error.message : String(error));
     console.log(formatBatteryHelpText());
     return 1;
   }

@@ -1,4 +1,5 @@
 import type { WeatherForecastSourceRecord } from "@emsd/core";
+import { logEmsError } from "./logging";
 import {
   createWeatherForecastSource,
   deleteWeatherForecastSource,
@@ -144,7 +145,7 @@ export async function runWeatherCommand(args: string[] = []): Promise<number> {
 
     throw new Error(`Unknown solar forecast command: ${args[0]}`);
   } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error));
+    logEmsError(error instanceof Error ? error.message : String(error));
     console.log(formatWeatherHelpText());
     return 1;
   }
