@@ -41,7 +41,7 @@ The built-in normalized strategy order is:
 5. `Import shortage` at index `4`
 6. `Solar production control` at index `5`
 
-`Import shortage` is after `Delayed charging`, so it has higher battery-strategy priority when it becomes an active battery-control item.
+`Import shortage` is after `Delayed charging`, so it has higher battery-strategy priority when it is active or due.
 
 `Solar production control` is kept in the normalized built-in order for persistence and UI consistency, but it runs as an independent sidecar behavior rather than a normal battery activation item.
 

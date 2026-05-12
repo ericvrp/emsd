@@ -13,6 +13,7 @@ import {
 import {
   type DynamicPriceTargetEstimate,
   estimateDynamicPriceTarget,
+  estimateImportShortageDynamicTarget,
 } from "../apps/daemon/src/dynamic-price-target";
 import { getNextStrategyTriggerAt } from "../apps/daemon/src/strategy-scheduler";
 import type {
@@ -67,7 +68,8 @@ interface EvaluationOptions extends ScriptOptions {
 
 type StrategyTriggerKind =
   | BatteryStrategyTriggerKind.ExportSurplus
-  | BatteryStrategyTriggerKind.DelayedCharging;
+  | BatteryStrategyTriggerKind.DelayedCharging
+  | BatteryStrategyTriggerKind.ImportShortage;
 
 type VerboseBlock =
   | "meta"
@@ -124,6 +126,7 @@ export function parseArgs(args: string[]): ScriptOptions {
   let strategyTriggerKinds: StrategyTriggerKind[] = [
     BatteryStrategyTriggerKind.ExportSurplus,
     BatteryStrategyTriggerKind.DelayedCharging,
+    BatteryStrategyTriggerKind.ImportShortage,
   ];
   let siteId: string | null = null;
   let targetBufferPercentPerHourOverride =
@@ -307,7 +310,7 @@ function printHelp(): void {
       "Evaluate the dynamic price target method against recent history.",
       "",
       "Defaults:",
-      "  strategy: export-surplus,delayed-charging",
+      "  strategy: export-surplus,delayed-charging,import-shortage",
       `  backup reserve margin: ${DEFAULT_BACKUP_RESERVE_MARGIN}%`,
       `  minimum solar surplus: ${DEFAULT_MINIMUM_SOLAR_SURPLUS_W}W`,
       `  backup reserve margin per hour: ${DEFAULT_TARGET_BUFFER_PERCENT_PER_HOUR}%`,
@@ -320,7 +323,8 @@ function printHelp(): void {
       "Usage:",
       "  bun run dynamic-price-target:evaluate",
       "  bun run dynamic-price-target:evaluate -- --strategy=delayed-charging",
-      "  bun run dynamic-price-target:evaluate -- --strategy=export-surplus,delayed-charging",
+      "  bun run dynamic-price-target:evaluate -- --strategy=import-shortage",
+      "  bun run dynamic-price-target:evaluate -- --strategy=export-surplus,delayed-charging,import-shortage",
       "  bun run dynamic-price-target:evaluate -- --marker-date=2026-04-19",
       "  bun run dynamic-price-target:evaluate -- --marker-percentage=55",
       "  bun run dynamic-price-target:evaluate -- --backup-reserve-margin=2",
@@ -385,7 +389,8 @@ function createEvaluationOptions(
   return {
     ...options,
     action:
-      strategyTriggerKind === BatteryStrategyTriggerKind.DelayedCharging
+      strategyTriggerKind === BatteryStrategyTriggerKind.DelayedCharging ||
+      strategyTriggerKind === BatteryStrategyTriggerKind.ImportShortage
         ? "charging"
         : "discharging",
     strategyTriggerKind,
@@ -420,6 +425,7 @@ function evaluateSite(
     action: options.action,
     battery: batteries[0],
     powerW: options.powerW,
+    strategyTriggerKind: options.strategyTriggerKind,
   });
   const estimateAt = resolveEvaluationReferenceTime({
     markerDate: options.markerDate,
@@ -461,42 +467,56 @@ function evaluateSite(
       action: options.action,
       battery,
       powerW: options.powerW,
+      strategyTriggerKind: options.strategyTriggerKind,
     });
-    dynamicPriceTargetEstimate = estimateDynamicPriceTarget({
-      battery,
-      batteryPowerSamples,
-      backupReserveMarginOverride: options.backupReserveMargin,
-      dynamicPriceSamples,
-      item: batterySyntheticItem,
-      items: [
-        battery.strategyPlan[0] ?? batterySyntheticItem,
-        batterySyntheticItem,
-      ],
-      now: estimateAt,
-      normalizedImportExportSpread,
-      p1MeterSamples,
-      sample: {
-        capacityWh: batteryTelemetry.capacityWh,
-        currentW: null,
-        manualChargeTargetSoc: battery.manualChargeTargetSoc,
-        manualDischargeTargetSoc: battery.manualDischargeTargetSoc,
-        manualPowerW: options.powerW,
-        manualState: options.action,
-        manualTargetSoc: battery.manualTargetSoc,
-        model: battery.model,
-        name: battery.name,
-        socPercent:
-          options.markerPercentage ??
-          getBatterySocAt(batteryPowerSamples, battery.id, estimateAt),
-        status: battery.status,
-        strategyMode: "manual",
-      },
-      minimumSolarSurplusWOverride: options.minimumSolarSurplusWOverride,
-      solarEnergyProviderSamples,
-      solarForecastSamples,
-      targetBufferPercentPerHourOverride:
-        options.targetBufferPercentPerHourOverride,
-    });
+    const sample = {
+      capacityWh: batteryTelemetry.capacityWh,
+      currentW: null,
+      manualChargeTargetSoc: battery.manualChargeTargetSoc,
+      manualDischargeTargetSoc: battery.manualDischargeTargetSoc,
+      manualPowerW: options.powerW,
+      manualState: options.action,
+      manualTargetSoc: battery.manualTargetSoc,
+      model: battery.model,
+      name: battery.name,
+      socPercent:
+        options.markerPercentage ??
+        getBatterySocAt(batteryPowerSamples, battery.id, estimateAt),
+      status: battery.status,
+      strategyMode: "manual",
+    };
+    dynamicPriceTargetEstimate =
+      options.strategyTriggerKind === BatteryStrategyTriggerKind.ImportShortage
+        ? estimateImportShortageDynamicTarget({
+            battery,
+            batteryPowerSamples,
+            lowPriceMarkerTime: estimateAt,
+            now: estimateAt,
+            p1MeterSamples,
+            sample,
+            solarEnergyProviderSamples,
+            solarForecastSamples,
+          })
+        : estimateDynamicPriceTarget({
+            battery,
+            batteryPowerSamples,
+            backupReserveMarginOverride: options.backupReserveMargin,
+            dynamicPriceSamples,
+            item: batterySyntheticItem,
+            items: [
+              battery.strategyPlan[0] ?? batterySyntheticItem,
+              batterySyntheticItem,
+            ],
+            now: estimateAt,
+            normalizedImportExportSpread,
+            p1MeterSamples,
+            sample,
+            minimumSolarSurplusWOverride: options.minimumSolarSurplusWOverride,
+            solarEnergyProviderSamples,
+            solarForecastSamples,
+            targetBufferPercentPerHourOverride:
+              options.targetBufferPercentPerHourOverride,
+          });
     const reserveTargetPercent = getReserveTargetPercent(
       battery.minimumDischargePercent,
       options.backupReserveMargin,
@@ -526,6 +546,7 @@ function createSyntheticPlanItem(input: {
   action: EvaluationOptions["action"];
   battery: ReturnType<typeof readBatteries>[number];
   powerW: number;
+  strategyTriggerKind: StrategyTriggerKind;
 }): BatteryStrategyPlanItem {
   return {
     enabled: true,
@@ -545,10 +566,7 @@ function createSyntheticPlanItem(input: {
     targetDurationMinutes: null,
     targetEndTime: null,
     targetMethod: "auto",
-    triggerKind:
-      input.action === "charging"
-        ? BatteryStrategyTriggerKind.DelayedCharging
-        : BatteryStrategyTriggerKind.ExportSurplus,
+    triggerKind: input.strategyTriggerKind,
   };
 }
 
@@ -925,6 +943,40 @@ export function buildEstimateSummaryRows(
     ];
   }
 
+  if (
+    input.strategyTriggerKind === BatteryStrategyTriggerKind.ImportShortage &&
+    input.dynamicPriceTargetEstimate.importShortageDetails
+  ) {
+    const details = input.dynamicPriceTargetEstimate.importShortageDetails;
+
+    return [
+      {
+        label: "Low Price Marker",
+        value: formatTargetTime(details.lowPriceMarkerTime),
+      },
+      {
+        label: "Solar Recovery",
+        value: formatTargetTime(details.chargeStartTime),
+      },
+      {
+        label: "Projected End SoC",
+        value: `${formatNumber(details.projectedEndSocPercent)}%`,
+      },
+      {
+        label: "Shortage + Buffer",
+        value: `${formatNumber(details.projectedShortagePercent)}% + ${formatNumber(details.bufferPercent)}%`,
+      },
+      {
+        label: "Charge Target",
+        value: `${formatNumber(details.targetSocPercent)}% (${formatWh(details.energyToImportWh)} at ${formatW(details.effectiveChargePowerW)})`,
+      },
+      {
+        label: "Start",
+        value: `${formatDisplayedStartTime(input.dynamicPriceTargetEstimate, input.referenceTime)} (${formatDurationMinutes(details.triggerLeadTimeMinutes)} before marker)`,
+      },
+    ];
+  }
+
   return [
     { label: "Action", value: actionLabel },
     ...highPriceMarkerRows,
@@ -1003,6 +1055,15 @@ export function buildEstimateSummaryLine(input: EvaluationContext): string {
     return `${input.siteName} (${input.siteId}) | ${input.battery.name} (${input.batteryId}) | delayed-charging ${actionLabel} at ${formatTargetTime(delayedChargingDetails.lowPriceMarkerTime)} (${formatPrice(delayedChargingDetails.lowestPrice)}) | start ${formatDisplayedStartTime(input.dynamicPriceTargetEstimate, input.referenceTime)} | lead ${formatDurationMinutes(delayedChargingDetails.triggerLeadTimeMinutes)}`;
   }
 
+  if (
+    input.strategyTriggerKind === BatteryStrategyTriggerKind.ImportShortage &&
+    input.dynamicPriceTargetEstimate.importShortageDetails
+  ) {
+    const details = input.dynamicPriceTargetEstimate.importShortageDetails;
+
+    return `${input.siteName} (${input.siteId}) | ${input.battery.name} (${input.batteryId}) | import-shortage charge to ${formatNumber(details.targetSocPercent)}% for ${formatNumber(details.projectedShortagePercent)}% shortage + ${formatNumber(details.bufferPercent)}% buffer | marker ${formatTargetTime(details.lowPriceMarkerTime)} | start ${formatDisplayedStartTime(input.dynamicPriceTargetEstimate, input.referenceTime)}`;
+  }
+
   return `${input.siteName} (${input.siteId}) | ${input.battery.name} (${input.batteryId}) | target percentage ${reserveAtTargetPercent}% at ${formatTargetTime(input.dynamicPriceTargetEstimate.targetTime)} | ${formatStrategyTriggerKindLabel(input.strategyTriggerKind)} ${actionLabel} target ${currentTargetPercent}% start time ${formatDisplayedStartTime(input.dynamicPriceTargetEstimate, input.referenceTime)}${delayedChargingStartExplanation === null ? "" : ` | ${delayedChargingStartExplanation}`}`;
 }
 
@@ -1071,6 +1132,23 @@ export function buildEnergyEstimateRows(input: {
       "Energy to full": formatWh(delayedChargingDetails.energyToFullWh),
       "Time-to-full formula": `${formatDurationMinutes(delayedChargingDetails.timeToFullMinutes)} = ${formatWh(delayedChargingDetails.energyToFullWh)} / ${formatW(delayedChargingDetails.effectiveFillPowerW)}`,
       "Trigger lead-time formula": `${formatDurationMinutes(delayedChargingDetails.triggerLeadTimeMinutes)} = ${formatDurationMinutes(delayedChargingDetails.timeToFullMinutes)} * 0.5 * ${formatNumber(delayedChargingDetails.triggerMarginFactor)}`,
+    };
+  }
+
+  if (input.dynamicPriceTargetEstimate.importShortageDetails) {
+    const details = input.dynamicPriceTargetEstimate.importShortageDetails;
+
+    return {
+      "Low-price marker": formatTargetTime(details.lowPriceMarkerTime),
+      "Solar recovery starts": formatTargetTime(details.chargeStartTime),
+      "Current SoC": `${formatNumber(details.currentSocPercent)}%`,
+      "Projected end SoC without import": `${formatNumber(details.projectedEndSocPercent)}%`,
+      "Projected shortage": `${formatNumber(details.projectedShortagePercent)}%`,
+      "Time buffer": `${formatNumber(details.bufferPercent)}%`,
+      "Battery capacity basis": formatWh(input.capacityWh),
+      "Energy to import": formatWh(details.energyToImportWh),
+      "Required charge-time formula": `${formatDurationMinutes(details.requiredChargeMinutes)} = ${formatWh(details.energyToImportWh)} / ${formatW(details.effectiveChargePowerW)}`,
+      "Trigger lead-time formula": `${formatDurationMinutes(details.triggerLeadTimeMinutes)} = ${formatDurationMinutes(details.requiredChargeMinutes)} * 1 * ${formatNumber(details.triggerMarginFactor)}`,
     };
   }
 
@@ -1160,6 +1238,29 @@ function buildWhyRows(input: EvaluationContext): Record<string, string> {
       ),
       "Trigger lead time": formatDurationMinutes(
         delayedChargingDetails.triggerLeadTimeMinutes,
+      ),
+      ...rows,
+    };
+  }
+
+  if (input.dynamicPriceTargetEstimate.importShortageDetails) {
+    const details = input.dynamicPriceTargetEstimate.importShortageDetails;
+
+    return {
+      "Low-price marker": formatTargetTime(details.lowPriceMarkerTime),
+      "Solar recovery starts": formatTargetTime(details.chargeStartTime),
+      "Current SoC": `${formatNumber(details.currentSocPercent)}%`,
+      "Projected end SoC without import": `${formatNumber(details.projectedEndSocPercent)}%`,
+      "Projected shortage": `${formatNumber(details.projectedShortagePercent)}%`,
+      "Time buffer": `${formatNumber(details.bufferPercent)}%`,
+      "Charge target": `${formatNumber(details.targetSocPercent)}%`,
+      "Energy to import": formatWh(details.energyToImportWh),
+      "Effective charge power": formatW(details.effectiveChargePowerW),
+      "Required charge time": formatDurationMinutes(
+        details.requiredChargeMinutes,
+      ),
+      "Trigger lead time": formatDurationMinutes(
+        details.triggerLeadTimeMinutes,
       ),
       ...rows,
     };
@@ -1283,7 +1384,9 @@ function formatVerboseHint(strategyTriggerKind: StrategyTriggerKind): string {
   const verboseBlocks =
     strategyTriggerKind === BatteryStrategyTriggerKind.DelayedCharging
       ? "why,energy,energy-buckets,history"
-      : "why,energy,break-even,history";
+      : strategyTriggerKind === BatteryStrategyTriggerKind.ImportShortage
+        ? "why,energy,history"
+        : "why,energy,break-even,history";
 
   return `More details: bun run dynamic-price-target:evaluate -- --strategy=${strategyTriggerKind} --verbose=${verboseBlocks}`;
 }
@@ -1300,7 +1403,7 @@ function parseStrategyTriggerKinds(
 ): StrategyTriggerKind[] {
   if (!value) {
     throw new Error(
-      "--strategy requires a comma-separated list of 'export-surplus' and/or 'delayed-charging'.",
+      "--strategy requires a comma-separated list of 'export-surplus', 'delayed-charging', and/or 'import-shortage'.",
     );
   }
 
@@ -1312,12 +1415,13 @@ function parseStrategyTriggerKinds(
   const invalidEntries = entries.filter(
     (entry) =>
       entry !== BatteryStrategyTriggerKind.ExportSurplus &&
-      entry !== BatteryStrategyTriggerKind.DelayedCharging,
+      entry !== BatteryStrategyTriggerKind.DelayedCharging &&
+      entry !== BatteryStrategyTriggerKind.ImportShortage,
   );
 
   if (invalidEntries.length > 0) {
     throw new Error(
-      `--strategy only accepts 'export-surplus' and 'delayed-charging'; received: ${invalidEntries.join(", ")}.`,
+      `--strategy only accepts 'export-surplus', 'delayed-charging', and 'import-shortage'; received: ${invalidEntries.join(", ")}.`,
     );
   }
 
@@ -1325,7 +1429,7 @@ function parseStrategyTriggerKinds(
 
   if (strategyTriggerKinds.length === 0) {
     throw new Error(
-      "--strategy must contain one or both of: export-surplus, delayed-charging.",
+      "--strategy must contain one or more of: export-surplus, delayed-charging, import-shortage.",
     );
   }
 

@@ -68,8 +68,7 @@ import {
 } from "./database";
 import {
   estimateDynamicPriceTarget,
-  estimateImportShortage,
-  formatImportShortageEstimateForLog,
+  estimateImportShortageDynamicTarget,
 } from "./dynamic-price-target";
 import { resolveEffectiveSolarProductionControlStatus } from "./solar-production-control";
 import {
@@ -1009,10 +1008,31 @@ async function runScheduledStrategy(
         ...(dynamicPriceSamples.length > 0 ? { dynamicPriceSamples } : {}),
       });
 
+      if (!triggerAt) {
+        logVerbose(
+          verbose,
+          `ignoring non-executable strategy item for ${battery.id}: ${describeStrategyPlanItem(item)}`,
+        );
+        continue;
+      }
+
       let dynamicPriceTargetEstimate =
         item.targetMethod === "auto" && isDelayedChargingAutoDischargeItem(item)
           ? getDynamicPriceTargetEstimate(item)
           : null;
+
+      if (item.triggerKind === BatteryStrategyTriggerKind.ImportShortage) {
+        dynamicPriceTargetEstimate = estimateImportShortageDynamicTarget({
+          battery,
+          batteryPowerSamples: getBatteryPowerSamples(),
+          lowPriceMarkerTime: triggerAt,
+          now,
+          p1MeterSamples: getP1MeterSamples(),
+          sample,
+          solarEnergyProviderSamples: getSolarEnergyProviderSamples(),
+          solarForecastSamples: getSolarForecastSamples(),
+        });
+      }
 
       if (dynamicPriceTargetEstimate?.startTime) {
         const delayedChargingStartTime = new Date(
@@ -1022,14 +1042,6 @@ async function runScheduledStrategy(
         if (!Number.isNaN(delayedChargingStartTime.getTime())) {
           triggerAt = delayedChargingStartTime;
         }
-      }
-
-      if (!triggerAt) {
-        logVerbose(
-          verbose,
-          `ignoring non-executable strategy item for ${battery.id}: ${describeStrategyPlanItem(item)}`,
-        );
-        continue;
       }
 
       if (now.getTime() < triggerAt.getTime()) {
@@ -1054,7 +1066,18 @@ async function runScheduledStrategy(
         continue;
       }
 
-      if (shouldSkipScheduledItem(item, triggerAt, now)) {
+      const importShortageTargetAt =
+        item.triggerKind === BatteryStrategyTriggerKind.ImportShortage &&
+        dynamicPriceTargetEstimate?.targetTime
+          ? new Date(dynamicPriceTargetEstimate.targetTime)
+          : null;
+      const scheduledItemExpired =
+        importShortageTargetAt !== null &&
+        !Number.isNaN(importShortageTargetAt.getTime())
+          ? shouldSkipScheduledItem(item, importShortageTargetAt, now)
+          : shouldSkipScheduledItem(item, triggerAt, now);
+
+      if (scheduledItemExpired) {
         logVerbose(
           verbose,
           `skipping expired strategy item for ${battery.id}: ${describeStrategyPlanItem(item)} triggerAt=${formatDaemonLogTimestamp(triggerAt)} now=${formatDaemonLogTimestamp(now)}`,
@@ -1088,39 +1111,6 @@ async function runScheduledStrategy(
           verbose,
           scheduledStartSkipReason,
           `skipping strategy item for ${battery.id}: ${describeStrategyPlanItemWithIndex(battery, item)} triggerAt=${formatDaemonLogTimestamp(triggerAt)} now=${formatDaemonLogTimestamp(now)}`,
-        );
-        runtime = {
-          ...runtime,
-          lastTriggeredAtByItemId: {
-            ...runtime.lastTriggeredAtByItemId,
-            [item.id]: triggerAt.toISOString(),
-          },
-        };
-        updateBatteryStrategyRuntime(db, {
-          batteryId: battery.id,
-          siteId: battery.siteId,
-          strategyRuntime: runtime,
-        });
-        continue;
-      }
-
-      if (item.triggerKind === BatteryStrategyTriggerKind.ImportShortage) {
-        logInfoWithVerboseDetails(
-          verbose,
-          formatImportShortageEstimateForLog({
-            batteryId: battery.id,
-            estimate: estimateImportShortage({
-              battery,
-              batteryPowerSamples: getBatteryPowerSamples(),
-              now,
-              p1MeterSamples: getP1MeterSamples(),
-              sample,
-              solarEnergyProviderSamples: getSolarEnergyProviderSamples(),
-              solarForecastSamples: getSolarForecastSamples(),
-              triggerAt,
-            }),
-          }),
-          `processed import-shortage estimate for ${battery.id}: ${describeStrategyPlanItemWithIndex(battery, item)} triggerAt=${formatDaemonLogTimestamp(triggerAt)} now=${formatDaemonLogTimestamp(now)}`,
         );
         runtime = {
           ...runtime,

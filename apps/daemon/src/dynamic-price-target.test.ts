@@ -13,6 +13,7 @@ import {
 import {
   estimateDynamicPriceTarget,
   estimateImportShortage,
+  estimateImportShortageDynamicTarget,
   resolveDelayedChargingLowPriceMarkerEligibility,
 } from "./dynamic-price-target";
 
@@ -429,6 +430,70 @@ test("estimateImportShortage projects solar surplus and shortage from a low-pric
   expect(estimate.projectedEndSocPercent).toBe(80);
   expect(estimate.shortageToFullPercent).toBe(20);
   expect(estimate.expectedFullAt).toBeNull();
+});
+
+test("estimateImportShortageDynamicTarget charges projected shortage with hourly buffer before low-price marker", () => {
+  const history = createConstantUsageHistory({
+    end: "2026-04-19T05:00:00.000Z",
+    siteLoadW: 200,
+    start: "2026-04-12T00:00:00.000Z",
+  });
+
+  const estimate = estimateImportShortageDynamicTarget({
+    battery: createBattery(),
+    batteryPowerSamples: history.batteryPowerSamples,
+    lowPriceMarkerTime: new Date("2026-04-19T12:00:00.000Z"),
+    now: new Date("2026-04-19T05:00:00.000Z"),
+    p1MeterSamples: history.p1MeterSamples,
+    sample: createSample({ capacityWh: 10000, socPercent: 40 }),
+    solarEnergyProviderSamples: history.solarEnergyProviderSamples,
+    solarForecastSamples: createSolarWindowForecastSamples({
+      daytimePowerW: 600,
+      end: "2026-04-19T21:00:00.000Z",
+      solarEnd: "2026-04-19T19:00:00.000Z",
+      solarStart: "2026-04-19T09:00:00.000Z",
+      start: "2026-04-19T05:00:00.000Z",
+    }),
+  });
+
+  expect(estimate.resolvedManualState).toBe("charging");
+  expect(estimate.estimatedTargetPercent).toBe(80);
+  expect(estimate.estimatedRemainingEnergyWh).toBe(4000);
+  expect(estimate.startTime).toBe("2026-04-19T06:00:00.000Z");
+  expect(estimate.targetTime).toBe("2026-04-19T12:00:00.000Z");
+  expect(estimate.skipReason).toBeNull();
+});
+
+test("estimateImportShortageDynamicTarget explains skipped no-shortage decisions", () => {
+  const history = createConstantUsageHistory({
+    end: "2026-04-19T03:00:00.000Z",
+    siteLoadW: 200,
+    start: "2026-04-12T00:00:00.000Z",
+  });
+
+  const estimate = estimateImportShortageDynamicTarget({
+    battery: createBattery(),
+    batteryPowerSamples: history.batteryPowerSamples,
+    lowPriceMarkerTime: new Date("2026-04-19T12:00:00.000Z"),
+    now: new Date("2026-04-19T03:00:00.000Z"),
+    p1MeterSamples: history.p1MeterSamples,
+    sample: createSample({ capacityWh: 10000, socPercent: 90 }),
+    solarEnergyProviderSamples: history.solarEnergyProviderSamples,
+    solarForecastSamples: createSolarWindowForecastSamples({
+      daytimePowerW: 3000,
+      end: "2026-04-19T21:00:00.000Z",
+      solarEnd: "2026-04-19T19:00:00.000Z",
+      solarStart: "2026-04-19T07:00:00.000Z",
+      start: "2026-04-19T03:00:00.000Z",
+    }),
+  });
+
+  expect(estimate.skipReason).toContain("no projected import shortage");
+  expect(estimate.skipReason).toContain("marker=");
+  expect(estimate.skipReason).toContain("currentSoc=90%");
+  expect(estimate.skipReason).toContain("projectedEndSoc=100%");
+  expect(estimate.skipReason).toContain("shortageToFull=0%");
+  expect(estimate.skipReason).toContain("buffer=12%");
 });
 
 function createAutoLowPriceItem(): BatteryStrategyPlanItem {

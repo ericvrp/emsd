@@ -16,16 +16,16 @@ import {
   resolveEvaluationReferenceTime,
 } from "./evaluate-dynamic-price-target";
 
-test("parseArgs accepts --strategy for export-surplus and delayed-charging", () => {
+test("parseArgs accepts --strategy for built-in dynamic price strategies", () => {
   expect(
-    parseArgs(["--strategy=export-surplus,delayed-charging"])
+    parseArgs(["--strategy=export-surplus,delayed-charging,import-shortage"])
       .strategyTriggerKinds,
-  ).toEqual(["export-surplus", "delayed-charging"]);
+  ).toEqual(["export-surplus", "delayed-charging", "import-shortage"]);
 });
 
 test("parseArgs rejects unknown strategy names", () => {
   expect(() => parseArgs(["--strategy=high"])).toThrow(
-    "--strategy only accepts 'export-surplus' and 'delayed-charging'; received: high.",
+    "--strategy only accepts 'export-surplus', 'delayed-charging', and 'import-shortage'; received: high.",
   );
 });
 
@@ -334,6 +334,65 @@ test("buildEstimateSummaryRows keeps export-surplus output strategy-specific", (
     { label: "Solar Surplus", value: "+100 W" },
     { label: "Discharge Target", value: "discharge to 57%" },
     { label: "Reserve At Target", value: "18%" },
+  ]);
+});
+
+test("buildEstimateSummaryRows keeps import-shortage output concise and strategy-specific", () => {
+  expect(
+    buildEstimateSummaryRows({
+      action: "charging",
+      battery: {
+        id: "battery-1",
+        minimumDischargePercent: 10,
+        name: "Battery 1",
+      } as never,
+      batteryId: "battery-1",
+      candidateDays: [],
+      capacityWh: 6000,
+      dynamicPriceTargetEstimate: {
+        ...createEstimate(),
+        estimatedRemainingEnergyWh: 1800,
+        estimatedReservePercentAtTargetTime: 40,
+        estimatedTargetPercent: 70,
+        importShortageDetails: {
+          bufferPercent: 12,
+          chargeStartTime: createReplayTime(
+            "2026-04-22",
+            "09:00",
+          ).toISOString(),
+          currentSocPercent: 40,
+          effectiveChargePowerW: 1200,
+          energyToImportWh: 1800,
+          lowPriceMarkerTime: createReplayTime(
+            "2026-04-22",
+            "07:00",
+          ).toISOString(),
+          projectedEndSocPercent: 82,
+          projectedShortagePercent: 18,
+          requiredChargeMinutes: 90,
+          targetSocPercent: 70,
+          triggerLeadTimeMinutes: 108,
+          triggerMarginFactor: 1.2,
+        },
+        resolvedManualState: "charging",
+        startTime: createReplayTime("2026-04-22", "05:12").toISOString(),
+        targetTime: createReplayTime("2026-04-22", "07:00").toISOString(),
+      },
+      minimumSolarSurplusWOverride: 50,
+      referenceTime: createReplayTime("2026-04-22", "07:00"),
+      reserveTargetPercent: 12,
+      siteId: "site-1",
+      siteName: "Home",
+      strategyTriggerKind: "import-shortage",
+      verboseBlocks: new Set(),
+    }),
+  ).toEqual([
+    { label: "Low Price Marker", value: "2026-04-22 07:00" },
+    { label: "Solar Recovery", value: "2026-04-22 09:00" },
+    { label: "Projected End SoC", value: "82%" },
+    { label: "Shortage + Buffer", value: "18% + 12%" },
+    { label: "Charge Target", value: "70% (1800 Wh at 1200 W)" },
+    { label: "Start", value: "2026-04-22 05:12 (1h 48m before marker)" },
   ]);
 });
 

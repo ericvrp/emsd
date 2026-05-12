@@ -733,7 +733,7 @@ function getBuiltInStrategyDescription(
     case BatteryStrategyBuiltinItemKey.DelayedCharging:
       return "Starts shortly before a low-price marker and then switches to self-consumption or full charging, depending on that marker price.";
     case BatteryStrategyBuiltinItemKey.ImportShortage:
-      return "Logs whether expected solar surplus after a low-price marker can fully recover the battery later in the day.";
+      return "Charges before a low-price marker when expected solar surplus cannot fully recover the battery later in the day.";
     case BatteryStrategyBuiltinItemKey.SolarProductionControl:
       return "Independently disables solar production while normalized export price is negative and re-enables it when export price turns positive again.";
   }

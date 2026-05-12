@@ -32,6 +32,9 @@ const MIN_SOLAR_SURPLUS_W = DYNAMIC_PRICE_TARGET_MIN_SOLAR_SURPLUS_W;
 const DEFAULT_PERIOD_MINUTES = DYNAMIC_PRICE_TARGET_PERIOD_MINUTES;
 const DELAYED_CHARGING_TRIGGER_BASE_FACTOR = 0.5;
 const DELAYED_CHARGING_TRIGGER_MARGIN_FACTOR = 1.2;
+const IMPORT_SHORTAGE_BUFFER_PERCENT_PER_HOUR = 3;
+const IMPORT_SHORTAGE_TRIGGER_BASE_FACTOR = 1;
+const IMPORT_SHORTAGE_TRIGGER_MARGIN_FACTOR = 1.2;
 
 export interface DynamicPriceTargetEstimate {
   availability: "full" | "partial" | "unavailable";
@@ -84,6 +87,7 @@ export interface DynamicPriceTargetEstimate {
     recoveryThresholdW: number | null;
   } | null;
   windowKind: "general" | "morning-export-surplus" | "evening-export-surplus";
+  importShortageDetails?: ImportShortageDynamicTargetDetails | null;
 }
 
 interface LoadProfile {
@@ -167,6 +171,21 @@ export interface ImportShortageEstimate {
   surplusEndTime: string | null;
   triggerAt: string;
   warning: string | null;
+}
+
+export interface ImportShortageDynamicTargetDetails {
+  bufferPercent: number;
+  chargeStartTime: string;
+  currentSocPercent: number;
+  effectiveChargePowerW: number;
+  energyToImportWh: number;
+  lowPriceMarkerTime: string;
+  projectedEndSocPercent: number;
+  projectedShortagePercent: number;
+  requiredChargeMinutes: number;
+  targetSocPercent: number;
+  triggerLeadTimeMinutes: number;
+  triggerMarginFactor: number;
 }
 
 export interface EnergyBucket {
@@ -861,6 +880,145 @@ export function estimateImportShortage(input: {
   };
 }
 
+export function estimateImportShortageDynamicTarget(input: {
+  battery: BatteryRecord;
+  batteryPowerSamples: BatteryPowerSampleRecord[];
+  lowPriceMarkerTime: Date;
+  now: Date;
+  p1MeterSamples: P1MeterSampleRecord[];
+  sample: NormalizedBatteryInfo;
+  solarEnergyProviderSamples: SolarEnergyProviderSampleRecord[];
+  solarForecastSamples: SolarForecastSampleRecord[];
+}): DynamicPriceTargetEstimate {
+  const estimate = estimateImportShortage({
+    battery: input.battery,
+    batteryPowerSamples: input.batteryPowerSamples,
+    now: input.now,
+    p1MeterSamples: input.p1MeterSamples,
+    sample: input.sample,
+    solarEnergyProviderSamples: input.solarEnergyProviderSamples,
+    solarForecastSamples: input.solarForecastSamples,
+    triggerAt: input.now,
+  });
+  const baseEstimate = createImportShortageDynamicTargetBase({
+    estimate,
+    lowPriceMarkerTime: input.lowPriceMarkerTime,
+    now: input.now,
+    sample: input.sample,
+  });
+  const capacityWh = input.sample.capacityWh;
+  const currentSocPercent = input.sample.socPercent;
+  const shortageToFullPercent = estimate.shortageToFullPercent;
+  const chargeStartTime = estimate.chargeStartTime
+    ? new Date(estimate.chargeStartTime)
+    : null;
+
+  if (capacityWh === null || capacityWh <= 0 || currentSocPercent === null) {
+    return {
+      ...baseEstimate,
+      skipReason: formatImportShortageSkipReason({
+        estimate,
+        lowPriceMarkerTime: input.lowPriceMarkerTime,
+        reason: "battery capacity or current charge unavailable",
+      }),
+    };
+  }
+
+  if (chargeStartTime === null || Number.isNaN(chargeStartTime.getTime())) {
+    return {
+      ...baseEstimate,
+      skipReason: formatImportShortageSkipReason({
+        estimate,
+        lowPriceMarkerTime: input.lowPriceMarkerTime,
+        reason: "solar recovery start unavailable",
+      }),
+    };
+  }
+
+  const hoursUntilSolarSurplusRecovery = Math.max(
+    0,
+    (chargeStartTime.getTime() - input.now.getTime()) / 3_600_000,
+  );
+  const bufferPercent = round2(
+    hoursUntilSolarSurplusRecovery * IMPORT_SHORTAGE_BUFFER_PERCENT_PER_HOUR,
+  );
+
+  if (shortageToFullPercent === null || shortageToFullPercent <= 0) {
+    return {
+      ...baseEstimate,
+      estimatedTargetPercent: currentSocPercent,
+      skipReason: formatImportShortageSkipReason({
+        bufferPercent,
+        estimate,
+        lowPriceMarkerTime: input.lowPriceMarkerTime,
+        reason: "no projected import shortage",
+      }),
+    };
+  }
+
+  const targetSocPercent = round2(
+    Math.min(100, currentSocPercent + shortageToFullPercent + bufferPercent),
+  );
+  const energyToImportWh = round2(
+    Math.max(0, capacityWh * ((targetSocPercent - currentSocPercent) / 100)),
+  );
+
+  if (input.battery.maximumChargePowerW <= 0) {
+    return {
+      ...baseEstimate,
+      skipReason: formatImportShortageSkipReason({
+        bufferPercent,
+        energyToImportWh,
+        estimate,
+        lowPriceMarkerTime: input.lowPriceMarkerTime,
+        reason: "maximum charge power unavailable",
+        targetSocPercent,
+      }),
+    };
+  }
+
+  const requiredChargeMinutes = Math.ceil(
+    (energyToImportWh / input.battery.maximumChargePowerW) * 60,
+  );
+  const triggerLeadTimeMinutes = Math.ceil(
+    requiredChargeMinutes *
+      IMPORT_SHORTAGE_TRIGGER_BASE_FACTOR *
+      IMPORT_SHORTAGE_TRIGGER_MARGIN_FACTOR,
+  );
+  const triggerAt = new Date(
+    input.lowPriceMarkerTime.getTime() - triggerLeadTimeMinutes * 60_000,
+  );
+
+  return {
+    ...baseEstimate,
+    delayedChargingDetails: null,
+    estimatedRemainingEnergyWh: energyToImportWh,
+    estimatedReservePercentAtTargetTime: currentSocPercent,
+    estimatedTargetPercent: targetSocPercent,
+    importShortageDetails: {
+      bufferPercent,
+      chargeStartTime: chargeStartTime.toISOString(),
+      currentSocPercent,
+      effectiveChargePowerW: input.battery.maximumChargePowerW,
+      energyToImportWh,
+      lowPriceMarkerTime: input.lowPriceMarkerTime.toISOString(),
+      projectedEndSocPercent:
+        estimate.projectedEndSocPercent ?? currentSocPercent,
+      projectedShortagePercent: shortageToFullPercent,
+      requiredChargeMinutes,
+      targetSocPercent,
+      triggerLeadTimeMinutes,
+      triggerMarginFactor: IMPORT_SHORTAGE_TRIGGER_MARGIN_FACTOR,
+    },
+    startTime: triggerAt.toISOString(),
+    startTimeBasisSocPercent: currentSocPercent,
+    resolvedManualState: "charging",
+    skipReason: null,
+    targetTime: input.lowPriceMarkerTime.toISOString(),
+    reasoning: `projected solar recovery shortage plus ${IMPORT_SHORTAGE_BUFFER_PERCENT_PER_HOUR}%/hour buffer`,
+  };
+}
+
 export function formatImportShortageEstimateForLog(input: {
   batteryId: string;
   estimate: ImportShortageEstimate;
@@ -870,6 +1028,72 @@ export function formatImportShortageEstimateForLog(input: {
     : "";
 
   return `import-shortage estimate for battery ${input.batteryId}: triggerAt=${input.estimate.triggerAt} currentSoc=${formatNullablePercent(input.estimate.currentSocPercent)} chargeStart=${input.estimate.chargeStartTime ?? "unknown"} surplusEnd=${input.estimate.surplusEndTime ?? "unknown"} solarEnergy=${formatWhAsKwh(input.estimate.expectedSolarGenerationWh)} houseEnergyDuringSurplus=${formatWhAsKwh(input.estimate.expectedHouseLoadDuringSurplusWh)} surplusEnergy=${formatWhAsKwh(input.estimate.expectedSurplusEnergyWh)} houseEnergyUntilChargeStart=${formatWhAsKwh(input.estimate.expectedHouseLoadUntilChargeStartWh)} projectedChargeStartSoc=${formatNullablePercent(input.estimate.projectedChargeStartSocPercent)} projectedEndSoc=${formatNullablePercent(input.estimate.projectedEndSocPercent)} shortageToFull=${formatNullablePercent(input.estimate.shortageToFullPercent)} availability=${input.estimate.availability}${expectedFullAt}`;
+}
+
+function formatImportShortageSkipReason(input: {
+  bufferPercent?: number | null;
+  energyToImportWh?: number | null;
+  estimate: ImportShortageEstimate;
+  lowPriceMarkerTime: Date;
+  reason: string;
+  targetSocPercent?: number | null;
+}): string {
+  const parts = [
+    `skipped: ${input.reason} for import-shortage item`,
+    `marker=${formatImportShortageTimestamp(input.lowPriceMarkerTime)}`,
+    `currentSoc=${formatNullablePercent(input.estimate.currentSocPercent)}`,
+    `chargeStart=${formatNullableImportShortageTimestamp(input.estimate.chargeStartTime)}`,
+    `surplusEnd=${formatNullableImportShortageTimestamp(input.estimate.surplusEndTime)}`,
+    `projectedChargeStartSoc=${formatNullablePercent(input.estimate.projectedChargeStartSocPercent)}`,
+    `projectedEndSoc=${formatNullablePercent(input.estimate.projectedEndSocPercent)}`,
+    `shortageToFull=${formatNullablePercent(input.estimate.shortageToFullPercent)}`,
+    `availability=${input.estimate.availability}`,
+  ];
+
+  if (input.bufferPercent !== null && input.bufferPercent !== undefined) {
+    parts.push(`buffer=${formatNullablePercent(input.bufferPercent)}`);
+  }
+
+  if (input.targetSocPercent !== null && input.targetSocPercent !== undefined) {
+    parts.push(`targetSoc=${formatNullablePercent(input.targetSocPercent)}`);
+  }
+
+  if (input.energyToImportWh !== null && input.energyToImportWh !== undefined) {
+    parts.push(`energyToImport=${formatWhAsKwh(input.energyToImportWh)}`);
+  }
+
+  return parts.join(" ");
+}
+
+function createImportShortageDynamicTargetBase(input: {
+  estimate: ImportShortageEstimate;
+  lowPriceMarkerTime: Date;
+  now: Date;
+  sample: NormalizedBatteryInfo;
+}): DynamicPriceTargetEstimate {
+  return {
+    availability: input.estimate.availability,
+    breakEvenTrace: [],
+    delayedChargingDetails: null,
+    effectiveDischargePowerW: null,
+    energyBuckets: [],
+    estimatedRemainingEnergyWh: 0,
+    estimatedReservePercentAtTargetTime: input.sample.socPercent ?? 0,
+    estimatedTargetPercent: input.sample.socPercent ?? 100,
+    expectedHouseLoadWh: input.estimate.expectedHouseLoadUntilChargeStartWh,
+    historyStats: input.estimate.historyStats,
+    predictedSolarGenerationWh: input.estimate.expectedSolarGenerationWh,
+    reasoning: input.estimate.reasoning,
+    requiredDischargeMinutes: null,
+    resolvedManualState: "charging",
+    skipReason: null,
+    startTime: input.now.toISOString(),
+    startTimeBasisSocPercent: input.sample.socPercent,
+    targetTime: input.lowPriceMarkerTime.toISOString(),
+    targetTimeSignal: null,
+    warning: input.estimate.warning,
+    windowKind: "general",
+  };
 }
 
 function findSolarRecoveryTime(input: {
@@ -1950,6 +2174,28 @@ function round2(value: number): number {
 
 function formatNullablePercent(value: number | null): string {
   return value === null ? "unknown" : `${round2(value)}%`;
+}
+
+function formatNullableImportShortageTimestamp(value: string | null): string {
+  if (value === null) {
+    return "unknown";
+  }
+
+  const date = new Date(value);
+
+  return Number.isNaN(date.getTime())
+    ? value
+    : formatImportShortageTimestamp(date);
+}
+
+function formatImportShortageTimestamp(date: Date): string {
+  return `${date.getFullYear()}-${formatImportShortageTimePart(
+    date.getMonth() + 1,
+  )}-${formatImportShortageTimePart(date.getDate())} ${formatImportShortageTimePart(date.getHours())}:${formatImportShortageTimePart(date.getMinutes())}`;
+}
+
+function formatImportShortageTimePart(value: number): string {
+  return String(value).padStart(2, "0");
 }
 
 function formatWhAsKwh(value: number): string {
