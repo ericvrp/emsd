@@ -38,8 +38,14 @@ The built-in normalized strategy order is:
 2. `Export surplus` at index `1`
 3. `Delayed-charge prep` at index `2`
 4. `Delayed charging` at index `3`
+5. `Import shortage` at index `4`
+6. `Solar production control` at index `5`
 
-User-added scheduled items appear after the built-in items and therefore have higher priority than the built-in non-default rules.
+`Import shortage` is after `Delayed charging`, so it has higher battery-strategy priority when it becomes an active battery-control item.
+
+`Solar production control` is kept in the normalized built-in order for persistence and UI consistency, but it runs as an independent sidecar behavior rather than a normal battery activation item.
+
+User-added scheduled items appear after the built-in items and therefore have higher priority than the built-in non-default battery rules.
 
 ## Delayed Charging Example
 

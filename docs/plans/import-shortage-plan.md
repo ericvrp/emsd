@@ -2,22 +2,26 @@
 
 ## Goal
 
-Add a new built-in battery strategy item named `Import shortage`.
+Add a built-in battery strategy item named `Import shortage` that detects whether a low-price import opportunity should be used because expected solar surplus later in the day will not fully recover the battery.
 
-The first version should make the daemon log battery charge and projected solar recovery context when the strategy reaches a low-price trigger point. The purpose is to estimate whether expected solar surplus can fully recharge the battery without additional grid import.
+The implementation is intentionally phased. Phase 1 is diagnostic only. Automatic battery activation should only be added after the logged estimates have been reviewed and trusted.
 
-## Product Intent
+## Current Status
 
-- built-in item name: `Import shortage`
-- type: built-in battery strategy item
-- expected role: detect whether a low-price import opportunity is needed because expected solar surplus will not fully recover the battery later in the day
-- first runtime behavior: daemon calculation and logging only
+Phase 1 is implemented.
 
-## Required Ordering
+- `Import shortage` exists as a built-in battery strategy item.
+- The strategy dialog toggle enables or disables the item.
+- When enabled, the daemon evaluates the item at low import-price marker points.
+- The daemon logs an estimate of whether expected solar surplus later in the day can refill the battery.
+- The estimate includes current charge, expected solar-surplus window, expected surplus energy, projected end charge, and shortage to full.
+- The item is non-invasive: it does not change battery mode, does not claim a manual override, does not start charging, and does not alter `Delayed charging` behavior.
 
-`Import shortage` should become part of the built-in normalized strategy plan order.
+The current low-price-marker timing is useful for validating the estimate, but it is not the final activation timing. Phase 2 should move the decision and eventual charging activation earlier than the low-price marker.
 
-Target built-in order:
+## Built-In Order And Priority
+
+The built-in normalized strategy order is:
 
 1. `Self-consumption`
 2. `Export surplus`
@@ -26,110 +30,126 @@ Target built-in order:
 5. `Import shortage`
 6. `Solar production control`
 
-Notes:
+The daemon priority rule is documented in `docs/strategies/priority.md`: higher-index items have higher priority. Because `Import shortage` is after `Delayed charging`, it has higher battery-strategy activation priority than `Delayed charging` when it becomes an active battery-control item.
 
-- `Import shortage` must have higher priority than `Delayed charging`
-- `Solar production control` already keeps its own independent execution model and should stay independent
-- in the strategy dialog, `Import shortage` should appear before `Solar production control`
-- user-added scheduled items should continue to appear after the built-in items
+`Solar production control` remains independent from the battery activation stack. It is present in the normalized plan order for persistence and UI consistency, but it does not participate as a normal battery strategy activation item.
 
-## Priority Model
+## Phase 1: Implemented Diagnostic Estimate
 
-`Import shortage` is planned as a normal built-in battery strategy item, not an independent sidecar item.
+Implemented Phase 1 work:
 
-That means the intended future behavior is:
+- added the `import-shortage` built-in item key
+- added the `import-shortage` trigger kind
+- normalized the built-in item into the fixed strategy plan before `Solar production control`
+- added the strategy dialog label, description, and toggle
+- added low-price-marker trigger resolution
+- added daemon estimate calculation and logging
+- added tests for fixed order, trigger resolution, and estimate calculation
 
-- it participates in the daemon's existing battery strategy priority system
-- it can preempt lower-priority built-in battery items when due
-- it can itself be preempted by higher-priority user-defined scheduled items
-- it should block lower-priority built-in battery items while active
+Current log shape:
 
-`Solar production control` should remain outside that battery-item priority stack.
+`import-shortage estimate for battery <batteryId>: triggerAt=<time> currentSoc=<percent>% chargeStart=<time> surplusEnd=<time> solarEnergy=<kWh> houseEnergyDuringSurplus=<kWh> surplusEnergy=<kWh> houseEnergyUntilChargeStart=<kWh> projectedChargeStartSoc=<percent>% projectedEndSoc=<percent>% shortageToFull=<percent>% availability=<availability> expectedFullAt=<time>`
 
-## First Version
+Notes about current fields:
 
-At each low-price trigger point, the daemon should compute and log whether expected solar surplus later in the day is enough to refill the battery.
+- `triggerAt` is currently the low import-price marker time.
+- `chargeStart` is the first future time when expected solar generation exceeds expected house load.
+- `surplusEnd` is the later time when expected solar generation no longer exceeds expected house load.
+- `houseEnergyUntilChargeStart` is effectively expected net demand before solar surplus begins, after subtracting expected solar production during that pre-surplus period.
+- `expectedFullAt` is only present when the estimate expects the battery to become full during the surplus window.
 
-Minimum log context:
+## Phase 2: Pre-Marker Decision Timing
 
-- add a built-in item key for `import-shortage`
-- add a trigger kind for `import-shortage`
-- normalize the built-in item into the strategy plan ahead of `Solar production control`
-- add a label and description in the strategy UI
-- when the trigger is reached, log the current battery charge percentage
-- include the battery id and the trigger timestamp in the daemon log message
-- keep the item non-invasive: do not change battery mode, do not claim a manual override, and do not alter `Delayed charging` behavior yet
-- avoid changing the current `Solar production control` independence model
+Phase 2 should move import-shortage evaluation from marker-time diagnostics to a pre-marker decision point.
 
-The log should be emitted only when evaluating a relevant low-price point, so it should normally appear once or twice per day rather than every daemon poll. The message can be comprehensive because it is tied to price-point evaluation, not continuous polling.
+The decision should be scheduled before the selected low import-price marker, using the same algorithm shape as `Delayed charging` but with import-shortage-specific constants.
 
-## First-Version Calculation
+Delayed charging currently uses this shape:
 
-The first implementation should estimate whether the battery can become full from expected solar surplus after the low-price trigger.
+`timeToFullMinutes = ceil(energyToFullWh / effectiveFillPowerW * 60)`
 
-Example scenario:
+`triggerLeadTimeMinutes = ceil(timeToFullMinutes * baseFactor * marginFactor)`
 
-- current time is `03:00`
-- the energy price is low, so this is the center trigger for `Import shortage`
-- early-spring solar forecast predicts enough production during the day to possibly refill the battery
-- expected house load is about `200W`
+`triggerAt = lowPriceMarkerTime - triggerLeadTimeMinutes`
 
-At the low-price trigger, the daemon should answer these questions:
+For import shortage, the equivalent should be:
 
-1. When will the battery start charging again from solar surplus?
-2. Until when will solar surplus continue to charge the battery?
-3. How much surplus energy is expected during that charging window?
-4. How much battery energy will be left when the charging window starts?
-5. What battery percentage is expected at the end of the charging window?
-6. If the battery does not reach full charge, how large is the import shortage?
+`requiredChargeMinutes = ceil(energyToImportWh / batteryMaxChargePowerW * 60)`
 
-The daemon should compute and log these values:
+`triggerLeadTimeMinutes = ceil(requiredChargeMinutes * IMPORT_SHORTAGE_TRIGGER_BASE_FACTOR * IMPORT_SHORTAGE_TRIGGER_MARGIN_FACTOR)`
 
-1. Current battery charge at the low-price trigger.
-2. The first future time when expected solar generation covers expected house load. This is the expected charging start, for example around `07:00`.
-3. The later time when expected solar generation no longer covers expected house load. This is the expected solar-surplus end, often late afternoon or evening.
-4. Expected solar generation over that surplus window.
-5. Expected house load over that surplus window.
-6. Expected surplus energy over that surplus window, calculated from solar generation minus house load.
-7. Expected house energy needed from the current trigger time until charging starts.
-8. Estimated battery state of charge at the end of the surplus window.
-9. Remaining deficit to full charge, expressed as a percentage. For example, if the projected end charge is `80%`, log a `20%` shortage.
+`triggerAt = lowPriceMarkerTime - triggerLeadTimeMinutes`
 
-The calculation should use the whole remaining day from the low-price trigger. For a `03:00` trigger, that means the daemon should look forward through the day, find when solar first covers house demand, and then continue until solar no longer covers house demand.
+The import-shortage constants should be separate from the delayed-charging constants because the risk profile is different.
 
-If expected solar generation covers the `200W` house load from `07:00` until `20:00`, that `07:00` to `20:00` span is the solar-surplus window. During that window, the daemon should integrate expected solar production and subtract expected house needs. The result is the surplus energy available for charging the battery.
+## Phase 2: Target Calculation
 
-From the `03:00` trigger to the `07:00` charging start, the daemon should also estimate how much house energy must be supplied before solar covers the house load. That expected pre-charge energy use reduces the battery charge available at the start of the solar-surplus window.
+The target should cover the projected shortage, not blindly charge to full.
 
-With these numbers, the daemon can estimate the battery percentage at the end of the solar-surplus window. If the projected end percentage is `80%`, the daemon should log a `20%` deficit to full charge. That deficit is the import shortage candidate for future versions.
+The target should also include a time-based uncertainty buffer. Do not use a fixed percentage margin.
 
-If the surplus estimate reaches full charge before the surplus window ends, the daemon should log the expected full-charge time. It should also log the expected battery state after the battery becomes full and later starts draining again.
+Initial buffer constant:
 
-The calculation can reuse the existing logic that estimates battery drain percentage and detects when expected solar generation covers house needs.
+- `IMPORT_SHORTAGE_BUFFER_PERCENT_PER_HOUR = 3`
 
-## Example Log Shape
+Suggested target model:
 
-The exact wording can change, but one comprehensive daemon message should include the calculation inputs and result:
+`shortageBufferPercent = hoursUntilSolarSurplusRecovery * IMPORT_SHORTAGE_BUFFER_PERCENT_PER_HOUR`
 
-`import-shortage estimate for battery <batteryId>: triggerAt=<time> currentSoc=<percent>% chargeStart=<time> surplusEnd=<time> solarEnergy=<kWh> houseEnergyDuringSurplus=<kWh> surplusEnergy=<kWh> houseEnergyUntilChargeStart=<kWh> projectedEndSoc=<percent>% shortageToFull=<percent>%`
+`targetSoc = min(100, currentSocPercent + projectedShortagePercent + shortageBufferPercent)`
 
-If the battery is expected to become full during the surplus window, include:
+Where:
 
-`expectedFullAt=<time>`
+- `projectedShortagePercent` is the estimated deficit to full after the expected solar-surplus window.
+- `hoursUntilSolarSurplusRecovery` is the time between the import-shortage decision point and the expected solar-surplus charging start.
+- `batteryMaxChargePowerW` is the battery maximum charge power used for estimating charging duration.
+- small projected shortages should not be ignored; even a small shortage is actionable if the calculation says it exists.
 
-## Files Likely To Change Later
+The buffer mirrors the intent of the export-surplus reserve buffer, but it must use separate import-shortage constants.
 
-- `packages/core/src/battery-strategy-shared.ts`
-- `packages/core/src/index.ts`
-- `apps/daemon/src/index.ts`
-- `apps/web/components/battery-strategy-plan-form.tsx`
-- related daemon, core, and web tests
+## Phase 3: Battery Activation
 
-## Non-Goals For This Step
+After the Phase 1 logs have been reviewed and the Phase 2 decision model is accepted, `Import shortage` can become an active battery-control item.
 
-- no daemon activation logic
-- no battery mode changes
-- no automatic import decision
-- no shortage-condition enforcement
-- no persistence migration beyond what placeholder normalization later requires
-- no UI workflow changes beyond built-in item placement
+Expected activation behavior:
+
+1. Select the relevant low import-price marker.
+2. Estimate the projected solar recovery shortage for the rest of the day.
+3. Calculate the target charge percentage from projected shortage plus the time-based buffer.
+4. Calculate the pre-marker trigger time from required charge minutes and import-shortage lead-time constants.
+5. When due, activate charging to the calculated target.
+6. Let the existing strategy priority system handle conflicts, blocking, and preemption.
+7. Complete when the calculated target charge is reached or when normal strategy completion rules determine that the item is finished.
+
+`Import shortage` should not add custom interaction rules for `Delayed charging`. The existing priority model should decide which item wins. Because `Import shortage` has a higher index than `Delayed charging`, it can preempt or block lower-priority battery items when active.
+
+## Dubious Or Needs Validation
+
+These items need validation before enabling automatic charging:
+
+- solar forecast reliability across sunny, cloudy, and mixed days
+- house-load estimate reliability compared with actual same-day load
+- battery capacity and state-of-charge availability
+- whether the `3%/hour` buffer is too low, too high, or acceptable in real use
+- whether import-shortage-specific lead-time constants should be more or less conservative than delayed charging
+- whether the current log field names are precise enough, especially `houseEnergyUntilChargeStart`
+- whether the current estimate should explicitly model and log post-full later-day drain after `expectedFullAt`
+
+## Acceptance Criteria Before Activation
+
+Before Phase 3 changes battery behavior:
+
+1. Review real daemon logs over enough days to cover different weather and consumption patterns.
+2. Confirm that projected shortage percentages are plausible compared with actual end-of-day charge.
+3. Confirm the `3%/hour` buffer is directionally correct.
+4. Decide initial values for `IMPORT_SHORTAGE_TRIGGER_BASE_FACTOR` and `IMPORT_SHORTAGE_TRIGGER_MARGIN_FACTOR`.
+5. Add tests for pre-marker trigger timing, target calculation, and priority interactions.
+6. Keep the behavior server-side in the daemon and do not add web-only business rules.
+
+## Non-Goals
+
+- no high-frequency optimization loop
+- no real-time demand-matching control loop
+- no web-only strategy rules
+- no automatic charging before Phase 3
+- no custom priority rules outside the existing strategy priority system

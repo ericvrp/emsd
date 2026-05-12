@@ -1,3 +1,3 @@
 # Plans
 
-- `huawei-solar-energy-provider-plan.md`: Huawei SUN2000 Modbus provider support, shipped status, and remaining next steps
+- `import-shortage-plan.md`: phased status and next steps for the import-shortage battery strategy item
