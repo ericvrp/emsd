@@ -26,6 +26,8 @@ import {
   DYNAMIC_PRICE_TARGET_BACKUP_RESERVE_MARGIN_PERCENT,
   DYNAMIC_PRICE_TARGET_BUFFER_PERCENT_PER_HOUR,
   DYNAMIC_PRICE_TARGET_MIN_SOLAR_SURPLUS_W,
+  PRICE_SELECTION_WINDOW_MS,
+  findPriceSelections,
   getDatabasePath,
   isFlagArg,
   parseIntegerArg,
@@ -100,7 +102,9 @@ interface EvaluationContext {
   capacityWh: number;
   candidateDays: string[];
   dynamicPriceTargetEstimate: DynamicPriceTargetEstimate;
+  dynamicPriceSamples?: ReturnType<typeof readDynamicPriceSamples>;
   minimumSolarSurplusWOverride: number;
+  normalizedImportExportSpread?: number | null;
   reserveTargetPercent: number;
   referenceTime: Date;
   strategyTriggerKind: StrategyTriggerKind;
@@ -402,6 +406,10 @@ function evaluateSite(
   const solarEnergyProviderSamples = readSolarEnergyProviderSamples(db, siteId);
   const solarForecastSamples = readSolarForecastSamples(db, siteId);
   const site = readSites(db).find((entry) => entry.id === siteId) ?? null;
+  const normalizedImportExportSpread = resolveNormalizedImportExportSpread(
+    dynamicPriceSources,
+    siteId,
+  );
 
   if (batteries.length === 0) {
     console.log(`\nSite ${siteId}: no batteries found.`);
@@ -465,10 +473,7 @@ function evaluateSite(
         batterySyntheticItem,
       ],
       now: estimateAt,
-      normalizedImportExportSpread: resolveNormalizedImportExportSpread(
-        dynamicPriceSources,
-        siteId,
-      ),
+      normalizedImportExportSpread,
       p1MeterSamples,
       sample: {
         capacityWh: batteryTelemetry.capacityWh,
@@ -504,7 +509,9 @@ function evaluateSite(
       capacityWh: batteryTelemetry.capacityWh,
       candidateDays,
       dynamicPriceTargetEstimate,
+      dynamicPriceSamples,
       minimumSolarSurplusWOverride: options.minimumSolarSurplusWOverride,
+      normalizedImportExportSpread,
       strategyTriggerKind: options.strategyTriggerKind,
       reserveTargetPercent,
       referenceTime: estimateAt,
@@ -629,6 +636,63 @@ function getBatterySocAt(
   }
 
   return null;
+}
+
+function resolveHighPriceMarkerExportPrice(
+  input: EvaluationContext,
+  markerAt: Date,
+): number | null {
+  if (
+    input.normalizedImportExportSpread === null ||
+    input.normalizedImportExportSpread === undefined
+  ) {
+    return null;
+  }
+
+  const normalizedImportExportSpread = input.normalizedImportExportSpread;
+  const markerMs = markerAt.getTime();
+
+  for (const sample of input.dynamicPriceSamples ?? []) {
+    const sampleMs = new Date(sample.periodStart).getTime();
+
+    if (Number.isNaN(sampleMs) || sampleMs !== markerMs) {
+      continue;
+    }
+
+    return Number(
+      (sample.importPrice - normalizedImportExportSpread).toFixed(5),
+    );
+  }
+
+  return null;
+}
+
+function resolveNextHighPriceMarkerAfter(input: EvaluationContext): Date | null {
+  const selections = findPriceSelections(
+    (input.dynamicPriceSamples ?? []).map((sample) => ({
+      periodStart: sample.periodStart,
+      value: sample.importPrice,
+    })),
+    PRICE_SELECTION_WINDOW_MS,
+  );
+  const referenceMs = input.referenceTime.getTime();
+
+  return (
+    selections.highest
+      .map((point) => new Date(point.periodStart))
+      .filter(
+        (markerAt) =>
+          !Number.isNaN(markerAt.getTime()) &&
+          markerAt.getTime() > referenceMs,
+      )
+      .sort((left, right) => left.getTime() - right.getTime())[0] ?? null
+  );
+}
+
+function formatHighPriceMarker(input: EvaluationContext, markerAt: Date): string {
+  return `${formatTargetTime(markerAt.toISOString())} at ${formatPrice(
+    resolveHighPriceMarkerExportPrice(input, markerAt),
+  )} export`;
 }
 
 function resolveNormalizedImportExportSpread(
@@ -797,6 +861,23 @@ export function buildEstimateSummaryRows(
   );
   const delayedChargingDetails =
     input.dynamicPriceTargetEstimate.delayedChargingDetails;
+  const nextHighPriceMarker = resolveNextHighPriceMarkerAfter(input);
+  const highPriceMarkerRows =
+    input.strategyTriggerKind === BatteryStrategyTriggerKind.ExportSurplus
+      ? [
+          {
+            label: "High Price Marker",
+            value: formatHighPriceMarker(input, input.referenceTime),
+          },
+          {
+            label: "Next High Price Marker",
+            value:
+              nextHighPriceMarker === null
+                ? "not available yet"
+                : formatHighPriceMarker(input, nextHighPriceMarker),
+          },
+        ]
+      : [];
 
   if (input.dynamicPriceTargetEstimate.skipReason) {
     return [
@@ -842,6 +923,7 @@ export function buildEstimateSummaryRows(
 
   return [
     { label: "Action", value: actionLabel },
+    ...highPriceMarkerRows,
     {
       label: "Recovery Target Time",
       value: formatTargetTime(input.dynamicPriceTargetEstimate.targetTime),
@@ -874,13 +956,6 @@ export function buildEstimateSummaryRows(
     {
       label: "Discharge Target",
       value: `${actionLabel} to ${currentTargetPercent}%`,
-    },
-    {
-      label: "Start",
-      value: formatDisplayedStartTime(
-        input.dynamicPriceTargetEstimate,
-        input.referenceTime,
-      ),
     },
     {
       label: "Reserve At Target",
@@ -1168,7 +1243,7 @@ function formatW(value: number | null): string {
 }
 
 function formatPrice(value: number | null): string {
-  return value === null ? "n/a" : `${formatNumber(value)} EUR/kWh`;
+  return value === null ? "n/a" : `${value.toFixed(3)} EUR/kWh`;
 }
 
 function formatSignedW(value: number | null): string {

@@ -151,6 +151,8 @@
 - Keep diffs small and avoid unrelated reformatting.
 - Use UTF-8 text, Unix newlines, and no trailing whitespace.
 - Follow the existing quote, comma, and semicolon style in each file.
+- Display dynamic/import/export energy prices shown as `<currency>/kWh` with exactly three decimals across daemon logs, EMS CLI output, scripts, and web UI.
+- The three-decimal price rule does not apply to non-price values such as kW, Wh, percentages, coordinates, or plain currency totals.
 
 ## Imports
 

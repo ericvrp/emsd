@@ -244,7 +244,7 @@ function formatPriceSummaryValue(value: number, currency: string): string {
 }
 
 function formatShortPriceAxisValue(value: number): string {
-  return value.toFixed(2);
+  return value.toFixed(3);
 }
 
 function buildPriceAxisDomain(

@@ -266,7 +266,7 @@ test("buildEstimateSummaryRows keeps delayed-charging output short and strategy-
   ).toEqual([
     {
       label: "Low Price Marker",
-      value: "2026-04-22 13:45 at -0.11 EUR/kWh",
+      value: "2026-04-22 13:45 at -0.110 EUR/kWh",
     },
     {
       label: "Activation Mode",
@@ -288,6 +288,8 @@ test("buildEstimateSummaryRows keeps delayed-charging output short and strategy-
 });
 
 test("buildEstimateSummaryRows keeps export-surplus output strategy-specific", () => {
+  const referenceTime = createReplayTime("2026-04-21", "19:45");
+
   expect(
     buildEstimateSummaryRows({
       action: "discharging",
@@ -300,8 +302,16 @@ test("buildEstimateSummaryRows keeps export-surplus output strategy-specific", (
       candidateDays: [],
       capacityWh: 6000,
       dynamicPriceTargetEstimate: createEstimate(),
+      dynamicPriceSamples: createDynamicPriceSamples([
+        [createReplayTime("2026-04-21", "15:45").toISOString(), 0.2],
+        [referenceTime.toISOString(), 0.31],
+        [createReplayTime("2026-04-21", "22:15").toISOString(), 0.18],
+        [createReplayTime("2026-04-22", "00:15").toISOString(), 0.27],
+        [createReplayTime("2026-04-22", "02:15").toISOString(), 0.19],
+      ]),
       minimumSolarSurplusWOverride: 50,
-      referenceTime: createReplayTime("2026-04-21", "19:45"),
+      normalizedImportExportSpread: 0.13,
+      referenceTime,
       reserveTargetPercent: 12,
       siteId: "site-1",
       siteName: "Home",
@@ -310,12 +320,19 @@ test("buildEstimateSummaryRows keeps export-surplus output strategy-specific", (
     }),
   ).toEqual([
     { label: "Action", value: "discharge" },
+    {
+      label: "High Price Marker",
+      value: "2026-04-21 19:45 at 0.180 EUR/kWh export",
+    },
+    {
+      label: "Next High Price Marker",
+      value: "2026-04-22 00:15 at 0.140 EUR/kWh export",
+    },
     { label: "Recovery Target Time", value: "2026-04-22 07:30" },
     { label: "Predicted Solar", value: "300 W" },
     { label: "Expected Load", value: "200 W" },
     { label: "Solar Surplus", value: "+100 W" },
     { label: "Discharge Target", value: "discharge to 57%" },
-    { label: "Start", value: "2026-04-21 19:45" },
     { label: "Reserve At Target", value: "18%" },
   ]);
 });
