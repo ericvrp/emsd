@@ -34,7 +34,9 @@ export function buildSupervisorEnv(mode: "development" | "production") {
   } satisfies NodeJS.ProcessEnv;
 }
 
-export async function runLabeledCommand(command: ManagedCommand): Promise<void> {
+export async function runLabeledCommand(
+  command: ManagedCommand,
+): Promise<void> {
   await new Promise<void>((resolvePromise, reject) => {
     const child = spawn("bun", command.args, {
       cwd: command.cwd ?? repoRoot,

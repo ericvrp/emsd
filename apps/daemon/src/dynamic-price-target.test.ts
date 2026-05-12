@@ -92,6 +92,87 @@ test("evening export-surplus ignores same-day solar blips and targets next-morni
   expect(estimate.estimatedReservePercentAtTargetTime).toBe(14);
 });
 
+test("export-surplus is skipped when the next morning high-price marker is higher", () => {
+  const estimate = estimateExportSurplusWithPriceMarkers({
+    dynamicPriceSamples: createDynamicPriceSamples([
+      ["2026-04-19T16:00:00.000Z", 0.1],
+      ["2026-04-19T19:45:00.000Z", 0.28],
+      ["2026-04-19T23:00:00.000Z", 0.1],
+      ["2026-04-20T04:00:00.000Z", 0.1],
+      ["2026-04-20T08:00:00.000Z", 0.31],
+      ["2026-04-20T12:00:00.000Z", 0.1],
+    ]),
+    now: new Date("2026-04-19T19:45:00.000Z"),
+  });
+
+  expect(estimate.skipReason).toContain(
+    "skipped: next morning high-price marker",
+  );
+  expect(estimate.skipReason).toContain("higher export price 0.180 EUR/kWh");
+  expect(estimate.skipReason).toContain("afternoon high-price marker");
+  expect(estimate.skipReason).toContain("0.150 EUR/kWh");
+});
+
+test("export-surplus is not skipped when there is no next high-price marker", () => {
+  const estimate = estimateExportSurplusWithPriceMarkers({
+    dynamicPriceSamples: createDynamicPriceSamples([
+      ["2026-04-19T16:00:00.000Z", 0.1],
+      ["2026-04-19T19:45:00.000Z", 0.28],
+      ["2026-04-19T23:00:00.000Z", 0.1],
+    ]),
+    now: new Date("2026-04-19T19:45:00.000Z"),
+  });
+
+  expect(estimate.skipReason).toBeNull();
+});
+
+test("export-surplus is not skipped when the next morning high-price marker is not higher", () => {
+  const estimate = estimateExportSurplusWithPriceMarkers({
+    dynamicPriceSamples: createDynamicPriceSamples([
+      ["2026-04-19T16:00:00.000Z", 0.1],
+      ["2026-04-19T19:45:00.000Z", 0.28],
+      ["2026-04-19T23:00:00.000Z", 0.1],
+      ["2026-04-20T04:00:00.000Z", 0.1],
+      ["2026-04-20T08:00:00.000Z", 0.27],
+      ["2026-04-20T12:00:00.000Z", 0.1],
+    ]),
+    now: new Date("2026-04-19T19:45:00.000Z"),
+  });
+
+  expect(estimate.skipReason).toBeNull();
+});
+
+test("export-surplus is not skipped when the current high-price marker is before midday", () => {
+  const estimate = estimateExportSurplusWithPriceMarkers({
+    dynamicPriceSamples: createDynamicPriceSamples([
+      ["2026-04-19T04:00:00.000Z", 0.1],
+      ["2026-04-19T08:00:00.000Z", 0.28],
+      ["2026-04-19T12:00:00.000Z", 0.1],
+      ["2026-04-20T04:00:00.000Z", 0.1],
+      ["2026-04-20T08:00:00.000Z", 0.31],
+      ["2026-04-20T12:00:00.000Z", 0.1],
+    ]),
+    now: new Date("2026-04-19T08:00:00.000Z"),
+  });
+
+  expect(estimate.skipReason).toBeNull();
+});
+
+test("export-surplus is not skipped when the next high-price marker is not before midday", () => {
+  const estimate = estimateExportSurplusWithPriceMarkers({
+    dynamicPriceSamples: createDynamicPriceSamples([
+      ["2026-04-19T09:00:00.000Z", 0.1],
+      ["2026-04-19T13:00:00.000Z", 0.28],
+      ["2026-04-19T16:00:00.000Z", 0.1],
+      ["2026-04-19T19:45:00.000Z", 0.31],
+      ["2026-04-19T23:00:00.000Z", 0.1],
+    ]),
+    now: new Date("2026-04-19T13:00:00.000Z"),
+  });
+
+  expect(estimate.skipReason).toBeNull();
+});
+
 test("delayed-charging auto switches to self-consumption before a positive low-price marker", () => {
   const now = new Date("2026-04-19T06:00:00.000Z");
   const battery = createBattery();
@@ -367,6 +448,32 @@ function createAutoLowPriceItem(): BatteryStrategyPlanItem {
     targetMethod: "auto",
     triggerKind: BatteryStrategyTriggerKind.DelayedCharging,
   };
+}
+
+function estimateExportSurplusWithPriceMarkers(input: {
+  dynamicPriceSamples: DynamicPriceSampleRecord[];
+  now: Date;
+}): ReturnType<typeof estimateDynamicPriceTarget> {
+  const battery = createBattery();
+  const item = createAutoDischargeItem();
+  const history = createOvernightUsageHistory();
+
+  return estimateDynamicPriceTarget({
+    battery,
+    batteryPowerSamples: history.batteryPowerSamples,
+    dynamicPriceSamples: input.dynamicPriceSamples,
+    item,
+    items: [createDefaultItem(), item],
+    now: input.now,
+    normalizedImportExportSpread: 0.13,
+    p1MeterSamples: history.p1MeterSamples,
+    sample: createSample({ capacityWh: 5000, socPercent: 90 }),
+    solarEnergyProviderSamples: history.solarEnergyProviderSamples,
+    solarForecastSamples: createZeroSolarForecastSamples(
+      input.now.toISOString(),
+      "2026-04-20T12:00:00.000Z",
+    ),
+  });
 }
 
 function createDaytimeSolarForecastSamples(

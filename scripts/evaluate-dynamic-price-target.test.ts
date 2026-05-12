@@ -337,6 +337,42 @@ test("buildEstimateSummaryRows keeps export-surplus output strategy-specific", (
   ]);
 });
 
+test("buildEstimateSummaryRows shows skipped export-surplus status", () => {
+  expect(
+    buildEstimateSummaryRows({
+      action: "discharging",
+      battery: {
+        id: "battery-1",
+        minimumDischargePercent: 10,
+        name: "Battery 1",
+      } as never,
+      batteryId: "battery-1",
+      candidateDays: [],
+      capacityWh: 6000,
+      dynamicPriceTargetEstimate: {
+        ...createEstimate(),
+        skipReason:
+          "skipped: next morning high-price marker 2026-04-22 08:00 has higher export price 0.180 EUR/kWh than afternoon high-price marker 2026-04-21 19:45 at 0.150 EUR/kWh",
+      },
+      minimumSolarSurplusWOverride: 50,
+      referenceTime: createReplayTime("2026-04-21", "19:45"),
+      reserveTargetPercent: 12,
+      siteId: "site-1",
+      siteName: "Home",
+      strategyTriggerKind: "export-surplus",
+      verboseBlocks: new Set(),
+    }),
+  ).toEqual([
+    { label: "Action", value: "discharge" },
+    { label: "Status", value: "skipped" },
+    {
+      label: "Reason",
+      value:
+        "skipped: next morning high-price marker 2026-04-22 08:00 has higher export price 0.180 EUR/kWh than afternoon high-price marker 2026-04-21 19:45 at 0.150 EUR/kWh",
+    },
+  ]);
+});
+
 test("buildEnergyEstimateRows explains the interval and target formula", () => {
   const referenceTime = createReplayTime("2026-04-21", "19:45");
 

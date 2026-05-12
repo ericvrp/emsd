@@ -10,6 +10,7 @@ import {
   type DynamicPriceSampleRecord,
   type NormalizedBatteryInfo,
   type P1MeterSampleRecord,
+  PRICE_SELECTION_WINDOW_MS,
   type SolarEnergyProviderSampleRecord,
   type SolarForecastSampleRecord,
   applySolarSeriesSmoothing,
@@ -17,10 +18,12 @@ import {
   buildHouseLoadHistorySeries,
   buildPredictedSolarGenerationSeries,
   calculateDynamicReserveFloorPercent,
+  findPriceSelections,
   isDelayedChargingAutoDischargeItem,
   resolveExpectedSiteLoadW,
 } from "@emsd/core";
 import {
+  formatDaemonLogTimestamp,
   getNextPriceMarkerTriggerAt,
   getNextStrategyTriggerAt,
 } from "./strategy-scheduler";
@@ -440,6 +443,12 @@ export function estimateDynamicPriceTarget(input: {
     loadProfile,
     targetTime,
   });
+  const exportSurplusSkipReason = resolveExportSurplusSkipReason({
+    dynamicPriceSamples: input.dynamicPriceSamples,
+    item: input.item,
+    normalizedImportExportSpread: input.normalizedImportExportSpread,
+    now: input.now,
+  });
 
   return {
     availability,
@@ -473,10 +482,132 @@ export function estimateDynamicPriceTarget(input: {
       estimatedTargetPercent,
       sampleSocPercent: input.sample.socPercent,
     }),
-    skipReason,
+    skipReason: exportSurplusSkipReason ?? skipReason,
     warning: reserveFloorResult.warning,
     windowKind,
   };
+}
+
+function resolveExportSurplusSkipReason(input: {
+  dynamicPriceSamples: DynamicPriceSampleRecord[];
+  item: BatteryStrategyPlanItem;
+  normalizedImportExportSpread?: number | null | undefined;
+  now: Date;
+}): string | null {
+  if (
+    input.item.triggerKind !== BatteryStrategyTriggerKind.ExportSurplus ||
+    input.normalizedImportExportSpread === null ||
+    input.normalizedImportExportSpread === undefined
+  ) {
+    return null;
+  }
+
+  const markerPair = resolveExportSurplusHighPriceMarkerPair({
+    dynamicPriceSamples: input.dynamicPriceSamples,
+    now: input.now,
+  });
+
+  if (markerPair === null) {
+    return null;
+  }
+
+  if (
+    markerPair.currentMarkerAt.getHours() < 12 ||
+    markerPair.nextMarkerAt.getHours() >= 12
+  ) {
+    return null;
+  }
+
+  const currentExportPrice = resolveExportPriceAtTime({
+    dynamicPriceSamples: input.dynamicPriceSamples,
+    markerAt: markerPair.currentMarkerAt,
+    normalizedImportExportSpread: input.normalizedImportExportSpread,
+  });
+  const nextExportPrice = resolveExportPriceAtTime({
+    dynamicPriceSamples: input.dynamicPriceSamples,
+    markerAt: markerPair.nextMarkerAt,
+    normalizedImportExportSpread: input.normalizedImportExportSpread,
+  });
+
+  if (
+    currentExportPrice === null ||
+    nextExportPrice === null ||
+    nextExportPrice <= currentExportPrice
+  ) {
+    return null;
+  }
+
+  return `skipped: next morning high-price marker ${formatDaemonLogTimestamp(markerPair.nextMarkerAt)} has higher export price ${formatPricePerKwh(nextExportPrice)} than afternoon high-price marker ${formatDaemonLogTimestamp(markerPair.currentMarkerAt)} at ${formatPricePerKwh(currentExportPrice)}`;
+}
+
+function resolveExportSurplusHighPriceMarkerPair(input: {
+  dynamicPriceSamples: DynamicPriceSampleRecord[];
+  now: Date;
+}): { currentMarkerAt: Date; nextMarkerAt: Date } | null {
+  const highMarkers = findPriceSelections(
+    input.dynamicPriceSamples.map((sample) => ({
+      periodStart: sample.periodStart,
+      value: sample.importPrice,
+    })),
+    PRICE_SELECTION_WINDOW_MS,
+  )
+    .highest.map((point) => new Date(point.periodStart))
+    .filter((markerAt) => !Number.isNaN(markerAt.getTime()))
+    .sort((left, right) => left.getTime() - right.getTime());
+  const nowMs = input.now.getTime();
+  let currentIndex = highMarkers.findIndex(
+    (markerAt) => markerAt.getTime() === nowMs,
+  );
+
+  if (currentIndex === -1) {
+    for (let index = highMarkers.length - 1; index >= 0; index -= 1) {
+      const markerAt = highMarkers[index];
+
+      if (markerAt && markerAt.getTime() <= nowMs) {
+        currentIndex = index;
+        break;
+      }
+    }
+  }
+
+  if (currentIndex === -1) {
+    currentIndex = highMarkers.findIndex(
+      (markerAt) => markerAt.getTime() > nowMs,
+    );
+  }
+
+  const currentMarkerAt = highMarkers[currentIndex];
+  const nextMarkerAt = highMarkers[currentIndex + 1];
+
+  return currentMarkerAt && nextMarkerAt
+    ? { currentMarkerAt, nextMarkerAt }
+    : null;
+}
+
+function resolveExportPriceAtTime(input: {
+  dynamicPriceSamples: DynamicPriceSampleRecord[];
+  markerAt: Date;
+  normalizedImportExportSpread: number;
+}): number | null {
+  const markerMs = input.markerAt.getTime();
+
+  for (const sample of input.dynamicPriceSamples) {
+    const sampleMs = new Date(sample.periodStart).getTime();
+
+    if (Number.isNaN(sampleMs) || sampleMs !== markerMs) {
+      continue;
+    }
+
+    return Number(
+      (sample.importPrice - input.normalizedImportExportSpread).toFixed(5),
+    );
+  }
+
+  return null;
+}
+
+function formatPricePerKwh(value: number): string {
+  return `${value.toFixed(3)} EUR/kWh`;
 }
 
 type PredictedPoint = { periodStart: string; value: number | null };

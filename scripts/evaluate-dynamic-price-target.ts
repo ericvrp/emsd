@@ -667,7 +667,9 @@ function resolveHighPriceMarkerExportPrice(
   return null;
 }
 
-function resolveNextHighPriceMarkerAfter(input: EvaluationContext): Date | null {
+function resolveNextHighPriceMarkerAfter(
+  input: EvaluationContext,
+): Date | null {
   const selections = findPriceSelections(
     (input.dynamicPriceSamples ?? []).map((sample) => ({
       periodStart: sample.periodStart,
@@ -682,14 +684,16 @@ function resolveNextHighPriceMarkerAfter(input: EvaluationContext): Date | null 
       .map((point) => new Date(point.periodStart))
       .filter(
         (markerAt) =>
-          !Number.isNaN(markerAt.getTime()) &&
-          markerAt.getTime() > referenceMs,
+          !Number.isNaN(markerAt.getTime()) && markerAt.getTime() > referenceMs,
       )
       .sort((left, right) => left.getTime() - right.getTime())[0] ?? null
   );
 }
 
-function formatHighPriceMarker(input: EvaluationContext, markerAt: Date): string {
+function formatHighPriceMarker(
+  input: EvaluationContext,
+  markerAt: Date,
+): string {
   return `${formatTargetTime(markerAt.toISOString())} at ${formatPrice(
     resolveHighPriceMarkerExportPrice(input, markerAt),
   )} export`;

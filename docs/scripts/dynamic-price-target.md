@@ -162,6 +162,9 @@ Default behavior:
 - prints a concise block for each evaluated strategy and battery
 - includes an empty line between blocks
 - includes the exact `--verbose=...` suggestion to use for more detail
+- shows `Status: skipped` and a `Reason` when the estimator decides not to run the evaluated strategy
+
+For export-surplus evaluation, the concise output includes the current high-price marker and the next high-price marker when available. Export-surplus is skipped when an afternoon/evening high-price marker is followed by a higher-priced morning high-price marker. It is not skipped for this reason when no next high-price marker is available.
 
 Verbose behavior:
 - `--verbose` shows all detail blocks
