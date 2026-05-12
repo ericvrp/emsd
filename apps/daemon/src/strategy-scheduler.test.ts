@@ -11,6 +11,7 @@ import {
   formatScheduledItemCompletion,
   getDelayedChargePrepSkipReason,
   getLowPriceAutoTriggerAtForMarker,
+  getSameDayLowerPriorityBuiltInSuppressions,
   getScheduledItemCompletion,
   getSolarProductionControlDecision,
   getStrategyTriggerAt,
@@ -70,13 +71,13 @@ test("getStrategyTriggerAt uses the latest due delayed-charging and export-surpl
   expect(highPriceTriggerAt?.toISOString()).toBe("2026-04-09T08:00:00.000Z");
 });
 
-test("getStrategyTriggerAt uses the low-price marker for import-shortage", () => {
+test("getStrategyTriggerAt uses the upcoming low-price marker for import-shortage", () => {
   const triggerAt = getStrategyTriggerAt({
     item: createDailyItem({
       targetMethod: "auto",
       triggerKind: BatteryStrategyTriggerKind.ImportShortage,
     }),
-    now: new Date("2026-04-09T14:30:00.000Z"),
+    now: new Date("2026-04-09T10:30:00.000Z"),
     dynamicPriceSamples: createDynamicPriceSamples([
       ["2026-04-09T00:00:00.000Z", 20],
       ["2026-04-09T04:00:00.000Z", 10],
@@ -87,6 +88,107 @@ test("getStrategyTriggerAt uses the low-price marker for import-shortage", () =>
   });
 
   expect(triggerAt?.toISOString()).toBe("2026-04-09T12:00:00.000Z");
+});
+
+test("getStrategyTriggerAt carries import-shortage into the next day's low-price window", () => {
+  const triggerAt = getStrategyTriggerAt({
+    item: createDailyItem({
+      targetMethod: "auto",
+      triggerKind: BatteryStrategyTriggerKind.ImportShortage,
+    }),
+    now: new Date("2026-04-09T19:00:00.000Z"),
+    dynamicPriceSamples: createDynamicPriceSamples([
+      ["2026-04-09T16:00:00.000Z", 20],
+      ["2026-04-09T18:00:00.000Z", 35],
+      ["2026-04-09T20:00:00.000Z", 22],
+      ["2026-04-09T22:00:00.000Z", 20],
+      ["2026-04-10T08:00:00.000Z", 12],
+      ["2026-04-10T10:00:00.000Z", 5],
+      ["2026-04-10T12:00:00.000Z", 14],
+      ["2026-04-10T14:00:00.000Z", 25],
+    ]),
+  });
+
+  expect(triggerAt?.toISOString()).toBe("2026-04-10T10:00:00.000Z");
+});
+
+test("getStrategyTriggerAt keeps a just-missed import-shortage marker during grace window", () => {
+  const triggerAt = getStrategyTriggerAt({
+    item: createDailyItem({
+      targetMethod: "auto",
+      triggerKind: BatteryStrategyTriggerKind.ImportShortage,
+    }),
+    now: new Date("2026-04-09T02:45:00.000Z"),
+    dynamicPriceSamples: createDynamicPriceSamples([
+      ["2026-04-09T00:00:00.000Z", 20],
+      ["2026-04-09T02:30:00.000Z", 5],
+      ["2026-04-09T05:00:00.000Z", 20],
+      ["2026-04-10T00:00:00.000Z", 20],
+      ["2026-04-10T02:30:00.000Z", 5],
+      ["2026-04-10T05:00:00.000Z", 20],
+    ]),
+  });
+
+  expect(triggerAt?.toISOString()).toBe("2026-04-09T02:30:00.000Z");
+});
+
+test("getStrategyTriggerAt advances import-shortage after missed marker grace expires", () => {
+  const triggerAt = getStrategyTriggerAt({
+    item: createDailyItem({
+      targetMethod: "auto",
+      triggerKind: BatteryStrategyTriggerKind.ImportShortage,
+    }),
+    now: new Date("2026-04-09T03:05:00.000Z"),
+    dynamicPriceSamples: createDynamicPriceSamples([
+      ["2026-04-09T00:00:00.000Z", 20],
+      ["2026-04-09T02:30:00.000Z", 5],
+      ["2026-04-09T05:00:00.000Z", 20],
+      ["2026-04-10T00:00:00.000Z", 20],
+      ["2026-04-10T02:30:00.000Z", 5],
+      ["2026-04-10T05:00:00.000Z", 20],
+    ]),
+  });
+
+  expect(triggerAt?.toISOString()).toBe("2026-04-10T02:30:00.000Z");
+});
+
+test("getSameDayLowerPriorityBuiltInSuppressions marks lower built-ins through local end of day", () => {
+  const exportSurplus = createDailyItem({
+    id: "export-surplus",
+    triggerKind: BatteryStrategyTriggerKind.ExportSurplus,
+  });
+  const delayedChargePrep = createDailyItem({
+    id: "delayed-charge-prep",
+    triggerKind: BatteryStrategyTriggerKind.DelayedChargePrep,
+  });
+  const delayedCharging = createDailyItem({
+    id: "delayed-charging",
+    triggerKind: BatteryStrategyTriggerKind.DelayedCharging,
+  });
+  const importShortage = createDailyItem({
+    id: "import-shortage",
+    triggerKind: BatteryStrategyTriggerKind.ImportShortage,
+  });
+  const suppressions = getSameDayLowerPriorityBuiltInSuppressions({
+    battery: {
+      strategyPlan: [
+        createDailyItem({ id: "default", kind: "default", triggerKind: null }),
+        exportSurplus,
+        delayedChargePrep,
+        delayedCharging,
+        importShortage,
+      ],
+    },
+    item: importShortage,
+    now: new Date("2026-04-09T02:30:00.000Z"),
+  });
+
+  expect(Object.keys(suppressions).sort()).toEqual([
+    "delayed-charge-prep",
+    "delayed-charging",
+    "export-surplus",
+  ]);
+  expect(new Date(suppressions["export-surplus"] ?? "").getHours()).toBe(23);
 });
 
 test("getStrategyTriggerAt returns the next upcoming price marker when none are due yet", () => {

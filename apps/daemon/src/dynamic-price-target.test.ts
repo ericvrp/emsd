@@ -432,7 +432,7 @@ test("estimateImportShortage projects solar surplus and shortage from a low-pric
   expect(estimate.expectedFullAt).toBeNull();
 });
 
-test("estimateImportShortageDynamicTarget charges projected shortage with hourly buffer before low-price marker", () => {
+test("estimateImportShortageDynamicTarget charges to the required marker SoC plus hourly buffer", () => {
   const history = createConstantUsageHistory({
     end: "2026-04-19T05:00:00.000Z",
     siteLoadW: 200,
@@ -457,9 +457,17 @@ test("estimateImportShortageDynamicTarget charges projected shortage with hourly
   });
 
   expect(estimate.resolvedManualState).toBe("charging");
-  expect(estimate.estimatedTargetPercent).toBe(80);
-  expect(estimate.estimatedRemainingEnergyWh).toBe(4000);
-  expect(estimate.startTime).toBe("2026-04-19T06:00:00.000Z");
+  expect(estimate.estimatedTargetPercent).toBe(73.4);
+  expect(estimate.estimatedRemainingEnergyWh).toBe(3340);
+  expect(estimate.importShortageDetails?.expectedNetSolarSurplusPercent).toBe(
+    28,
+  );
+  expect(estimate.importShortageDetails?.baseTargetSocPercent).toBe(72);
+  expect(estimate.importShortageDetails?.bufferPercent).toBe(1.4);
+  expect(estimate.importShortageDetails?.solarSurplusEndTime).toBe(
+    "2026-04-19T19:00:00.000Z",
+  );
+  expect(estimate.startTime).toBe("2026-04-19T06:58:00.000Z");
   expect(estimate.targetTime).toBe("2026-04-19T12:00:00.000Z");
   expect(estimate.skipReason).toBeNull();
 });
@@ -488,12 +496,17 @@ test("estimateImportShortageDynamicTarget explains skipped no-shortage decisions
     }),
   });
 
-  expect(estimate.skipReason).toContain("no projected import shortage");
+  expect(estimate.skipReason).toContain(
+    "current charge already meets import-shortage target",
+  );
   expect(estimate.skipReason).toContain("marker=");
   expect(estimate.skipReason).toContain("currentSoc=90%");
-  expect(estimate.skipReason).toContain("projectedEndSoc=100%");
-  expect(estimate.skipReason).toContain("shortageToFull=0%");
-  expect(estimate.skipReason).toContain("buffer=12%");
+  expect(estimate.skipReason).toContain("solarSurplusEnd=");
+  expect(estimate.skipReason).toContain("netSurplus=19.6kWh");
+  expect(estimate.skipReason).toContain("netSolarFill=196%");
+  expect(estimate.skipReason).toContain("baseTarget=-96%");
+  expect(estimate.skipReason).toContain("buffer=1.4%");
+  expect(estimate.skipReason).toContain("targetSoc=0%");
 });
 
 function createAutoLowPriceItem(): BatteryStrategyPlanItem {

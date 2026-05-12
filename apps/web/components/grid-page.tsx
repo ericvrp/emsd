@@ -11,6 +11,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { formatEnergyValue } from "../lib/energy-format";
 import {
   formatAbsolutePowerValue,
   formatShortPowerValue,
@@ -171,7 +172,7 @@ export function GridPage({
           importPricePoints={importPriceSamples}
           nowMarkerPeriodStart={daySelection.nowMarkerPeriodStart}
           priceCurrency={priceCurrency}
-          valueFormatter={formatAbsolutePowerValue}
+          valueFormatter={formatGridOverviewTooltipValue}
           yAxisFormatter={formatShortPowerValue}
           yAxisLabel="Power"
           {...(typeof exportDeduction === "number" ? { exportDeduction } : {})}
@@ -245,6 +246,7 @@ function GridOverviewChart({
 }) {
   let cumulativeImportCost = 0;
   let cumulativeExportEarnings = 0;
+  let cumulativeExpectedSiteLoadWh = 0;
   const chartData = gridPoints.map((gridPoint, index) => {
     const actualSiteLoadPoint = actualSiteLoadPoints[index];
     const expectedSiteLoadPoint = expectedSiteLoadPoints[index];
@@ -268,10 +270,16 @@ function GridOverviewChart({
       }
     }
 
+    if (typeof expectedSiteLoadPoint?.value === "number") {
+      cumulativeExpectedSiteLoadWh +=
+        expectedSiteLoadPoint.value * (HISTORY_STEP_MS / (60 * 60 * 1_000));
+    }
+
     return {
       actualSiteLoadCurrentValue: actualSiteLoadPoint?.currentValue ?? null,
       actualSiteLoadFutureValue: actualSiteLoadPoint?.futureValue ?? null,
       cumulativeExportEarnings,
+      cumulativeExpectedSiteLoadWh,
       cumulativeImportCost,
       cumulativeNetCost: cumulativeImportCost - cumulativeExportEarnings,
       expectedSiteLoadCurrentValue: expectedSiteLoadPoint?.currentValue ?? null,
@@ -537,6 +545,7 @@ type GridOverviewChartPoint = {
   actualSiteLoadCurrentValue: number | null;
   actualSiteLoadFutureValue: number | null;
   cumulativeExportEarnings: number;
+  cumulativeExpectedSiteLoadWh: number;
   cumulativeImportCost: number;
   cumulativeNetCost: number;
   expectedSiteLoadCurrentValue: number | null;
@@ -683,4 +692,35 @@ function formatGridOverviewTooltipLabel(value: number, key?: string): string {
   }
 
   return "Inferred Site Load";
+}
+
+function formatGridOverviewTooltipValue(
+  value: number,
+  key?: string,
+  payload?: unknown,
+): string {
+  if (!key?.startsWith("expectedSiteLoad")) {
+    return formatAbsolutePowerValue(value);
+  }
+
+  const totalWh = getExpectedSiteLoadTooltipRunningTotalWh(payload);
+
+  if (totalWh === null) {
+    return formatAbsolutePowerValue(value);
+  }
+
+  return `${formatAbsolutePowerValue(value)} • Total ${formatEnergyValue(totalWh)}`;
+}
+
+function getExpectedSiteLoadTooltipRunningTotalWh(
+  payload?: unknown,
+): number | null {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  const totalWh = (payload as { cumulativeExpectedSiteLoadWh?: unknown })
+    .cumulativeExpectedSiteLoadWh;
+
+  return typeof totalWh === "number" ? totalWh : null;
 }

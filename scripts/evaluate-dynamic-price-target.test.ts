@@ -356,20 +356,23 @@ test("buildEstimateSummaryRows keeps import-shortage output concise and strategy
         estimatedTargetPercent: 70,
         importShortageDetails: {
           bufferPercent: 12,
-          chargeStartTime: createReplayTime(
-            "2026-04-22",
-            "09:00",
-          ).toISOString(),
           currentSocPercent: 40,
           effectiveChargePowerW: 1200,
           energyToImportWh: 1800,
+          expectedHouseLoadUntilSurplusEndWh: 2400,
+          expectedNetSolarSurplusPercent: 30,
+          expectedNetSolarSurplusWh: 1800,
+          expectedSolarGenerationUntilSurplusEndWh: 4200,
           lowPriceMarkerTime: createReplayTime(
             "2026-04-22",
             "07:00",
           ).toISOString(),
-          projectedEndSocPercent: 82,
-          projectedShortagePercent: 18,
           requiredChargeMinutes: 90,
+          baseTargetSocPercent: 58,
+          solarSurplusEndTime: createReplayTime(
+            "2026-04-22",
+            "17:00",
+          ).toISOString(),
           targetSocPercent: 70,
           triggerLeadTimeMinutes: 108,
           triggerMarginFactor: 1.2,
@@ -388,9 +391,17 @@ test("buildEstimateSummaryRows keeps import-shortage output concise and strategy
     }),
   ).toEqual([
     { label: "Low Price Marker", value: "2026-04-22 07:00" },
-    { label: "Solar Recovery", value: "2026-04-22 09:00" },
-    { label: "Projected End SoC", value: "82%" },
-    { label: "Shortage + Buffer", value: "18% + 12%" },
+    { label: "Solar Surplus End", value: "2026-04-22 17:00" },
+    { label: "Current SoC", value: "40%" },
+    {
+      label: "Net Solar Surplus",
+      value: "1800 Wh / 30% (4200 Wh solar - 2400 Wh load)",
+    },
+    {
+      label: "Needed Before Solar Surplus",
+      value: "58% = 100% - 30% net solar fill",
+    },
+    { label: "Safety Buffer", value: "12%" },
     { label: "Charge Target", value: "70% (1800 Wh at 1200 W)" },
     { label: "Start", value: "2026-04-22 05:12 (1h 48m before marker)" },
   ]);

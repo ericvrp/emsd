@@ -86,6 +86,7 @@ import {
   getDaemonTimeZoneLabel,
   getDelayedChargePrepSkipReason,
   getNextStrategyTriggerAt,
+  getSameDayLowerPriorityBuiltInSuppressions,
   getScheduledItemCompletion,
   getSolarProductionControlDecision,
   getStrategyTriggerAt,
@@ -1511,6 +1512,11 @@ async function runScheduledStrategy(
         : null,
       lastTriggeredAtByItemId: {
         ...runtime.lastTriggeredAtByItemId,
+        ...getSameDayLowerPriorityBuiltInSuppressions({
+          battery,
+          item,
+          now,
+        }),
         [item.id]: triggerAt.toISOString(),
       },
     },

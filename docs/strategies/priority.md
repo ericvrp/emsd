@@ -43,6 +43,8 @@ The built-in normalized strategy order is:
 
 `Import shortage` is after `Delayed charging`, so it has higher battery-strategy priority when it is active or due.
 
+When `Import shortage` activates, the daemon also suppresses lower-priority built-in battery items for the rest of the same local day. This prevents `Export surplus`, `Delayed-charge prep`, and `Delayed charging` from running later after an import-shortage charge has already been chosen for that day.
+
 `Solar production control` is kept in the normalized built-in order for persistence and UI consistency, but it runs as an independent sidecar behavior rather than a normal battery activation item.
 
 User-added scheduled items appear after the built-in items and therefore have higher priority than the built-in non-default battery rules.

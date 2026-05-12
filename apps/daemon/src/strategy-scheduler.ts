@@ -418,6 +418,14 @@ export function getStrategyTriggerAt(input: {
     return getLowPriceAutoTriggerAt({ now, dynamicPriceSamples });
   }
 
+  if (item.triggerKind === BatteryStrategyTriggerKind.ImportShortage) {
+    return getImportShortageTriggerAt({
+      triggerKind: item.triggerKind,
+      now,
+      dynamicPriceSamples,
+    });
+  }
+
   return getPriceMarkerTriggerAt({
     triggerKind: item.triggerKind,
     now,
@@ -477,6 +485,41 @@ export function getScheduledEndAt(
   }
 
   return endAt;
+}
+
+export function getSameDayLowerPriorityBuiltInSuppressions(input: {
+  battery: Pick<BatteryRecord, "strategyPlan">;
+  item: BatteryStrategyPlanItem;
+  now: Date;
+}): Record<string, string> {
+  if (input.item.triggerKind !== BatteryStrategyTriggerKind.ImportShortage) {
+    return {};
+  }
+
+  const itemIndex = input.battery.strategyPlan.findIndex(
+    (candidate) => candidate.id === input.item.id,
+  );
+
+  if (itemIndex <= 1) {
+    return {};
+  }
+
+  const endOfDay = new Date(input.now);
+  endOfDay.setHours(23, 59, 59, 999);
+  const suppressedAt = endOfDay.toISOString();
+  const suppressions: Record<string, string> = {};
+
+  for (const candidate of input.battery.strategyPlan.slice(1, itemIndex)) {
+    if (
+      candidate.triggerKind === BatteryStrategyTriggerKind.ExportSurplus ||
+      candidate.triggerKind === BatteryStrategyTriggerKind.DelayedChargePrep ||
+      candidate.triggerKind === BatteryStrategyTriggerKind.DelayedCharging
+    ) {
+      suppressions[candidate.id] = suppressedAt;
+    }
+  }
+
+  return suppressions;
 }
 
 export function needsCompletionTracking(
@@ -726,6 +769,30 @@ function getPriceMarkerTriggerAt(input: {
   }
 
   return todayMarkers[0] ?? null;
+}
+
+function getImportShortageTriggerAt(input: {
+  triggerKind: BatteryStrategyTriggerKind.ImportShortage;
+  now: Date;
+  dynamicPriceSamples: DynamicPriceSampleRecord[];
+}): Date | null {
+  const markers = getPriceMarkersOnOrAfterDay(input);
+  let latestEligibleMarker: Date | null = null;
+
+  for (const markerAt of markers) {
+    if (markerAt.getTime() > input.now.getTime()) {
+      return latestEligibleMarker ?? markerAt;
+    }
+
+    if (
+      input.now.getTime() <
+      markerAt.getTime() + PRICE_TRIGGER_ELIGIBILITY_WINDOW_MS
+    ) {
+      latestEligibleMarker = markerAt;
+    }
+  }
+
+  return latestEligibleMarker;
 }
 
 export function getNextPriceMarkerTriggerAt(input: {

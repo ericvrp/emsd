@@ -955,16 +955,24 @@ export function buildEstimateSummaryRows(
         value: formatTargetTime(details.lowPriceMarkerTime),
       },
       {
-        label: "Solar Recovery",
-        value: formatTargetTime(details.chargeStartTime),
+        label: "Solar Surplus End",
+        value: formatTargetTime(details.solarSurplusEndTime),
       },
       {
-        label: "Projected End SoC",
-        value: `${formatNumber(details.projectedEndSocPercent)}%`,
+        label: "Current SoC",
+        value: `${formatNumber(details.currentSocPercent)}%`,
       },
       {
-        label: "Shortage + Buffer",
-        value: `${formatNumber(details.projectedShortagePercent)}% + ${formatNumber(details.bufferPercent)}%`,
+        label: "Net Solar Surplus",
+        value: `${formatWh(details.expectedNetSolarSurplusWh)} / ${formatNumber(details.expectedNetSolarSurplusPercent)}% (${formatWh(details.expectedSolarGenerationUntilSurplusEndWh)} solar - ${formatWh(details.expectedHouseLoadUntilSurplusEndWh)} load)`,
+      },
+      {
+        label: "Needed Before Solar Surplus",
+        value: `${formatNumber(details.baseTargetSocPercent)}% = 100% - ${formatNumber(details.expectedNetSolarSurplusPercent)}% net solar fill`,
+      },
+      {
+        label: "Safety Buffer",
+        value: `${formatNumber(details.bufferPercent)}%`,
       },
       {
         label: "Charge Target",
@@ -1061,7 +1069,7 @@ export function buildEstimateSummaryLine(input: EvaluationContext): string {
   ) {
     const details = input.dynamicPriceTargetEstimate.importShortageDetails;
 
-    return `${input.siteName} (${input.siteId}) | ${input.battery.name} (${input.batteryId}) | import-shortage charge to ${formatNumber(details.targetSocPercent)}% for ${formatNumber(details.projectedShortagePercent)}% shortage + ${formatNumber(details.bufferPercent)}% buffer | marker ${formatTargetTime(details.lowPriceMarkerTime)} | start ${formatDisplayedStartTime(input.dynamicPriceTargetEstimate, input.referenceTime)}`;
+    return `${input.siteName} (${input.siteId}) | ${input.battery.name} (${input.batteryId}) | import-shortage charge to ${formatNumber(details.targetSocPercent)}% from base target ${formatNumber(details.baseTargetSocPercent)}% + ${formatNumber(details.bufferPercent)}% buffer | marker ${formatTargetTime(details.lowPriceMarkerTime)} | start ${formatDisplayedStartTime(input.dynamicPriceTargetEstimate, input.referenceTime)}`;
   }
 
   return `${input.siteName} (${input.siteId}) | ${input.battery.name} (${input.batteryId}) | target percentage ${reserveAtTargetPercent}% at ${formatTargetTime(input.dynamicPriceTargetEstimate.targetTime)} | ${formatStrategyTriggerKindLabel(input.strategyTriggerKind)} ${actionLabel} target ${currentTargetPercent}% start time ${formatDisplayedStartTime(input.dynamicPriceTargetEstimate, input.referenceTime)}${delayedChargingStartExplanation === null ? "" : ` | ${delayedChargingStartExplanation}`}`;
@@ -1140,10 +1148,17 @@ export function buildEnergyEstimateRows(input: {
 
     return {
       "Low-price marker": formatTargetTime(details.lowPriceMarkerTime),
-      "Solar recovery starts": formatTargetTime(details.chargeStartTime),
+      "Solar surplus ends": formatTargetTime(details.solarSurplusEndTime),
       "Current SoC": `${formatNumber(details.currentSocPercent)}%`,
-      "Projected end SoC without import": `${formatNumber(details.projectedEndSocPercent)}%`,
-      "Projected shortage": `${formatNumber(details.projectedShortagePercent)}%`,
+      "Expected solar until surplus end": formatWh(
+        details.expectedSolarGenerationUntilSurplusEndWh,
+      ),
+      "Expected load until surplus end": formatWh(
+        details.expectedHouseLoadUntilSurplusEndWh,
+      ),
+      "Expected net solar surplus": formatWh(details.expectedNetSolarSurplusWh),
+      "Expected net solar fill": `${formatNumber(details.expectedNetSolarSurplusPercent)}%`,
+      "Needed before solar surplus": `${formatNumber(details.baseTargetSocPercent)}%`,
       "Time buffer": `${formatNumber(details.bufferPercent)}%`,
       "Battery capacity basis": formatWh(input.capacityWh),
       "Energy to import": formatWh(details.energyToImportWh),
@@ -1248,10 +1263,17 @@ function buildWhyRows(input: EvaluationContext): Record<string, string> {
 
     return {
       "Low-price marker": formatTargetTime(details.lowPriceMarkerTime),
-      "Solar recovery starts": formatTargetTime(details.chargeStartTime),
+      "Solar surplus ends": formatTargetTime(details.solarSurplusEndTime),
       "Current SoC": `${formatNumber(details.currentSocPercent)}%`,
-      "Projected end SoC without import": `${formatNumber(details.projectedEndSocPercent)}%`,
-      "Projected shortage": `${formatNumber(details.projectedShortagePercent)}%`,
+      "Expected solar until surplus end": formatWh(
+        details.expectedSolarGenerationUntilSurplusEndWh,
+      ),
+      "Expected load until surplus end": formatWh(
+        details.expectedHouseLoadUntilSurplusEndWh,
+      ),
+      "Expected net solar surplus": formatWh(details.expectedNetSolarSurplusWh),
+      "Expected net solar fill": `${formatNumber(details.expectedNetSolarSurplusPercent)}%`,
+      "Needed before solar surplus": `${formatNumber(details.baseTargetSocPercent)}%`,
       "Time buffer": `${formatNumber(details.bufferPercent)}%`,
       "Charge target": `${formatNumber(details.targetSocPercent)}%`,
       "Energy to import": formatWh(details.energyToImportWh),
@@ -1475,7 +1497,7 @@ function formatTargetTime(value: string | null): string {
     return value;
   }
 
-  return `${date.toISOString().slice(0, 10)} ${date.toTimeString().slice(0, 5)}`;
+  return formatLocalDateTime(date);
 }
 
 function formatDisplayedStartTime(
@@ -1563,7 +1585,15 @@ function formatDurationUntilTarget(
 }
 
 function formatReferenceMoment(value: Date): string {
-  return `${value.toISOString().slice(0, 10)} ${value.toTimeString().slice(0, 5)}`;
+  return formatLocalDateTime(value);
+}
+
+function formatLocalDateTime(value: Date): string {
+  return `${value.getFullYear()}-${formatDateTimePart(value.getMonth() + 1)}-${formatDateTimePart(value.getDate())} ${formatDateTimePart(value.getHours())}:${formatDateTimePart(value.getMinutes())}`;
+}
+
+function formatDateTimePart(value: number): string {
+  return String(value).padStart(2, "0");
 }
 
 function formatNullablePercent(value: number | null): string {
