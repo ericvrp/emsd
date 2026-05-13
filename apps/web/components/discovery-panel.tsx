@@ -489,11 +489,12 @@ function SupportedPluginsDialog({ onClose }: { onClose: () => void }) {
 
             <div className="mt-6 overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/5">
               <div
-                className={`${UI_STYLES.tabBar} justify-start px-3 pt-3 sm:px-4`}
+                className={`${UI_STYLES.tabBar} justify-center px-3 pt-3 sm:px-4`}
               >
-                <div className="flex flex-wrap items-center gap-6">
+                <div className="flex flex-wrap items-center justify-center gap-6">
                   {SUPPORTED_PLUGIN_TYPES.map((pluginType) => (
                     <button
+                      aria-label={pluginType}
                       className={cn(
                         UI_STYLES.tabItem,
                         pluginType === activeTab
@@ -503,13 +504,15 @@ function SupportedPluginsDialog({ onClose }: { onClose: () => void }) {
                       key={pluginType}
                       onClick={() => setActiveTab(pluginType)}
                       type="button"
-                    >
-                      <PluginTypeIcon
-                        aria-hidden="true"
-                        className="h-4 w-4"
-                        type={pluginType}
-                      />
-                      {pluginType}
+                      >
+                        <PluginTypeIcon
+                          aria-hidden="true"
+                          className="h-4 w-4"
+                          type={pluginType}
+                        />
+                        <span className="sr-only sm:not-sr-only">
+                          {pluginType}
+                        </span>
                     </button>
                   ))}
                 </div>
