@@ -17,6 +17,7 @@ export * from "./battery-strategy-shared";
 export * from "./site-load";
 export { deriveBatteryStatusFromPower } from "./battery-power";
 export * from "./price-selection";
+export * from "./solar-surplus";
 export * from "./solar-prediction";
 export * from "./solar-prediction-smoothing";
 

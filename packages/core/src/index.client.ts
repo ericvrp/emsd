@@ -1,4 +1,5 @@
 export * from "./price-selection";
+export * from "./solar-surplus";
 export * from "./solar-prediction";
 export * from "./solar-prediction-smoothing";
 export * from "./battery-strategy-shared";

@@ -10,6 +10,7 @@ import {
   DEFAULT_SOLAR_PREDICTION_SMOOTHING_MODE,
   applySolarSeriesSmoothing,
   buildSolarPredictionAccuracySummary,
+  findSolarSurplusBoundsFromSeries,
   formatSolarPredictionSmoothingMode,
 } from "@emsd/core/client";
 import type { ReactNode } from "react";
@@ -22,6 +23,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { resolveRelativeDayParam } from "../lib/day-utils";
 import { formatEnergyValue } from "../lib/energy-format";
 import {
   formatAbsolutePowerValue,
@@ -92,6 +94,12 @@ export function WeatherForecastSection({
   source: WeatherForecastSourceRecord | null;
 }) {
   const params = new URLSearchParams({ siteId: site.id });
+  const resolvedRequestedDay = resolveRelativeDayParam(requestedDay);
+
+  if (resolvedRequestedDay) {
+    params.set("day", resolvedRequestedDay);
+  }
+
   const { data: graphData, refreshError: graphRefreshError } =
     useLiveJsonSWR<SolarGraphResponse>(
       `/api/solar/graph?${params.toString()}`,
@@ -141,6 +149,14 @@ export function WeatherForecastSection({
     generatedAccuracySeries,
     daySelection.selectedDay,
   );
+  const selectedDayExpectedSiteLoadSeries =
+    archive.selectedDayExpectedSiteLoadSamples;
+  const solarSurplusBounds = findSolarSurplusBoundsFromSeries({
+    expectedLoadSeries: selectedDayExpectedSiteLoadSeries,
+    fallbackEndTime: selectedDayPredictedSeries.at(-1)?.periodStart ?? null,
+    predictedSeries: selectedDayPredictedSeries,
+    selectedDayKey: daySelection.selectedDay,
+  });
   const predictionAccuracySummary = buildSolarPredictionAccuracySummary({
     generatedSeries: selectedDayGeneratedAccuracySeries,
     predictedSeries: selectedDayPredictedSeries,
@@ -229,6 +245,8 @@ export function WeatherForecastSection({
             predictedPoints={splitSingleValueSeriesByTime(
               selectedDayPredictedSeries,
             )}
+            solarSurplusEndPeriodStart={solarSurplusBounds.finalEndTime}
+            solarSurplusStartPeriodStart={solarSurplusBounds.firstStartTime}
           />
         </div>
       )}
@@ -246,6 +264,8 @@ function ForecastPredictionChart({
   nowMarkerPeriodStart,
   predictionAccuracyPercentage,
   predictedPoints,
+  solarSurplusEndPeriodStart,
+  solarSurplusStartPeriodStart,
 }: {
   emptyMessage: string;
   forecastLabel: string;
@@ -256,6 +276,8 @@ function ForecastPredictionChart({
   nowMarkerPeriodStart: string | null;
   predictionAccuracyPercentage: number | null;
   predictedPoints: SplitSingleValuePoint[];
+  solarSurplusEndPeriodStart: string | null;
+  solarSurplusStartPeriodStart: string | null;
 }) {
   let generatedCumulativeWh = 0;
   let predictedCumulativeWh = 0;
@@ -431,6 +453,32 @@ function ForecastPredictionChart({
                     strokeDasharray="4 4"
                     strokeOpacity={0.8}
                     x={nowMarkerPeriodStart}
+                    yAxisId="forecast"
+                  />
+                ) : null}
+                {solarSurplusStartPeriodStart ? (
+                  <ReferenceLine
+                    label={buildSolarSurplusLabel(
+                      "Surplus start",
+                      UI_COLORS.success,
+                    )}
+                    stroke={UI_COLORS.success}
+                    strokeDasharray="2 2"
+                    strokeOpacity={0.7}
+                    x={solarSurplusStartPeriodStart}
+                    yAxisId="forecast"
+                  />
+                ) : null}
+                {solarSurplusEndPeriodStart ? (
+                  <ReferenceLine
+                    label={buildSolarSurplusLabel(
+                      "Surplus end",
+                      UI_COLORS.solarPrediction,
+                    )}
+                    stroke={UI_COLORS.solarPrediction}
+                    strokeDasharray="2 2"
+                    strokeOpacity={0.7}
+                    x={solarSurplusEndPeriodStart}
                     yAxisId="forecast"
                   />
                 ) : null}
@@ -636,6 +684,15 @@ function buildPredictedSolarLegendLabel(input: {
 
 function buildGeneratedSolarLegendLabel(): string {
   return "Generated Wattage";
+}
+
+function buildSolarSurplusLabel(value: string, fill: string) {
+  return {
+    fill,
+    fontSize: 11,
+    position: "top" as const,
+    value,
+  };
 }
 
 function PredictedSolarLegendMarker() {

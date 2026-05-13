@@ -6,6 +6,7 @@ import {
 import { DashboardPageFrame } from "../../components/dashboard-page-frame";
 import { WeatherForecastSection } from "../../components/forecast-page";
 import { SiteSetupPanel } from "../../components/settings-panel";
+import { resolveRelativeDayParam } from "../../lib/day-utils";
 import { getHistoryArchive } from "../../lib/ems-bridge";
 import { getSearchParamValue } from "../../lib/search-params";
 
@@ -26,8 +27,12 @@ export default async function SolarPage({
   const requestedDay = getSearchParamValue(
     dashboardData.resolvedSearchParams.day,
   );
+  const resolvedRequestedDay = resolveRelativeDayParam(requestedDay);
   const historyArchive = currentSite
-    ? await getHistoryArchive({ siteId: currentSite.id })
+    ? await getHistoryArchive({
+        day: resolvedRequestedDay,
+        siteId: currentSite.id,
+      })
     : null;
 
   return (
@@ -37,7 +42,7 @@ export default async function SolarPage({
           archive={historyArchive}
           error={weatherForecastError}
           forecast={weatherForecast}
-          requestedDay={requestedDay}
+          requestedDay={resolvedRequestedDay}
           site={currentSite}
           source={currentSite.weatherSources[0] ?? null}
         />

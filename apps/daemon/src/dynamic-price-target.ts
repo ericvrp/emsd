@@ -18,7 +18,9 @@ import {
   buildHouseLoadHistorySeries,
   buildPredictedSolarGenerationSeries,
   calculateDynamicReserveFloorPercent,
+  findFirstSolarSurplusWindow,
   findPriceSelections,
+  findSolarSurplusBounds,
   isDelayedChargingAutoDischargeItem,
   resolveExpectedSiteLoadW,
 } from "@emsd/core";
@@ -789,13 +791,15 @@ export function estimateImportShortage(input: {
     };
   }
 
-  const chargeStart = findSolarSurplusStart({
-    loadProfile,
+  const firstSurplusWindow = findFirstSolarSurplusWindow({
+    fallbackEndTime: endOfDay(input.triggerAt),
     predictedSeries,
-    triggerAt: input.triggerAt,
+    resolveExpectedLoadW: (periodStart) =>
+      resolveExpectedSiteLoadW(periodStart, loadProfile),
+    startAt: input.triggerAt,
   });
 
-  if (chargeStart === null) {
+  if (firstSurplusWindow === null) {
     return {
       availability: predictedSeries.length === 0 ? "unavailable" : "partial",
       chargeStartTime: null,
@@ -816,12 +820,8 @@ export function estimateImportShortage(input: {
     };
   }
 
-  const surplusEnd = findSolarSurplusEnd({
-    chargeStart,
-    loadProfile,
-    predictedSeries,
-    triggerAt: input.triggerAt,
-  });
+  const chargeStart = new Date(firstSurplusWindow.startTime);
+  const surplusEnd = new Date(firstSurplusWindow.endTime);
   const periodHours = resolvePeriodHours(input.solarForecastSamples);
   const preChargeEnergyEstimate = buildIntervalEnergyEstimate({
     integrationEnd: chargeStart,
@@ -925,14 +925,23 @@ export function estimateImportShortageDynamicTarget(input: {
       : loadProfile.expectedLoadBySlot.size === 0
         ? "partial"
         : "full";
+  const solarSurplusBounds =
+    predictedSeries.length === 0
+      ? null
+      : findSolarSurplusBounds({
+          fallbackEndTime: endOfDay(input.lowPriceMarkerTime),
+          predictedSeries,
+          resolveExpectedLoadW: (periodStart) =>
+            resolveExpectedSiteLoadW(periodStart, loadProfile),
+          selectedDayKey: formatLocalDayKey(input.lowPriceMarkerTime),
+          startAt: input.lowPriceMarkerTime,
+        });
   const solarSurplusEnd =
     predictedSeries.length === 0
       ? null
-      : (findFinalSolarSurplusEnd({
-          loadProfile,
-          predictedSeries,
-          triggerAt: input.lowPriceMarkerTime,
-        }) ?? endOfDay(input.lowPriceMarkerTime));
+      : solarSurplusBounds?.finalEndTime
+        ? new Date(solarSurplusBounds.finalEndTime)
+        : endOfDay(input.lowPriceMarkerTime);
   const baseEstimate = createImportShortageDynamicTargetBase({
     availability,
     expectedHouseLoadWh: 0,
@@ -1883,114 +1892,6 @@ function resolveDelayedChargingMarkerEligibility(input: {
     lowPriceMarkerTime: input.lowPriceMarkerTime,
     predictedSolarW: markerSignal.predictedSolarW,
   };
-}
-
-function findSolarSurplusStart(input: {
-  loadProfile: LoadProfile;
-  predictedSeries: PredictedPoint[];
-  triggerAt: Date;
-}): Date | null {
-  for (const point of input.predictedSeries) {
-    const pointDate = new Date(point.periodStart);
-
-    if (
-      Number.isNaN(pointDate.getTime()) ||
-      pointDate.getTime() < input.triggerAt.getTime()
-    ) {
-      continue;
-    }
-
-    const predictedSolarW =
-      typeof point.value === "number" ? Math.max(0, point.value) : null;
-    const expectedHouseLoadW = resolveExpectedSiteLoadW(
-      pointDate,
-      input.loadProfile,
-    );
-
-    if (predictedSolarW !== null && predictedSolarW > expectedHouseLoadW) {
-      return pointDate;
-    }
-  }
-
-  return null;
-}
-
-function findSolarSurplusEnd(input: {
-  chargeStart: Date;
-  loadProfile: LoadProfile;
-  predictedSeries: PredictedPoint[];
-  triggerAt: Date;
-}): Date {
-  for (const point of input.predictedSeries) {
-    const pointDate = new Date(point.periodStart);
-
-    if (
-      Number.isNaN(pointDate.getTime()) ||
-      pointDate.getTime() <= input.chargeStart.getTime()
-    ) {
-      continue;
-    }
-
-    const predictedSolarW =
-      typeof point.value === "number" ? Math.max(0, point.value) : null;
-    const expectedHouseLoadW = resolveExpectedSiteLoadW(
-      pointDate,
-      input.loadProfile,
-    );
-
-    if (predictedSolarW === null || predictedSolarW <= expectedHouseLoadW) {
-      return pointDate;
-    }
-  }
-
-  return endOfDay(input.triggerAt);
-}
-
-function findFinalSolarSurplusEnd(input: {
-  loadProfile: LoadProfile;
-  predictedSeries: PredictedPoint[];
-  triggerAt: Date;
-}): Date | null {
-  let wasInSurplus = false;
-  let finalSurplusEnd: Date | null = null;
-  let sawSurplus = false;
-
-  for (const point of input.predictedSeries) {
-    const pointDate = new Date(point.periodStart);
-
-    if (
-      Number.isNaN(pointDate.getTime()) ||
-      pointDate.getTime() < input.triggerAt.getTime() ||
-      formatLocalDayKey(pointDate) !== formatLocalDayKey(input.triggerAt)
-    ) {
-      continue;
-    }
-
-    const predictedSolarW =
-      typeof point.value === "number" ? Math.max(0, point.value) : null;
-    const expectedHouseLoadW = resolveExpectedSiteLoadW(
-      pointDate,
-      input.loadProfile,
-    );
-    const isInSurplus =
-      predictedSolarW !== null && predictedSolarW > expectedHouseLoadW;
-
-    if (isInSurplus) {
-      sawSurplus = true;
-    }
-
-    if (wasInSurplus && !isInSurplus) {
-      finalSurplusEnd = pointDate;
-    }
-
-    wasInSurplus = isInSurplus;
-  }
-
-  if (!sawSurplus) {
-    return null;
-  }
-
-  return finalSurplusEnd ?? endOfDay(input.triggerAt);
 }
 
 function resolveExpectedFullAt(input: {

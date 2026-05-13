@@ -18,12 +18,13 @@ export async function GET(request: NextRequest) {
   }
 
   const siteId = request.nextUrl.searchParams.get("siteId");
+  const day = request.nextUrl.searchParams.get("day");
   if (!siteId) {
     return NextResponse.json({ error: "siteId is required" }, { status: 400 });
   }
 
   const [archive, snapshot] = await Promise.all([
-    getHistoryArchive({ siteId }),
+    getHistoryArchive({ day, siteId }),
     getLiveStatus(),
   ]);
   const site = snapshot.sites.find((entry) => entry.id === siteId) ?? null;
