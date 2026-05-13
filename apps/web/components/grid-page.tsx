@@ -246,6 +246,7 @@ function GridOverviewChart({
 }) {
   let cumulativeImportCost = 0;
   let cumulativeExportEarnings = 0;
+  let cumulativeActualSiteLoadWh = 0;
   let cumulativeExpectedSiteLoadWh = 0;
   const chartData = gridPoints.map((gridPoint, index) => {
     const actualSiteLoadPoint = actualSiteLoadPoints[index];
@@ -275,9 +276,15 @@ function GridOverviewChart({
         expectedSiteLoadPoint.value * (HISTORY_STEP_MS / (60 * 60 * 1_000));
     }
 
+    if (typeof actualSiteLoadPoint?.value === "number") {
+      cumulativeActualSiteLoadWh +=
+        actualSiteLoadPoint.value * (HISTORY_STEP_MS / (60 * 60 * 1_000));
+    }
+
     return {
       actualSiteLoadCurrentValue: actualSiteLoadPoint?.currentValue ?? null,
       actualSiteLoadFutureValue: actualSiteLoadPoint?.futureValue ?? null,
+      cumulativeActualSiteLoadWh,
       cumulativeExportEarnings,
       cumulativeExpectedSiteLoadWh,
       cumulativeImportCost,
@@ -544,6 +551,7 @@ function GridOverviewChart({
 type GridOverviewChartPoint = {
   actualSiteLoadCurrentValue: number | null;
   actualSiteLoadFutureValue: number | null;
+  cumulativeActualSiteLoadWh: number;
   cumulativeExportEarnings: number;
   cumulativeExpectedSiteLoadWh: number;
   cumulativeImportCost: number;
@@ -699,11 +707,14 @@ function formatGridOverviewTooltipValue(
   key?: string,
   payload?: unknown,
 ): string {
-  if (!key?.startsWith("expectedSiteLoad")) {
+  if (
+    !key?.startsWith("expectedSiteLoad") &&
+    !key?.startsWith("actualSiteLoad")
+  ) {
     return formatAbsolutePowerValue(value);
   }
 
-  const totalWh = getExpectedSiteLoadTooltipRunningTotalWh(payload);
+  const totalWh = getSiteLoadTooltipRunningTotalWh(key, payload);
 
   if (totalWh === null) {
     return formatAbsolutePowerValue(value);
@@ -712,15 +723,19 @@ function formatGridOverviewTooltipValue(
   return `${formatAbsolutePowerValue(value)} • Total ${formatEnergyValue(totalWh)}`;
 }
 
-function getExpectedSiteLoadTooltipRunningTotalWh(
+function getSiteLoadTooltipRunningTotalWh(
+  key: string,
   payload?: unknown,
 ): number | null {
   if (!payload || typeof payload !== "object") {
     return null;
   }
 
-  const totalWh = (payload as { cumulativeExpectedSiteLoadWh?: unknown })
-    .cumulativeExpectedSiteLoadWh;
+  const totalWh = key.startsWith("expectedSiteLoad")
+    ? (payload as { cumulativeExpectedSiteLoadWh?: unknown })
+        .cumulativeExpectedSiteLoadWh
+    : (payload as { cumulativeActualSiteLoadWh?: unknown })
+        .cumulativeActualSiteLoadWh;
 
   return typeof totalWh === "number" ? totalWh : null;
 }
