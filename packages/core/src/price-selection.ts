@@ -5,6 +5,10 @@ export interface PriceSelectionPoint {
   value: number;
 }
 
+interface ValidPriceSelectionPoint extends PriceSelectionPoint {
+  timeMs: number;
+}
+
 export function findPriceSelections(
   samples: Array<{ periodStart: string; value: number | null }>,
   windowMs: number = PRICE_SELECTION_WINDOW_MS,
@@ -15,17 +19,16 @@ export function findPriceSelections(
   const validSamples = samples
     .map((sample) => ({
       periodStart: sample.periodStart,
+      timeMs: new Date(sample.periodStart).getTime(),
       value: sample.value,
     }))
     .filter(
-      (sample): sample is { periodStart: string; value: number } =>
-        typeof sample.value === "number" && Number.isFinite(sample.value),
+      (sample): sample is ValidPriceSelectionPoint =>
+        typeof sample.value === "number" &&
+        Number.isFinite(sample.value) &&
+        !Number.isNaN(sample.timeMs),
     )
-    .sort(
-      (left, right) =>
-        new Date(left.periodStart).getTime() -
-        new Date(right.periodStart).getTime(),
-    );
+    .sort((left, right) => left.timeMs - right.timeMs);
 
   if (validSamples.length === 0) {
     return { lowest: [], highest: [] };
@@ -44,62 +47,73 @@ export function findPriceSelections(
 
   const lowest: PriceSelectionPoint[] = [];
   const highest: PriceSelectionPoint[] = [];
+  const lowestPeriodStarts = new Set<string>();
+  const highestPeriodStarts = new Set<string>();
 
   for (let i = 0; i < validSamples.length; i++) {
     const current = validSamples[i];
     if (!current) {
       continue;
     }
-    const currentTime = new Date(current.periodStart).getTime();
+    const currentTime = current.timeMs;
     const windowStart = currentTime - windowMs;
     const windowEnd = currentTime + windowMs;
+    let leftCount = 0;
+    let rightCount = 0;
+    let isHigherThanAllLeft = true;
+    let isHigherThanAllRight = true;
+    let isLowerThanAllLeft = true;
+    let isLowerThanAllRight = true;
 
-    const windowSamples = validSamples.filter((sample) => {
-      const sampleTime = new Date(sample.periodStart).getTime();
-      return sampleTime >= windowStart && sampleTime <= windowEnd;
-    });
+    for (let leftIndex = i - 1; leftIndex >= 0; leftIndex -= 1) {
+      const sample = validSamples[leftIndex];
 
-    if (windowSamples.length < 2) {
-      continue;
+      if (!sample || sample.timeMs < windowStart) {
+        break;
+      }
+
+      leftCount += 1;
+      isHigherThanAllLeft &&= sample.value < current.value;
+      isLowerThanAllLeft &&= sample.value > current.value;
     }
 
-    const samplesOnLeft = windowSamples.filter(
-      (s) => new Date(s.periodStart).getTime() < currentTime,
-    );
-    const samplesOnRight = windowSamples.filter(
-      (s) => new Date(s.periodStart).getTime() > currentTime,
-    );
+    for (
+      let rightIndex = i + 1;
+      rightIndex < validSamples.length;
+      rightIndex += 1
+    ) {
+      const sample = validSamples[rightIndex];
 
-    const isHigherThanAllLeft =
-      samplesOnLeft.length > 0 &&
-      samplesOnLeft.every((s) => s.value < current.value);
-    const isHigherThanAllRight =
-      samplesOnRight.length > 0 &&
-      samplesOnRight.every((s) => s.value < current.value);
-    const isLowerThanAllLeft =
-      samplesOnLeft.length > 0 &&
-      samplesOnLeft.every((s) => s.value > current.value);
-    const isLowerThanAllRight =
-      samplesOnRight.length > 0 &&
-      samplesOnRight.every((s) => s.value > current.value);
+      if (!sample || sample.timeMs > windowEnd) {
+        break;
+      }
 
-    const isLocalHigh = isHigherThanAllLeft && isHigherThanAllRight;
-    const isLocalLow = isLowerThanAllLeft && isLowerThanAllRight;
+      rightCount += 1;
+      isHigherThanAllRight &&= sample.value < current.value;
+      isLowerThanAllRight &&= sample.value > current.value;
+    }
+
+    const isLocalHigh =
+      leftCount > 0 &&
+      rightCount > 0 &&
+      isHigherThanAllLeft &&
+      isHigherThanAllRight;
+    const isLocalLow =
+      leftCount > 0 &&
+      rightCount > 0 &&
+      isLowerThanAllLeft &&
+      isLowerThanAllRight;
 
     if (isLocalLow) {
-      const alreadyIncluded = lowest.some(
-        (l) => l.periodStart === current.periodStart,
-      );
-      if (!alreadyIncluded) {
+      if (!lowestPeriodStarts.has(current.periodStart)) {
+        lowestPeriodStarts.add(current.periodStart);
         lowest.push({ periodStart: current.periodStart, value: current.value });
       }
     }
 
     if (isLocalHigh) {
-      const alreadyIncluded = highest.some(
-        (h) => h.periodStart === current.periodStart,
-      );
-      if (!alreadyIncluded) {
+      if (!highestPeriodStarts.has(current.periodStart)) {
+        highestPeriodStarts.add(current.periodStart);
         highest.push({
           periodStart: current.periodStart,
           value: current.value,

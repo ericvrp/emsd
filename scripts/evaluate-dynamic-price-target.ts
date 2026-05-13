@@ -54,6 +54,7 @@ interface ScriptOptions {
   hasExplicitMarkerTime: boolean;
   minimumSolarSurplusWOverride: number;
   powerW: number;
+  profile: boolean;
   strategyTriggerKinds: StrategyTriggerKind[];
   siteId: string | null;
   targetBufferPercentPerHourOverride: number;
@@ -115,6 +116,12 @@ interface EvaluationContext {
   verboseBlocks: Set<VerboseBlock>;
 }
 
+interface ProfileRow {
+  count: number | null;
+  label: string;
+  ms: number;
+}
+
 export function parseArgs(args: string[]): ScriptOptions {
   let markerDate = getCurrentLocalDate();
   let markerPercentage: number | null = null;
@@ -123,6 +130,7 @@ export function parseArgs(args: string[]): ScriptOptions {
   let hasExplicitMarkerTime = false;
   let minimumSolarSurplusWOverride = DEFAULT_MINIMUM_SOLAR_SURPLUS_W;
   let powerW = DEFAULT_POWER_W;
+  let profile = false;
   let strategyTriggerKinds: StrategyTriggerKind[] = [
     BatteryStrategyTriggerKind.ExportSurplus,
     BatteryStrategyTriggerKind.DelayedCharging,
@@ -260,6 +268,11 @@ export function parseArgs(args: string[]): ScriptOptions {
       process.exit(0);
     }
 
+    if (arg === "--profile") {
+      profile = true;
+      continue;
+    }
+
     if (arg === "--verbose") {
       for (const block of DEFAULT_VERBOSE_BLOCKS) {
         verboseBlocks.add(block);
@@ -295,6 +308,7 @@ export function parseArgs(args: string[]): ScriptOptions {
     backupReserveMargin,
     hasExplicitMarkerTime,
     powerW,
+    profile,
     strategyTriggerKinds,
     siteId,
     minimumSolarSurplusWOverride,
@@ -336,6 +350,7 @@ function printHelp(): void {
       "  bun run dynamic-price-target:evaluate -- --verbose",
       "  bun run dynamic-price-target:evaluate -- --verbose=meta,why,history",
       "  bun run dynamic-price-target:evaluate -- --verbose=energy-buckets",
+      "  bun run dynamic-price-target:evaluate -- --profile",
       `  verbose blocks: ${ALL_VERBOSE_BLOCKS.join(", ")}`,
     ].join("\n"),
   );
@@ -343,11 +358,17 @@ function printHelp(): void {
 
 function main() {
   const options = parseArgs(process.argv.slice(2));
-  const db = openDaemonDatabase(getDatabasePath());
+  const profileRows: ProfileRow[] = [];
+  const totalStartedAt = performance.now();
+  const db = measureProfile(profileRows, "open database + schema", () =>
+    openDaemonDatabase(getDatabasePath()),
+  );
 
   try {
-    const sites = readSites(db).filter((site) =>
-      options.siteId === null ? true : site.id === options.siteId,
+    const sites = measureProfile(profileRows, "read sites", () =>
+      readSites(db).filter((site) =>
+        options.siteId === null ? true : site.id === options.siteId,
+      ),
     );
 
     if (sites.length === 0) {
@@ -374,11 +395,24 @@ function main() {
           );
         }
 
-        evaluateSite(site.id, evaluationOptions, db);
+        measureProfile(
+          profileRows,
+          `evaluate site ${site.id} ${strategyTriggerKind}`,
+          () => evaluateSite(site.id, evaluationOptions, db, profileRows),
+        );
       }
     }
   } finally {
     db.close();
+    profileRows.push({
+      count: null,
+      label: "total process work",
+      ms: performance.now() - totalStartedAt,
+    });
+
+    if (options.profile) {
+      printProfileRows(profileRows);
+    }
   }
 }
 
@@ -401,16 +435,51 @@ function evaluateSite(
   siteId: string,
   options: EvaluationOptions,
   db: ReturnType<typeof openDaemonDatabase>,
+  profileRows: ProfileRow[],
 ): void {
-  const batteries = readBatteries(db, siteId);
-  const telemetry = readManagedDeviceTelemetry(db);
-  const batteryPowerSamples = readBatteryPowerSamples(db, siteId);
-  const dynamicPriceSamples = readDynamicPriceSamples(db, siteId);
-  const dynamicPriceSources = readDynamicPriceSources(db);
-  const p1MeterSamples = readP1MeterSamples(db, siteId);
-  const solarEnergyProviderSamples = readSolarEnergyProviderSamples(db, siteId);
-  const solarForecastSamples = readSolarForecastSamples(db, siteId);
-  const site = readSites(db).find((entry) => entry.id === siteId) ?? null;
+  const batteries = measureProfile(
+    profileRows,
+    `read batteries ${siteId}`,
+    () => readBatteries(db, siteId),
+  );
+  const telemetry = measureProfile(profileRows, "read telemetry", () =>
+    readManagedDeviceTelemetry(db),
+  );
+  const batteryPowerSamples = measureProfile(
+    profileRows,
+    `read battery power samples ${siteId}`,
+    () => readBatteryPowerSamples(db, siteId),
+  );
+  const dynamicPriceSamples = measureProfile(
+    profileRows,
+    `read dynamic price samples ${siteId}`,
+    () => readDynamicPriceSamples(db, siteId),
+  );
+  const dynamicPriceSources = measureProfile(
+    profileRows,
+    "read dynamic price sources",
+    () => readDynamicPriceSources(db),
+  );
+  const p1MeterSamples = measureProfile(
+    profileRows,
+    `read p1 meter samples ${siteId}`,
+    () => readP1MeterSamples(db, siteId),
+  );
+  const solarEnergyProviderSamples = measureProfile(
+    profileRows,
+    `read solar energy samples ${siteId}`,
+    () => readSolarEnergyProviderSamples(db, siteId),
+  );
+  const solarForecastSamples = measureProfile(
+    profileRows,
+    `read solar forecast samples ${siteId}`,
+    () => readSolarForecastSamples(db, siteId),
+  );
+  const site = measureProfile(
+    profileRows,
+    "read site lookup",
+    () => readSites(db).find((entry) => entry.id === siteId) ?? null,
+  );
   const normalizedImportExportSpread = resolveNormalizedImportExportSpread(
     dynamicPriceSources,
     siteId,
@@ -427,17 +496,21 @@ function evaluateSite(
     powerW: options.powerW,
     strategyTriggerKind: options.strategyTriggerKind,
   });
-  const estimateAt = resolveEvaluationReferenceTime({
-    markerDate: options.markerDate,
-    dynamicPriceSamples,
-    hasExplicitMarkerTime: options.hasExplicitMarkerTime,
-    item: syntheticItem,
-    markerTime: options.markerTime,
-  });
-  const candidateDays = getCandidateDaysFromBatterySamples(
-    batteryPowerSamples,
-    estimateAt.toISOString().slice(0, 10),
-    options.days,
+  const estimateAt = measureProfile(profileRows, "resolve reference time", () =>
+    resolveEvaluationReferenceTime({
+      markerDate: options.markerDate,
+      dynamicPriceSamples,
+      hasExplicitMarkerTime: options.hasExplicitMarkerTime,
+      item: syntheticItem,
+      markerTime: options.markerTime,
+    }),
+  );
+  const candidateDays = measureProfile(profileRows, "get candidate days", () =>
+    getCandidateDaysFromBatterySamples(
+      batteryPowerSamples,
+      estimateAt.toISOString().slice(0, 10),
+      options.days,
+    ),
   );
 
   if (candidateDays.length === 0) {
@@ -485,61 +558,104 @@ function evaluateSite(
       status: battery.status,
       strategyMode: "manual",
     };
-    dynamicPriceTargetEstimate =
-      options.strategyTriggerKind === BatteryStrategyTriggerKind.ImportShortage
-        ? estimateImportShortageDynamicTarget({
-            battery,
-            batteryPowerSamples,
-            lowPriceMarkerTime: estimateAt,
-            now: estimateAt,
-            p1MeterSamples,
-            sample,
-            solarEnergyProviderSamples,
-            solarForecastSamples,
-          })
-        : estimateDynamicPriceTarget({
-            battery,
-            batteryPowerSamples,
-            backupReserveMarginOverride: options.backupReserveMargin,
-            dynamicPriceSamples,
-            item: batterySyntheticItem,
-            items: [
-              battery.strategyPlan[0] ?? batterySyntheticItem,
-              batterySyntheticItem,
-            ],
-            now: estimateAt,
-            normalizedImportExportSpread,
-            p1MeterSamples,
-            sample,
-            minimumSolarSurplusWOverride: options.minimumSolarSurplusWOverride,
-            solarEnergyProviderSamples,
-            solarForecastSamples,
-            targetBufferPercentPerHourOverride:
-              options.targetBufferPercentPerHourOverride,
-          });
+    dynamicPriceTargetEstimate = measureProfile(
+      profileRows,
+      `estimate ${options.strategyTriggerKind} ${battery.id}`,
+      () =>
+        options.strategyTriggerKind ===
+        BatteryStrategyTriggerKind.ImportShortage
+          ? estimateImportShortageDynamicTarget({
+              battery,
+              batteryPowerSamples,
+              lowPriceMarkerTime: estimateAt,
+              now: estimateAt,
+              p1MeterSamples,
+              sample,
+              solarEnergyProviderSamples,
+              solarForecastSamples,
+            })
+          : estimateDynamicPriceTarget({
+              battery,
+              batteryPowerSamples,
+              backupReserveMarginOverride: options.backupReserveMargin,
+              dynamicPriceSamples,
+              item: batterySyntheticItem,
+              items: [
+                battery.strategyPlan[0] ?? batterySyntheticItem,
+                batterySyntheticItem,
+              ],
+              now: estimateAt,
+              normalizedImportExportSpread,
+              p1MeterSamples,
+              sample,
+              minimumSolarSurplusWOverride:
+                options.minimumSolarSurplusWOverride,
+              solarEnergyProviderSamples,
+              solarForecastSamples,
+              targetBufferPercentPerHourOverride:
+                options.targetBufferPercentPerHourOverride,
+            }),
+    );
     const reserveTargetPercent = getReserveTargetPercent(
       battery.minimumDischargePercent,
       options.backupReserveMargin,
     );
 
-    printCurrentEstimateSummary({
-      action: options.action,
-      battery,
-      batteryId: battery.id,
-      capacityWh: batteryTelemetry.capacityWh,
-      candidateDays,
-      dynamicPriceTargetEstimate,
-      dynamicPriceSamples,
-      minimumSolarSurplusWOverride: options.minimumSolarSurplusWOverride,
-      normalizedImportExportSpread,
-      strategyTriggerKind: options.strategyTriggerKind,
-      reserveTargetPercent,
-      referenceTime: estimateAt,
-      siteId,
-      siteName: site?.name ?? siteId,
-      verboseBlocks: options.verboseBlocks,
+    measureProfile(profileRows, `print summary ${battery.id}`, () =>
+      printCurrentEstimateSummary({
+        action: options.action,
+        battery,
+        batteryId: battery.id,
+        capacityWh: batteryTelemetry.capacityWh,
+        candidateDays,
+        dynamicPriceTargetEstimate,
+        dynamicPriceSamples,
+        minimumSolarSurplusWOverride: options.minimumSolarSurplusWOverride,
+        normalizedImportExportSpread,
+        strategyTriggerKind: options.strategyTriggerKind,
+        reserveTargetPercent,
+        referenceTime: estimateAt,
+        siteId,
+        siteName: site?.name ?? siteId,
+        verboseBlocks: options.verboseBlocks,
+      }),
+    );
+  }
+}
+
+function measureProfile<T>(rows: ProfileRow[], label: string, fn: () => T): T {
+  const startedAt = performance.now();
+  let result: T | undefined;
+
+  try {
+    result = fn();
+    return result;
+  } finally {
+    rows.push({
+      count: getProfileCount(result),
+      label,
+      ms: performance.now() - startedAt,
     });
   }
+}
+
+function getProfileCount(result: unknown): number | null {
+  if (Array.isArray(result)) {
+    return result.length;
+  }
+
+  return null;
+}
+
+function printProfileRows(rows: ProfileRow[]): void {
+  console.log("Profile:");
+  console.table(
+    rows.map((row) => ({
+      count: row.count ?? "",
+      label: row.label,
+      ms: Number(row.ms.toFixed(2)),
+    })),
+  );
 }
 
 function createSyntheticPlanItem(input: {
