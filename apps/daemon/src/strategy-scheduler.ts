@@ -15,6 +15,7 @@ import type {
 } from "@emsd/core";
 
 const PRICE_TRIGGER_ELIGIBILITY_WINDOW_MS = 30 * 60 * 1000;
+const DELAYED_CHARGE_MAX_SOC_PERCENT = 100;
 
 export function formatDaemonLogTimestamp(date: Date = new Date()): string {
   return `${formatLocalDate(date)} ${formatLocalTime(date)}`;
@@ -36,6 +37,41 @@ export function isItemAlreadyTriggeredToday(input: {
     typeof lastTriggeredAt === "string" &&
     new Date(lastTriggeredAt).getTime() >= input.triggerAt.getTime()
   );
+}
+
+export function getStrategyRuntimeTriggerAt(input: {
+  item: BatteryStrategyPlanItem;
+  targetTime?: string | null;
+  triggerAt: Date;
+}): Date {
+  if (
+    input.item.triggerKind !== BatteryStrategyTriggerKind.ImportShortage &&
+    !isDelayedChargingAutoDischargeItem(input.item)
+  ) {
+    return input.triggerAt;
+  }
+
+  if (!input.targetTime) {
+    return input.triggerAt;
+  }
+
+  const targetAt = new Date(input.targetTime);
+
+  return Number.isNaN(targetAt.getTime()) ? input.triggerAt : targetAt;
+}
+
+export function getDelayedChargeHighSocSkipReason(input: {
+  currentSocPercent: number | null;
+  itemDescription: string;
+}): string | null {
+  if (
+    input.currentSocPercent === null ||
+    input.currentSocPercent < DELAYED_CHARGE_MAX_SOC_PERCENT
+  ) {
+    return null;
+  }
+
+  return `skipped: current charge is already ${input.currentSocPercent}% for ${input.itemDescription}`;
 }
 
 export function shouldCompleteScheduledItem(input: {
@@ -941,12 +977,23 @@ export function isDelayedChargePrepItem(
 
 export function getDelayedChargePrepSkipReason(input: {
   delayedChargingItemId: string;
+  delayedChargingMarkerTime: string | null;
   delayedChargingSkipReason: string | null;
   delayedChargingStartTime: string | null;
+  currentSocPercent: number | null;
   now: Date;
   prepItemId: string;
   runtime: BatteryStrategyRuntimeRecord;
 }): string | null {
+  const highSocSkipReason = getDelayedChargeHighSocSkipReason({
+    currentSocPercent: input.currentSocPercent,
+    itemDescription: `delayed-charge prep item ${input.prepItemId}`,
+  });
+
+  if (highSocSkipReason !== null) {
+    return highSocSkipReason;
+  }
+
   if (input.delayedChargingSkipReason !== null) {
     return input.delayedChargingSkipReason;
   }
@@ -961,14 +1008,22 @@ export function getDelayedChargePrepSkipReason(input: {
     return `skipped: invalid delayed charging start ${input.delayedChargingStartTime} for delayed-charge prep item ${input.prepItemId}`;
   }
 
+  const delayedChargingMarkerAt = input.delayedChargingMarkerTime
+    ? new Date(input.delayedChargingMarkerTime)
+    : delayedChargingTriggerAt;
+
+  if (Number.isNaN(delayedChargingMarkerAt.getTime())) {
+    return `skipped: invalid delayed charging marker ${input.delayedChargingMarkerTime} for delayed-charge prep item ${input.prepItemId}`;
+  }
+
   if (
     isItemAlreadyTriggeredToday({
       runtime: input.runtime,
       itemId: input.delayedChargingItemId,
-      triggerAt: delayedChargingTriggerAt,
+      triggerAt: delayedChargingMarkerAt,
     })
   ) {
-    return `skipped: delayed charging item ${input.delayedChargingItemId} already triggered for ${input.delayedChargingStartTime} while evaluating delayed-charge prep item ${input.prepItemId}`;
+    return `skipped: delayed charging item ${input.delayedChargingItemId} already triggered for ${delayedChargingMarkerAt.toISOString()} while evaluating delayed-charge prep item ${input.prepItemId}`;
   }
 
   if (input.now.getTime() >= delayedChargingTriggerAt.getTime()) {

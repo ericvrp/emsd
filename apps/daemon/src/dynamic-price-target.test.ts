@@ -279,6 +279,39 @@ test("delayed-charging auto charges to full before a non-positive low-price mark
   });
 });
 
+test("delayed-charging auto is skipped when current charge is at least 100%", () => {
+  const now = new Date("2026-04-19T06:00:00.000Z");
+  const battery = createBattery();
+  const item = createAutoLowPriceItem();
+  const history = createDaytimeUsageHistory(250);
+  const estimate = estimateDynamicPriceTarget({
+    battery,
+    batteryPowerSamples: history.batteryPowerSamples,
+    backupReserveMarginOverride: 2,
+    dynamicPriceSamples: createDynamicPriceSamples([
+      ["2026-04-19T02:00:00.000Z", 20],
+      ["2026-04-19T06:00:00.000Z", 30],
+      ["2026-04-19T10:00:00.000Z", -2],
+      ["2026-04-19T14:00:00.000Z", 28],
+      ["2026-04-19T18:00:00.000Z", 18],
+    ]),
+    item,
+    items: [createDefaultItem(), item],
+    now,
+    normalizedImportExportSpread: 0.13,
+    p1MeterSamples: history.p1MeterSamples,
+    sample: createSample({ socPercent: 100 }),
+    solarEnergyProviderSamples: history.solarEnergyProviderSamples,
+    solarForecastSamples: createDaytimeSolarForecastSamples(3000),
+  });
+
+  expect(estimate.targetTime).toBe("2026-04-19T10:00:00.000Z");
+  expect(estimate.startTime).toBeNull();
+  expect(estimate.skipReason).toBe(
+    "skipped: current charge is already 100% for delayed charging item auto-delayed-charging",
+  );
+});
+
 test("delayed-charging auto is skipped when the marker price is non-positive but marker solar does not beat load", () => {
   const now = new Date("2026-04-19T06:00:00.000Z");
   const battery = createBattery();

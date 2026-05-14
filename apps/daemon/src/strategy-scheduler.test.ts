@@ -14,8 +14,10 @@ import {
   getSameDayLowerPriorityBuiltInSuppressions,
   getScheduledItemCompletion,
   getSolarProductionControlDecision,
+  getStrategyRuntimeTriggerAt,
   getStrategyTriggerAt,
   getTodayTriggerAt,
+  isItemAlreadyTriggeredToday,
   needsCompletionTracking,
   shouldCompleteScheduledItem,
   shouldMarkScheduledItemObserved,
@@ -150,6 +152,66 @@ test("getStrategyTriggerAt advances import-shortage after missed marker grace ex
   });
 
   expect(triggerAt?.toISOString()).toBe("2026-04-10T02:30:00.000Z");
+});
+
+test("getStrategyRuntimeTriggerAt dedupes import-shortage by low-price marker", () => {
+  const item = createDailyItem({
+    id: "import-shortage",
+    targetMethod: "auto",
+    triggerKind: BatteryStrategyTriggerKind.ImportShortage,
+  });
+  const runtimeTriggerAt = getStrategyRuntimeTriggerAt({
+    item,
+    targetTime: "2026-04-09T14:00:00.000Z",
+    triggerAt: new Date("2026-04-09T13:55:44.000Z"),
+  });
+
+  expect(runtimeTriggerAt.toISOString()).toBe("2026-04-09T14:00:00.000Z");
+  expect(
+    isItemAlreadyTriggeredToday({
+      runtime: {
+        ...createBattery().strategyRuntime,
+        lastTriggeredAtByItemId: {
+          "import-shortage": "2026-04-09T14:00:00.000Z",
+        },
+      },
+      itemId: item.id,
+      triggerAt: runtimeTriggerAt,
+    }),
+  ).toBe(true);
+});
+
+test("getStrategyRuntimeTriggerAt dedupes delayed-charging auto by low-price marker", () => {
+  const item = createDailyItem({
+    id: "delayed-charging",
+    manualState: "charging",
+    targetMethod: "auto",
+    triggerKind: BatteryStrategyTriggerKind.DelayedCharging,
+  });
+  const runtimeTriggerAt = getStrategyRuntimeTriggerAt({
+    item,
+    targetTime: "2026-04-09T14:00:00.000Z",
+    triggerAt: new Date("2026-04-09T11:36:00.000Z"),
+  });
+
+  expect(runtimeTriggerAt.toISOString()).toBe("2026-04-09T14:00:00.000Z");
+});
+
+test("getDelayedChargePrepSkipReason blocks prep when current charge is at least 100%", () => {
+  expect(
+    getDelayedChargePrepSkipReason({
+      delayedChargingItemId: "delayed-charging-1",
+      delayedChargingMarkerTime: "2026-04-09T14:00:00.000Z",
+      delayedChargingSkipReason: null,
+      delayedChargingStartTime: "2026-04-09T13:45:00.000Z",
+      currentSocPercent: 100,
+      now: new Date("2026-04-09T11:37:01.000Z"),
+      prepItemId: "prep-1",
+      runtime: createBattery().strategyRuntime,
+    }),
+  ).toBe(
+    "skipped: current charge is already 100% for delayed-charge prep item prep-1",
+  );
 });
 
 test("getSameDayLowerPriorityBuiltInSuppressions marks lower built-ins through local end of day", () => {
@@ -891,9 +953,11 @@ test("getDelayedChargePrepSkipReason reuses the paired delayed-charging skip rea
   expect(
     getDelayedChargePrepSkipReason({
       delayedChargingItemId: "delayed-charging-1",
+      delayedChargingMarkerTime: null,
       delayedChargingSkipReason:
         "skipped: low-price marker 2026-04-10T02:00:00.000Z needs expected solar above expected house load, but predicted solar is 0W and expected house load is 181W for item delayed-charging-1",
       delayedChargingStartTime: null,
+      currentSocPercent: 40,
       now: new Date("2026-04-09T13:58:15.000Z"),
       prepItemId: "prep-1",
       runtime: createBattery().strategyRuntime,
@@ -905,19 +969,21 @@ test("getDelayedChargePrepSkipReason blocks prep when the paired delayed chargin
   expect(
     getDelayedChargePrepSkipReason({
       delayedChargingItemId: "delayed-charging-1",
+      delayedChargingMarkerTime: "2026-04-09T14:00:00.000Z",
       delayedChargingSkipReason: null,
       delayedChargingStartTime: "2026-04-09T13:45:00.000Z",
+      currentSocPercent: 40,
       now: new Date("2026-04-09T13:58:15.000Z"),
       prepItemId: "prep-1",
       runtime: {
         ...createBattery().strategyRuntime,
         lastTriggeredAtByItemId: {
-          "delayed-charging-1": "2026-04-09T13:45:00.000Z",
+          "delayed-charging-1": "2026-04-09T14:00:00.000Z",
         },
       },
     }),
   ).toBe(
-    "skipped: delayed charging item delayed-charging-1 already triggered for 2026-04-09T13:45:00.000Z while evaluating delayed-charge prep item prep-1",
+    "skipped: delayed charging item delayed-charging-1 already triggered for 2026-04-09T14:00:00.000Z while evaluating delayed-charge prep item prep-1",
   );
 });
 

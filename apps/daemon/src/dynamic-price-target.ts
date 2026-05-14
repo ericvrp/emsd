@@ -26,6 +26,7 @@ import {
 } from "@emsd/core";
 import {
   formatDaemonLogTimestamp,
+  getDelayedChargeHighSocSkipReason,
   getNextPriceMarkerTriggerAt,
   getNextStrategyTriggerAt,
 } from "./strategy-scheduler";
@@ -1466,6 +1467,37 @@ function estimateDelayedChargingAuto(input: {
       skipReason: `skipped: no SoC basis available for delayed charging item ${input.item.id}`,
       startTime: null,
       startTimeBasisSocPercent: null,
+      targetTime: input.lowPriceMarkerTime.toISOString(),
+      targetTimeSignal: null,
+      warning: null,
+      windowKind: "general",
+    };
+  }
+
+  const highSocSkipReason = getDelayedChargeHighSocSkipReason({
+    currentSocPercent: input.currentSocBasisPercent,
+    itemDescription: `delayed charging item ${input.item.id}`,
+  });
+
+  if (highSocSkipReason !== null) {
+    return {
+      availability: baseAvailability,
+      breakEvenTrace: [],
+      delayedChargingDetails: null,
+      effectiveDischargePowerW: null,
+      energyBuckets: [],
+      estimatedRemainingEnergyWh: 0,
+      estimatedReservePercentAtTargetTime: 100,
+      estimatedTargetPercent: 100,
+      expectedHouseLoadWh: 0,
+      historyStats,
+      predictedSolarGenerationWh: 0,
+      reasoning: "current charge is already high enough for delayed charging",
+      requiredDischargeMinutes: null,
+      resolvedManualState: null,
+      skipReason: highSocSkipReason,
+      startTime: null,
+      startTimeBasisSocPercent: input.currentSocBasisPercent,
       targetTime: input.lowPriceMarkerTime.toISOString(),
       targetTimeSignal: null,
       warning: null,

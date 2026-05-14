@@ -89,6 +89,7 @@ import {
   getSameDayLowerPriorityBuiltInSuppressions,
   getScheduledItemCompletion,
   getSolarProductionControlDecision,
+  getStrategyRuntimeTriggerAt,
   getStrategyTriggerAt,
   isDelayedChargePrepItem,
   isItemAlreadyTriggeredToday,
@@ -961,8 +962,10 @@ async function runScheduledStrategy(
 
     return getDelayedChargePrepSkipReason({
       delayedChargingItemId: delayedChargingItem.id,
+      delayedChargingMarkerTime: delayedChargingEstimate?.targetTime ?? null,
       delayedChargingSkipReason: delayedChargingEstimate?.skipReason ?? null,
       delayedChargingStartTime: delayedChargingEstimate?.startTime ?? null,
+      currentSocPercent: sample.socPercent,
       now,
       prepItemId: item.id,
       runtime,
@@ -978,6 +981,7 @@ async function runScheduledStrategy(
     > | null;
     item: BatteryStrategyPlanItem;
     resolvedManualState: BatteryStrategyPlanItem["manualState"];
+    runtimeTriggerAt: Date;
     triggerAt: Date;
   } | null => {
     for (
@@ -1045,6 +1049,12 @@ async function runScheduledStrategy(
         }
       }
 
+      const runtimeTriggerAt = getStrategyRuntimeTriggerAt({
+        item,
+        targetTime: dynamicPriceTargetEstimate?.targetTime ?? null,
+        triggerAt,
+      });
+
       if (now.getTime() < triggerAt.getTime()) {
         logVerbose(
           verbose,
@@ -1057,7 +1067,7 @@ async function runScheduledStrategy(
         isItemAlreadyTriggeredToday({
           runtime,
           itemId: item.id,
-          triggerAt,
+          triggerAt: runtimeTriggerAt,
         })
       ) {
         logVerbose(
@@ -1087,7 +1097,7 @@ async function runScheduledStrategy(
           ...runtime,
           lastTriggeredAtByItemId: {
             ...runtime.lastTriggeredAtByItemId,
-            [item.id]: triggerAt.toISOString(),
+            [item.id]: runtimeTriggerAt.toISOString(),
           },
         };
         updateBatteryStrategyRuntime(db, {
@@ -1117,7 +1127,7 @@ async function runScheduledStrategy(
           ...runtime,
           lastTriggeredAtByItemId: {
             ...runtime.lastTriggeredAtByItemId,
-            [item.id]: triggerAt.toISOString(),
+            [item.id]: runtimeTriggerAt.toISOString(),
           },
         };
         updateBatteryStrategyRuntime(db, {
@@ -1144,7 +1154,7 @@ async function runScheduledStrategy(
             ...runtime,
             lastTriggeredAtByItemId: {
               ...runtime.lastTriggeredAtByItemId,
-              [item.id]: triggerAt.toISOString(),
+              [item.id]: runtimeTriggerAt.toISOString(),
             },
           };
           updateBatteryStrategyRuntime(db, {
@@ -1174,7 +1184,7 @@ async function runScheduledStrategy(
           ...runtime,
           lastTriggeredAtByItemId: {
             ...runtime.lastTriggeredAtByItemId,
-            [item.id]: triggerAt.toISOString(),
+            [item.id]: runtimeTriggerAt.toISOString(),
           },
         };
         updateBatteryStrategyRuntime(db, {
@@ -1193,6 +1203,7 @@ async function runScheduledStrategy(
           resolvedManualState: dynamicPriceTargetEstimate?.resolvedManualState,
           targetMethod: item.targetMethod,
         }),
+        runtimeTriggerAt,
         triggerAt,
       };
     }
@@ -1438,8 +1449,13 @@ async function runScheduledStrategy(
     return;
   }
 
-  const { dynamicPriceTargetEstimate, item, resolvedManualState, triggerAt } =
-    activationCandidate;
+  const {
+    dynamicPriceTargetEstimate,
+    item,
+    resolvedManualState,
+    runtimeTriggerAt,
+    triggerAt,
+  } = activationCandidate;
 
   if (activeItem) {
     logInfoWithVerboseDetails(
@@ -1517,7 +1533,7 @@ async function runScheduledStrategy(
           item,
           now,
         }),
-        [item.id]: triggerAt.toISOString(),
+        [item.id]: runtimeTriggerAt.toISOString(),
       },
     },
     now,
@@ -1847,14 +1863,23 @@ async function restoreFallbackStrategy(
   await createBatteryPlugin(battery).setStrategy(fallbackStrategy);
 
   const appliedAt = new Date();
+  const completedItem = battery.strategyPlan.find(
+    (item) => item.id === completedItemId,
+  );
+  const completedRuntimeTriggeredAt =
+    completedItem &&
+    isDelayedChargingAutoDischargeItem(completedItem) &&
+    battery.strategyRuntime.activeTargetTime &&
+    !Number.isNaN(new Date(battery.strategyRuntime.activeTargetTime).getTime())
+      ? battery.strategyRuntime.activeTargetTime
+      : (battery.strategyRuntime.lastTriggeredAtByItemId[completedItemId] ??
+        appliedAt.toISOString());
   const nextRuntime = acknowledgePendingBatteryStrategyPlan(
     {
       ...clearActiveBatteryStrategyRuntime(battery.strategyRuntime),
       lastTriggeredAtByItemId: {
         ...battery.strategyRuntime.lastTriggeredAtByItemId,
-        [completedItemId]:
-          battery.strategyRuntime.lastTriggeredAtByItemId[completedItemId] ??
-          appliedAt.toISOString(),
+        [completedItemId]: completedRuntimeTriggeredAt,
       },
     },
     appliedAt,
