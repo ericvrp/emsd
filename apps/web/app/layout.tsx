@@ -8,6 +8,10 @@ import { ToastViewport } from "../components/toast-viewport";
 export const metadata: Metadata = {
   title: "EMS",
   description: "Energy Management System",
+  icons: {
+    icon: "/favicon.png",
+    apple: "/favicon.png",
+  },
 };
 
 export default async function RootLayout({
