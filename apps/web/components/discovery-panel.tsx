@@ -504,15 +504,15 @@ function SupportedPluginsDialog({ onClose }: { onClose: () => void }) {
                       key={pluginType}
                       onClick={() => setActiveTab(pluginType)}
                       type="button"
-                      >
-                        <PluginTypeIcon
-                          aria-hidden="true"
-                          className="h-4 w-4"
-                          type={pluginType}
-                        />
-                        <span className="sr-only sm:not-sr-only">
-                          {pluginType}
-                        </span>
+                    >
+                      <PluginTypeIcon
+                        aria-hidden="true"
+                        className="h-4 w-4"
+                        type={pluginType}
+                      />
+                      <span className="sr-only sm:not-sr-only">
+                        {pluginType}
+                      </span>
                     </button>
                   ))}
                 </div>
