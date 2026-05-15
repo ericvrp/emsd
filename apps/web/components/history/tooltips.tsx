@@ -7,7 +7,7 @@ import type { BatteryHistoryPoint, TooltipPayloadEntry } from "./types";
 import { deduplicateTooltipEntries, formatPercentValue } from "./utils";
 
 const TOOLTIP_CARD_CLASS_NAME =
-  "rounded-2xl border border-white/10 bg-slate-950/95 px-3 py-2 text-sm text-slate-50 shadow-[0_24px_70px_rgba(2,6,23,0.6)] backdrop-blur";
+  "rounded-2xl border border-white/10 bg-slate-950/95 px-3 py-2 text-sm text-slate-50 shadow-[0_24px_70px_rgba(2,6,23,0.6)]";
 
 export function HistoryTooltip({
   active,
