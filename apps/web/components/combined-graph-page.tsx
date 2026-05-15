@@ -224,32 +224,28 @@ export function CombinedGraphPage({
     archiveRefreshError ?? currentRefreshError ?? solarCurrentRefreshError;
 
   return (
-    <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-300/40 to-transparent" />
+    <div className="space-y-5">
       {refreshError ? (
         <RefreshWarning
           action={<PageRefreshButton />}
-          className="mt-5"
           message={refreshError}
         />
       ) : null}
 
-      <div className="mt-5 space-y-4 rounded-[1.4rem] border border-white/10 bg-white/5 p-4">
-        <CombinedHistoryChart
-          activeTypes={activeTypes}
-          archive={archive}
-          currentData={currentData}
-          daySelection={daySelection}
-          dynamicPriceSnapshot={dynamicPriceSnapshot}
-          forecast={forecast}
-          highestMarkerPeriodStarts={highestMarkerPeriodStarts}
-          lowestMarkerPeriodStarts={lowestMarkerPeriodStarts}
-          priceCurrency={priceCurrency}
-          site={site}
-          solarCurrentData={solarCurrentData}
-        />
-      </div>
-    </section>
+      <CombinedHistoryChart
+        activeTypes={activeTypes}
+        archive={archive}
+        currentData={currentData}
+        daySelection={daySelection}
+        dynamicPriceSnapshot={dynamicPriceSnapshot}
+        forecast={forecast}
+        highestMarkerPeriodStarts={highestMarkerPeriodStarts}
+        lowestMarkerPeriodStarts={lowestMarkerPeriodStarts}
+        priceCurrency={priceCurrency}
+        site={site}
+        solarCurrentData={solarCurrentData}
+      />
+    </div>
   );
 }
 
@@ -713,7 +709,7 @@ function CombinedHistoryChart({
   const primaryAxis = getPrimaryAxisKind(activeTypes);
   const secondaryAxis = getSecondaryAxisKind(activeAxisKinds, primaryAxis);
   const mirrorPrimaryAxis = shouldMirrorRightAxis(activeTypes);
-  const hideAxisDetails = activeTypes.length > 1;
+  const hideSecondaryAxisDetails = activeTypes.length > 1;
   const axisConfigs = useMemo(() => {
     const configs: Partial<
       Record<AxisKind, ReturnType<typeof buildMirroredYAxis>>
@@ -947,18 +943,10 @@ function CombinedHistoryChart({
                   primaryAxis,
                   getActiveAxisConfig(primaryAxis),
                   "left",
-                  hideAxisDetails
-                    ? "Multiple axes"
-                    : getAxisLabel(
-                        primaryAxis,
-                        priceCurrency,
-                        forecastUnitLabel,
-                      ),
-                  hideAxisDetails
-                    ? formatHiddenAxisTick
-                    : getAxisFormatter(primaryAxis, priceCurrency),
+                  getAxisLabel(primaryAxis, priceCurrency, forecastUnitLabel),
+                  getAxisFormatter(primaryAxis, priceCurrency),
                   undefined,
-                  !hideAxisDetails,
+                  true,
                 )}
                 {activeAxisKinds
                   .filter((axisKind) => axisKind !== primaryAxis)
@@ -967,18 +955,18 @@ function CombinedHistoryChart({
                       axisKind,
                       getActiveAxisConfig(axisKind),
                       axisKind === secondaryAxis ? "right" : "hidden",
-                      hideAxisDetails
+                      hideSecondaryAxisDetails
                         ? ""
                         : getAxisLabel(
                             axisKind,
                             priceCurrency,
                             forecastUnitLabel,
                           ),
-                      hideAxisDetails
+                      hideSecondaryAxisDetails
                         ? formatHiddenAxisTick
                         : getAxisFormatter(axisKind, priceCurrency),
                       undefined,
-                      !hideAxisDetails,
+                      !hideSecondaryAxisDetails,
                     ),
                   )}
                 {mirrorPrimaryAxis
@@ -1029,7 +1017,7 @@ function CombinedHistoryChart({
                     />
                   }
                 />
-                <YAxis domain={[0, 1]} hide yAxisId="overlay" />
+                <YAxis domain={[0, 1]} hide width={0} yAxisId="overlay" />
                 {activeTypes.includes("battery") ? (
                   <Line
                     activeDot={false}
@@ -1494,6 +1482,11 @@ function renderAxis(
   formatter: (value: number) => string,
   yAxisId: string = axisKind,
   showTicks = true,
+  width = placement === "hidden"
+    ? 0
+    : placement === "right"
+      ? RIGHT_Y_AXIS_WIDTH
+      : LEFT_Y_AXIS_WIDTH,
 ) {
   return (
     <YAxis
@@ -1515,7 +1508,7 @@ function renderAxis(
       tickLine={false}
       tickMargin={8}
       ticks={showTicks ? axisConfig.ticks : []}
-      width={placement === "right" ? RIGHT_Y_AXIS_WIDTH : LEFT_Y_AXIS_WIDTH}
+      width={width}
       yAxisId={yAxisId}
     />
   );
