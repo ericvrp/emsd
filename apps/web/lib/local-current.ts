@@ -1,14 +1,17 @@
 import type {
-  DynamicPricePointRecord,
   DynamicPriceSnapshotRecord,
-  LiveStatusSnapshot,
+  HistoryArchive,
   ManagedDeviceStatusRecord,
-  ManagedDeviceTelemetryRecord,
-  WeatherForecastPointRecord,
   WeatherForecastRecord,
 } from "@emsd/core";
 import {
+  PRICE_SELECTION_WINDOW_MS,
+  findPriceSelections,
+  findSolarSurplusBoundsFromSeries,
+} from "@emsd/core";
+import {
   getDynamicPriceSnapshot,
+  getHistoryArchive,
   getLiveStatus,
   getWeatherForecast,
 } from "./ems-bridge";
@@ -23,6 +26,7 @@ export interface LocalApiCurrentResponse {
     location: string;
   } | null;
   summary: LocalApiSummary;
+  derivedMarkers?: LocalApiDerivedMarkers;
   pricing?: LocalApiPricing;
   solarForecast?: LocalApiSolarForecast;
   devices?: LocalApiDevices;
@@ -39,6 +43,35 @@ export interface LocalApiSummary {
   batteryStrategySummary: string | null;
   totalSolarPowerW: number | null;
   totalMeterPowerW: number | null;
+}
+
+export interface LocalApiDerivedPriceMarker {
+  startsAt: string;
+  importPrice: number;
+}
+
+export interface LocalApiDerivedMarkers {
+  todayLowPriceMarkerStartsAt: string | null;
+  todayLowPriceMarkerImportPrice: number | null;
+  todayLowPriceMarkers: LocalApiDerivedPriceMarker[];
+  todayHighPriceMarkerStartsAt: string | null;
+  todayHighPriceMarkerImportPrice: number | null;
+  todayHighPriceMarkers: LocalApiDerivedPriceMarker[];
+  solarSurplusStartAt: string | null;
+  solarSurplusEndAt: string | null;
+}
+
+export interface LocalApiTimingBreakdown {
+  authMs?: number;
+  filterMs?: number;
+  liveStatusMs?: number;
+  dynamicPriceSnapshotMs?: number;
+  weatherForecastMs?: number;
+  deviceGroupingAndComputeMs?: number;
+  historyArchiveMs?: number;
+  responseBuildMs?: number;
+  derivedMarkersMs?: number;
+  responseJsonMs?: number;
 }
 
 export interface LocalApiPricing {
@@ -117,6 +150,86 @@ export interface LocalApiSolarDevice {
   state: string;
   powerW: number | null;
   productionControlStatus: string | null;
+}
+
+function createEmptyDerivedMarkers(): LocalApiDerivedMarkers {
+  return {
+    todayLowPriceMarkerStartsAt: null,
+    todayLowPriceMarkerImportPrice: null,
+    todayLowPriceMarkers: [],
+    todayHighPriceMarkerStartsAt: null,
+    todayHighPriceMarkerImportPrice: null,
+    todayHighPriceMarkers: [],
+    solarSurplusStartAt: null,
+    solarSurplusEndAt: null,
+  };
+}
+
+export function computeDerivedMarkers(input: {
+  archive: HistoryArchive;
+  now: Date;
+}): LocalApiDerivedMarkers {
+  const todayKey = getLocalDayKey(input.now);
+  const priceSamples = input.archive.dynamicPriceSamples.map((sample) => ({
+    periodStart: sample.periodStart,
+    value: sample.importPrice,
+  }));
+  const priceSelections = findPriceSelections(
+    priceSamples,
+    PRICE_SELECTION_WINDOW_MS,
+  );
+  const todayLowPriceMarkers = priceSelections.lowest
+    .filter((point) => isSameLocalDay(point.periodStart, todayKey))
+    .map((point) => ({
+      startsAt: point.periodStart,
+      importPrice: point.value,
+    }));
+  const todayHighPriceMarkers = priceSelections.highest
+    .filter((point) => isSameLocalDay(point.periodStart, todayKey))
+    .map((point) => ({
+      startsAt: point.periodStart,
+      importPrice: point.value,
+    }));
+  const todayPredictedSolar = input.archive.solarPredictedGeneration.filter(
+    (point) => isSameLocalDay(point.periodStart, todayKey),
+  );
+  const todayExpectedLoad =
+    input.archive.selectedDayExpectedSiteLoadSamples.filter((point) =>
+      isSameLocalDay(point.periodStart, todayKey),
+    );
+  const solarSurplusBounds = findSolarSurplusBoundsFromSeries({
+    expectedLoadSeries: todayExpectedLoad,
+    fallbackEndTime: todayPredictedSolar.at(-1)?.periodStart ?? null,
+    predictedSeries: todayPredictedSolar,
+    selectedDayKey: todayKey,
+  });
+  const firstLowPriceMarker = todayLowPriceMarkers[0] ?? null;
+  const firstHighPriceMarker = todayHighPriceMarkers[0] ?? null;
+
+  return {
+    todayLowPriceMarkerStartsAt: firstLowPriceMarker?.startsAt ?? null,
+    todayLowPriceMarkerImportPrice: firstLowPriceMarker?.importPrice ?? null,
+    todayLowPriceMarkers,
+    todayHighPriceMarkerStartsAt: firstHighPriceMarker?.startsAt ?? null,
+    todayHighPriceMarkerImportPrice: firstHighPriceMarker?.importPrice ?? null,
+    todayHighPriceMarkers,
+    solarSurplusStartAt: solarSurplusBounds.firstStartTime,
+    solarSurplusEndAt: solarSurplusBounds.finalEndTime,
+  };
+}
+
+function isSameLocalDay(timestamp: string, dayKey: string): boolean {
+  const date = new Date(timestamp);
+
+  return !Number.isNaN(date.getTime()) && getLocalDayKey(date) === dayKey;
+}
+
+function getLocalDayKey(date: Date): string {
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
 }
 
 function selectCurrentPoint(
@@ -391,9 +504,14 @@ function mapSolarDevice(
 
 export async function buildLocalApiCurrent(
   exclude?: Set<string>,
+  timings?: LocalApiTimingBreakdown,
 ): Promise<Partial<LocalApiCurrentResponse>> {
   const now = new Date();
+  const liveStatusStartedAt = Date.now();
   const snapshot = await getLiveStatus();
+  if (timings) {
+    timings.liveStatusMs = Date.now() - liveStatusStartedAt;
+  }
   const site = snapshot.sites[0] ?? null;
 
   const needPricing =
@@ -406,16 +524,23 @@ export async function buildLocalApiCurrent(
 
   if (site) {
     if (needPricing && site.dynamicPriceSources.length > 0) {
+      const dynamicPriceSnapshotStartedAt = Date.now();
       try {
         dynamicPriceSnapshot = await getDynamicPriceSnapshot({
           siteId: site.id,
         });
       } catch {
         dynamicPriceSnapshot = null;
+      } finally {
+        if (timings) {
+          timings.dynamicPriceSnapshotMs =
+            Date.now() - dynamicPriceSnapshotStartedAt;
+        }
       }
     }
 
     if (needForecast && site.weatherSources.length > 0) {
+      const weatherForecastStartedAt = Date.now();
       try {
         forecast = await getWeatherForecast({
           hours: 24,
@@ -424,10 +549,15 @@ export async function buildLocalApiCurrent(
         });
       } catch {
         forecast = null;
+      } finally {
+        if (timings) {
+          timings.weatherForecastMs = Date.now() - weatherForecastStartedAt;
+        }
       }
     }
   }
 
+  const deviceGroupingAndComputeStartedAt = Date.now();
   const batteries = site
     ? site.devices.filter((d) => d.kind === "battery")
     : [];
@@ -448,12 +578,35 @@ export async function buildLocalApiCurrent(
   if (pricing?.current && pricing.current.importPrice < 0) {
     currentImportPriceIsNegative = true;
   }
+  if (timings) {
+    timings.deviceGroupingAndComputeMs =
+      Date.now() - deviceGroupingAndComputeStartedAt;
+  }
 
   const needBasic = !exclude || !exclude.has("ems_basic");
   const needBatteryInfo = !exclude || !exclude.has("ems_battery_info");
   const needSolarPower = !exclude || !exclude.has("ems_solar_power");
   const needMeterPower = !exclude || !exclude.has("ems_meter_power");
+  const needDerivedMarkers = !exclude || !exclude.has("ems_derived_markers");
+  let historyArchive: HistoryArchive | null = null;
 
+  if (site && needDerivedMarkers) {
+    const historyArchiveStartedAt = Date.now();
+    try {
+      historyArchive = await getHistoryArchive({
+        day: getLocalDayKey(now),
+        siteId: site.id,
+      });
+    } catch {
+      historyArchive = null;
+    } finally {
+      if (timings) {
+        timings.historyArchiveMs = Date.now() - historyArchiveStartedAt;
+      }
+    }
+  }
+
+  const responseBuildStartedAt = Date.now();
   const response: Record<string, unknown> = {
     schema: "ems.local.current.v1",
     generatedAt: snapshot.generatedAt,
@@ -508,8 +661,24 @@ export async function buildLocalApiCurrent(
     response.solarForecast = solarForecast;
   }
 
+  if (needDerivedMarkers) {
+    const derivedMarkersStartedAt = Date.now();
+    try {
+      response.derivedMarkers = historyArchive
+        ? computeDerivedMarkers({ archive: historyArchive, now })
+        : createEmptyDerivedMarkers();
+    } finally {
+      if (timings) {
+        timings.derivedMarkersMs = Date.now() - derivedMarkersStartedAt;
+      }
+    }
+  }
+
   if (!exclude || !exclude.has("ems_price_now")) {
     response.pricing = pricing;
+  }
+  if (timings) {
+    timings.responseBuildMs = Date.now() - responseBuildStartedAt;
   }
 
   return response as unknown as Partial<LocalApiCurrentResponse>;

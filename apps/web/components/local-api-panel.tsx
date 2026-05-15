@@ -10,126 +10,23 @@ import {
   RefreshCw,
   Trash2,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   createLocalApiTokenAction,
   getLocalApiTokenStatusAction,
   revokeLocalApiTokenAction,
 } from "../app/actions";
+import {
+  LOCAL_API_REFRESH_SECONDS,
+  LOCAL_API_ROUTE_PATH,
+  generateLocalApiYaml,
+} from "../lib/local-api-yaml";
 import { UI_STYLES } from "../lib/ui-colors";
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
 
-const ROUTE_PATH = "/api/local/v1/current";
-
 type OutputTab = "yaml" | "api-response";
-
-const ENTITY_DEFAULTS: EntityOption[] = [
-  {
-    id: "ems_basic",
-    label: "Basic info",
-    description: "daemon, site, devices",
-    template: "",
-    unit: "",
-    deviceClass: "",
-    meta: true,
-  },
-  {
-    id: "ems_price_now",
-    label: "Import Price",
-    template: "{{ value_json.summary.currentImportPrice }}",
-    unit: "EUR/kWh",
-    deviceClass: "",
-  },
-  {
-    id: "ems_negative_price_now",
-    label: "Import Price Is Negative",
-    template: "{{ value_json.summary.currentImportPriceIsNegative }}",
-    unit: "",
-    deviceClass: "",
-    binary: true,
-  },
-  {
-    id: "ems_battery_info",
-    label: "Battery Info",
-    description: "soc, strategy, power",
-    template: "",
-    unit: "",
-    deviceClass: "",
-    sensors: [
-      {
-        id: "battery_soc",
-        label: "Battery SOC",
-        template: "{{ value_json.summary.totalBatterySocPercent }}",
-        unit: "%",
-        deviceClass: "battery",
-      },
-      {
-        id: "battery_power",
-        label: "Battery Power",
-        template: "{{ value_json.summary.totalBatteryPowerW }}",
-        unit: "W",
-        deviceClass: "power",
-        stateClass: "measurement",
-      },
-      {
-        id: "battery_state",
-        label: "Battery State",
-        template: "{{ value_json.devices.batteries[0].state }}",
-        unit: "",
-        deviceClass: "",
-      },
-    ],
-  },
-  {
-    id: "ems_solar_forecast",
-    label: "Solar Forecast",
-    template: "{{ value_json.summary.currentForecastSolarPowerW }}",
-    unit: "W",
-    deviceClass: "power",
-    stateClass: "measurement",
-  },
-  {
-    id: "ems_solar_power",
-    label: "Solar Power",
-    template: "{{ value_json.summary.totalSolarPowerW }}",
-    unit: "W",
-    deviceClass: "power",
-    stateClass: "measurement",
-  },
-  {
-    id: "ems_meter_power",
-    label: "Grid Power",
-    template: "{{ value_json.summary.totalMeterPowerW }}",
-    unit: "W",
-    deviceClass: "power",
-    stateClass: "measurement",
-  },
-];
-
-interface EntitySensor {
-  id: string;
-  label: string;
-  template: string;
-  unit: string;
-  deviceClass: string;
-  stateClass?: string;
-  binary?: boolean;
-}
-
-interface EntityOption {
-  id: string;
-  label: string;
-  description?: string;
-  template: string;
-  unit: string;
-  deviceClass: string;
-  stateClass?: string;
-  binary?: boolean;
-  meta?: boolean;
-  sensors?: EntitySensor[];
-}
 
 export function LocalApiPanel() {
   const [tokenConfigured, setTokenConfigured] = useState<boolean | null>(null);
@@ -142,11 +39,7 @@ export function LocalApiPanel() {
   const [host, setHost] = useState(() =>
     typeof window !== "undefined" ? window.location.host : "localhost:3300",
   );
-  const [scanInterval, setScanInterval] = useState(30);
   const [entityPrefix, setEntityPrefix] = useState("ems");
-  const [selectedEntities, setSelectedEntities] = useState<Set<string>>(
-    new Set(ENTITY_DEFAULTS.map((e) => e.id)),
-  );
   const [outputTab, setOutputTab] = useState<OutputTab>("yaml");
   const [apiPreview, setApiPreview] = useState<{
     data: string;
@@ -158,18 +51,6 @@ export function LocalApiPanel() {
 
   const abortRef = useRef<AbortController | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const excludedEntities = ENTITY_DEFAULTS.map((e) => e.id).filter(
-    (id) => !selectedEntities.has(id),
-  );
-
-  const excludeQuery = useMemo(() => {
-    if (excludedEntities.length === 0) {
-      return "";
-    }
-
-    return `?exclude=${excludedEntities.join(",")}`;
-  }, [excludedEntities]);
 
   const checkStatus = useCallback(async () => {
     try {
@@ -259,20 +140,6 @@ export function LocalApiPanel() {
     document.body.removeChild(textarea);
   }
 
-  function toggleEntity(id: string) {
-    setSelectedEntities((prev) => {
-      const next = new Set(prev);
-
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-
-      return next;
-    });
-  }
-
   const handleFetchApi = useCallback(
     async (silent = false) => {
       if (!activeToken) {
@@ -288,13 +155,10 @@ export function LocalApiPanel() {
       }
 
       try {
-        const response = await fetch(
-          `http://${host}${ROUTE_PATH}${excludeQuery}`,
-          {
-            headers: { Authorization: `Bearer ${activeToken}` },
-            signal: controller.signal,
-          },
-        );
+        const response = await fetch(`http://${host}${LOCAL_API_ROUTE_PATH}`, {
+          headers: { Authorization: `Bearer ${activeToken}` },
+          signal: controller.signal,
+        });
 
         const text = await response.text();
 
@@ -335,7 +199,7 @@ export function LocalApiPanel() {
         }
       }
     },
-    [activeToken, excludeQuery, host],
+    [activeToken, host],
   );
 
   useEffect(() => {
@@ -368,7 +232,7 @@ export function LocalApiPanel() {
       if (document.visibilityState === "visible") {
         void handleFetchApi(true);
       }
-    }, Math.max(scanInterval, 5) * 1000);
+    }, LOCAL_API_REFRESH_SECONDS * 1000);
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
@@ -380,104 +244,13 @@ export function LocalApiPanel() {
 
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [activeToken, handleFetchApi, outputTab, scanInterval]);
+  }, [activeToken, handleFetchApi, outputTab]);
 
   function generateYaml(): string {
-    const entities = ENTITY_DEFAULTS.filter(
-      (e) => selectedEntities.has(e.id) && !e.meta,
-    );
-
-    const allSensors: EntitySensor[] = [];
-    const allBinaries: EntitySensor[] = [];
-
-    for (const entity of entities) {
-      if (entity.sensors) {
-        for (const sub of entity.sensors) {
-          if (sub.binary) {
-            allBinaries.push(sub);
-          } else {
-            allSensors.push(sub);
-          }
-        }
-      } else if (entity.binary) {
-        const entry: EntitySensor = {
-          id: entity.id,
-          label: entity.label,
-          template: entity.template,
-          unit: entity.unit,
-          deviceClass: entity.deviceClass,
-          binary: true,
-        };
-
-        if (entity.stateClass) {
-          entry.stateClass = entity.stateClass;
-        }
-
-        allBinaries.push(entry);
-      } else {
-        const entry: EntitySensor = {
-          id: entity.id,
-          label: entity.label,
-          template: entity.template,
-          unit: entity.unit,
-          deviceClass: entity.deviceClass,
-        };
-
-        if (entity.stateClass) {
-          entry.stateClass = entity.stateClass;
-        }
-
-        allSensors.push(entry);
-      }
-    }
-
-    let sensorLines = "";
-
-    for (const sensor of allSensors) {
-      const prefix = entityPrefix || "ems";
-      const cleanId = sensor.id.replace(/^ems_/, "");
-      sensorLines += `      - name: "EMS ${sensor.label}"\n`;
-      sensorLines += `        unique_id: ${prefix}_${cleanId}\n`;
-      sensorLines += `        value_template: "${sensor.template}"\n`;
-
-      if (sensor.unit) {
-        sensorLines += `        unit_of_measurement: "${sensor.unit}"\n`;
-      }
-
-      if (sensor.deviceClass) {
-        sensorLines += `        device_class: ${sensor.deviceClass}\n`;
-      }
-
-      if (sensor.stateClass) {
-        sensorLines += `        state_class: ${sensor.stateClass}\n`;
-      }
-
-      sensorLines += "\n";
-    }
-
-    let binaryLines = "";
-
-    for (const bs of allBinaries) {
-      const prefix = entityPrefix || "ems";
-      const cleanId = bs.id.replace(/^ems_/, "");
-      binaryLines += `      - name: "EMS ${bs.label}"\n`;
-      binaryLines += `        unique_id: ${prefix}_${cleanId}\n`;
-      binaryLines += `        value_template: "${bs.template}"\n\n`;
-    }
-
-    const yaml = `rest:
-  - resource: http://${host}${ROUTE_PATH}${excludeQuery}
-    scan_interval: ${scanInterval}
-    timeout: 10
-    headers:
-      Authorization: !secret ems_local_api_token
-    sensor:
-${sensorLines.trimEnd() || "      []"}
-    binary_sensor:
-${binaryLines.trimEnd() || "      []"}
-`;
-
-    return yaml;
+    return generateLocalApiYaml({
+      entityPrefix,
+      host,
+    });
   }
 
   function generateSecretsEntry(): string {
@@ -499,7 +272,7 @@ ${binaryLines.trimEnd() || "      []"}
           for Home Assistant, which is the primary target. The endpoint is
           available at{" "}
           <code className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-cyan-300">
-            {ROUTE_PATH}
+            {LOCAL_API_ROUTE_PATH}
           </code>
           .
         </p>
@@ -613,8 +386,8 @@ ${binaryLines.trimEnd() || "      []"}
               Home Assistant Setup
             </h3>
             <p className="mt-1 text-sm text-slate-400">
-              Configure your setup and generate a ready-to-paste Home Assistant
-              configuration.
+              Generate a ready-to-paste Home Assistant configuration that
+              exports every currently available Local API entity.
             </p>
           </div>
         </div>
@@ -638,23 +411,6 @@ ${binaryLines.trimEnd() || "      []"}
           <div>
             <label
               className="block text-xs font-semibold uppercase tracking-[0.14em] text-slate-400"
-              htmlFor="la-scan-interval"
-            >
-              Scan Interval (seconds)
-            </label>
-            <input
-              className="mt-1 flex h-11 w-full rounded-xl border border-white/10 bg-slate-950/80 px-3 py-2 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-cyan-400/50"
-              id="la-scan-interval"
-              max={3600}
-              min={5}
-              onChange={(e) => setScanInterval(Number(e.target.value) || 30)}
-              type="number"
-              value={scanInterval}
-            />
-          </div>
-          <div>
-            <label
-              className="block text-xs font-semibold uppercase tracking-[0.14em] text-slate-400"
               htmlFor="la-entity-prefix"
             >
               Entity Name Prefix
@@ -666,36 +422,6 @@ ${binaryLines.trimEnd() || "      []"}
               placeholder="ems"
               value={entityPrefix}
             />
-          </div>
-        </div>
-
-        <div className="mt-4">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
-            Entities to include
-          </p>
-          <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
-            {ENTITY_DEFAULTS.map((entity) => (
-              <label
-                className="flex items-center gap-2 text-sm text-slate-300"
-                key={entity.id}
-              >
-                <input
-                  checked={selectedEntities.has(entity.id)}
-                  className="accent-cyan-400"
-                  onChange={() => toggleEntity(entity.id)}
-                  type="checkbox"
-                />
-                {entity.label}
-                {entity.description && (
-                  <span className="text-[10px] text-slate-500">
-                    ({entity.description})
-                  </span>
-                )}
-                {entity.binary && (
-                  <span className="text-[10px] text-slate-500">(binary)</span>
-                )}
-              </label>
-            ))}
           </div>
         </div>
 

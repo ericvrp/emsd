@@ -44,17 +44,27 @@ Two auth mechanisms are supported, in priority order:
 
 Invalid or missing tokens return `401 JSON`.
 
-### Query Parameter: `exclude`
+### Query Parameters: `include` and `exclude`
 
-The route accepts an optional `?exclude=` query parameter with a comma-separated list of entity IDs to omit from the response. This reduces response size and skips unnecessary backend computation.
+The route accepts optional `?include=` and `?exclude=` query parameters with comma-separated entity IDs. The generated Home Assistant YAML does not use these filters and exports every current entity by default, but they remain available for direct API consumers.
 
 ```
+GET /api/local/v1/current?include=ems_price_now,ems_derived_markers
 GET /api/local/v1/current?exclude=ems_solar_forecast,ems_meter_power
 ```
 
-Excluded fields and sections are simply absent from the JSON response.
+When `include` is present, only the listed entity groups are returned. When `exclude` is present, the listed entity groups are omitted. If both are present, `exclude` wins. Filtered fields and sections are simply absent from the JSON response.
 
-The EMC D UI generates this parameter automatically based on the user's entity checkbox selection.
+### Cache Header
+
+Successful responses include:
+
+```http
+Cache-Control: private, max-age=10
+Vary: Authorization
+```
+
+The generated Home Assistant YAML still uses `scan_interval: 30`.
 
 ## Response Schema
 
@@ -96,6 +106,26 @@ The EMC D UI generates this parameter automatically based on the user's entity c
     },
     "upcoming": []
   },
+  "derivedMarkers": {
+    "todayLowPriceMarkerStartsAt": "2026-04-27T12:00:00.000Z",
+    "todayLowPriceMarkerImportPrice": -0.12,
+    "todayLowPriceMarkers": [
+      {
+        "startsAt": "2026-04-27T12:00:00.000Z",
+        "importPrice": -0.12
+      }
+    ],
+    "todayHighPriceMarkerStartsAt": "2026-04-27T19:00:00.000Z",
+    "todayHighPriceMarkerImportPrice": 0.31,
+    "todayHighPriceMarkers": [
+      {
+        "startsAt": "2026-04-27T19:00:00.000Z",
+        "importPrice": 0.31
+      }
+    ],
+    "solarSurplusStartAt": "2026-04-27T10:45:00.000Z",
+    "solarSurplusEndAt": "2026-04-27T16:30:00.000Z"
+  },
   "solarForecast": {
     "generatedAt": "2026-04-27T09:58:00.000Z",
     "periodMinutes": 15,
@@ -126,6 +156,7 @@ The EMC D UI generates this parameter automatically based on the user's entity c
 | `site` | object \| null | Current site metadata (id, name, location) |
 | `summary` | object | Aggregated scalar values for easy automation templates |
 | `pricing` | object | Current, next, and upcoming dynamic price points. Omitted when both import price entities are excluded |
+| `derivedMarkers` | object | Today's derived low/high price marker times and solar surplus start/end times. Omitted when Derived Markers is excluded |
 | `solarForecast` | object | Current and upcoming solar forecast points. Omitted when the solar forecast entity is excluded |
 | `devices` | object | Grouped managed device records (batteries, meters, solar providers). Omitted when Basic info is excluded |
 
@@ -167,6 +198,19 @@ All top-level fields except `schema`, `generatedAt`, and `summary` may be absent
 | `providerLabel` | string \| null | Human-readable provider name |
 | `current` | object \| null | Current forecast period (period, periodEnd, value). Falls back to the first upcoming value when no period contains the current time |
 | `upcoming` | array | Periods whose end time is in the future |
+
+### Derived Markers Section
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `todayLowPriceMarkerStartsAt` | string \| null | First low-price marker for the current local day |
+| `todayLowPriceMarkerImportPrice` | number \| null | Import price at the first low-price marker |
+| `todayLowPriceMarkers` | array | All low-price markers for the current local day |
+| `todayHighPriceMarkerStartsAt` | string \| null | First high-price marker for the current local day |
+| `todayHighPriceMarkerImportPrice` | number \| null | Import price at the first high-price marker |
+| `todayHighPriceMarkers` | array | All high-price markers for the current local day |
+| `solarSurplusStartAt` | string \| null | First predicted solar surplus start for the current local day |
+| `solarSurplusEndAt` | string \| null | Final predicted solar surplus end for the current local day |
 
 ### Devices Section
 
@@ -232,9 +276,9 @@ The route returns `200` in non-ideal states rather than failing the entire reque
 | No solar forecast source | `solarForecast` section omitted, forecast summary fields null |
 | Missing telemetry | Individual power/SOC fields are null, counts remain accurate |
 
-## Entity Exclusion
+## Entity Filtering
 
-The `?exclude=` query parameter controls which data the API fetches and returns. Each entity ID maps to specific response fields:
+The generated Home Assistant YAML does not filter entities. Direct API callers can still use `?include=` or `?exclude=` to control which data the API fetches and returns. Each entity ID maps to specific response fields:
 
 | Entity ID | Controls |
 |-----------|----------|
@@ -245,16 +289,17 @@ The `?exclude=` query parameter controls which data the API fetches and returns.
 | `ems_solar_forecast` | `currentForecastSolarPowerW`, `solarForecast` section |
 | `ems_solar_power` | `totalSolarPowerW` |
 | `ems_meter_power` | `totalMeterPowerW` |
+| `ems_derived_markers` | `derivedMarkers` section |
 
-When an entity is excluded, its associated fields are omitted from the response and the backend skips unnecessary computation (e.g. skipping the dynamic price fetch when both pricing entities are excluded).
+When an entity is filtered out, its associated fields are omitted from the response and the backend skips unnecessary computation (e.g. skipping the dynamic price fetch when both pricing entities are excluded).
 
 ## Home Assistant YAML Setup
 
-The EMSD UI generates ready-to-paste Home Assistant YAML based on the user's entity selection and preferences. The generated YAML uses one `rest:` block pointing at the versioned API route and maps JSON fields to individual Home Assistant entities.
+The EMSD UI generates ready-to-paste Home Assistant YAML for every current entity. The generated YAML uses one `rest:` block pointing at the versioned API route and maps JSON fields to individual Home Assistant entities.
 
-### Entity Checkboxes
+### Generated Entities
 
-The UI provides checkboxes for each entity group:
+The generated YAML includes these entity groups:
 
 | UI Label | Description | Generated Sensors |
 |----------|-------------|-------------------|
@@ -265,8 +310,9 @@ The UI provides checkboxes for each entity group:
 | Solar Forecast | Current solar forecast value | `sensor.ems_solar_forecast` |
 | Solar Power | Current measured solar production | `sensor.ems_solar_power` |
 | Grid Power | Net grid meter power | `sensor.ems_grid_power` |
+| Derived Markers | Today low/high price marker counts with full marker arrays as attributes, plus solar surplus start/end | `sensor.ems_today_low_price_markers`, `sensor.ems_today_high_price_markers`, `sensor.ems_solar_surplus_start`, `sensor.ems_solar_surplus_end` |
 
-The API response auto-refreshes in the UI preview whenever checkboxes, host, or token change, and on a regular interval matching the scan interval.
+The API response preview auto-refreshes every 30 seconds while visible.
 
 ### Example Home Assistant Automation
 
