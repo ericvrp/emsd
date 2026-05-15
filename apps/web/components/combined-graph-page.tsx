@@ -226,10 +226,7 @@ export function CombinedGraphPage({
   return (
     <div className="space-y-5">
       {refreshError ? (
-        <RefreshWarning
-          action={<PageRefreshButton />}
-          message={refreshError}
-        />
+        <RefreshWarning action={<PageRefreshButton />} message={refreshError} />
       ) : null}
 
       <CombinedHistoryChart
@@ -890,18 +887,8 @@ function CombinedHistoryChart({
 
   return (
     <div className="space-y-2.5">
-      <div className="flex flex-wrap items-start gap-3">
-        <div className="shrink-0">
-          <TopLevelDaySelect daySelection={daySelection} />
-        </div>
-        <GroupedLegend
-          activeTypes={activeTypes}
-          isVisible={isVisible}
-          predictionAccuracyPercentage={predictionAccuracyPercentage}
-          strategyStates={strategyStates}
-          summaries={summaries}
-          toggle={toggle}
-        />
+      <div className="flex justify-center">
+        <TopLevelDaySelect daySelection={daySelection} />
       </div>
       <div className="relative">
         <MeasuredChartContainer className="h-[440px] min-w-0 w-full">
@@ -1125,6 +1112,14 @@ function CombinedHistoryChart({
           <EmptyChartMessage message="No samples for the active graph types on this day." />
         ) : null}
       </div>
+      <GroupedLegend
+        activeTypes={activeTypes}
+        isVisible={isVisible}
+        predictionAccuracyPercentage={predictionAccuracyPercentage}
+        strategyStates={strategyStates}
+        summaries={summaries}
+        toggle={toggle}
+      />
       <p className="text-xs leading-5 text-slate-500">
         Tip: click a graph type to show only it. Long-press or use Ctrl,
         Command, Shift, or Alt/Option-click to add or remove graph types.
@@ -1160,13 +1155,13 @@ function GroupedLegend({
     predictionAccuracyPercentage,
   );
   return (
-    <div className="flex flex-wrap gap-3 text-xs font-medium text-slate-300">
+    <div className="space-y-3 text-xs font-medium text-slate-300">
       {groups.map((group) => (
         <div
-          className="rounded-2xl border border-white/10 bg-slate-950/35 p-2"
+          className="w-fit max-w-full rounded-2xl border border-white/10 bg-slate-950/35 p-2"
           key={group.type}
         >
-          <p className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+          <p className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-300">
             {group.label} • {group.summaryLabel}
           </p>
           <div className="flex flex-wrap gap-2">
