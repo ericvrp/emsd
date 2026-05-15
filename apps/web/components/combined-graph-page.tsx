@@ -226,22 +226,6 @@ export function CombinedGraphPage({
   return (
     <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-300/40 to-transparent" />
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan-300/90">
-            Combined
-          </p>
-          <h3 className="mt-2 text-xl font-semibold text-white">
-            Combined graph for {site.name}
-          </h3>
-          <p className="mt-2 text-sm leading-6 text-slate-400">
-            Overlay battery, prices, solar, and grid series on one time-of-day
-            chart.
-          </p>
-        </div>
-        <TopLevelDaySelect daySelection={daySelection} />
-      </div>
-
       {refreshError ? (
         <RefreshWarning
           action={<PageRefreshButton />}
@@ -910,14 +894,19 @@ function CombinedHistoryChart({
 
   return (
     <div className="space-y-2.5">
-      <GroupedLegend
-        activeTypes={activeTypes}
-        isVisible={isVisible}
-        predictionAccuracyPercentage={predictionAccuracyPercentage}
-        strategyStates={strategyStates}
-        summaries={summaries}
-        toggle={toggle}
-      />
+      <div className="flex flex-wrap items-start gap-3">
+        <div className="shrink-0">
+          <TopLevelDaySelect daySelection={daySelection} />
+        </div>
+        <GroupedLegend
+          activeTypes={activeTypes}
+          isVisible={isVisible}
+          predictionAccuracyPercentage={predictionAccuracyPercentage}
+          strategyStates={strategyStates}
+          summaries={summaries}
+          toggle={toggle}
+        />
+      </div>
       <div className="relative">
         <MeasuredChartContainer className="h-[440px] min-w-0 w-full">
           {({ height, width }) => {
