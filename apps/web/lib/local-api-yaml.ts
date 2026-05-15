@@ -20,6 +20,8 @@ export interface EntityOption {
   template: string;
   unit: string;
   deviceClass: string;
+  jsonAttributes?: string[];
+  jsonAttributesPath?: string;
   stateClass?: string;
   binary?: boolean;
   meta?: boolean;
@@ -34,14 +36,111 @@ export const LOCAL_API_ENTITY_OPTIONS: EntityOption[] = [
     template: "",
     unit: "",
     deviceClass: "",
-    meta: true,
+    sensors: [
+      {
+        id: "api_schema",
+        label: "API Schema",
+        template: "{{ value_json.schema }}",
+        unit: "",
+        deviceClass: "",
+      },
+      {
+        id: "api_generated_at",
+        label: "API Generated At",
+        template: "{{ value_json.generatedAt }}",
+        unit: "",
+        deviceClass: "timestamp",
+      },
+      {
+        id: "daemon_running",
+        label: "Daemon Running",
+        template: "{{ value_json.daemonRunning }}",
+        unit: "",
+        deviceClass: "",
+        binary: true,
+      },
+      {
+        id: "site_name",
+        label: "Site Name",
+        template: "{{ value_json.site.name }}",
+        unit: "",
+        deviceClass: "",
+        jsonAttributesPath: "$.site",
+        jsonAttributes: ["id", "location"],
+      },
+      {
+        id: "battery_devices",
+        label: "Battery Devices",
+        template: "{{ value_json.devices.batteries | count }}",
+        unit: "",
+        deviceClass: "",
+        jsonAttributesPath: "$.devices",
+        jsonAttributes: ["batteries"],
+      },
+      {
+        id: "meter_devices",
+        label: "Meter Devices",
+        template: "{{ value_json.devices.meters | count }}",
+        unit: "",
+        deviceClass: "",
+        jsonAttributesPath: "$.devices",
+        jsonAttributes: ["meters"],
+      },
+      {
+        id: "solar_devices",
+        label: "Solar Devices",
+        template: "{{ value_json.devices.solarEnergyProviders | count }}",
+        unit: "",
+        deviceClass: "",
+        jsonAttributesPath: "$.devices",
+        jsonAttributes: ["solarEnergyProviders"],
+      },
+    ],
   },
   {
     id: "ems_price_now",
     label: "Import Price",
+    description: "current and upcoming prices",
     template: "{{ value_json.summary.currentImportPrice }}",
     unit: "EUR/kWh",
     deviceClass: "",
+    sensors: [
+      {
+        id: "ems_price_now",
+        label: "Import Price",
+        template: "{{ value_json.summary.currentImportPrice }}",
+        unit: "EUR/kWh",
+        deviceClass: "",
+        jsonAttributesPath: "$.summary",
+        jsonAttributes: [
+          "currentImportPriceCurrency",
+          "currentImportPriceStartsAt",
+        ],
+      },
+      {
+        id: "price_currency",
+        label: "Import Price Currency",
+        template: "{{ value_json.summary.currentImportPriceCurrency }}",
+        unit: "",
+        deviceClass: "",
+      },
+      {
+        id: "price_starts_at",
+        label: "Import Price Starts At",
+        template: "{{ value_json.summary.currentImportPriceStartsAt }}",
+        unit: "",
+        deviceClass: "timestamp",
+      },
+      {
+        id: "upcoming_prices",
+        label: "Upcoming Prices",
+        template: "{{ value_json.pricing.upcoming | count }}",
+        unit: "",
+        deviceClass: "",
+        jsonAttributesPath: "$.pricing",
+        jsonAttributes: ["current", "upcoming"],
+      },
+    ],
   },
   {
     id: "ems_negative_price_now",
@@ -81,15 +180,74 @@ export const LOCAL_API_ENTITY_OPTIONS: EntityOption[] = [
         unit: "",
         deviceClass: "",
       },
+      {
+        id: "battery_strategy",
+        label: "Battery Strategy",
+        template: "{{ value_json.summary.batteryStrategySummary }}",
+        unit: "",
+        deviceClass: "",
+      },
     ],
   },
   {
     id: "ems_solar_forecast",
     label: "Solar Forecast",
+    description: "current and upcoming forecast periods",
     template: "{{ value_json.summary.currentForecastSolarPowerW }}",
     unit: "W",
     deviceClass: "power",
     stateClass: "measurement",
+    sensors: [
+      {
+        id: "ems_solar_forecast",
+        label: "Solar Forecast",
+        template: "{{ value_json.summary.currentForecastSolarPowerW }}",
+        unit: "W",
+        deviceClass: "power",
+        stateClass: "measurement",
+        jsonAttributesPath: "$.solarForecast",
+        jsonAttributes: [
+          "generatedAt",
+          "periodMinutes",
+          "provider",
+          "providerLabel",
+          "current",
+          "upcoming",
+        ],
+      },
+      {
+        id: "solar_forecast_generated_at",
+        label: "Solar Forecast Generated At",
+        template: "{{ value_json.solarForecast.generatedAt }}",
+        unit: "",
+        deviceClass: "timestamp",
+      },
+      {
+        id: "solar_forecast_period_minutes",
+        label: "Solar Forecast Period Minutes",
+        template: "{{ value_json.solarForecast.periodMinutes }}",
+        unit: "min",
+        deviceClass: "",
+      },
+      {
+        id: "solar_forecast_provider",
+        label: "Solar Forecast Provider",
+        template: "{{ value_json.solarForecast.providerLabel }}",
+        unit: "",
+        deviceClass: "",
+        jsonAttributesPath: "$.solarForecast",
+        jsonAttributes: ["provider"],
+      },
+      {
+        id: "upcoming_solar_forecast",
+        label: "Upcoming Solar Forecast",
+        template: "{{ value_json.solarForecast.upcoming | count }}",
+        unit: "",
+        deviceClass: "",
+        jsonAttributesPath: "$.solarForecast",
+        jsonAttributes: ["current", "upcoming"],
+      },
+    ],
   },
   {
     id: "ems_solar_power",
@@ -123,7 +281,11 @@ export const LOCAL_API_ENTITY_OPTIONS: EntityOption[] = [
         unit: "",
         deviceClass: "",
         jsonAttributesPath: "$.derivedMarkers",
-        jsonAttributes: ["todayLowPriceMarkers"],
+        jsonAttributes: [
+          "todayLowPriceMarkerStartsAt",
+          "todayLowPriceMarkerImportPrice",
+          "todayLowPriceMarkers",
+        ],
       },
       {
         id: "today_high_price_markers",
@@ -133,7 +295,42 @@ export const LOCAL_API_ENTITY_OPTIONS: EntityOption[] = [
         unit: "",
         deviceClass: "",
         jsonAttributesPath: "$.derivedMarkers",
-        jsonAttributes: ["todayHighPriceMarkers"],
+        jsonAttributes: [
+          "todayHighPriceMarkerStartsAt",
+          "todayHighPriceMarkerImportPrice",
+          "todayHighPriceMarkers",
+        ],
+      },
+      {
+        id: "today_low_price_marker_start",
+        label: "Today's Low Price Marker Start",
+        template: "{{ value_json.derivedMarkers.todayLowPriceMarkerStartsAt }}",
+        unit: "",
+        deviceClass: "timestamp",
+      },
+      {
+        id: "today_low_price_marker_price",
+        label: "Today's Low Price Marker Price",
+        template:
+          "{{ value_json.derivedMarkers.todayLowPriceMarkerImportPrice }}",
+        unit: "EUR/kWh",
+        deviceClass: "",
+      },
+      {
+        id: "today_high_price_marker_start",
+        label: "Today's High Price Marker Start",
+        template:
+          "{{ value_json.derivedMarkers.todayHighPriceMarkerStartsAt }}",
+        unit: "",
+        deviceClass: "timestamp",
+      },
+      {
+        id: "today_high_price_marker_price",
+        label: "Today's High Price Marker Price",
+        template:
+          "{{ value_json.derivedMarkers.todayHighPriceMarkerImportPrice }}",
+        unit: "EUR/kWh",
+        deviceClass: "",
       },
       {
         id: "solar_surplus_start",
@@ -194,6 +391,14 @@ export function generateLocalApiYaml(input: {
         binary: true,
       };
 
+      if (entity.jsonAttributesPath) {
+        entry.jsonAttributesPath = entity.jsonAttributesPath;
+      }
+
+      if (entity.jsonAttributes) {
+        entry.jsonAttributes = entity.jsonAttributes;
+      }
+
       if (entity.stateClass) {
         entry.stateClass = entity.stateClass;
       }
@@ -207,6 +412,14 @@ export function generateLocalApiYaml(input: {
         unit: entity.unit,
         deviceClass: entity.deviceClass,
       };
+
+      if (entity.jsonAttributesPath) {
+        entry.jsonAttributesPath = entity.jsonAttributesPath;
+      }
+
+      if (entity.jsonAttributes) {
+        entry.jsonAttributes = entity.jsonAttributes;
+      }
 
       if (entity.stateClass) {
         entry.stateClass = entity.stateClass;
@@ -258,7 +471,13 @@ export function generateLocalApiYaml(input: {
     const cleanId = binarySensor.id.replace(/^ems_/, "");
     binaryLines += `      - name: "EMS ${binarySensor.label}"\n`;
     binaryLines += `        unique_id: ${prefix}_${cleanId}\n`;
-    binaryLines += `        value_template: "${binarySensor.template}"\n\n`;
+    binaryLines += `        value_template: "${binarySensor.template}"\n`;
+
+    if (binarySensor.deviceClass) {
+      binaryLines += `        device_class: ${binarySensor.deviceClass}\n`;
+    }
+
+    binaryLines += "\n";
   }
 
   return `rest:

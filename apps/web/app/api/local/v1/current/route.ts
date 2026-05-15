@@ -60,9 +60,9 @@ export async function GET(request: Request) {
     status = 500;
     throw error;
   } finally {
-    console.log(
-      `[local-api] GET ${url.pathname} status=${status} durationMs=${Date.now() - startedAt} ${formatTimingBreakdown(timings)} include=${url.searchParams.get("include") ?? ""} exclude=${url.searchParams.get("exclude") ?? ""}`,
-    );
+    // console.log(
+    //   `[local-api] GET ${url.pathname} status=${status} durationMs=${Date.now() - startedAt} ${formatTimingBreakdown(timings)} include=${url.searchParams.get("include") ?? ""} exclude=${url.searchParams.get("exclude") ?? ""}`,
+    // );
   }
 }
 
