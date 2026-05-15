@@ -16,6 +16,28 @@ import {
   getWeatherForecast,
 } from "./ems-bridge";
 
+const DYNAMIC_PRICE_CACHE_TTL_MS = 5 * 60 * 1000;
+const WEATHER_FORECAST_CACHE_TTL_MS = 5 * 60 * 1000;
+const DERIVED_MARKERS_CACHE_TTL_MS = 5 * 60 * 1000;
+
+interface CacheEntry<T> {
+  expiresAt: number;
+  promise: Promise<T>;
+}
+
+const dynamicPriceSnapshotCache = new Map<
+  string,
+  CacheEntry<DynamicPriceSnapshotRecord | null>
+>();
+const weatherForecastCache = new Map<
+  string,
+  CacheEntry<WeatherForecastRecord | null>
+>();
+const derivedMarkersCache = new Map<
+  string,
+  CacheEntry<LocalApiDerivedMarkers>
+>();
+
 export interface LocalApiCurrentResponse {
   schema: "ems.local.current.v1";
   generatedAt: string;
@@ -165,6 +187,38 @@ function createEmptyDerivedMarkers(): LocalApiDerivedMarkers {
   };
 }
 
+function getCachedValue<T>(input: {
+  cache: Map<string, CacheEntry<T>>;
+  key: string;
+  load: () => Promise<T>;
+  nowMs: number;
+  ttlMs: number;
+}): Promise<T> {
+  const cached = input.cache.get(input.key);
+
+  if (cached && cached.expiresAt > input.nowMs) {
+    return cached.promise;
+  }
+
+  const promise = input.load().catch((error) => {
+    input.cache.delete(input.key);
+    throw error;
+  });
+
+  input.cache.set(input.key, {
+    expiresAt: input.nowMs + input.ttlMs,
+    promise,
+  });
+
+  return promise;
+}
+
+export function clearLocalApiCurrentCaches(): void {
+  dynamicPriceSnapshotCache.clear();
+  weatherForecastCache.clear();
+  derivedMarkersCache.clear();
+}
+
 export function computeDerivedMarkers(input: {
   archive: HistoryArchive;
   now: Date;
@@ -216,6 +270,104 @@ export function computeDerivedMarkers(input: {
     solarSurplusStartAt: solarSurplusBounds.firstStartTime,
     solarSurplusEndAt: solarSurplusBounds.finalEndTime,
   };
+}
+
+async function getCachedDynamicPriceSnapshot(input: {
+  nowMs: number;
+  siteId: string;
+}): Promise<DynamicPriceSnapshotRecord | null> {
+  try {
+    return await getCachedValue({
+      cache: dynamicPriceSnapshotCache,
+      key: input.siteId,
+      nowMs: input.nowMs,
+      ttlMs: DYNAMIC_PRICE_CACHE_TTL_MS,
+      load: () => getDynamicPriceSnapshot({ siteId: input.siteId }),
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function getCachedWeatherForecast(input: {
+  nowMs: number;
+  siteId: string;
+}): Promise<WeatherForecastRecord | null> {
+  try {
+    return await getCachedValue({
+      cache: weatherForecastCache,
+      key: input.siteId,
+      nowMs: input.nowMs,
+      ttlMs: WEATHER_FORECAST_CACHE_TTL_MS,
+      load: () =>
+        getWeatherForecast({
+          hours: 24,
+          periodMinutes: 15,
+          siteId: input.siteId,
+        }),
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function getCachedDerivedMarkers(input: {
+  dayKey: string;
+  now: Date;
+  nowMs: number;
+  siteId: string;
+  timings?: LocalApiTimingBreakdown;
+}): Promise<LocalApiDerivedMarkers> {
+  const cacheKey = `${input.siteId}:${input.dayKey}`;
+  const cached = derivedMarkersCache.get(cacheKey);
+
+  if (cached && cached.expiresAt > input.nowMs) {
+    if (input.timings) {
+      input.timings.historyArchiveMs = input.timings.historyArchiveMs ?? 0;
+      input.timings.derivedMarkersMs = input.timings.derivedMarkersMs ?? 0;
+    }
+    return cached.promise;
+  }
+
+  const promise = (async () => {
+    const historyArchiveStartedAt = Date.now();
+    let historyArchive: HistoryArchive | null = null;
+
+    try {
+      historyArchive = await getHistoryArchive({
+        day: input.dayKey,
+        siteId: input.siteId,
+      });
+    } catch {
+      historyArchive = null;
+    } finally {
+      if (input.timings) {
+        input.timings.historyArchiveMs = Date.now() - historyArchiveStartedAt;
+      }
+    }
+
+    const derivedMarkersStartedAt = Date.now();
+
+    try {
+      return historyArchive
+        ? computeDerivedMarkers({ archive: historyArchive, now: input.now })
+        : createEmptyDerivedMarkers();
+    } finally {
+      if (input.timings) {
+        input.timings.derivedMarkersMs = Date.now() - derivedMarkersStartedAt;
+      }
+    }
+  })().catch((error) => {
+    derivedMarkersCache.delete(cacheKey);
+    throw error;
+  });
+
+  derivedMarkersCache.set(cacheKey, {
+    expiresAt: input.nowMs + DERIVED_MARKERS_CACHE_TTL_MS,
+    promise,
+  });
+
+  return promise;
 }
 
 function isSameLocalDay(timestamp: string, dayKey: string): boolean {
@@ -507,6 +659,7 @@ export async function buildLocalApiCurrent(
   timings?: LocalApiTimingBreakdown,
 ): Promise<Partial<LocalApiCurrentResponse>> {
   const now = new Date();
+  const nowMs = Date.now();
   const liveStatusStartedAt = Date.now();
   const snapshot = await getLiveStatus();
   if (timings) {
@@ -518,44 +671,51 @@ export async function buildLocalApiCurrent(
     !exclude ||
     !(exclude.has("ems_price_now") && exclude.has("ems_negative_price_now"));
   const needForecast = !exclude || !exclude.has("ems_solar_forecast");
+  const needDerivedMarkers = !exclude || !exclude.has("ems_derived_markers");
 
-  let dynamicPriceSnapshot: DynamicPriceSnapshotRecord | null = null;
-  let forecast: WeatherForecastRecord | null = null;
-
-  if (site) {
-    if (needPricing && site.dynamicPriceSources.length > 0) {
-      const dynamicPriceSnapshotStartedAt = Date.now();
-      try {
-        dynamicPriceSnapshot = await getDynamicPriceSnapshot({
+  const dynamicPriceSnapshotPromise =
+    site && needPricing && site.dynamicPriceSources.length > 0
+      ? (async () => {
+          const dynamicPriceSnapshotStartedAt = Date.now();
+          try {
+            return await getCachedDynamicPriceSnapshot({
+              nowMs,
+              siteId: site.id,
+            });
+          } finally {
+            if (timings) {
+              timings.dynamicPriceSnapshotMs =
+                Date.now() - dynamicPriceSnapshotStartedAt;
+            }
+          }
+        })()
+      : Promise.resolve(null);
+  const forecastPromise =
+    site && needForecast && site.weatherSources.length > 0
+      ? (async () => {
+          const weatherForecastStartedAt = Date.now();
+          try {
+            return await getCachedWeatherForecast({
+              nowMs,
+              siteId: site.id,
+            });
+          } finally {
+            if (timings) {
+              timings.weatherForecastMs = Date.now() - weatherForecastStartedAt;
+            }
+          }
+        })()
+      : Promise.resolve(null);
+  const derivedMarkersPromise =
+    site && needDerivedMarkers
+      ? getCachedDerivedMarkers({
+          dayKey: getLocalDayKey(now),
+          now,
+          nowMs,
           siteId: site.id,
-        });
-      } catch {
-        dynamicPriceSnapshot = null;
-      } finally {
-        if (timings) {
-          timings.dynamicPriceSnapshotMs =
-            Date.now() - dynamicPriceSnapshotStartedAt;
-        }
-      }
-    }
-
-    if (needForecast && site.weatherSources.length > 0) {
-      const weatherForecastStartedAt = Date.now();
-      try {
-        forecast = await getWeatherForecast({
-          hours: 24,
-          periodMinutes: 15,
-          siteId: site.id,
-        });
-      } catch {
-        forecast = null;
-      } finally {
-        if (timings) {
-          timings.weatherForecastMs = Date.now() - weatherForecastStartedAt;
-        }
-      }
-    }
-  }
+          ...(timings ? { timings } : {}),
+        })
+      : Promise.resolve<LocalApiDerivedMarkers | null>(null);
 
   const deviceGroupingAndComputeStartedAt = Date.now();
   const batteries = site
@@ -565,6 +725,16 @@ export async function buildLocalApiCurrent(
   const solarProviders = site
     ? site.devices.filter((d) => d.kind === "solar-energy-provider")
     : [];
+  if (timings) {
+    timings.deviceGroupingAndComputeMs =
+      Date.now() - deviceGroupingAndComputeStartedAt;
+  }
+
+  const [dynamicPriceSnapshot, forecast, derivedMarkers] = await Promise.all([
+    dynamicPriceSnapshotPromise,
+    forecastPromise,
+    derivedMarkersPromise,
+  ]);
 
   const pricing: LocalApiPricing | null = needPricing
     ? computePricing(dynamicPriceSnapshot, now)
@@ -578,33 +748,11 @@ export async function buildLocalApiCurrent(
   if (pricing?.current && pricing.current.importPrice < 0) {
     currentImportPriceIsNegative = true;
   }
-  if (timings) {
-    timings.deviceGroupingAndComputeMs =
-      Date.now() - deviceGroupingAndComputeStartedAt;
-  }
 
   const needBasic = !exclude || !exclude.has("ems_basic");
   const needBatteryInfo = !exclude || !exclude.has("ems_battery_info");
   const needSolarPower = !exclude || !exclude.has("ems_solar_power");
   const needMeterPower = !exclude || !exclude.has("ems_meter_power");
-  const needDerivedMarkers = !exclude || !exclude.has("ems_derived_markers");
-  let historyArchive: HistoryArchive | null = null;
-
-  if (site && needDerivedMarkers) {
-    const historyArchiveStartedAt = Date.now();
-    try {
-      historyArchive = await getHistoryArchive({
-        day: getLocalDayKey(now),
-        siteId: site.id,
-      });
-    } catch {
-      historyArchive = null;
-    } finally {
-      if (timings) {
-        timings.historyArchiveMs = Date.now() - historyArchiveStartedAt;
-      }
-    }
-  }
 
   const responseBuildStartedAt = Date.now();
   const response: Record<string, unknown> = {
@@ -662,16 +810,7 @@ export async function buildLocalApiCurrent(
   }
 
   if (needDerivedMarkers) {
-    const derivedMarkersStartedAt = Date.now();
-    try {
-      response.derivedMarkers = historyArchive
-        ? computeDerivedMarkers({ archive: historyArchive, now })
-        : createEmptyDerivedMarkers();
-    } finally {
-      if (timings) {
-        timings.derivedMarkersMs = Date.now() - derivedMarkersStartedAt;
-      }
-    }
+    response.derivedMarkers = derivedMarkers ?? createEmptyDerivedMarkers();
   }
 
   if (!exclude || !exclude.has("ems_price_now")) {

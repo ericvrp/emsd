@@ -1086,7 +1086,7 @@ async function runScheduledStrategy(
         importShortageTargetAt !== null &&
         !Number.isNaN(importShortageTargetAt.getTime())
           ? shouldSkipScheduledItem(item, importShortageTargetAt, now)
-          : shouldSkipScheduledItem(item, triggerAt, now);
+          : shouldSkipScheduledItem(item, runtimeTriggerAt, now);
 
       if (scheduledItemExpired) {
         logVerbose(

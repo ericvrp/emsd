@@ -335,6 +335,10 @@ export function shouldSkipScheduledItem(
   triggerAt: Date,
   now: Date,
 ): boolean {
+  if (isDelayedChargePrepItem(item)) {
+    return false;
+  }
+
   if (
     isBatteryStrategyPriceTrigger(item.triggerKind) &&
     now.getTime() >= triggerAt.getTime() + PRICE_TRIGGER_ELIGIBILITY_WINDOW_MS

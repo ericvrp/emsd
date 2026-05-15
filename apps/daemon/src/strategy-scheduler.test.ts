@@ -949,6 +949,46 @@ test("shouldSkipScheduledItem expires price-triggered items after 30 minutes", (
   ).toBe(true);
 });
 
+test("shouldSkipScheduledItem keeps delayed charging eligible until the low-price marker expires", () => {
+  const item = createDailyItem({
+    manualState: "charging",
+    targetMethod: "auto",
+    triggerKind: BatteryStrategyTriggerKind.DelayedCharging,
+  });
+  const markerAt = new Date("2026-04-09T14:00:00.000Z");
+
+  expect(
+    shouldSkipScheduledItem(
+      item,
+      markerAt,
+      new Date("2026-04-09T13:45:00.000Z"),
+    ),
+  ).toBe(false);
+  expect(
+    shouldSkipScheduledItem(
+      item,
+      markerAt,
+      new Date("2026-04-09T14:30:00.000Z"),
+    ),
+  ).toBe(true);
+});
+
+test("shouldSkipScheduledItem keeps delayed-charge prep eligible after its price-trigger grace window", () => {
+  const item = createDailyItem({
+    manualState: "idle",
+    targetMethod: "auto",
+    triggerKind: BatteryStrategyTriggerKind.DelayedChargePrep,
+  });
+
+  expect(
+    shouldSkipScheduledItem(
+      item,
+      new Date("2026-04-09T06:00:00.000Z"),
+      new Date("2026-04-09T12:08:00.000Z"),
+    ),
+  ).toBe(false);
+});
+
 test("getDelayedChargePrepSkipReason reuses the paired delayed-charging skip reason", () => {
   expect(
     getDelayedChargePrepSkipReason({

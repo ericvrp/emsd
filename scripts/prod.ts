@@ -12,6 +12,12 @@ await runLabeledCommand({
   label: "build",
 });
 
+await runLabeledCommand({
+  args: ["run", "daemon:stop"],
+  env,
+  label: "daemon",
+});
+
 await runManagedCommands([
   {
     args: ["apps/daemon/dist/index.js"],
