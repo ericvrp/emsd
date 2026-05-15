@@ -7,11 +7,13 @@ import { SettingsPanel } from "./settings-panel";
 type DashboardPageFrameProps = {
   children: ReactNode;
   currentSite: Parameters<typeof SettingsPanel>[0]["currentSite"];
+  nav?: ReactNode;
 };
 
 export function DashboardPageFrame({
   children,
   currentSite,
+  nav,
 }: DashboardPageFrameProps) {
   const batteries =
     currentSite?.devices
@@ -48,6 +50,7 @@ export function DashboardPageFrame({
           </SettingsDialog>
         </>
       }
+      nav={nav}
     >
       {children}
     </AppShell>

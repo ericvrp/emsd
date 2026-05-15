@@ -343,7 +343,11 @@ function GridOverviewChart({
           <LegendChip
             color={UI_COLORS.solarPrediction}
             label="Expected Site Load"
-            marker={<ExpectedLegendMarker />}
+            marker={
+              <ExpectedLegendMarker
+                selected={isVisible(EXPECTED_SITE_LOAD_SERIES_ID)}
+              />
+            }
             onClick={() => toggle(EXPECTED_SITE_LOAD_SERIES_ID)}
             selected={isVisible(EXPECTED_SITE_LOAD_SERIES_ID)}
           />
@@ -667,7 +671,7 @@ function TooltipDetailRow({
   );
 }
 
-function ExpectedLegendMarker() {
+function ExpectedLegendMarker({ selected }: { selected: boolean }) {
   return (
     <svg
       aria-hidden="true"
@@ -677,7 +681,7 @@ function ExpectedLegendMarker() {
       width="18"
     >
       <line
-        stroke={UI_COLORS.solarPrediction}
+        stroke={selected ? UI_COLORS.solarPrediction : UI_COLORS.chartTickMuted}
         strokeDasharray="1 6"
         strokeLinecap="round"
         strokeWidth="2.8"

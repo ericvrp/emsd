@@ -355,7 +355,11 @@ function ForecastPredictionChart({
             label={buildPredictedSolarLegendLabel({
               predictionAccuracyPercentage,
             })}
-            marker={<PredictedSolarLegendMarker />}
+            marker={
+              <PredictedSolarLegendMarker
+                selected={isVisible(PREDICTED_SOLAR_SERIES_ID)}
+              />
+            }
             onClick={() => toggle(PREDICTED_SOLAR_SERIES_ID)}
             selected={isVisible(PREDICTED_SOLAR_SERIES_ID)}
           />
@@ -695,7 +699,7 @@ function buildSolarSurplusLabel(value: string, fill: string) {
   };
 }
 
-function PredictedSolarLegendMarker() {
+function PredictedSolarLegendMarker({ selected }: { selected: boolean }) {
   return (
     <svg
       aria-hidden="true"
@@ -705,7 +709,7 @@ function PredictedSolarLegendMarker() {
       width="18"
     >
       <line
-        stroke={UI_COLORS.solarEnergy}
+        stroke={selected ? UI_COLORS.solarEnergy : UI_COLORS.chartTickMuted}
         strokeDasharray="1 6"
         strokeLinecap="round"
         strokeWidth="2.8"
