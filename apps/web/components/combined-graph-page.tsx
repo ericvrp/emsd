@@ -20,8 +20,9 @@ import {
   HandCoins,
   SunMedium,
 } from "lucide-react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import type { MouseEvent, ReactNode } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
+import type { MouseEvent, PointerEvent, ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CartesianGrid,
   Line,
@@ -32,7 +33,6 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { resolveRelativeDayParam } from "../lib/day-utils";
 import { formatEnergyValue } from "../lib/energy-format";
 import {
   formatAbsolutePowerValue,
@@ -88,10 +88,8 @@ import {
 } from "./top-level-day-select";
 import { useChartSeriesVisibility } from "./use-chart-series-visibility";
 import {
-  type PricesGraphResponse,
   type SiteCurrentResponse,
   type SolarCurrentResponse,
-  type SolarGraphResponse,
   useLiveJsonSWR,
 } from "./use-live-json-swr";
 
@@ -114,8 +112,9 @@ const ALL_GRAPH_TYPES: GraphType[] = ["battery", "solar", "prices", "grid"];
 const DEFAULT_GRAPH_TYPES: GraphType[] = ["battery"];
 const GRAPH_REFRESH_INTERVAL_MS = 60 * 1_000;
 const LIVE_REFRESH_INTERVAL_MS = 5_000;
-const PRICE_REFRESH_INTERVAL_MS = 15 * 60 * 1_000;
 const COMBINED_VISIBILITY_STORAGE_KEY = "emsd:chart-visibility:combined:v1";
+const COMBINED_GRAPH_TYPES_CHANGE_EVENT = "emsd:combined-graph-types-change";
+const LONG_PRESS_TOGGLE_DELAY_MS = 450;
 const SOLAR_POWER_AXIS_MAX_W = 4_000;
 const BATTERY_STRATEGY_BAND_HEIGHT_RATIO = 0.0603;
 const BATTERY_STRATEGY_BAND_BOTTOM = 1 - BATTERY_STRATEGY_BAND_HEIGHT_RATIO;
@@ -174,8 +173,9 @@ export function CombinedGraphPage({
   const activeTypes = useActiveGraphTypes();
   const hasBatteryOrGrid =
     activeTypes.includes("battery") || activeTypes.includes("grid");
-  const hasPrices = activeTypes.includes("prices");
   const hasSolar = activeTypes.includes("solar");
+  const isLiveDay = requestedDay === null;
+  const livePollingEnabled = useDelayedEnabled(hasBatteryOrGrid || hasSolar);
   const requestedDayParam = requestedDay
     ? `&day=${encodeURIComponent(requestedDay)}`
     : "";
@@ -198,34 +198,7 @@ export function CombinedGraphPage({
         failureMessage:
           "Combined live updates are retrying. Showing last available data.",
         refreshIntervalMs: LIVE_REFRESH_INTERVAL_MS,
-        enabled: hasBatteryOrGrid,
-      },
-    );
-  const { data: pricesData, refreshError: pricesRefreshError } =
-    useLiveJsonSWR<PricesGraphResponse>(
-      hasPrices
-        ? `/api/prices/graph?siteId=${encodeURIComponent(site.id)}`
-        : null,
-      {
-        failureMessage:
-          "Price graph updates are retrying. Showing last available data.",
-        refreshIntervalMs: PRICE_REFRESH_INTERVAL_MS,
-        retryIntervalMs: LIVE_REFRESH_INTERVAL_MS,
-        enabled: hasPrices,
-      },
-    );
-  const solarParams = new URLSearchParams({ siteId: site.id });
-  const resolvedRequestedDay = resolveRelativeDayParam(requestedDay);
-  if (resolvedRequestedDay) solarParams.set("day", resolvedRequestedDay);
-  const { data: solarData, refreshError: solarRefreshError } =
-    useLiveJsonSWR<SolarGraphResponse>(
-      hasSolar ? `/api/solar/graph?${solarParams.toString()}` : null,
-      {
-        failureMessage:
-          "Solar graph updates are retrying. Showing last available data.",
-        refreshIntervalMs: GRAPH_REFRESH_INTERVAL_MS,
-        retryIntervalMs: LIVE_REFRESH_INTERVAL_MS,
-        enabled: hasSolar,
+        enabled: isLiveDay && livePollingEnabled && hasBatteryOrGrid,
       },
     );
   const { data: solarCurrentData, refreshError: solarCurrentRefreshError } =
@@ -237,23 +210,18 @@ export function CombinedGraphPage({
         failureMessage:
           "Solar current updates are retrying. Showing last available data.",
         refreshIntervalMs: LIVE_REFRESH_INTERVAL_MS,
-        enabled: hasSolar,
+        enabled: isLiveDay && livePollingEnabled && hasSolar,
       },
     );
-  const archive =
-    pricesData?.archive ?? solarData?.archive ?? archiveData ?? initialArchive;
-  const forecast = solarData?.forecast ?? weatherForecast;
+  const archive = archiveData ?? initialArchive;
+  const forecast = weatherForecast;
   const daySelection = useTopLevelDaySelection({ archive, requestedDay });
   const priceCurrency =
     dynamicPriceSnapshot?.currency ??
     archive.dynamicPriceSamples[0]?.currency ??
     "EUR";
   const refreshError =
-    archiveRefreshError ??
-    currentRefreshError ??
-    pricesRefreshError ??
-    solarRefreshError ??
-    solarCurrentRefreshError;
+    archiveRefreshError ?? currentRefreshError ?? solarCurrentRefreshError;
 
   return (
     <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-5 shadow-[0_20px_90px_rgba(0,0,0,0.25)] backdrop-blur">
@@ -288,16 +256,10 @@ export function CombinedGraphPage({
           archive={archive}
           currentData={currentData}
           daySelection={daySelection}
-          dynamicPriceSnapshot={
-            pricesData?.dynamicPriceSnapshot ?? dynamicPriceSnapshot
-          }
+          dynamicPriceSnapshot={dynamicPriceSnapshot}
           forecast={forecast}
-          highestMarkerPeriodStarts={
-            pricesData?.highestMarkerPeriodStarts ?? highestMarkerPeriodStarts
-          }
-          lowestMarkerPeriodStarts={
-            pricesData?.lowestMarkerPeriodStarts ?? lowestMarkerPeriodStarts
-          }
+          highestMarkerPeriodStarts={highestMarkerPeriodStarts}
+          lowestMarkerPeriodStarts={lowestMarkerPeriodStarts}
           priceCurrency={priceCurrency}
           site={site}
           solarCurrentData={solarCurrentData}
@@ -309,7 +271,42 @@ export function CombinedGraphPage({
 
 function useActiveGraphTypes(): GraphType[] {
   const searchParams = useSearchParams();
-  const graphsParam = searchParams.get("graphs");
+  const [activeTypes, setActiveTypes] = useState(() =>
+    parseGraphTypes(searchParams.get("graphs")),
+  );
+
+  useEffect(() => {
+    setActiveTypes(parseGraphTypes(searchParams.get("graphs")));
+  }, [searchParams]);
+
+  useEffect(() => {
+    function syncFromLocation() {
+      setActiveTypes(
+        parseGraphTypes(
+          new URLSearchParams(window.location.search).get("graphs"),
+        ),
+      );
+    }
+
+    window.addEventListener("popstate", syncFromLocation);
+    window.addEventListener(
+      COMBINED_GRAPH_TYPES_CHANGE_EVENT,
+      syncFromLocation,
+    );
+
+    return () => {
+      window.removeEventListener("popstate", syncFromLocation);
+      window.removeEventListener(
+        COMBINED_GRAPH_TYPES_CHANGE_EVENT,
+        syncFromLocation,
+      );
+    };
+  }, []);
+
+  return activeTypes;
+}
+
+function parseGraphTypes(graphsParam: string | null): GraphType[] {
   const parsed = graphsParam
     ?.split(",")
     .filter((value): value is GraphType =>
@@ -319,24 +316,76 @@ function useActiveGraphTypes(): GraphType[] {
   return parsed && parsed.length > 0 ? parsed : DEFAULT_GRAPH_TYPES;
 }
 
+function useDelayedEnabled(enabled: boolean): boolean {
+  const [delayedEnabled, setDelayedEnabled] = useState(false);
+
+  useEffect(() => {
+    if (!enabled) {
+      setDelayedEnabled(false);
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => setDelayedEnabled(true), 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [enabled]);
+
+  return delayedEnabled;
+}
+
 export function CombinedGraphTypeTabs() {
   const activeTypes = useActiveGraphTypes();
   const pathname = usePathname();
-  const router = useRouter();
   const searchParams = useSearchParams();
+  const longPressHandledRef = useRef(false);
+  const longPressTimerRef = useRef<number | null>(null);
+
+  function updateGraphTypes(nextTypes: GraphType[]) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("graphs", nextTypes.join(","));
+    window.history.pushState(null, "", `${pathname}?${params.toString()}`);
+    window.dispatchEvent(new Event(COMBINED_GRAPH_TYPES_CHANGE_EVENT));
+  }
+
+  function clearLongPressTimer() {
+    if (longPressTimerRef.current === null) return;
+    window.clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = null;
+  }
+
+  function startLongPressToggle(
+    event: PointerEvent<HTMLButtonElement>,
+    graphType: GraphType,
+  ) {
+    if (event.button !== 0) return;
+
+    clearLongPressTimer();
+    longPressHandledRef.current = false;
+    longPressTimerRef.current = window.setTimeout(() => {
+      longPressTimerRef.current = null;
+      longPressHandledRef.current = true;
+      updateGraphTypes(toggleGraphType(activeTypes, graphType));
+    }, LONG_PRESS_TOGGLE_DELAY_MS);
+  }
 
   function selectGraphType(
     event: MouseEvent<HTMLButtonElement>,
     graphType: GraphType,
   ) {
+    clearLongPressTimer();
+
+    if (longPressHandledRef.current) {
+      longPressHandledRef.current = false;
+      event.preventDefault();
+      return;
+    }
+
     const isAdditive =
       event.ctrlKey || event.metaKey || event.shiftKey || event.altKey;
     const nextTypes = isAdditive
       ? toggleGraphType(activeTypes, graphType)
       : [graphType];
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("graphs", nextTypes.join(","));
-    router.push(`${pathname}?${params.toString()}`, { scroll: false });
+    updateGraphTypes(nextTypes);
   }
 
   return (
@@ -354,19 +403,25 @@ export function CombinedGraphTypeTabs() {
         return (
           <button
             aria-pressed={selected}
+            aria-label={`${meta.label}. Click to show only this graph. Long-press to combine graphs.`}
             className={cn(
               UI_STYLES.tabItem,
+              "touch-manipulation select-none",
               selected ? UI_STYLES.tabItemActive : UI_STYLES.tabItemInactive,
             )}
             key={graphType}
             onClick={(event) => selectGraphType(event, graphType)}
+            onPointerCancel={clearLongPressTimer}
+            onPointerDown={(event) => startLongPressToggle(event, graphType)}
+            onPointerLeave={clearLongPressTimer}
+            onPointerUp={clearLongPressTimer}
             type="button"
           >
             <Icon
               size={14}
               style={{ color: selected ? meta.color : undefined }}
             />
-            <span>{meta.label}</span>
+            <span className="hidden sm:inline">{meta.label}</span>
           </button>
         );
       })}
@@ -413,261 +468,452 @@ function CombinedHistoryChart({
   site: SiteSnapshot;
   solarCurrentData: SolarCurrentResponse | undefined;
 }) {
-  const batteryPoints = buildBatteryHistoryPoints(
-    archive.batteryPowerSamples,
-    archive.batteryStrategyHistory,
-    daySelection.selectedDay,
-    archive.batteryStrategyPlansByBatteryId,
+  const hasBattery = activeTypes.includes("battery");
+  const hasGrid = activeTypes.includes("grid");
+  const hasPrices = activeTypes.includes("prices");
+  const hasSolar = activeTypes.includes("solar");
+  const basePoints = useMemo(
+    () =>
+      splitSingleValueSeriesByTime(
+        fillSingleValueDay([], daySelection.selectedDay),
+      ),
+    [daySelection.selectedDay],
   );
-  const gridPoints = splitSingleValueSeriesByTime(
-    fillSingleValueDay(
-      invertSingleValueSeries(aggregatePowerSamples(archive.p1MeterSamples)),
+  const batteryPoints = useMemo(
+    () =>
+      hasBattery
+        ? buildBatteryHistoryPoints(
+            archive.batteryPowerSamples,
+            archive.batteryStrategyHistory,
+            daySelection.selectedDay,
+            archive.batteryStrategyPlansByBatteryId,
+          )
+        : [],
+    [
+      archive.batteryPowerSamples,
+      archive.batteryStrategyHistory,
+      archive.batteryStrategyPlansByBatteryId,
       daySelection.selectedDay,
-    ),
+      hasBattery,
+    ],
   );
-  const siteLoadPoints = splitSingleValueSeriesByTime(
-    archive.selectedDaySiteLoadSamples,
-  );
-  const expectedSiteLoadPoints = splitSingleValueSeriesByTime(
-    archive.selectedDayExpectedSiteLoadSamples,
-  );
-  const pricePoints = splitSingleValueSeriesByTime(
-    fillSingleValueDay(
-      archive.dynamicPriceSamples.map((sample) => ({
-        periodStart: sample.periodStart,
-        value: sample.importPrice,
-      })),
-      daySelection.selectedDay,
-    ),
-  );
-  const generatedPoints = splitSingleValueSeriesByTime(
-    fillSingleValueDay(
-      aggregatePowerSamples(archive.solarEnergyProviderSamples),
-      daySelection.selectedDay,
-    ),
-  );
-  const predictedPoints = splitSingleValueSeriesByTime(
-    fillSingleValueDay(
-      archive.solarPredictedGeneration,
-      daySelection.selectedDay,
-    ),
-  );
-  const selectedDayPredictedSeries = fillSingleValueDay(
-    archive.solarPredictedGeneration,
-    daySelection.selectedDay,
-  );
-  const generatedAccuracySeries = applySolarSeriesSmoothing(
-    aggregatePowerSamples(archive.solarEnergyProviderSamples),
-    DEFAULT_SOLAR_PREDICTION_SMOOTHING_MODE,
-  );
-  const selectedDayGeneratedAccuracySeries = fillSingleValueDay(
-    generatedAccuracySeries,
-    daySelection.selectedDay,
-  );
-  const forecastPoints = splitSingleValueSeriesByTime(
-    fillSingleValueDay(
-      archive.solarForecastSamples.map((sample) => ({
-        periodStart: sample.periodStart,
-        value: sample.value,
-      })),
-      daySelection.selectedDay,
-    ),
-  );
-  let generatedCumulativeWh = 0;
-  let predictedCumulativeWh = 0;
-  let actualSiteLoadCumulativeWh = 0;
-  let expectedSiteLoadCumulativeWh = 0;
-  let cumulativeImportCost = 0;
-  let cumulativeExportEarnings = 0;
-  const chartData = pricePoints.map((pricePoint, index) => {
-    const batteryPoint = batteryPoints[index];
-    const gridPoint = gridPoints[index];
-    const siteLoadPoint = siteLoadPoints[index];
-    const expectedSiteLoadPoint = expectedSiteLoadPoints[index];
-    const generatedPoint = generatedPoints[index];
-    const predictedPoint = predictedPoints[index];
-    const forecastPoint = forecastPoints[index];
-    const importPrice =
-      getActivePricePointAtOrBefore(
-        archive.dynamicPriceSamples,
-        pricePoint.periodStart,
-      )?.importPrice ?? null;
-    if (typeof generatedPoint?.value === "number")
-      generatedCumulativeWh +=
-        generatedPoint.value * (HISTORY_STEP_MS / (60 * 60 * 1_000));
-    if (typeof predictedPoint?.value === "number")
-      predictedCumulativeWh +=
-        predictedPoint.value * (HISTORY_STEP_MS / (60 * 60 * 1_000));
-    if (typeof siteLoadPoint?.value === "number")
-      actualSiteLoadCumulativeWh +=
-        siteLoadPoint.value * (HISTORY_STEP_MS / (60 * 60 * 1_000));
-    if (typeof expectedSiteLoadPoint?.value === "number")
-      expectedSiteLoadCumulativeWh +=
-        expectedSiteLoadPoint.value * (HISTORY_STEP_MS / (60 * 60 * 1_000));
-    if (
-      typeof gridPoint?.value === "number" &&
-      typeof importPrice === "number"
-    ) {
-      const energyKwh =
-        (Math.abs(gridPoint.value) * (HISTORY_STEP_MS / (60 * 60 * 1_000))) /
-        1_000;
-
-      if (gridPoint.value < 0) {
-        cumulativeImportCost += energyKwh * importPrice;
-      } else {
-        cumulativeExportEarnings +=
-          energyKwh *
-          computeExportPrice(
-            importPrice,
-            site.dynamicPriceSources[0]?.exportDeduction,
-          );
-      }
+  const gridParts = useMemo(() => {
+    if (!hasGrid) {
+      return {
+        expectedSiteLoadPoints: [],
+        gridImportPricesByPeriodStart: new Map<string, number | null>(),
+        gridPoints: [],
+        siteLoadPoints: [],
+      };
     }
 
+    const points = splitSingleValueSeriesByTime(
+      fillSingleValueDay(
+        invertSingleValueSeries(aggregatePowerSamples(archive.p1MeterSamples)),
+        daySelection.selectedDay,
+      ),
+    );
+
     return {
-      actualSiteLoadCumulativeWh,
-      actualSiteLoadCurrentValue: siteLoadPoint?.currentValue ?? null,
-      actualSiteLoadFutureValue: siteLoadPoint?.futureValue ?? null,
-      batteryChargeCurrentValue: batteryPoint?.currentChargePercent ?? null,
-      batteryChargeFutureValue: batteryPoint?.futureChargePercent ?? null,
-      batteryPowerCurrentValue: batteryPoint?.currentPower ?? null,
-      batteryPowerFutureValue: batteryPoint?.futurePower ?? null,
-      cumulativeExportEarnings,
-      cumulativeImportCost,
-      cumulativeNetCost: cumulativeImportCost - cumulativeExportEarnings,
-      expectedSiteLoadCumulativeWh,
-      expectedSiteLoadCurrentValue: expectedSiteLoadPoint?.currentValue ?? null,
-      expectedSiteLoadFutureValue: expectedSiteLoadPoint?.futureValue ?? null,
-      forecastCurrentValue: forecastPoint?.currentValue ?? null,
-      forecastFutureValue: forecastPoint?.futureValue ?? null,
-      generatedCumulativeWh,
-      generatedCurrentValue: generatedPoint?.currentValue ?? null,
-      generatedFutureValue: generatedPoint?.futureValue ?? null,
-      gridCurrentValue: gridPoint?.currentValue ?? null,
-      gridFutureValue: gridPoint?.futureValue ?? null,
-      overlayValue: batteryPoint?.overlayValue ?? null,
-      periodStart: pricePoint.periodStart,
-      predictedCumulativeWh,
-      predictedCurrentValue: predictedPoint?.currentValue ?? null,
-      predictedFutureValue: predictedPoint?.futureValue ?? null,
-      priceCurrentValue: pricePoint.currentValue,
-      priceFutureValue: pricePoint.futureValue,
-      strategyColor: batteryPoint?.strategyColor ?? null,
-      strategyDisplayLabel: batteryPoint?.strategyDisplayLabel ?? null,
-      strategyDisplayState: batteryPoint?.strategyDisplayState ?? null,
-      strategyItemLabel: batteryPoint?.strategyItemLabel ?? null,
-      strategySource: batteryPoint?.strategySource ?? null,
-      timestampMs: new Date(pricePoint.periodStart).getTime(),
+      expectedSiteLoadPoints: splitSingleValueSeriesByTime(
+        archive.selectedDayExpectedSiteLoadSamples,
+      ),
+      gridImportPricesByPeriodStart: buildActiveImportPriceMap(
+        points,
+        archive.dynamicPriceSamples,
+      ),
+      gridPoints: points,
+      siteLoadPoints: splitSingleValueSeriesByTime(
+        archive.selectedDaySiteLoadSamples,
+      ),
     };
-  });
-  const strategyStates = activeTypes.includes("battery")
-    ? getBatteryStrategyLegendItems(batteryPoints)
-    : [];
-  const seriesIds = [
-    ...getSeriesIds(activeTypes),
-    ...strategyStates.map((state) => state.seriesId),
-  ];
+  }, [
+    archive.dynamicPriceSamples,
+    archive.p1MeterSamples,
+    archive.selectedDayExpectedSiteLoadSamples,
+    archive.selectedDaySiteLoadSamples,
+    daySelection.selectedDay,
+    hasGrid,
+  ]);
+  const pricePoints = useMemo(
+    () =>
+      hasPrices || hasGrid
+        ? splitSingleValueSeriesByTime(
+            fillSingleValueDay(
+              archive.dynamicPriceSamples.map((sample) => ({
+                periodStart: sample.periodStart,
+                value: sample.importPrice,
+              })),
+              daySelection.selectedDay,
+            ),
+          )
+        : [],
+    [archive.dynamicPriceSamples, daySelection.selectedDay, hasGrid, hasPrices],
+  );
+  const solarParts = useMemo(() => {
+    if (!hasSolar) {
+      return {
+        forecastPoints: [],
+        generatedPoints: [],
+        predictedPoints: [],
+        selectedDayGeneratedAccuracySeries: [],
+        selectedDayPredictedSeries: [],
+      };
+    }
+
+    const generatedPowerSeries = aggregatePowerSamples(
+      archive.solarEnergyProviderSamples,
+    );
+    const generatedAccuracySeries = applySolarSeriesSmoothing(
+      generatedPowerSeries,
+      DEFAULT_SOLAR_PREDICTION_SMOOTHING_MODE,
+    );
+
+    return {
+      forecastPoints: splitSingleValueSeriesByTime(
+        fillSingleValueDay(
+          archive.solarForecastSamples.map((sample) => ({
+            periodStart: sample.periodStart,
+            value: sample.value,
+          })),
+          daySelection.selectedDay,
+        ),
+      ),
+      generatedPoints: splitSingleValueSeriesByTime(
+        fillSingleValueDay(generatedPowerSeries, daySelection.selectedDay),
+      ),
+      predictedPoints: splitSingleValueSeriesByTime(
+        fillSingleValueDay(
+          archive.solarPredictedGeneration,
+          daySelection.selectedDay,
+        ),
+      ),
+      selectedDayGeneratedAccuracySeries: fillSingleValueDay(
+        generatedAccuracySeries,
+        daySelection.selectedDay,
+      ),
+      selectedDayPredictedSeries: fillSingleValueDay(
+        archive.solarPredictedGeneration,
+        daySelection.selectedDay,
+      ),
+    };
+  }, [
+    archive.solarEnergyProviderSamples,
+    archive.solarForecastSamples,
+    archive.solarPredictedGeneration,
+    daySelection.selectedDay,
+    hasSolar,
+  ]);
+  const chartData = useMemo(() => {
+    let generatedCumulativeWh = 0;
+    let predictedCumulativeWh = 0;
+    let actualSiteLoadCumulativeWh = 0;
+    let expectedSiteLoadCumulativeWh = 0;
+    let cumulativeImportCost = 0;
+    let cumulativeExportEarnings = 0;
+
+    return basePoints.map((basePoint, index) => {
+      const batteryPoint = batteryPoints[index];
+      const gridPoint = gridParts.gridPoints[index];
+      const siteLoadPoint = gridParts.siteLoadPoints[index];
+      const expectedSiteLoadPoint = gridParts.expectedSiteLoadPoints[index];
+      const generatedPoint = solarParts.generatedPoints[index];
+      const predictedPoint = solarParts.predictedPoints[index];
+      const forecastPoint = solarParts.forecastPoints[index];
+      const importPrice = hasGrid
+        ? (gridParts.gridImportPricesByPeriodStart.get(basePoint.periodStart) ??
+          null)
+        : null;
+      if (typeof generatedPoint?.value === "number")
+        generatedCumulativeWh +=
+          generatedPoint.value * (HISTORY_STEP_MS / (60 * 60 * 1_000));
+      if (typeof predictedPoint?.value === "number")
+        predictedCumulativeWh +=
+          predictedPoint.value * (HISTORY_STEP_MS / (60 * 60 * 1_000));
+      if (typeof siteLoadPoint?.value === "number")
+        actualSiteLoadCumulativeWh +=
+          siteLoadPoint.value * (HISTORY_STEP_MS / (60 * 60 * 1_000));
+      if (typeof expectedSiteLoadPoint?.value === "number")
+        expectedSiteLoadCumulativeWh +=
+          expectedSiteLoadPoint.value * (HISTORY_STEP_MS / (60 * 60 * 1_000));
+      if (
+        typeof gridPoint?.value === "number" &&
+        typeof importPrice === "number"
+      ) {
+        const energyKwh =
+          (Math.abs(gridPoint.value) * (HISTORY_STEP_MS / (60 * 60 * 1_000))) /
+          1_000;
+
+        if (gridPoint.value < 0) {
+          cumulativeImportCost += energyKwh * importPrice;
+        } else {
+          cumulativeExportEarnings +=
+            energyKwh *
+            computeExportPrice(
+              importPrice,
+              site.dynamicPriceSources[0]?.exportDeduction,
+            );
+        }
+      }
+
+      return {
+        actualSiteLoadCumulativeWh,
+        actualSiteLoadCurrentValue: siteLoadPoint?.currentValue ?? null,
+        actualSiteLoadFutureValue: siteLoadPoint?.futureValue ?? null,
+        batteryChargeCurrentValue: batteryPoint?.currentChargePercent ?? null,
+        batteryChargeFutureValue: batteryPoint?.futureChargePercent ?? null,
+        batteryPowerCurrentValue: batteryPoint?.currentPower ?? null,
+        batteryPowerFutureValue: batteryPoint?.futurePower ?? null,
+        cumulativeExportEarnings,
+        cumulativeImportCost,
+        cumulativeNetCost: cumulativeImportCost - cumulativeExportEarnings,
+        expectedSiteLoadCumulativeWh,
+        expectedSiteLoadCurrentValue:
+          expectedSiteLoadPoint?.currentValue ?? null,
+        expectedSiteLoadFutureValue: expectedSiteLoadPoint?.futureValue ?? null,
+        forecastCurrentValue: forecastPoint?.currentValue ?? null,
+        forecastFutureValue: forecastPoint?.futureValue ?? null,
+        generatedCumulativeWh,
+        generatedCurrentValue: generatedPoint?.currentValue ?? null,
+        generatedFutureValue: generatedPoint?.futureValue ?? null,
+        gridCurrentValue: gridPoint?.currentValue ?? null,
+        gridFutureValue: gridPoint?.futureValue ?? null,
+        overlayValue: batteryPoint?.overlayValue ?? null,
+        periodStart: basePoint.periodStart,
+        predictedCumulativeWh,
+        predictedCurrentValue: predictedPoint?.currentValue ?? null,
+        predictedFutureValue: predictedPoint?.futureValue ?? null,
+        priceCurrentValue: hasPrices
+          ? (pricePoints[index]?.currentValue ?? null)
+          : null,
+        priceFutureValue: hasPrices
+          ? (pricePoints[index]?.futureValue ?? null)
+          : null,
+        strategyColor: batteryPoint?.strategyColor ?? null,
+        strategyDisplayLabel: batteryPoint?.strategyDisplayLabel ?? null,
+        strategyDisplayState: batteryPoint?.strategyDisplayState ?? null,
+        strategyItemLabel: batteryPoint?.strategyItemLabel ?? null,
+        strategySource: batteryPoint?.strategySource ?? null,
+        timestampMs: new Date(basePoint.periodStart).getTime(),
+      };
+    });
+  }, [
+    basePoints,
+    batteryPoints,
+    gridParts,
+    hasGrid,
+    hasPrices,
+    pricePoints,
+    site.dynamicPriceSources,
+    solarParts,
+  ]);
+  const strategyStates = useMemo(
+    () => (hasBattery ? getBatteryStrategyLegendItems(batteryPoints) : []),
+    [batteryPoints, hasBattery],
+  );
+  const seriesIds = useMemo(
+    () => [
+      ...getSeriesIds(activeTypes),
+      ...strategyStates.map((state) => state.seriesId),
+    ],
+    [activeTypes, strategyStates],
+  );
   const { isVisible, toggle } = useChartSeriesVisibility({
     seriesIds,
     storageKey: COMBINED_VISIBILITY_STORAGE_KEY,
   });
-  const activeAxisKinds = getActiveAxisKinds(activeTypes);
+  const activeAxisKinds = useMemo(
+    () => getActiveAxisKinds(activeTypes),
+    [activeTypes],
+  );
   const primaryAxis = getPrimaryAxisKind(activeTypes);
   const secondaryAxis = getSecondaryAxisKind(activeAxisKinds, primaryAxis);
   const mirrorPrimaryAxis = shouldMirrorRightAxis(activeTypes);
   const hideAxisDetails = activeTypes.length > 1;
-  const axisConfigs = {
-    charge: buildMirroredYAxis(
-      chartData.flatMap((point) => [
-        point.batteryChargeCurrentValue,
-        point.batteryChargeFutureValue,
-      ]),
-      [0, 100],
-    ),
-    forecast: buildMirroredYAxis(
-      chartData.flatMap((point) => [
-        point.forecastCurrentValue,
-        point.forecastFutureValue,
-      ]),
-    ),
-    power: buildMirroredYAxis(
-      chartData.flatMap((point) => [
-        point.batteryPowerCurrentValue,
-        point.batteryPowerFutureValue,
-        point.gridCurrentValue,
-        point.gridFutureValue,
-        point.actualSiteLoadCurrentValue,
-        point.actualSiteLoadFutureValue,
-        point.expectedSiteLoadCurrentValue,
-        point.expectedSiteLoadFutureValue,
-        point.generatedCurrentValue,
-        point.generatedFutureValue,
-        point.predictedCurrentValue,
-        point.predictedFutureValue,
-      ]),
-      activeTypes.length === 1 && activeTypes[0] === "solar"
-        ? [0, SOLAR_POWER_AXIS_MAX_W]
-        : undefined,
-    ),
-    price: buildMirroredYAxis(
-      chartData.flatMap((point) => [
-        point.priceCurrentValue,
-        point.priceFutureValue,
-      ]),
-      undefined,
-      undefined,
-      false,
-    ),
-  } satisfies Record<AxisKind, ReturnType<typeof buildMirroredYAxis>>;
-  const hasValues = chartData.some((point) =>
-    seriesIds.some((seriesId) => hasSeriesValue(point, seriesId)),
+  const axisConfigs = useMemo(() => {
+    const configs: Partial<
+      Record<AxisKind, ReturnType<typeof buildMirroredYAxis>>
+    > = {};
+
+    for (const axisKind of activeAxisKinds) {
+      if (axisKind === "charge") {
+        configs[axisKind] = buildMirroredYAxis(
+          chartData.flatMap((point) => [
+            point.batteryChargeCurrentValue,
+            point.batteryChargeFutureValue,
+          ]),
+          [0, 100],
+        );
+        continue;
+      }
+
+      if (axisKind === "forecast") {
+        configs[axisKind] = buildMirroredYAxis(
+          chartData.flatMap((point) => [
+            point.forecastCurrentValue,
+            point.forecastFutureValue,
+          ]),
+        );
+        continue;
+      }
+
+      if (axisKind === "price") {
+        configs[axisKind] = buildMirroredYAxis(
+          chartData.flatMap((point) => [
+            point.priceCurrentValue,
+            point.priceFutureValue,
+          ]),
+          undefined,
+          undefined,
+          false,
+        );
+        continue;
+      }
+
+      configs[axisKind] = buildMirroredYAxis(
+        chartData.flatMap((point) => [
+          point.batteryPowerCurrentValue,
+          point.batteryPowerFutureValue,
+          point.gridCurrentValue,
+          point.gridFutureValue,
+          point.actualSiteLoadCurrentValue,
+          point.actualSiteLoadFutureValue,
+          point.expectedSiteLoadCurrentValue,
+          point.expectedSiteLoadFutureValue,
+          point.generatedCurrentValue,
+          point.generatedFutureValue,
+          point.predictedCurrentValue,
+          point.predictedFutureValue,
+        ]),
+        activeTypes.length === 1 && activeTypes[0] === "solar"
+          ? [0, SOLAR_POWER_AXIS_MAX_W]
+          : undefined,
+      );
+    }
+
+    return configs;
+  }, [activeAxisKinds, activeTypes, chartData]);
+  function getActiveAxisConfig(axisKind: AxisKind) {
+    const config = axisConfigs[axisKind];
+    if (!config) {
+      throw new Error(`Missing combined chart axis config for ${axisKind}`);
+    }
+
+    return config;
+  }
+  const hasValues = useMemo(
+    () =>
+      chartData.some((point) =>
+        seriesIds.some((seriesId) => hasSeriesValue(point, seriesId)),
+      ),
+    [chartData, seriesIds],
   );
   const forecastUnitLabel = forecast?.unitLabel ?? "W/m²";
-  const strategyBatteryId = getBatteryHistoryStrategyBatteryId(
-    archive.batteryPowerSamples,
-    daySelection.selectedDay,
+  const strategyBatteryId = useMemo(
+    () =>
+      hasBattery
+        ? getBatteryHistoryStrategyBatteryId(
+            archive.batteryPowerSamples,
+            daySelection.selectedDay,
+          )
+        : null,
+    [archive.batteryPowerSamples, daySelection.selectedDay, hasBattery],
   );
   const xAxisStartMs = chartData[0]?.timestampMs ?? 0;
   const xAxisEndMs = (chartData.at(-1)?.timestampMs ?? 0) + HISTORY_STEP_MS;
-  const strategySegments = buildExactBatteryStrategySegments({
-    chartEndMs: xAxisEndMs,
-    chartStartMs: xAxisStartMs,
-    cutoffMs: daySelection.nowMarkerPeriodStart
-      ? new Date(daySelection.nowMarkerPeriodStart).getTime()
-      : null,
-    strategyBatteryId,
-    strategyHistory: archive.batteryStrategyHistory,
-    strategyPlansByBatteryId: archive.batteryStrategyPlansByBatteryId,
-  });
-  const solarSurplusBounds = findSolarSurplusBoundsFromSeries({
-    expectedLoadSeries: archive.selectedDayExpectedSiteLoadSamples,
-    fallbackEndTime: predictedPoints.at(-1)?.periodStart ?? null,
-    predictedSeries: predictedPoints,
-    selectedDayKey: daySelection.selectedDay,
-  });
-  const predictionAccuracySummary = buildSolarPredictionAccuracySummary({
-    generatedSeries: selectedDayGeneratedAccuracySeries,
-    predictedSeries: selectedDayPredictedSeries,
-    nowMarkerPeriodStart: daySelection.nowMarkerPeriodStart,
-  });
-  const summaries = getLegendSummaries({
-    archive,
-    chartData,
-    currentData,
-    dynamicPriceSnapshot,
-    priceCurrency,
-    site,
-    solarCurrentData,
-  });
+  const showPriceMarkers = hasPrices && isVisible(SERIES_IDS.priceImport);
+  const visibleLowestMarkerTimes = showPriceMarkers
+    ? getVisibleMarkerTimes(lowestMarkerPeriodStarts, xAxisStartMs, xAxisEndMs)
+    : [];
+  const visibleHighestMarkerTimes = showPriceMarkers
+    ? getVisibleMarkerTimes(highestMarkerPeriodStarts, xAxisStartMs, xAxisEndMs)
+    : [];
+  const strategySegments = useMemo(
+    () =>
+      hasBattery
+        ? buildExactBatteryStrategySegments({
+            chartEndMs: xAxisEndMs,
+            chartStartMs: xAxisStartMs,
+            cutoffMs: daySelection.nowMarkerPeriodStart
+              ? new Date(daySelection.nowMarkerPeriodStart).getTime()
+              : null,
+            strategyBatteryId,
+            strategyHistory: archive.batteryStrategyHistory,
+            strategyPlansByBatteryId: archive.batteryStrategyPlansByBatteryId,
+          })
+        : [],
+    [
+      archive.batteryStrategyHistory,
+      archive.batteryStrategyPlansByBatteryId,
+      daySelection.nowMarkerPeriodStart,
+      hasBattery,
+      strategyBatteryId,
+      xAxisEndMs,
+      xAxisStartMs,
+    ],
+  );
+  const solarSurplusBounds = useMemo(
+    () =>
+      hasSolar
+        ? findSolarSurplusBoundsFromSeries({
+            expectedLoadSeries: archive.selectedDayExpectedSiteLoadSamples,
+            fallbackEndTime:
+              solarParts.predictedPoints.at(-1)?.periodStart ?? null,
+            predictedSeries: solarParts.predictedPoints,
+            selectedDayKey: daySelection.selectedDay,
+          })
+        : { finalEndTime: null, firstStartTime: null },
+    [
+      archive.selectedDayExpectedSiteLoadSamples,
+      daySelection.selectedDay,
+      hasSolar,
+      solarParts.predictedPoints,
+    ],
+  );
+  const predictionAccuracyPercentage = useMemo(
+    () =>
+      hasSolar
+        ? buildSolarPredictionAccuracySummary({
+            generatedSeries: solarParts.selectedDayGeneratedAccuracySeries,
+            predictedSeries: solarParts.selectedDayPredictedSeries,
+            nowMarkerPeriodStart: daySelection.nowMarkerPeriodStart,
+          }).overallAccuracyPercentage
+        : null,
+    [
+      daySelection.nowMarkerPeriodStart,
+      hasSolar,
+      solarParts.selectedDayGeneratedAccuracySeries,
+      solarParts.selectedDayPredictedSeries,
+    ],
+  );
+  const summaries = useMemo(
+    () =>
+      getLegendSummaries({
+        archive,
+        chartData,
+        currentData,
+        dynamicPriceSnapshot,
+        priceCurrency,
+        site,
+        solarCurrentData,
+      }),
+    [
+      archive,
+      chartData,
+      currentData,
+      dynamicPriceSnapshot,
+      priceCurrency,
+      site,
+      solarCurrentData,
+    ],
+  );
 
   return (
     <div className="space-y-2.5">
       <GroupedLegend
         activeTypes={activeTypes}
         isVisible={isVisible}
-        predictionAccuracyPercentage={
-          predictionAccuracySummary.overallAccuracyPercentage
-        }
+        predictionAccuracyPercentage={predictionAccuracyPercentage}
         strategyStates={strategyStates}
         summaries={summaries}
         toggle={toggle}
@@ -710,7 +956,7 @@ function CombinedHistoryChart({
                 />
                 {renderAxis(
                   primaryAxis,
-                  axisConfigs[primaryAxis],
+                  getActiveAxisConfig(primaryAxis),
                   "left",
                   hideAxisDetails
                     ? "Multiple axes"
@@ -730,7 +976,7 @@ function CombinedHistoryChart({
                   .map((axisKind) =>
                     renderAxis(
                       axisKind,
-                      axisConfigs[axisKind],
+                      getActiveAxisConfig(axisKind),
                       axisKind === secondaryAxis ? "right" : "hidden",
                       hideAxisDetails
                         ? ""
@@ -749,7 +995,7 @@ function CombinedHistoryChart({
                 {mirrorPrimaryAxis
                   ? renderAxis(
                       primaryAxis,
-                      axisConfigs[primaryAxis],
+                      getActiveAxisConfig(primaryAxis),
                       "right",
                       getAxisLabel(
                         primaryAxis,
@@ -839,34 +1085,28 @@ function CombinedHistoryChart({
                     yAxisId={primaryAxis}
                   />
                 ) : null}
-                {activeTypes.includes("prices") &&
-                isVisible(SERIES_IDS.priceImport)
-                  ? lowestMarkerPeriodStarts.map((periodStart) => (
-                      <ReferenceLine
-                        key={`low-${periodStart}`}
-                        label={buildLowestLabel()}
-                        stroke={UI_COLORS.success}
-                        strokeDasharray="2 2"
-                        strokeOpacity={0.65}
-                        x={new Date(periodStart).getTime()}
-                        yAxisId="price"
-                      />
-                    ))
-                  : null}
-                {activeTypes.includes("prices") &&
-                isVisible(SERIES_IDS.priceImport)
-                  ? highestMarkerPeriodStarts.map((periodStart) => (
-                      <ReferenceLine
-                        key={`high-${periodStart}`}
-                        label={buildHighestLabel()}
-                        stroke={UI_COLORS.error}
-                        strokeDasharray="2 2"
-                        strokeOpacity={0.65}
-                        x={new Date(periodStart).getTime()}
-                        yAxisId="price"
-                      />
-                    ))
-                  : null}
+                {visibleLowestMarkerTimes.map((markerTime) => (
+                  <ReferenceLine
+                    key={`low-${markerTime}`}
+                    label={buildLowestLabel()}
+                    stroke={UI_COLORS.success}
+                    strokeDasharray="2 2"
+                    strokeOpacity={0.65}
+                    x={markerTime}
+                    yAxisId="price"
+                  />
+                ))}
+                {visibleHighestMarkerTimes.map((markerTime) => (
+                  <ReferenceLine
+                    key={`high-${markerTime}`}
+                    label={buildHighestLabel()}
+                    stroke={UI_COLORS.error}
+                    strokeDasharray="2 2"
+                    strokeOpacity={0.65}
+                    x={markerTime}
+                    yAxisId="price"
+                  />
+                ))}
                 {activeTypes.includes("solar") &&
                 (isVisible(SERIES_IDS.solarPredicted) ||
                   isVisible(SERIES_IDS.solarGenerated)) &&
@@ -909,8 +1149,8 @@ function CombinedHistoryChart({
         ) : null}
       </div>
       <p className="text-xs leading-5 text-slate-500">
-        Tip: click a graph type to select only it. Use Ctrl, Command, Shift, or
-        Alt/Option-click to add or remove graph types.
+        Tip: click a graph type to show only it. Long-press or use Ctrl,
+        Command, Shift, or Alt/Option-click to add or remove graph types.
       </p>
       {dynamicPriceSnapshot === null && activeTypes.includes("prices") ? (
         <p className="text-xs leading-5 text-amber-100">
@@ -1290,6 +1530,48 @@ function renderAxis(
       yAxisId={yAxisId}
     />
   );
+}
+
+function getVisibleMarkerTimes(
+  periodStarts: string[],
+  startMs: number,
+  endMs: number,
+): number[] {
+  return periodStarts.flatMap((periodStart) => {
+    const markerTime = new Date(periodStart).getTime();
+
+    return markerTime >= startMs && markerTime <= endMs ? [markerTime] : [];
+  });
+}
+
+function buildActiveImportPriceMap(
+  points: Array<{ periodStart: string }>,
+  priceSamples: Array<{ importPrice: number | null; periodStart: string }>,
+): Map<string, number | null> {
+  const priceByPeriodStart = new Map<string, number | null>();
+  let activeImportPrice: number | null = null;
+  let priceIndex = 0;
+  const sortedPriceSamples = [...priceSamples].sort(
+    (left, right) =>
+      new Date(left.periodStart).getTime() -
+      new Date(right.periodStart).getTime(),
+  );
+
+  for (const point of points) {
+    const pointTime = new Date(point.periodStart).getTime();
+
+    while (priceIndex < sortedPriceSamples.length) {
+      const sample = sortedPriceSamples[priceIndex];
+      if (!sample || new Date(sample.periodStart).getTime() > pointTime) break;
+
+      activeImportPrice = sample.importPrice;
+      priceIndex += 1;
+    }
+
+    priceByPeriodStart.set(point.periodStart, activeImportPrice);
+  }
+
+  return priceByPeriodStart;
 }
 
 function formatHiddenAxisTick(): string {
