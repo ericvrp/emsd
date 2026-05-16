@@ -174,7 +174,6 @@ export function CombinedGraphPage({
   const hasBatteryOrGrid =
     activeTypes.includes("battery") || activeTypes.includes("grid");
   const hasSolar = activeTypes.includes("solar");
-  const isLiveDay = requestedDay === null;
   const livePollingEnabled = useDelayedEnabled(hasBatteryOrGrid || hasSolar);
   const requestedDayParam = requestedDay
     ? `&day=${encodeURIComponent(requestedDay)}`
@@ -198,7 +197,7 @@ export function CombinedGraphPage({
         failureMessage:
           "Combined live updates are retrying. Showing last available data.",
         refreshIntervalMs: LIVE_REFRESH_INTERVAL_MS,
-        enabled: isLiveDay && livePollingEnabled && hasBatteryOrGrid,
+        enabled: livePollingEnabled && hasBatteryOrGrid,
       },
     );
   const { data: solarCurrentData, refreshError: solarCurrentRefreshError } =
@@ -210,7 +209,7 @@ export function CombinedGraphPage({
         failureMessage:
           "Solar current updates are retrying. Showing last available data.",
         refreshIntervalMs: LIVE_REFRESH_INTERVAL_MS,
-        enabled: isLiveDay && livePollingEnabled && hasSolar,
+        enabled: livePollingEnabled && hasSolar,
       },
     );
   const archive = archiveData ?? initialArchive;
