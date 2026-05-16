@@ -195,7 +195,6 @@ async function runAction(
   try {
     const result = await runner();
     revalidatePath("/");
-    revalidatePath("/status");
     return {
       notice: result.notice,
       ok: true,
@@ -207,7 +206,6 @@ async function runAction(
     }
 
     revalidatePath("/");
-    revalidatePath("/status");
     return {
       notice: error instanceof Error ? error.message : String(error),
       ok: false,

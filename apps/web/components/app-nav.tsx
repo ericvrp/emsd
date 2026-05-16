@@ -1,6 +1,12 @@
 "use client";
 
-import { BatteryCharging, Gauge, HandCoins, SunMedium } from "lucide-react";
+import {
+  BatteryCharging,
+  Gauge,
+  HandCoins,
+  Layers3,
+  SunMedium,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { UI_STYLES } from "../lib/ui-colors";
@@ -11,10 +17,11 @@ export function AppNav() {
   const searchParams = useSearchParams();
   const selectedDay = searchParams.get("day");
   const navItems = [
-    { href: "/", icon: BatteryCharging, label: "Battery" },
-    { href: "/solar", icon: SunMedium, label: "Solar" },
-    { href: "/prices", icon: HandCoins, label: "Prices" },
-    { href: "/grid", icon: Gauge, label: "Grid" },
+    { href: "/", icon: Layers3, label: "Combined" },
+    { href: "/old", icon: BatteryCharging, label: "Battery" },
+    { href: "/old/forecast", icon: SunMedium, label: "Forecast" },
+    { href: "/old/pricing", icon: HandCoins, label: "Pricing" },
+    { href: "/old/grid", icon: Gauge, label: "Grid" },
   ];
 
   return (
