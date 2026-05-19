@@ -234,6 +234,34 @@ test("uses self-consumption wording in the scheduled start summary for delayed-c
   );
 });
 
+test("includes import-shortage estimate details in the scheduled start summary", () => {
+  expect(
+    formatScheduledStrategyStartedSummary(
+      "battery-1",
+      buildDailyItem({
+        manualChargeTargetSoc: 100,
+        manualDischargeTargetSoc: null,
+        manualState: "charging",
+        manualTargetSoc: 100,
+        targetMethod: "auto",
+        triggerKind: BatteryStrategyTriggerKind.ImportShortage,
+      }),
+      "",
+      {
+        details:
+          "lowImportPriceMarker=2026-05-19 14:00 projection=40% now -> 32% by solarSurplusStart=2026-05-19 09:00 after preSurplusDemand=0.8kWh/8%; then solarRecovery=4kWh/40% to projectedEndSoc=72% by solarSurplusEnd=2026-05-19 19:00 decision=shortageToFull=28% targetSoc=70.8% energyToImport=3.08kWh start=2026-05-19 07:22 targetFormula=40% + 28% shortage + 2.8% buffer = 70.8%",
+        reasoning: "projected end-of-surplus shortage plus 0.2%/hour buffer",
+        resolvedManualState: "charging",
+        targetSocPercent: 70.8,
+        reserveSocPercent: 40,
+        targetTime: "2026-05-19T12:00:00.000Z",
+      },
+    ),
+  ).toBe(
+    "the import shortage schedule is now active for battery-1: scheduled charge to 70.8% at 2400W; charging to 70.8% for import shortage: lowImportPriceMarker=2026-05-19 14:00 projection=40% now -> 32% by solarSurplusStart=2026-05-19 09:00 after preSurplusDemand=0.8kWh/8%; then solarRecovery=4kWh/40% to projectedEndSoc=72% by solarSurplusEnd=2026-05-19 19:00 decision=shortageToFull=28% targetSoc=70.8% energyToImport=3.08kWh start=2026-05-19 07:22 targetFormula=40% + 28% shortage + 2.8% buffer = 70.8%",
+  );
+});
+
 test("summarizes price-triggered strategy lifecycle with the trigger kind", () => {
   expect(
     formatScheduledStrategyStartedSummary(

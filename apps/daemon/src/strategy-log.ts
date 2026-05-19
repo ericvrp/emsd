@@ -98,6 +98,7 @@ export function formatScheduledStrategyStartedSummary(
   item: BatteryStrategyPlanItem,
   observedDelay: string,
   estimate?: {
+    details?: string | null;
     resolvedManualState: BatteryManualState | null;
     targetSocPercent: number;
     reserveSocPercent: number;
@@ -120,6 +121,13 @@ export function formatScheduledStrategyStartedSummary(
 
   if (item.triggerKind === BatteryStrategyTriggerKind.DelayedChargePrep) {
     return base;
+  }
+
+  if (
+    item.triggerKind === BatteryStrategyTriggerKind.ImportShortage &&
+    estimate.details
+  ) {
+    return `${base}; charging to ${estimate.targetSocPercent}% for import shortage: ${estimate.details}`;
   }
 
   const targetTimeLabel =

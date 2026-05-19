@@ -75,6 +75,7 @@ export interface BatteryStrategyRuntimeRecord {
   activeReserveSocPercent?: number | null;
   activeTargetTime?: string | null;
   activeRecoveryTime?: string | null;
+  activeEstimateDetails?: string | null;
   activeStartedAt: string | null;
   activeObservedAt: string | null;
   activeStartSocPercent: number | null;
@@ -380,6 +381,7 @@ export function createBatteryStrategyRuntime(): BatteryStrategyRuntimeRecord {
     activeReserveSocPercent: null,
     activeTargetTime: null,
     activeRecoveryTime: null,
+    activeEstimateDetails: null,
     activeStartedAt: null,
     activeObservedAt: null,
     activeStartSocPercent: null,
@@ -405,6 +407,7 @@ export function clearActiveBatteryStrategyRuntime(
     activeReserveSocPercent: null,
     activeTargetTime: null,
     activeRecoveryTime: null,
+    activeEstimateDetails: null,
     activeStartedAt: null,
     activeObservedAt: null,
     activeStartSocPercent: null,
@@ -456,6 +459,7 @@ export function createBatteryStrategyRuntimeForPlanApply(
     activeReserveSocPercent: null,
     activeTargetTime: null,
     activeRecoveryTime: null,
+    activeEstimateDetails: null,
     activeStartedAt: null,
     activeObservedAt: null,
     activeStartSocPercent: null,
@@ -929,6 +933,11 @@ function normalizeBatteryStrategyRuntime(
       typeof candidate.activeRecoveryTime === "string" &&
       candidate.activeRecoveryTime.length > 0
         ? candidate.activeRecoveryTime
+        : null,
+    activeEstimateDetails:
+      typeof candidate.activeEstimateDetails === "string" &&
+      candidate.activeEstimateDetails.length > 0
+        ? candidate.activeEstimateDetails
         : null,
     activeStartedAt:
       typeof candidate.activeStartedAt === "string" &&

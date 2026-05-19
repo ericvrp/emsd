@@ -15,7 +15,7 @@ import {
   estimateDynamicPriceTarget,
   estimateImportShortageDynamicTarget,
 } from "../apps/daemon/src/dynamic-price-target";
-import { getNextStrategyTriggerAt } from "../apps/daemon/src/strategy-scheduler";
+import { getStrategyTriggerAt } from "../apps/daemon/src/strategy-scheduler";
 import type {
   BatteryManualState,
   BatteryStrategyPlanItem,
@@ -48,17 +48,16 @@ const DEFAULT_TARGET_BUFFER_PERCENT_PER_HOUR =
 
 interface ScriptOptions {
   backupReserveMargin: number;
-  markerDate: string;
+  date: string;
   markerPercentage: number | null;
   days: number;
-  hasExplicitMarkerTime: boolean;
   minimumSolarSurplusWOverride: number;
   powerW: number;
   profile: boolean;
   strategyTriggerKinds: StrategyTriggerKind[];
   siteId: string | null;
   targetBufferPercentPerHourOverride: number;
-  markerTime: string;
+  time: string;
   verboseBlocks: Set<VerboseBlock>;
 }
 
@@ -110,6 +109,7 @@ interface EvaluationContext {
   normalizedImportExportSpread?: number | null;
   reserveTargetPercent: number;
   referenceTime: Date;
+  selectedMarkerTime?: Date | null;
   strategyTriggerKind: StrategyTriggerKind;
   siteId: string;
   siteName: string;
@@ -123,11 +123,10 @@ interface ProfileRow {
 }
 
 export function parseArgs(args: string[]): ScriptOptions {
-  let markerDate = getCurrentLocalDate();
+  let date = getCurrentLocalDate();
   let markerPercentage: number | null = null;
   let days = DEFAULT_DAYS;
   let backupReserveMargin = DEFAULT_BACKUP_RESERVE_MARGIN;
-  let hasExplicitMarkerTime = false;
   let minimumSolarSurplusWOverride = DEFAULT_MINIMUM_SOLAR_SURPLUS_W;
   let powerW = DEFAULT_POWER_W;
   let profile = false;
@@ -139,7 +138,7 @@ export function parseArgs(args: string[]): ScriptOptions {
   let siteId: string | null = null;
   let targetBufferPercentPerHourOverride =
     DEFAULT_TARGET_BUFFER_PERCENT_PER_HOUR;
-  let markerTime = getCurrentLocalClockTime();
+  let time = getCurrentLocalClockTime();
   const verboseBlocks = new Set<VerboseBlock>();
 
   for (let index = 0; index < args.length; index += 1) {
@@ -155,15 +154,14 @@ export function parseArgs(args: string[]): ScriptOptions {
       continue;
     }
 
-    const dateArg = parseStringArg(args, index, "--marker-date");
+    const dateArg = parseStringArg(args, index, "--date");
 
     if (dateArg) {
       if (!isIsoDate(dateArg.value)) {
-        throw new Error("--marker-date must use YYYY-MM-DD format.");
+        throw new Error("--date must use YYYY-MM-DD format.");
       }
 
-      markerDate = dateArg.value;
-      hasExplicitMarkerTime = true;
+      date = dateArg.value;
       index = dateArg.newIndex;
       continue;
     }
@@ -242,15 +240,14 @@ export function parseArgs(args: string[]): ScriptOptions {
       continue;
     }
 
-    const timeArg = parseStringArg(args, index, "--marker-time");
+    const timeArg = parseStringArg(args, index, "--time");
 
     if (timeArg) {
       if (!isClockTime(timeArg.value)) {
-        throw new Error("--marker-time must use HH:MM format.");
+        throw new Error("--time must use HH:MM or HH:MM:SS format.");
       }
 
-      markerTime = timeArg.value;
-      hasExplicitMarkerTime = true;
+      time = timeArg.value;
       index = timeArg.newIndex;
       continue;
     }
@@ -290,30 +287,21 @@ export function parseArgs(args: string[]): ScriptOptions {
       continue;
     }
 
-    if (arg === "--date" || arg.startsWith("--date=")) {
-      throw new Error("--date was renamed to --marker-date.");
-    }
-
-    if (arg === "--time" || arg.startsWith("--time=")) {
-      throw new Error("--time was renamed to --marker-time.");
-    }
-
     throw new Error(`Unknown argument: ${arg}`);
   }
 
   return {
-    markerDate,
+    date,
     markerPercentage,
     days,
     backupReserveMargin,
-    hasExplicitMarkerTime,
     powerW,
     profile,
     strategyTriggerKinds,
     siteId,
     minimumSolarSurplusWOverride,
     targetBufferPercentPerHourOverride,
-    markerTime,
+    time,
     verboseBlocks,
   };
 }
@@ -329,7 +317,7 @@ function printHelp(): void {
       `  minimum solar surplus: ${DEFAULT_MINIMUM_SOLAR_SURPLUS_W}W`,
       `  backup reserve margin per hour: ${DEFAULT_TARGET_BUFFER_PERCENT_PER_HOUR}%`,
       `  power: ${DEFAULT_POWER_W}W`,
-      "  marker date/time: next relevant price marker unless --marker-date or --marker-time is set",
+      "  date/time: current local time unless --date or --time is set; strategy markers are resolved from that moment",
       "  marker percentage: current battery SoC unless --marker-percentage is set",
       `  days: ${DEFAULT_DAYS}`,
       `  --verbose enables: ${DEFAULT_VERBOSE_BLOCKS.join(", ")}`,
@@ -339,13 +327,14 @@ function printHelp(): void {
       "  bun run dynamic-price-target:evaluate -- --strategy=delayed-charging",
       "  bun run dynamic-price-target:evaluate -- --strategy=import-shortage",
       "  bun run dynamic-price-target:evaluate -- --strategy=export-surplus,delayed-charging,import-shortage",
-      "  bun run dynamic-price-target:evaluate -- --marker-date=2026-04-19",
+      "  bun run dynamic-price-target:evaluate -- --date=2026-04-19",
       "  bun run dynamic-price-target:evaluate -- --marker-percentage=55",
       "  bun run dynamic-price-target:evaluate -- --backup-reserve-margin=2",
       "  bun run dynamic-price-target:evaluate -- --minimum-solar-surplus=75",
       "  bun run dynamic-price-target:evaluate -- --backup-reserve-margin-per-hour=0.5",
       "  bun run dynamic-price-target:evaluate -- --power=1800",
-      "  bun run dynamic-price-target:evaluate -- --marker-time=17:30",
+      "  bun run dynamic-price-target:evaluate -- --time=17:30",
+      "  bun run dynamic-price-target:evaluate -- --time=17:30:20",
       "  bun run dynamic-price-target:evaluate -- --site=<site-id>",
       "  bun run dynamic-price-target:evaluate -- --verbose",
       "  bun run dynamic-price-target:evaluate -- --verbose=meta,why,history",
@@ -389,9 +378,7 @@ function main() {
 
         if (evaluationOptions.verboseBlocks.has("meta")) {
           console.log(
-            evaluationOptions.hasExplicitMarkerTime
-              ? `Estimating synthetic ${formatActionLabel(evaluationOptions.action)} target for ${formatStrategyTriggerKindLabel(evaluationOptions.strategyTriggerKind)} at ${evaluationOptions.powerW}W for marker ${evaluationOptions.markerDate} ${evaluationOptions.markerTime}.`
-              : `Estimating synthetic ${formatActionLabel(evaluationOptions.action)} target for the next ${formatStrategyTriggerKindLabel(evaluationOptions.strategyTriggerKind)} marker at ${evaluationOptions.powerW}W.`,
+            `Estimating synthetic ${formatActionLabel(evaluationOptions.action)} target for ${formatStrategyTriggerKindLabel(evaluationOptions.strategyTriggerKind)} at ${evaluationOptions.powerW}W as of ${evaluationOptions.date} ${evaluationOptions.time}.`,
           );
         }
 
@@ -496,19 +483,29 @@ function evaluateSite(
     powerW: options.powerW,
     strategyTriggerKind: options.strategyTriggerKind,
   });
-  const estimateAt = measureProfile(profileRows, "resolve reference time", () =>
-    resolveEvaluationReferenceTime({
-      markerDate: options.markerDate,
-      dynamicPriceSamples,
-      hasExplicitMarkerTime: options.hasExplicitMarkerTime,
-      item: syntheticItem,
-      markerTime: options.markerTime,
-    }),
+  const referenceTime = measureProfile(
+    profileRows,
+    "resolve reference time",
+    () =>
+      resolveEvaluationReferenceTime({
+        date: options.date,
+        time: options.time,
+      }),
+  );
+  const selectedMarkerTime = measureProfile(
+    profileRows,
+    "resolve strategy marker",
+    () =>
+      resolveEvaluationStrategyMarker({
+        dynamicPriceSamples,
+        item: syntheticItem,
+        referenceTime,
+      }),
   );
   const candidateDays = measureProfile(profileRows, "get candidate days", () =>
     getCandidateDaysFromBatterySamples(
       batteryPowerSamples,
-      estimateAt.toISOString().slice(0, 10),
+      referenceTime.toISOString().slice(0, 10),
       options.days,
     ),
   );
@@ -554,7 +551,7 @@ function evaluateSite(
       name: battery.name,
       socPercent:
         options.markerPercentage ??
-        getBatterySocAt(batteryPowerSamples, battery.id, estimateAt),
+        getBatterySocAt(batteryPowerSamples, battery.id, referenceTime),
       status: battery.status,
       strategyMode: "manual",
     };
@@ -567,8 +564,8 @@ function evaluateSite(
           ? estimateImportShortageDynamicTarget({
               battery,
               batteryPowerSamples,
-              lowPriceMarkerTime: estimateAt,
-              now: estimateAt,
+              lowPriceMarkerTime: selectedMarkerTime ?? referenceTime,
+              now: referenceTime,
               p1MeterSamples,
               sample,
               solarEnergyProviderSamples,
@@ -584,7 +581,7 @@ function evaluateSite(
                 battery.strategyPlan[0] ?? batterySyntheticItem,
                 batterySyntheticItem,
               ],
-              now: estimateAt,
+              now: referenceTime,
               normalizedImportExportSpread,
               p1MeterSamples,
               sample,
@@ -614,7 +611,8 @@ function evaluateSite(
         normalizedImportExportSpread,
         strategyTriggerKind: options.strategyTriggerKind,
         reserveTargetPercent,
-        referenceTime: estimateAt,
+        referenceTime,
+        selectedMarkerTime,
         siteId,
         siteName: site?.name ?? siteId,
         verboseBlocks: options.verboseBlocks,
@@ -688,7 +686,7 @@ function createSyntheticPlanItem(input: {
 
 export function createReplayTime(day: string, time: string): Date {
   const [yearPart, monthPart, dayPart] = day.split("-");
-  const [hoursPart, minutesPart] = time.split(":");
+  const [hoursPart, minutesPart, secondsPart] = time.split(":");
   const replayTime = new Date();
 
   replayTime.setFullYear(
@@ -696,31 +694,33 @@ export function createReplayTime(day: string, time: string): Date {
     Number(monthPart) - 1,
     Number(dayPart),
   );
-  replayTime.setHours(Number(hoursPart), Number(minutesPart), 0, 0);
+  replayTime.setHours(
+    Number(hoursPart),
+    Number(minutesPart),
+    secondsPart === undefined ? 0 : Number(secondsPart),
+    0,
+  );
 
   return replayTime;
 }
 
 export function resolveEvaluationReferenceTime(input: {
-  markerDate: string;
-  dynamicPriceSamples: ReturnType<typeof readDynamicPriceSamples>;
-  hasExplicitMarkerTime: boolean;
-  item: BatteryStrategyPlanItem;
-  markerTime: string;
+  date: string;
+  time: string;
 }): Date {
-  const fallbackTime = createReplayTime(input.markerDate, input.markerTime);
+  return createReplayTime(input.date, input.time);
+}
 
-  if (input.hasExplicitMarkerTime) {
-    return fallbackTime;
-  }
-
-  return (
-    getNextStrategyTriggerAt({
-      item: input.item,
-      now: fallbackTime,
-      dynamicPriceSamples: input.dynamicPriceSamples,
-    }) ?? fallbackTime
-  );
+export function resolveEvaluationStrategyMarker(input: {
+  dynamicPriceSamples: ReturnType<typeof readDynamicPriceSamples>;
+  item: BatteryStrategyPlanItem;
+  referenceTime: Date;
+}): Date | null {
+  return getStrategyTriggerAt({
+    item: input.item,
+    now: input.referenceTime,
+    dynamicPriceSamples: input.dynamicPriceSamples,
+  });
 }
 
 function getCandidateDaysFromBatterySamples(
@@ -986,7 +986,7 @@ function printCurrentEstimateSummary(input: EvaluationContext): void {
     );
   }
 
-  console.log(formatVerboseHint(input.strategyTriggerKind));
+  console.log(formatVerboseHint(input));
 }
 
 export function buildEstimateSummaryRows(
@@ -999,13 +999,17 @@ export function buildEstimateSummaryRows(
   );
   const delayedChargingDetails =
     input.dynamicPriceTargetEstimate.delayedChargingDetails;
+  const contextRows = buildEvaluationContextRows(input);
   const nextHighPriceMarker = resolveNextHighPriceMarkerAfter(input);
   const highPriceMarkerRows =
     input.strategyTriggerKind === BatteryStrategyTriggerKind.ExportSurplus
       ? [
           {
             label: "High Price Marker",
-            value: formatHighPriceMarker(input, input.referenceTime),
+            value: formatHighPriceMarker(
+              input,
+              input.selectedMarkerTime ?? input.referenceTime,
+            ),
           },
           {
             label: "Next High Price Marker",
@@ -1018,7 +1022,24 @@ export function buildEstimateSummaryRows(
       : [];
 
   if (input.dynamicPriceTargetEstimate.skipReason) {
+    if (
+      input.strategyTriggerKind === BatteryStrategyTriggerKind.ImportShortage &&
+      input.dynamicPriceTargetEstimate.importShortageDetails
+    ) {
+      return [
+        ...contextRows,
+        ...buildImportShortageDecisionRows(
+          input.dynamicPriceTargetEstimate.importShortageDetails,
+          input.dynamicPriceTargetEstimate,
+          input.referenceTime,
+        ),
+        { label: "Status", value: "skipped" },
+        { label: "Reason", value: input.dynamicPriceTargetEstimate.skipReason },
+      ];
+    }
+
     return [
+      ...contextRows,
       { label: "Action", value: actionLabel },
       { label: "Status", value: "skipped" },
       { label: "Reason", value: input.dynamicPriceTargetEstimate.skipReason },
@@ -1030,6 +1051,7 @@ export function buildEstimateSummaryRows(
     delayedChargingDetails !== null
   ) {
     return [
+      ...contextRows,
       {
         label: "Low Price Marker",
         value: `${formatTargetTime(delayedChargingDetails.lowPriceMarkerTime)} at ${formatPrice(delayedChargingDetails.lowestPrice)}`,
@@ -1066,42 +1088,17 @@ export function buildEstimateSummaryRows(
     const details = input.dynamicPriceTargetEstimate.importShortageDetails;
 
     return [
-      {
-        label: "Low Price Marker",
-        value: formatTargetTime(details.lowPriceMarkerTime),
-      },
-      {
-        label: "Solar Surplus End",
-        value: formatTargetTime(details.solarSurplusEndTime),
-      },
-      {
-        label: "Current SoC",
-        value: `${formatNumber(details.currentSocPercent)}%`,
-      },
-      {
-        label: "Net Solar Surplus",
-        value: `${formatWh(details.expectedNetSolarSurplusWh)} / ${formatNumber(details.expectedNetSolarSurplusPercent)}% (${formatWh(details.expectedSolarGenerationUntilSurplusEndWh)} solar - ${formatWh(details.expectedHouseLoadUntilSurplusEndWh)} load)`,
-      },
-      {
-        label: "Needed Before Solar Surplus",
-        value: `${formatNumber(details.baseTargetSocPercent)}% = 100% - ${formatNumber(details.expectedNetSolarSurplusPercent)}% net solar fill`,
-      },
-      {
-        label: "Safety Buffer",
-        value: `${formatNumber(details.bufferPercent)}%`,
-      },
-      {
-        label: "Charge Target",
-        value: `${formatNumber(details.targetSocPercent)}% (${formatWh(details.energyToImportWh)} at ${formatW(details.effectiveChargePowerW)})`,
-      },
-      {
-        label: "Start",
-        value: `${formatDisplayedStartTime(input.dynamicPriceTargetEstimate, input.referenceTime)} (${formatDurationMinutes(details.triggerLeadTimeMinutes)} before marker)`,
-      },
+      ...contextRows,
+      ...buildImportShortageDecisionRows(
+        details,
+        input.dynamicPriceTargetEstimate,
+        input.referenceTime,
+      ),
     ];
   }
 
   return [
+    ...contextRows,
     { label: "Action", value: actionLabel },
     ...highPriceMarkerRows,
     {
@@ -1140,6 +1137,64 @@ export function buildEstimateSummaryRows(
     {
       label: "Reserve At Target",
       value: `${reserveAtTargetPercent}%`,
+    },
+  ];
+}
+
+function buildEvaluationContextRows(
+  input: EvaluationContext,
+): Array<{ label: string; value: string }> {
+  return [
+    {
+      label: "Evaluated At",
+      value: formatReferenceMoment(input.referenceTime),
+    },
+    {
+      label: "Selected Marker",
+      value:
+        input.selectedMarkerTime === null ||
+        input.selectedMarkerTime === undefined
+          ? "not available"
+          : formatTargetTime(input.selectedMarkerTime.toISOString()),
+    },
+  ];
+}
+
+function buildImportShortageDecisionRows(
+  details: NonNullable<DynamicPriceTargetEstimate["importShortageDetails"]>,
+  estimate: DynamicPriceTargetEstimate,
+  referenceTime: Date,
+): Array<{ label: string; value: string }> {
+  return [
+    {
+      label: "Import Price Marker",
+      value: `${formatTargetTime(details.lowPriceMarkerTime)} low import-price marker used to schedule any cheap grid top-up`,
+    },
+    {
+      label: "Solar Surplus Window",
+      value: `${formatTargetTime(details.solarSurplusStartTime)} -> ${formatTargetTime(details.solarSurplusEndTime)}`,
+    },
+    {
+      label: "Projection",
+      value: `${formatNumber(details.currentSocPercent)}% now -> ${formatNumber(details.projectedSurplusStartSocPercent)}% by solar surplus start after ${formatWh(details.expectedNetDemandBeforeSurplusWh)} (${formatNumber(details.expectedNetDemandBeforeSurplusPercent)}%) house-load gap; then +${formatNumber(details.expectedNetSolarRecoveryPercent)}% solar recovery to ${formatNumber(details.projectedEndSocWithoutImportPercent)}% by surplus end`,
+    },
+    {
+      label: "Decision",
+      value:
+        details.energyToImportWh <= 0
+          ? `shortageToFull=${formatNumber(details.shortageToFullPercent)}%, so no grid import is needed`
+          : `need ${formatNumber(details.shortageToFullPercent)}% more; target = ${formatNumber(details.currentSocPercent)}% current + ${formatNumber(details.shortageToFullPercent)}% shortage + ${formatNumber(details.bufferPercent)}% buffer = ${formatNumber(details.targetSocPercent)}%`,
+    },
+    {
+      label: "Energy To Import",
+      value: `${formatWh(details.energyToImportWh)} at ${formatW(details.effectiveChargePowerW)}`,
+    },
+    {
+      label: "Start",
+      value:
+        details.energyToImportWh <= 0
+          ? "not needed"
+          : `${formatDisplayedStartTime(estimate, referenceTime)} (${formatDurationMinutes(details.triggerLeadTimeMinutes)} before marker)`,
     },
   ];
 }
@@ -1185,7 +1240,7 @@ export function buildEstimateSummaryLine(input: EvaluationContext): string {
   ) {
     const details = input.dynamicPriceTargetEstimate.importShortageDetails;
 
-    return `${input.siteName} (${input.siteId}) | ${input.battery.name} (${input.batteryId}) | import-shortage charge to ${formatNumber(details.targetSocPercent)}% from base target ${formatNumber(details.baseTargetSocPercent)}% + ${formatNumber(details.bufferPercent)}% buffer | marker ${formatTargetTime(details.lowPriceMarkerTime)} | start ${formatDisplayedStartTime(input.dynamicPriceTargetEstimate, input.referenceTime)}`;
+    return `${input.siteName} (${input.siteId}) | ${input.battery.name} (${input.batteryId}) | import-shortage charge to ${formatNumber(details.targetSocPercent)}% from projected end SoC ${formatNumber(details.projectedEndSocWithoutImportPercent)}% + ${formatNumber(details.bufferPercent)}% buffer | marker ${formatTargetTime(details.lowPriceMarkerTime)} | solar surplus ${formatTargetTime(details.solarSurplusStartTime)} -> ${formatTargetTime(details.solarSurplusEndTime)} | start ${formatDisplayedStartTime(input.dynamicPriceTargetEstimate, input.referenceTime)}`;
   }
 
   return `${input.siteName} (${input.siteId}) | ${input.battery.name} (${input.batteryId}) | target percentage ${reserveAtTargetPercent}% at ${formatTargetTime(input.dynamicPriceTargetEstimate.targetTime)} | ${formatStrategyTriggerKindLabel(input.strategyTriggerKind)} ${actionLabel} target ${currentTargetPercent}% start time ${formatDisplayedStartTime(input.dynamicPriceTargetEstimate, input.referenceTime)}${delayedChargingStartExplanation === null ? "" : ` | ${delayedChargingStartExplanation}`}`;
@@ -1264,17 +1319,35 @@ export function buildEnergyEstimateRows(input: {
 
     return {
       "Low-price marker": formatTargetTime(details.lowPriceMarkerTime),
+      "Solar surplus starts": formatTargetTime(details.solarSurplusStartTime),
       "Solar surplus ends": formatTargetTime(details.solarSurplusEndTime),
       "Current SoC": `${formatNumber(details.currentSocPercent)}%`,
+      "Pre-surplus load": formatWh(details.expectedHouseLoadBeforeSurplusWh),
+      "Pre-surplus solar": formatWh(
+        details.expectedSolarGenerationBeforeSurplusWh,
+      ),
+      "Pre-surplus net demand": formatWh(
+        details.expectedNetDemandBeforeSurplusWh,
+      ),
+      "Solar recovery generation": formatWh(
+        details.expectedSolarGenerationDuringSurplusWh,
+      ),
+      "Solar recovery load": formatWh(details.expectedHouseLoadDuringSurplusWh),
+      "Solar recovery net": formatWh(details.expectedNetSolarRecoveryWh),
+      "Solar recovery fill": `${formatNumber(details.expectedNetSolarRecoveryPercent)}%`,
       "Expected solar until surplus end": formatWh(
         details.expectedSolarGenerationUntilSurplusEndWh,
       ),
       "Expected load until surplus end": formatWh(
         details.expectedHouseLoadUntilSurplusEndWh,
       ),
-      "Expected net solar surplus": formatWh(details.expectedNetSolarSurplusWh),
-      "Expected net solar fill": `${formatNumber(details.expectedNetSolarSurplusPercent)}%`,
-      "Needed before solar surplus": `${formatNumber(details.baseTargetSocPercent)}%`,
+      "Expected net until surplus end": formatWh(
+        details.expectedNetSolarSurplusWh,
+      ),
+      "Expected net fill until surplus end": `${formatNumber(details.expectedNetSolarSurplusPercent)}%`,
+      "Projected end SoC without import": `${formatNumber(details.projectedEndSocWithoutImportPercent)}%`,
+      "Shortage to full": `${formatNumber(details.shortageToFullPercent)}%`,
+      "Base charge target before buffer": `${formatNumber(details.baseTargetSocPercent)}%`,
       "Time buffer": `${formatNumber(details.bufferPercent)}%`,
       "Battery capacity basis": formatWh(input.capacityWh),
       "Energy to import": formatWh(details.energyToImportWh),
@@ -1379,17 +1452,27 @@ function buildWhyRows(input: EvaluationContext): Record<string, string> {
 
     return {
       "Low-price marker": formatTargetTime(details.lowPriceMarkerTime),
+      "Solar surplus starts": formatTargetTime(details.solarSurplusStartTime),
       "Solar surplus ends": formatTargetTime(details.solarSurplusEndTime),
       "Current SoC": `${formatNumber(details.currentSocPercent)}%`,
+      "Pre-surplus net demand": formatWh(
+        details.expectedNetDemandBeforeSurplusWh,
+      ),
+      "Solar recovery net": formatWh(details.expectedNetSolarRecoveryWh),
+      "Solar recovery fill": `${formatNumber(details.expectedNetSolarRecoveryPercent)}%`,
       "Expected solar until surplus end": formatWh(
         details.expectedSolarGenerationUntilSurplusEndWh,
       ),
       "Expected load until surplus end": formatWh(
         details.expectedHouseLoadUntilSurplusEndWh,
       ),
-      "Expected net solar surplus": formatWh(details.expectedNetSolarSurplusWh),
-      "Expected net solar fill": `${formatNumber(details.expectedNetSolarSurplusPercent)}%`,
-      "Needed before solar surplus": `${formatNumber(details.baseTargetSocPercent)}%`,
+      "Expected net until surplus end": formatWh(
+        details.expectedNetSolarSurplusWh,
+      ),
+      "Expected net fill until surplus end": `${formatNumber(details.expectedNetSolarSurplusPercent)}%`,
+      "Projected end SoC without import": `${formatNumber(details.projectedEndSocWithoutImportPercent)}%`,
+      "Shortage to full": `${formatNumber(details.shortageToFullPercent)}%`,
+      "Base charge target before buffer": `${formatNumber(details.baseTargetSocPercent)}%`,
       "Time buffer": `${formatNumber(details.bufferPercent)}%`,
       "Charge target": `${formatNumber(details.targetSocPercent)}%`,
       "Energy to import": formatWh(details.energyToImportWh),
@@ -1400,7 +1483,7 @@ function buildWhyRows(input: EvaluationContext): Record<string, string> {
       "Trigger lead time": formatDurationMinutes(
         details.triggerLeadTimeMinutes,
       ),
-      ...rows,
+      Reasoning: input.dynamicPriceTargetEstimate.reasoning || "n/a",
     };
   }
 
@@ -1518,15 +1601,19 @@ function formatStrategyTriggerKindLabel(
   return strategyTriggerKind;
 }
 
-function formatVerboseHint(strategyTriggerKind: StrategyTriggerKind): string {
+function formatVerboseHint(
+  input: Pick<EvaluationContext, "referenceTime" | "strategyTriggerKind">,
+): string {
   const verboseBlocks =
-    strategyTriggerKind === BatteryStrategyTriggerKind.DelayedCharging
+    input.strategyTriggerKind === BatteryStrategyTriggerKind.DelayedCharging
       ? "why,energy,energy-buckets,history"
-      : strategyTriggerKind === BatteryStrategyTriggerKind.ImportShortage
+      : input.strategyTriggerKind === BatteryStrategyTriggerKind.ImportShortage
         ? "why,energy,history"
         : "why,energy,break-even,history";
+  const date = formatLocalDate(input.referenceTime);
+  const time = formatClockTimeWithOptionalSeconds(input.referenceTime);
 
-  return `More details: bun run dynamic-price-target:evaluate -- --strategy=${strategyTriggerKind} --verbose=${verboseBlocks}`;
+  return `More details: bun run dynamic-price-target:evaluate -- --date=${date} --time=${time} --strategy=${input.strategyTriggerKind} --verbose=${verboseBlocks}`;
 }
 
 function getDisplayedTargetPercent(
@@ -1595,7 +1682,10 @@ function getCurrentLocalDate(): string {
 }
 
 function isClockTime(value: string | undefined): value is string {
-  return typeof value === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
+  return (
+    typeof value === "string" &&
+    /^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(value)
+  );
 }
 
 function isIsoDate(value: string | undefined): value is string {
@@ -1701,11 +1791,27 @@ function formatDurationUntilTarget(
 }
 
 function formatReferenceMoment(value: Date): string {
-  return formatLocalDateTime(value);
+  return formatLocalDateTime(value, value.getSeconds() !== 0);
 }
 
-function formatLocalDateTime(value: Date): string {
-  return `${value.getFullYear()}-${formatDateTimePart(value.getMonth() + 1)}-${formatDateTimePart(value.getDate())} ${formatDateTimePart(value.getHours())}:${formatDateTimePart(value.getMinutes())}`;
+function formatLocalDateTime(value: Date, includeSeconds = false): string {
+  const minutePrecision = `${value.getFullYear()}-${formatDateTimePart(value.getMonth() + 1)}-${formatDateTimePart(value.getDate())} ${formatDateTimePart(value.getHours())}:${formatDateTimePart(value.getMinutes())}`;
+
+  return includeSeconds
+    ? `${minutePrecision}:${formatDateTimePart(value.getSeconds())}`
+    : minutePrecision;
+}
+
+function formatLocalDate(value: Date): string {
+  return `${value.getFullYear()}-${formatDateTimePart(value.getMonth() + 1)}-${formatDateTimePart(value.getDate())}`;
+}
+
+function formatClockTimeWithOptionalSeconds(value: Date): string {
+  const minutePrecision = `${formatDateTimePart(value.getHours())}:${formatDateTimePart(value.getMinutes())}`;
+
+  return value.getSeconds() === 0
+    ? minutePrecision
+    : `${minutePrecision}:${formatDateTimePart(value.getSeconds())}`;
 }
 
 function formatDateTimePart(value: number): string {

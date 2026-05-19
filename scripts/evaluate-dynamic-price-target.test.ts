@@ -14,6 +14,7 @@ import {
   createReplayTime,
   parseArgs,
   resolveEvaluationReferenceTime,
+  resolveEvaluationStrategyMarker,
 } from "./evaluate-dynamic-price-target";
 
 test("parseArgs accepts --strategy for built-in dynamic price strategies", () => {
@@ -33,78 +34,76 @@ test("parseArgs accepts --marker-percentage", () => {
   expect(parseArgs(["--marker-percentage=55.5"]).markerPercentage).toBe(55.5);
 });
 
+test("parseArgs accepts --date and --time with optional seconds", () => {
+  expect(parseArgs(["--date=2026-05-19", "--time=02:19:20"])).toMatchObject({
+    date: "2026-05-19",
+    time: "02:19:20",
+  });
+  expect(parseArgs(["--time=02:19"]).time).toBe("02:19");
+});
+
 test("parseArgs rejects out-of-range marker percentages", () => {
   expect(() => parseArgs(["--marker-percentage=120"])).toThrow(
     "--marker-percentage must be between 0 and 100.",
   );
 });
 
-test("resolveEvaluationReferenceTime keeps the explicit marker time for export-surplus items", () => {
+test("resolveEvaluationReferenceTime returns the requested as-of time", () => {
   expect(
     resolveEvaluationReferenceTime({
-      markerDate: "2026-04-19",
-      dynamicPriceSamples: createDynamicPriceSamples([]),
-      hasExplicitMarkerTime: true,
-      item: createHighPriceItem(),
-      markerTime: "17:30",
+      date: "2026-04-19",
+      time: "17:30:20",
     }).toISOString(),
-  ).toBe(createReplayTime("2026-04-19", "17:30").toISOString());
+  ).toBe(createReplayTime("2026-04-19", "17:30:20").toISOString());
 });
 
-test("resolveEvaluationReferenceTime keeps the explicit low-price marker for delayed-charging items", () => {
+test("resolveEvaluationStrategyMarker picks the next low-price marker for import-shortage", () => {
   expect(
-    resolveEvaluationReferenceTime({
-      markerDate: "2026-04-19",
+    resolveEvaluationStrategyMarker({
       dynamicPriceSamples: createDynamicPriceSamples([
         ["2026-04-19T02:00:00.000Z", 20],
         ["2026-04-19T06:00:00.000Z", 30],
         ["2026-04-19T10:00:00.000Z", 10],
         ["2026-04-19T14:00:00.000Z", 18],
       ]),
-      hasExplicitMarkerTime: true,
-      item: createLowPriceAutoItem(),
-      markerTime: "10:00",
-    }).toISOString(),
+      item: createImportShortageItem(),
+      referenceTime: createReplayTime("2026-04-19", "02:19:20"),
+    })?.toISOString(),
   ).toBe("2026-04-19T10:00:00.000Z");
 });
 
-test("resolveEvaluationReferenceTime uses the next export-surplus marker by default", () => {
+test("resolveEvaluationStrategyMarker uses the next export-surplus marker", () => {
   expect(
-    resolveEvaluationReferenceTime({
-      markerDate: "2026-04-19",
+    resolveEvaluationStrategyMarker({
       dynamicPriceSamples: createDynamicPriceSamples([
         ["2026-04-19T04:00:00.000Z", 10],
         ["2026-04-19T08:00:00.000Z", 30],
         ["2026-04-19T12:00:00.000Z", 10],
       ]),
-      hasExplicitMarkerTime: false,
       item: createHighPriceItem(),
-      markerTime: "06:00",
-    }).toISOString(),
+      referenceTime: createReplayTime("2026-04-19", "06:00"),
+    })?.toISOString(),
   ).toBe("2026-04-19T08:00:00.000Z");
 });
 
-test("resolveEvaluationReferenceTime uses the next delayed-charging low-price marker by default", () => {
+test("resolveEvaluationStrategyMarker uses the next delayed-charging low-price marker", () => {
   expect(
-    resolveEvaluationReferenceTime({
-      markerDate: "2026-04-19",
+    resolveEvaluationStrategyMarker({
       dynamicPriceSamples: createDynamicPriceSamples([
         ["2026-04-19T02:00:00.000Z", 20],
         ["2026-04-19T06:00:00.000Z", 30],
         ["2026-04-19T10:00:00.000Z", 10],
         ["2026-04-19T14:00:00.000Z", 18],
       ]),
-      hasExplicitMarkerTime: false,
       item: createLowPriceAutoItem(),
-      markerTime: "01:00",
-    }).toISOString(),
+      referenceTime: createReplayTime("2026-04-19", "01:00"),
+    })?.toISOString(),
   ).toBe("2026-04-19T10:00:00.000Z");
 });
 
-test("resolveEvaluationReferenceTime uses the next day's delayed-charging low-price marker when today's low marker is gone", () => {
+test("resolveEvaluationStrategyMarker uses the next day's delayed-charging low-price marker when today's low marker is gone", () => {
   expect(
-    resolveEvaluationReferenceTime({
-      markerDate: "2026-04-19",
+    resolveEvaluationStrategyMarker({
       dynamicPriceSamples: createDynamicPriceSamples([
         ["2026-04-19T16:00:00.000Z", 20],
         ["2026-04-19T18:00:00.000Z", 35],
@@ -115,10 +114,9 @@ test("resolveEvaluationReferenceTime uses the next day's delayed-charging low-pr
         ["2026-04-20T12:00:00.000Z", 14],
         ["2026-04-20T14:00:00.000Z", 25],
       ]),
-      hasExplicitMarkerTime: false,
       item: createLowPriceAutoItem(),
-      markerTime: "23:30",
-    }).toISOString(),
+      referenceTime: createReplayTime("2026-04-19", "23:30"),
+    })?.toISOString(),
   ).toBe("2026-04-20T10:00:00.000Z");
 });
 
@@ -264,6 +262,8 @@ test("buildEstimateSummaryRows keeps delayed-charging output short and strategy-
       verboseBlocks: new Set(),
     }),
   ).toEqual([
+    { label: "Evaluated At", value: "2026-04-22 11:00" },
+    { label: "Selected Marker", value: "not available" },
     {
       label: "Low Price Marker",
       value: "2026-04-22 13:45 at -0.110 EUR/kWh",
@@ -319,6 +319,8 @@ test("buildEstimateSummaryRows keeps export-surplus output strategy-specific", (
       verboseBlocks: new Set(),
     }),
   ).toEqual([
+    { label: "Evaluated At", value: "2026-04-21 19:45" },
+    { label: "Selected Marker", value: "not available" },
     { label: "Action", value: "discharge" },
     {
       label: "High Price Marker",
@@ -359,16 +361,31 @@ test("buildEstimateSummaryRows keeps import-shortage output concise and strategy
           currentSocPercent: 40,
           effectiveChargePowerW: 1200,
           energyToImportWh: 1800,
-          expectedHouseLoadUntilSurplusEndWh: 2400,
-          expectedNetSolarSurplusPercent: 30,
-          expectedNetSolarSurplusWh: 1800,
-          expectedSolarGenerationUntilSurplusEndWh: 4200,
+          expectedHouseLoadBeforeSurplusWh: 400,
+          expectedHouseLoadDuringSurplusWh: 1380,
+          expectedHouseLoadUntilSurplusEndWh: 1780,
+          expectedNetDemandBeforeSurplusPercent: 5,
+          expectedNetDemandBeforeSurplusWh: 300,
+          expectedNetSolarRecoveryPercent: 47,
+          expectedNetSolarRecoveryWh: 2820,
+          expectedNetSolarSurplusPercent: 42,
+          expectedNetSolarSurplusWh: 2520,
+          expectedSolarGenerationBeforeSurplusWh: 100,
+          expectedSolarGenerationDuringSurplusWh: 4200,
+          expectedSolarGenerationUntilSurplusEndWh: 4300,
           lowPriceMarkerTime: createReplayTime(
             "2026-04-22",
             "07:00",
           ).toISOString(),
+          projectedEndSocWithoutImportPercent: 82,
+          projectedSurplusStartSocPercent: 35,
           requiredChargeMinutes: 90,
           baseTargetSocPercent: 58,
+          shortageToFullPercent: 18,
+          solarSurplusStartTime: createReplayTime(
+            "2026-04-22",
+            "09:00",
+          ).toISOString(),
           solarSurplusEndTime: createReplayTime(
             "2026-04-22",
             "17:00",
@@ -390,19 +407,28 @@ test("buildEstimateSummaryRows keeps import-shortage output concise and strategy
       verboseBlocks: new Set(),
     }),
   ).toEqual([
-    { label: "Low Price Marker", value: "2026-04-22 07:00" },
-    { label: "Solar Surplus End", value: "2026-04-22 17:00" },
-    { label: "Current SoC", value: "40%" },
+    { label: "Evaluated At", value: "2026-04-22 07:00" },
+    { label: "Selected Marker", value: "not available" },
     {
-      label: "Net Solar Surplus",
-      value: "1800 Wh / 30% (4200 Wh solar - 2400 Wh load)",
+      label: "Import Price Marker",
+      value:
+        "2026-04-22 07:00 low import-price marker used to schedule any cheap grid top-up",
     },
     {
-      label: "Needed Before Solar Surplus",
-      value: "58% = 100% - 30% net solar fill",
+      label: "Solar Surplus Window",
+      value: "2026-04-22 09:00 -> 2026-04-22 17:00",
     },
-    { label: "Safety Buffer", value: "12%" },
-    { label: "Charge Target", value: "70% (1800 Wh at 1200 W)" },
+    {
+      label: "Projection",
+      value:
+        "40% now -> 35% by solar surplus start after 300 Wh (5%) house-load gap; then +47% solar recovery to 82% by surplus end",
+    },
+    {
+      label: "Decision",
+      value:
+        "need 18% more; target = 40% current + 18% shortage + 12% buffer = 70%",
+    },
+    { label: "Energy To Import", value: "1800 Wh at 1200 W" },
     { label: "Start", value: "2026-04-22 05:12 (1h 48m before marker)" },
   ]);
 });
@@ -433,6 +459,8 @@ test("buildEstimateSummaryRows shows skipped export-surplus status", () => {
       verboseBlocks: new Set(),
     }),
   ).toEqual([
+    { label: "Evaluated At", value: "2026-04-21 19:45" },
+    { label: "Selected Marker", value: "not available" },
     { label: "Action", value: "discharge" },
     { label: "Status", value: "skipped" },
     {
@@ -555,6 +583,14 @@ function createLowPriceAutoItem(): BatteryStrategyPlanItem {
     targetEndTime: null,
     targetMethod: "auto",
     triggerKind: BatteryStrategyTriggerKind.DelayedCharging,
+  };
+}
+
+function createImportShortageItem(): BatteryStrategyPlanItem {
+  return {
+    ...createLowPriceAutoItem(),
+    id: "import-shortage-item",
+    triggerKind: BatteryStrategyTriggerKind.ImportShortage,
   };
 }
 

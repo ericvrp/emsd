@@ -178,16 +178,28 @@ export interface ImportShortageEstimate {
 
 export interface ImportShortageDynamicTargetDetails {
   bufferPercent: number;
+  baseTargetSocPercent: number;
   currentSocPercent: number;
   effectiveChargePowerW: number;
   energyToImportWh: number;
+  expectedHouseLoadBeforeSurplusWh: number;
+  expectedHouseLoadDuringSurplusWh: number;
   expectedHouseLoadUntilSurplusEndWh: number;
+  expectedNetDemandBeforeSurplusPercent: number;
+  expectedNetDemandBeforeSurplusWh: number;
+  expectedNetSolarRecoveryPercent: number;
+  expectedNetSolarRecoveryWh: number;
   expectedNetSolarSurplusWh: number;
   expectedNetSolarSurplusPercent: number;
+  expectedSolarGenerationBeforeSurplusWh: number;
+  expectedSolarGenerationDuringSurplusWh: number;
   expectedSolarGenerationUntilSurplusEndWh: number;
   lowPriceMarkerTime: string;
+  projectedEndSocWithoutImportPercent: number;
+  projectedSurplusStartSocPercent: number;
   requiredChargeMinutes: number;
-  baseTargetSocPercent: number;
+  shortageToFullPercent: number;
+  solarSurplusStartTime: string | null;
   solarSurplusEndTime: string;
   targetSocPercent: number;
   triggerLeadTimeMinutes: number;
@@ -935,8 +947,11 @@ export function estimateImportShortageDynamicTarget(input: {
           resolveExpectedLoadW: (periodStart) =>
             resolveExpectedSiteLoadW(periodStart, loadProfile),
           selectedDayKey: formatLocalDayKey(input.lowPriceMarkerTime),
-          startAt: input.lowPriceMarkerTime,
+          startAt: input.now,
         });
+  const solarSurplusStart = solarSurplusBounds?.firstStartTime
+    ? new Date(solarSurplusBounds.firstStartTime)
+    : null;
   const solarSurplusEnd =
     predictedSeries.length === 0
       ? null
@@ -951,16 +966,46 @@ export function estimateImportShortageDynamicTarget(input: {
     predictedSolarGenerationWh: 0,
     sample: input.sample,
   });
-  const intervalEnergyEstimate = solarSurplusEnd
-    ? buildIntervalEnergyEstimate({
-        integrationEnd: solarSurplusEnd,
-        integrationStart: input.lowPriceMarkerTime,
-        loadProfile,
-        mode: "solar-minus-load",
-        periodHours: resolvePeriodHours(input.solarForecastSamples),
-        predictedSeries,
-      })
-    : null;
+  const validSolarSurplusStart =
+    solarSurplusStart !== null && !Number.isNaN(solarSurplusStart.getTime())
+      ? solarSurplusStart
+      : null;
+  const periodHours = resolvePeriodHours(input.solarForecastSamples);
+  const intervalEnergyEstimate =
+    solarSurplusEnd !== null && !Number.isNaN(solarSurplusEnd.getTime())
+      ? buildIntervalEnergyEstimate({
+          integrationEnd: solarSurplusEnd,
+          integrationStart: input.now,
+          loadProfile,
+          mode: "solar-minus-load",
+          periodHours,
+          predictedSeries,
+        })
+      : null;
+  const preSurplusEnergyEstimate =
+    solarSurplusEnd !== null && !Number.isNaN(solarSurplusEnd.getTime())
+      ? buildIntervalEnergyEstimate({
+          integrationEnd: validSolarSurplusStart ?? solarSurplusEnd,
+          integrationStart: input.now,
+          loadProfile,
+          mode: "load-minus-solar",
+          periodHours,
+          predictedSeries,
+        })
+      : null;
+  const surplusRecoveryEnergyEstimate =
+    solarSurplusEnd !== null &&
+    !Number.isNaN(solarSurplusEnd.getTime()) &&
+    validSolarSurplusStart !== null
+      ? buildIntervalEnergyEstimate({
+          integrationEnd: solarSurplusEnd,
+          integrationStart: validSolarSurplusStart,
+          loadProfile,
+          mode: "solar-minus-load",
+          periodHours,
+          predictedSeries,
+        })
+      : null;
 
   if (capacityWh === null || capacityWh <= 0 || currentSocPercent === null) {
     return {
@@ -974,7 +1019,11 @@ export function estimateImportShortageDynamicTarget(input: {
     };
   }
 
-  if (solarSurplusEnd === null || intervalEnergyEstimate === null) {
+  if (
+    solarSurplusEnd === null ||
+    intervalEnergyEstimate === null ||
+    preSurplusEnergyEstimate === null
+  ) {
     return {
       ...baseEstimate,
       skipReason: formatImportShortageSkipReason({
@@ -986,42 +1035,136 @@ export function estimateImportShortageDynamicTarget(input: {
     };
   }
 
-  const expectedNetSolarSurplusWh =
-    intervalEnergyEstimate.estimatedRemainingEnergyWh;
+  const expectedNetSolarSurplusWh = round2(
+    intervalEnergyEstimate.predictedSolarGenerationWh -
+      intervalEnergyEstimate.expectedHouseLoadWh,
+  );
   const expectedNetSolarSurplusPercent = round2(
     (expectedNetSolarSurplusWh / capacityWh) * 100,
   );
-  const baseTargetSocPercent = round2(100 - expectedNetSolarSurplusPercent);
+  const expectedNetDemandBeforeSurplusWh = round2(
+    Math.max(
+      0,
+      preSurplusEnergyEstimate.expectedHouseLoadWh -
+        preSurplusEnergyEstimate.predictedSolarGenerationWh,
+    ),
+  );
+  const expectedNetDemandBeforeSurplusPercent = round2(
+    (expectedNetDemandBeforeSurplusWh / capacityWh) * 100,
+  );
+  const expectedNetSolarRecoveryWh = round2(
+    (surplusRecoveryEnergyEstimate?.predictedSolarGenerationWh ?? 0) -
+      (surplusRecoveryEnergyEstimate?.expectedHouseLoadWh ?? 0),
+  );
+  const expectedNetSolarRecoveryPercent = round2(
+    (expectedNetSolarRecoveryWh / capacityWh) * 100,
+  );
+  const currentEnergyWh = capacityWh * (currentSocPercent / 100);
+  const projectedEnergyAtSurplusStartWh = Math.max(
+    0,
+    currentEnergyWh - expectedNetDemandBeforeSurplusWh,
+  );
+  const projectedSurplusStartSocPercent = round2(
+    (projectedEnergyAtSurplusStartWh / capacityWh) * 100,
+  );
+  const projectedEndEnergyWithoutImportWh = Math.min(
+    capacityWh,
+    Math.max(0, projectedEnergyAtSurplusStartWh + expectedNetSolarRecoveryWh),
+  );
+  const projectedEndSocWithoutImportPercent = round2(
+    (projectedEndEnergyWithoutImportWh / capacityWh) * 100,
+  );
+  const shortageToFullPercent = round2(
+    Math.max(0, 100 - projectedEndSocWithoutImportPercent),
+  );
+  const baseTargetSocPercent = round2(
+    Math.min(100, currentSocPercent + shortageToFullPercent),
+  );
   const hoursUntilSolarSurplusEnd = Math.max(
     0,
-    (solarSurplusEnd.getTime() - input.lowPriceMarkerTime.getTime()) /
-      3_600_000,
+    (solarSurplusEnd.getTime() - input.now.getTime()) / 3_600_000,
   );
   const bufferPercent = round2(
     hoursUntilSolarSurplusEnd * IMPORT_SHORTAGE_BUFFER_PERCENT_PER_HOUR,
   );
   const targetSocPercent = round2(
-    Math.min(100, Math.max(0, baseTargetSocPercent + bufferPercent)),
+    shortageToFullPercent <= 0
+      ? currentSocPercent
+      : Math.min(100, Math.max(0, baseTargetSocPercent + bufferPercent)),
   );
   const energyToImportWh = round2(
-    Math.max(0, capacityWh * ((targetSocPercent - currentSocPercent) / 100)),
+    shortageToFullPercent <= 0
+      ? 0
+      : Math.max(
+          0,
+          capacityWh * ((targetSocPercent - currentSocPercent) / 100),
+        ),
   );
+  const buildImportShortageDetails = (timing: {
+    effectiveChargePowerW: number;
+    requiredChargeMinutes: number;
+    triggerLeadTimeMinutes: number;
+  }): ImportShortageDynamicTargetDetails => ({
+    bufferPercent,
+    baseTargetSocPercent,
+    currentSocPercent,
+    effectiveChargePowerW: timing.effectiveChargePowerW,
+    energyToImportWh,
+    expectedHouseLoadBeforeSurplusWh:
+      preSurplusEnergyEstimate.expectedHouseLoadWh,
+    expectedHouseLoadDuringSurplusWh:
+      surplusRecoveryEnergyEstimate?.expectedHouseLoadWh ?? 0,
+    expectedHouseLoadUntilSurplusEndWh:
+      intervalEnergyEstimate.expectedHouseLoadWh,
+    expectedNetDemandBeforeSurplusPercent,
+    expectedNetDemandBeforeSurplusWh,
+    expectedNetSolarRecoveryPercent,
+    expectedNetSolarRecoveryWh,
+    expectedNetSolarSurplusPercent,
+    expectedNetSolarSurplusWh,
+    expectedSolarGenerationBeforeSurplusWh:
+      preSurplusEnergyEstimate.predictedSolarGenerationWh,
+    expectedSolarGenerationDuringSurplusWh:
+      surplusRecoveryEnergyEstimate?.predictedSolarGenerationWh ?? 0,
+    expectedSolarGenerationUntilSurplusEndWh:
+      intervalEnergyEstimate.predictedSolarGenerationWh,
+    lowPriceMarkerTime: input.lowPriceMarkerTime.toISOString(),
+    projectedEndSocWithoutImportPercent,
+    projectedSurplusStartSocPercent,
+    requiredChargeMinutes: timing.requiredChargeMinutes,
+    shortageToFullPercent,
+    solarSurplusStartTime: validSolarSurplusStart?.toISOString() ?? null,
+    solarSurplusEndTime: solarSurplusEnd.toISOString(),
+    targetSocPercent,
+    triggerLeadTimeMinutes: timing.triggerLeadTimeMinutes,
+    triggerMarginFactor: IMPORT_SHORTAGE_TRIGGER_MARGIN_FACTOR,
+  });
 
   if (energyToImportWh <= 0) {
     return {
       ...baseEstimate,
+      energyBuckets: intervalEnergyEstimate.energyBuckets,
       estimatedRemainingEnergyWh: 0,
       estimatedReservePercentAtTargetTime: currentSocPercent,
       estimatedTargetPercent: targetSocPercent,
       expectedHouseLoadWh: intervalEnergyEstimate.expectedHouseLoadWh,
+      importShortageDetails: buildImportShortageDetails({
+        effectiveChargePowerW: input.battery.maximumChargePowerW,
+        requiredChargeMinutes: 0,
+        triggerLeadTimeMinutes: 0,
+      }),
       predictedSolarGenerationWh:
         intervalEnergyEstimate.predictedSolarGenerationWh,
+      reasoning: `projected end-of-surplus shortage plus ${IMPORT_SHORTAGE_BUFFER_PERCENT_PER_HOUR}%/hour buffer`,
       skipReason: formatImportShortageSkipReason({
         bufferPercent,
         currentSocPercent,
         energyToImportWh,
         expectedHouseLoadUntilSurplusEndWh:
           intervalEnergyEstimate.expectedHouseLoadWh,
+        expectedNetDemandBeforeSurplusWh,
+        expectedNetSolarRecoveryPercent,
+        expectedNetSolarRecoveryWh,
         expectedNetSolarSurplusPercent,
         expectedNetSolarSurplusWh,
         expectedSolarGenerationUntilSurplusEndWh:
@@ -1029,6 +1172,9 @@ export function estimateImportShortageDynamicTarget(input: {
         lowPriceMarkerTime: input.lowPriceMarkerTime,
         reason: "current charge already meets import-shortage target",
         baseTargetSocPercent,
+        projectedEndSocWithoutImportPercent,
+        shortageToFullPercent,
+        solarSurplusStartTime: validSolarSurplusStart,
         solarSurplusEndTime: solarSurplusEnd,
         targetSocPercent,
       }),
@@ -1038,12 +1184,26 @@ export function estimateImportShortageDynamicTarget(input: {
   if (input.battery.maximumChargePowerW <= 0) {
     return {
       ...baseEstimate,
+      energyBuckets: intervalEnergyEstimate.energyBuckets,
+      estimatedTargetPercent: targetSocPercent,
+      expectedHouseLoadWh: intervalEnergyEstimate.expectedHouseLoadWh,
+      importShortageDetails: buildImportShortageDetails({
+        effectiveChargePowerW: input.battery.maximumChargePowerW,
+        requiredChargeMinutes: 0,
+        triggerLeadTimeMinutes: 0,
+      }),
+      predictedSolarGenerationWh:
+        intervalEnergyEstimate.predictedSolarGenerationWh,
+      reasoning: `projected end-of-surplus shortage plus ${IMPORT_SHORTAGE_BUFFER_PERCENT_PER_HOUR}%/hour buffer`,
       skipReason: formatImportShortageSkipReason({
         bufferPercent,
         currentSocPercent,
         energyToImportWh,
         expectedHouseLoadUntilSurplusEndWh:
           intervalEnergyEstimate.expectedHouseLoadWh,
+        expectedNetDemandBeforeSurplusWh,
+        expectedNetSolarRecoveryPercent,
+        expectedNetSolarRecoveryWh,
         expectedNetSolarSurplusPercent,
         expectedNetSolarSurplusWh,
         expectedSolarGenerationUntilSurplusEndWh:
@@ -1051,6 +1211,9 @@ export function estimateImportShortageDynamicTarget(input: {
         lowPriceMarkerTime: input.lowPriceMarkerTime,
         reason: "maximum charge power unavailable",
         baseTargetSocPercent,
+        projectedEndSocWithoutImportPercent,
+        shortageToFullPercent,
+        solarSurplusStartTime: validSolarSurplusStart,
         solarSurplusEndTime: solarSurplusEnd,
         targetSocPercent,
       }),
@@ -1075,26 +1238,13 @@ export function estimateImportShortageDynamicTarget(input: {
     estimatedRemainingEnergyWh: energyToImportWh,
     estimatedReservePercentAtTargetTime: currentSocPercent,
     estimatedTargetPercent: targetSocPercent,
+    energyBuckets: intervalEnergyEstimate.energyBuckets,
     expectedHouseLoadWh: intervalEnergyEstimate.expectedHouseLoadWh,
-    importShortageDetails: {
-      bufferPercent,
-      currentSocPercent,
+    importShortageDetails: buildImportShortageDetails({
       effectiveChargePowerW: input.battery.maximumChargePowerW,
-      energyToImportWh,
-      expectedHouseLoadUntilSurplusEndWh:
-        intervalEnergyEstimate.expectedHouseLoadWh,
-      expectedNetSolarSurplusPercent,
-      expectedNetSolarSurplusWh,
-      expectedSolarGenerationUntilSurplusEndWh:
-        intervalEnergyEstimate.predictedSolarGenerationWh,
-      lowPriceMarkerTime: input.lowPriceMarkerTime.toISOString(),
       requiredChargeMinutes,
-      baseTargetSocPercent,
-      solarSurplusEndTime: solarSurplusEnd.toISOString(),
-      targetSocPercent,
       triggerLeadTimeMinutes,
-      triggerMarginFactor: IMPORT_SHORTAGE_TRIGGER_MARGIN_FACTOR,
-    },
+    }),
     predictedSolarGenerationWh:
       intervalEnergyEstimate.predictedSolarGenerationWh,
     startTime: triggerAt.toISOString(),
@@ -1102,7 +1252,7 @@ export function estimateImportShortageDynamicTarget(input: {
     resolvedManualState: "charging",
     skipReason: null,
     targetTime: input.lowPriceMarkerTime.toISOString(),
-    reasoning: `required marker charge for net solar surplus until solar-surplus end plus ${IMPORT_SHORTAGE_BUFFER_PERCENT_PER_HOUR}%/hour buffer`,
+    reasoning: `projected end-of-surplus shortage plus ${IMPORT_SHORTAGE_BUFFER_PERCENT_PER_HOUR}%/hour buffer`,
   };
 }
 
@@ -1117,17 +1267,46 @@ export function formatImportShortageEstimateForLog(input: {
   return `import-shortage estimate for battery ${input.batteryId}: triggerAt=${input.estimate.triggerAt} currentSoc=${formatNullablePercent(input.estimate.currentSocPercent)} chargeStart=${input.estimate.chargeStartTime ?? "unknown"} surplusEnd=${input.estimate.surplusEndTime ?? "unknown"} solarEnergy=${formatWhAsKwh(input.estimate.expectedSolarGenerationWh)} houseEnergyDuringSurplus=${formatWhAsKwh(input.estimate.expectedHouseLoadDuringSurplusWh)} surplusEnergy=${formatWhAsKwh(input.estimate.expectedSurplusEnergyWh)} houseEnergyUntilChargeStart=${formatWhAsKwh(input.estimate.expectedHouseLoadUntilChargeStartWh)} projectedChargeStartSoc=${formatNullablePercent(input.estimate.projectedChargeStartSocPercent)} projectedEndSoc=${formatNullablePercent(input.estimate.projectedEndSocPercent)} shortageToFull=${formatNullablePercent(input.estimate.shortageToFullPercent)} availability=${input.estimate.availability}${expectedFullAt}`;
 }
 
+export function formatImportShortageDynamicTargetForLog(
+  estimate: DynamicPriceTargetEstimate,
+): string | null {
+  const details = estimate.importShortageDetails;
+
+  if (!details) {
+    return null;
+  }
+
+  const start = estimate.startTime ? new Date(estimate.startTime) : null;
+  const startLabel =
+    start !== null && !Number.isNaN(start.getTime())
+      ? formatImportShortageTimestamp(start)
+      : "unknown";
+
+  return [
+    `lowImportPriceMarker=${formatNullableImportShortageTimestamp(details.lowPriceMarkerTime)}`,
+    `projection=${formatNullablePercent(details.currentSocPercent)} now -> ${formatNullablePercent(details.projectedSurplusStartSocPercent)} by solarSurplusStart=${formatNullableImportShortageTimestamp(details.solarSurplusStartTime)} after preSurplusDemand=${formatWhAsKwh(details.expectedNetDemandBeforeSurplusWh)}/${formatNullablePercent(details.expectedNetDemandBeforeSurplusPercent)}; then solarRecovery=${formatWhAsKwh(details.expectedNetSolarRecoveryWh)}/${formatNullablePercent(details.expectedNetSolarRecoveryPercent)} to projectedEndSoc=${formatNullablePercent(details.projectedEndSocWithoutImportPercent)} by solarSurplusEnd=${formatNullableImportShortageTimestamp(details.solarSurplusEndTime)}`,
+    `decision=shortageToFull=${formatNullablePercent(details.shortageToFullPercent)} targetSoc=${formatNullablePercent(details.targetSocPercent)} energyToImport=${formatWhAsKwh(details.energyToImportWh)} start=${startLabel}`,
+    `targetFormula=${formatNullablePercent(details.currentSocPercent)} + ${formatNullablePercent(details.shortageToFullPercent)} shortage + ${formatNullablePercent(details.bufferPercent)} buffer = ${formatNullablePercent(details.targetSocPercent)}`,
+  ].join(" ");
+}
+
 function formatImportShortageSkipReason(input: {
   bufferPercent?: number | null;
   baseTargetSocPercent?: number | null;
   currentSocPercent: number | null;
   energyToImportWh?: number | null;
   expectedHouseLoadUntilSurplusEndWh?: number | null;
+  expectedNetDemandBeforeSurplusWh?: number | null;
+  expectedNetSolarRecoveryPercent?: number | null;
+  expectedNetSolarRecoveryWh?: number | null;
   expectedNetSolarSurplusPercent?: number | null;
   expectedNetSolarSurplusWh?: number | null;
   expectedSolarGenerationUntilSurplusEndWh?: number | null;
   lowPriceMarkerTime: Date;
+  projectedEndSocWithoutImportPercent?: number | null;
   reason: string;
+  shortageToFullPercent?: number | null;
+  solarSurplusStartTime?: Date | null;
   solarSurplusEndTime: Date | null;
   targetSocPercent?: number | null;
 }): string {
@@ -1135,6 +1314,7 @@ function formatImportShortageSkipReason(input: {
     `skipped: ${input.reason} for import-shortage item`,
     `marker=${formatImportShortageTimestamp(input.lowPriceMarkerTime)}`,
     `currentSoc=${formatNullablePercent(input.currentSocPercent)}`,
+    `solarSurplusStart=${formatNullableImportShortageDate(input.solarSurplusStartTime ?? null)}`,
     `solarSurplusEnd=${formatNullableImportShortageDate(input.solarSurplusEndTime)}`,
   ];
 
@@ -1160,7 +1340,25 @@ function formatImportShortageSkipReason(input: {
     input.expectedNetSolarSurplusWh !== null &&
     input.expectedNetSolarSurplusWh !== undefined
   ) {
-    parts.push(`netSurplus=${formatWhAsKwh(input.expectedNetSolarSurplusWh)}`);
+    parts.push(`netUntilEnd=${formatWhAsKwh(input.expectedNetSolarSurplusWh)}`);
+  }
+
+  if (
+    input.expectedNetDemandBeforeSurplusWh !== null &&
+    input.expectedNetDemandBeforeSurplusWh !== undefined
+  ) {
+    parts.push(
+      `preSurplusDemand=${formatWhAsKwh(input.expectedNetDemandBeforeSurplusWh)}`,
+    );
+  }
+
+  if (
+    input.expectedNetSolarRecoveryWh !== null &&
+    input.expectedNetSolarRecoveryWh !== undefined
+  ) {
+    parts.push(
+      `solarRecovery=${formatWhAsKwh(input.expectedNetSolarRecoveryWh)}`,
+    );
   }
 
   if (
@@ -1168,7 +1366,34 @@ function formatImportShortageSkipReason(input: {
     input.expectedNetSolarSurplusPercent !== undefined
   ) {
     parts.push(
-      `netSolarFill=${formatNullablePercent(input.expectedNetSolarSurplusPercent)}`,
+      `netUntilEndFill=${formatNullablePercent(input.expectedNetSolarSurplusPercent)}`,
+    );
+  }
+
+  if (
+    input.expectedNetSolarRecoveryPercent !== null &&
+    input.expectedNetSolarRecoveryPercent !== undefined
+  ) {
+    parts.push(
+      `solarRecoveryFill=${formatNullablePercent(input.expectedNetSolarRecoveryPercent)}`,
+    );
+  }
+
+  if (
+    input.projectedEndSocWithoutImportPercent !== null &&
+    input.projectedEndSocWithoutImportPercent !== undefined
+  ) {
+    parts.push(
+      `projectedEndSoc=${formatNullablePercent(input.projectedEndSocWithoutImportPercent)}`,
+    );
+  }
+
+  if (
+    input.shortageToFullPercent !== null &&
+    input.shortageToFullPercent !== undefined
+  ) {
+    parts.push(
+      `shortageToFull=${formatNullablePercent(input.shortageToFullPercent)}`,
     );
   }
 
@@ -1216,8 +1441,7 @@ function createImportShortageDynamicTargetBase(input: {
     expectedHouseLoadWh: input.expectedHouseLoadWh,
     historyStats: input.historyStats,
     predictedSolarGenerationWh: input.predictedSolarGenerationWh,
-    reasoning:
-      "required marker charge for net solar surplus until solar-surplus end",
+    reasoning: "projected end-of-surplus shortage",
     requiredDischargeMinutes: null,
     resolvedManualState: "charging",
     skipReason: null,

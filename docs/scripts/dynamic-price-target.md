@@ -23,12 +23,13 @@ For delayed-charging schedules with `targetMethod === "auto"`, the flow is:
 - complete the delayed-charging item when the battery reaches `100%`, then restore the default strategy
 
 For import-shortage schedules with `targetMethod === "auto"`, the flow is:
-- resolve the upcoming import-shortage marker as the local low-price marker
-- find the final same-day solar-surplus end, where expected solar stops covering house load after a surplus period
-- integrate expected solar generation minus expected house load from the low-price marker until that final solar-surplus end
-- compute the marker SoC required for that expected net surplus to fill the battery to `100%`
-- add the import-shortage time buffer, currently `0.2%/hour` from the marker until the final solar-surplus end
-- compute the charge target as `baseTargetSoc + buffer`, clamped between `0%` and `100%`
+- resolve the upcoming import-shortage marker as the local low import-price marker used for scheduling any cheap grid top-up
+- find the first same-day solar-surplus start and final same-day solar-surplus end
+- integrate expected net demand from the decision time until solar surplus starts
+- integrate expected net solar recovery from solar surplus start until final solar-surplus end
+- compute the projected end-of-surplus SoC without grid import
+- compute the shortage to `100%` and add the import-shortage time buffer, currently `0.2%/hour` from the decision time until the final solar-surplus end
+- compute the charge target as `currentSoc + shortageToFull + buffer`, clamped to `100%`, and skip when there is no shortage
 - compute required charge time from `energyToImportWh / battery.maximumChargePowerW`
 - compute lead time as `requiredChargeMinutes * IMPORT_SHORTAGE_TRIGGER_BASE_FACTOR * IMPORT_SHORTAGE_TRIGGER_MARGIN_FACTOR`
 - trigger import shortage at `lowPriceMarkerTime - leadTime`
@@ -36,7 +37,8 @@ For import-shortage schedules with `targetMethod === "auto"`, the flow is:
 
 Important:
 - delayed charging start time is based on the low-price marker only
-- the estimator uses the marker signal only; it does not average across a larger delayed-charging window
+- the delayed-charging estimator uses the marker signal only; it does not average across a larger delayed-charging window
+- the import-shortage estimator uses the low import-price marker for timing, but the SoC projection runs from the current decision time through solar-surplus start and end
 - the separate `Delayed-charge prep` built-in item is not estimated here; it has its own marker-based trigger before delayed charging becomes due
 
 This same estimator is used by:
@@ -59,9 +61,9 @@ Important:
 - `Import shortage` is documented as an active built-in rule
 - this file documents the shared estimator and evaluation script, not the final product wording for each strategy type
 
-## Core Model
+## Export-Surplus Core Model
 
-The estimator answers this question:
+For dynamic discharge strategies such as export surplus, the estimator answers this question:
 
 `Until what percentage may we discharge for the selected date/time so the battery is still expected to hold the desired reserve at the solar break-even point?`
 
@@ -104,7 +106,7 @@ Expected house load per time bucket is then built from recent history using:
 - median by time slot
 - light smoothing across neighboring slots to avoid noisy zero buckets
 
-## Target Time
+## Export-Surplus Target Time
 
 `targetTime` is the first future break-even bucket.
 
@@ -117,7 +119,7 @@ Notes:
 - this can land later the same morning or the next morning depending on the selected time
 - if no break-even bucket can be found confidently, the estimator falls back to the next relevant schedule boundary and then broader time fallbacks
 
-## Stop Target Calculation
+## Export-Surplus Stop Target Calculation
 
 Once `targetTime` is known:
 
@@ -168,19 +170,20 @@ If a higher-index schedule item becomes due while a lower-index item is still ac
 
 ## CLI Evaluation Script
 
-`bun run dynamic-price-target:evaluate` uses the same estimator to evaluate a synthetic action for a chosen price marker.
+`bun run dynamic-price-target:evaluate` uses the same estimator to evaluate a synthetic action from a chosen local daemon-like time.
 
-If neither `--marker-date` nor `--marker-time` is supplied, the script evaluates from the next relevant price trigger instead of the current wall-clock time.
+If neither `--date` nor `--time` is supplied, the script evaluates from the current local wall-clock time. The selected price marker is resolved from that time according to the chosen strategy.
 
 Default behavior:
 - prints a concise block for each evaluated strategy and battery
 - includes an empty line between blocks
+- shows the evaluated local time and selected strategy marker
 - includes the exact `--verbose=...` suggestion to use for more detail
 - shows `Status: skipped` and a `Reason` when the estimator decides not to run the evaluated strategy
 
 For export-surplus evaluation, the concise output includes the current high-price marker and the next high-price marker when available. Export-surplus is skipped when an afternoon/evening high-price marker is followed by a higher-priced morning high-price marker. It is not skipped for this reason when no next high-price marker is available.
 
-For import-shortage evaluation, the script calls the same `estimateImportShortageDynamicTarget()` helper used by the daemon. Concise output includes the low-price marker, final solar-surplus end, current SoC, expected net solar surplus until that end, needed SoC before solar surplus plus buffer, charge target, energy to import, and calculated start time.
+For import-shortage evaluation, the script calls the same `estimateImportShortageDynamicTarget()` helper used by the daemon. Concise output names the low import-price marker, shows the solar-surplus window, explains the expected SoC path from current SoC to solar-surplus start and then to solar-surplus end, and states whether any grid import is needed.
 
 Verbose behavior:
 - `--verbose` shows all detail blocks
@@ -196,8 +199,8 @@ Available verbose blocks:
 - `history`
 
 The script supports:
-- `--marker-date YYYY-MM-DD`
-- `--marker-time HH:MM`
+- `--date YYYY-MM-DD`
+- `--time HH:MM` or `--time HH:MM:SS`
 - `--strategy export-surplus,delayed-charging,import-shortage`
 - `--backup-reserve-margin <percent>`
 - `--backup-reserve-margin-per-hour <percent>`
@@ -205,9 +208,9 @@ The script supports:
 - `--site <site-id>`
 - `--days <n>`
 
-For delayed-charging auto evaluation, `--marker-date` and `--marker-time` select the delayed-charging marker being evaluated. Verbose `why` output explains the marker, resolved activation mode, marker load/solar signal, effective fill power, time to full, trigger lead time, and computed trigger time.
+For delayed-charging auto evaluation, `--date` and `--time` select the local as-of time. The evaluator resolves the delayed-charging low-price marker from that time. Verbose `why` output explains the marker, resolved activation mode, marker load/solar signal, effective fill power, time to full, trigger lead time, and computed trigger time.
 
-For import-shortage auto evaluation, `--marker-date` and `--marker-time` select the low-price marker being evaluated. Verbose `why` and `energy` output explains the final solar-surplus end, expected net solar surplus, required marker SoC, hourly buffer, effective charge power, required charge time, trigger lead time, and computed trigger time.
+For import-shortage auto evaluation, `--date` and `--time` select the local as-of time, matching daemon log timestamps such as `02:19:20`. The evaluator resolves the import-shortage low import-price marker from that time. Verbose `why` and `energy` output explains the solar-surplus start and end, pre-surplus demand, net solar recovery, projected end SoC without import, shortage to full, hourly buffer, effective charge power, required charge time, trigger lead time, and computed trigger time.
 
 ## Main Files
 

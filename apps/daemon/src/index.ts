@@ -69,6 +69,7 @@ import {
 import {
   estimateDynamicPriceTarget,
   estimateImportShortageDynamicTarget,
+  formatImportShortageDynamicTargetForLog,
 } from "./dynamic-price-target";
 import { resolveEffectiveSolarProductionControlStatus } from "./solar-production-control";
 import {
@@ -1261,6 +1262,7 @@ async function runScheduledStrategy(
             typeof runtime.activeTargetSocPercent === "number"
             ? {
                 reasoning: describeEstimatedRuntimeReasoning(runtime),
+                details: runtime.activeEstimateDetails ?? null,
                 resolvedManualState: runtime.activeResolvedManualState ?? null,
                 targetSocPercent: runtime.activeTargetSocPercent,
                 reserveSocPercent: runtime.activeReserveSocPercent ?? 0,
@@ -1349,6 +1351,14 @@ async function runScheduledStrategy(
               needsCompletionTracking(prepCandidate.item) &&
               prepCandidate.item.targetMethod === "auto"
                 ? (prepCandidate.dynamicPriceTargetEstimate?.targetTime ?? null)
+                : null,
+            activeEstimateDetails:
+              needsCompletionTracking(prepCandidate.item) &&
+              prepCandidate.item.targetMethod === "auto" &&
+              prepCandidate.dynamicPriceTargetEstimate
+                ? formatImportShortageDynamicTargetForLog(
+                    prepCandidate.dynamicPriceTargetEstimate,
+                  )
                 : null,
             activeStartedAt: needsCompletionTracking(prepCandidate.item)
               ? appliedAt.toISOString()
@@ -1521,6 +1531,12 @@ async function runScheduledStrategy(
               ).toISOString()
             : null
           : null,
+      activeEstimateDetails:
+        needsCompletionTracking(item) &&
+        item.targetMethod === "auto" &&
+        dynamicPriceTargetEstimate
+          ? formatImportShortageDynamicTargetForLog(dynamicPriceTargetEstimate)
+          : null,
       activeStartedAt: needsCompletionTracking(item) ? now.toISOString() : null,
       activeObservedAt: null,
       activeStartSocPercent: needsCompletionTracking(item)
@@ -1562,6 +1578,10 @@ async function runScheduledStrategy(
         dynamicPriceTargetEstimate
           ? {
               reasoning: dynamicPriceTargetEstimate.reasoning,
+              details:
+                formatImportShortageDynamicTargetForLog(
+                  dynamicPriceTargetEstimate,
+                ) ?? null,
               resolvedManualState:
                 dynamicPriceTargetEstimate.resolvedManualState ?? null,
               recoveryTime: dynamicPriceTargetEstimate.delayedChargingDetails
