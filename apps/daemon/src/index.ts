@@ -173,19 +173,19 @@ function main(): void {
   const meters = readMeters(db);
   const solarEnergyProviders = readSolarEnergyProviders(db);
 
-  logInfo(`${EMSD_NAME} daemon started.`);
-  logInfo(`SQLite database: ${getDatabasePath()}`);
-  logInfo(`Connected batteries: ${batteries.length}`);
-  logInfo(`Connected meters: ${meters.length}`);
-  logInfo(`Connected solar energy providers: ${solarEnergyProviders.length}`);
-  logInfo(`Daemon local time zone: ${getDaemonTimeZoneLabel()}`);
-  logInfo(`Polling managed devices every ${POLL_INTERVAL_MS / 1000} seconds.`);
-  logInfo(
-    `Refreshing solar forecasts at most every ${FORECAST_REFRESH_INTERVAL_MS / 60_000} minutes.`,
-  );
-  logInfo(
-    `Refreshing dynamic prices at most every ${DYNAMIC_PRICE_REFRESH_INTERVAL_MS / 60_000} minutes.`,
-  );
+  logInfo(`========== ${EMSD_NAME} daemon is starting ==========`);
+  // logInfo(`SQLite database: ${getDatabasePath()}`);
+  // logInfo(`Connected batteries: ${batteries.length}`);
+  // logInfo(`Connected meters: ${meters.length}`);
+  // logInfo(`Connected solar energy providers: ${solarEnergyProviders.length}`);
+  // logInfo(`Daemon local time zone: ${getDaemonTimeZoneLabel()}`);
+  // logInfo(`Polling managed devices every ${POLL_INTERVAL_MS / 1000} seconds.`);
+  // logInfo(
+  //   `Refreshing solar forecasts at most every ${FORECAST_REFRESH_INTERVAL_MS / 60_000} minutes.`,
+  // );
+  // logInfo(
+  //   `Refreshing dynamic prices at most every ${DYNAMIC_PRICE_REFRESH_INTERVAL_MS / 60_000} minutes.`,
+  // );
 
   let pollInFlight = false;
   let refreshInFlight = false;
@@ -469,9 +469,9 @@ function main(): void {
   }
 
   // Initial refresh of forecast and price info on daemon start
-  logInfo("Polling solar forecasts at startup...");
+  // logInfo("Polling solar forecasts at startup...");
   void refreshSiteData(true);
-  logInfo("Polling dynamic prices at startup...");
+  // logInfo("Polling dynamic prices at startup...");
 
   void pollTelemetry();
 
