@@ -10,6 +10,7 @@ test("formatHelpText includes help and discover usage", () => {
   expect(output).toContain("meter <subcommand>");
   expect(output).toContain("weather <subcommand>");
   expect(output).toContain("price <subcommand>");
+  expect(output).toContain("daemon <subcommand>");
   expect(output).toContain("discover [--verbose] [--host <ipv4>]");
 });
 

@@ -5,11 +5,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   completeSolarEnergyProviderControlRequest,
+  insertDaemonLog,
   markSolarEnergyProviderControlRequestRunning,
   openDaemonDatabase,
   queueSolarEnergyProviderControlRequest,
   readBatteries,
   readBatteryPowerSamples,
+  readDaemonLogs,
   readDynamicPriceSamples,
   readLatestSolarEnergyProviderControlRequests,
   readManagedDeviceTelemetry,
@@ -41,6 +43,44 @@ test("openDaemonDatabase creates the SQLite file and empty managed tables", () =
   expect(sites).toHaveLength(0);
   expect(batteries).toHaveLength(0);
   expect(meters).toHaveLength(0);
+
+  rmSync(tempDir, { recursive: true, force: true });
+});
+
+test("daemon logs can be inserted and read back", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "emsd-daemon-test-"));
+  const databasePath = join(tempDir, "emsd.sqlite");
+  const db = openDaemonDatabase(databasePath);
+
+  insertDaemonLog(db, {
+    level: "info",
+    message: "daemon started",
+    loggedAt: "2026-05-19T12:00:00.000Z",
+  });
+  insertDaemonLog(db, {
+    level: "warn",
+    message: "battery offline",
+    loggedAt: "2026-05-19T12:01:00.000Z",
+  });
+
+  const logs = readDaemonLogs(db);
+
+  db.close();
+
+  expect(logs).toEqual([
+    {
+      id: 1,
+      level: "info",
+      message: "daemon started",
+      loggedAt: "2026-05-19T12:00:00.000Z",
+    },
+    {
+      id: 2,
+      level: "warn",
+      message: "battery offline",
+      loggedAt: "2026-05-19T12:01:00.000Z",
+    },
+  ]);
 
   rmSync(tempDir, { recursive: true, force: true });
 });

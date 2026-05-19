@@ -2,6 +2,10 @@ import { EMSD_NAME } from "@emsd/core";
 import { runApiCommand } from "./api";
 import { formatBatteryHelpText, runBatteryCommand } from "./battery";
 import {
+  formatDaemonLogHelpText,
+  runDaemonLogCommand,
+} from "./daemon-log";
+import {
   formatHelpText as formatDiscoverHelpText,
   runDiscoverCommand,
 } from "./discover";
@@ -21,6 +25,7 @@ export function formatHelpText(): string {
     "  meter <subcommand>    Manage meters for a site",
     "  weather <subcommand>  Manage solar forecast sources",
     "  price <subcommand>    Manage dynamic price sources",
+    "  daemon <subcommand>   Read daemon state",
     "  discover [--verbose] [--host <ipv4>]  Scan for supported devices",
     "",
     "Tip:",
@@ -29,6 +34,7 @@ export function formatHelpText(): string {
     "  meter --help          Show meter management help",
     "  weather --help        Show solar forecast source help",
     "  price --help          Show dynamic price source help",
+    "  daemon --help         Show daemon command help",
     "  discover --help       Show discovery-specific help",
   ].join("\n");
 }
@@ -69,6 +75,15 @@ export async function runEms(args = process.argv.slice(2)): Promise<number> {
     }
 
     return runDiscoverCommand(args.slice(1));
+  }
+
+  if (args[0] === "daemon") {
+    if (args[1] === "--help" || args[1] === "-h" || args[1] === "help") {
+      console.log(formatDaemonLogHelpText());
+      return 0;
+    }
+
+    return runDaemonLogCommand(args.slice(1));
   }
 
   if (args[0] === "meter") {

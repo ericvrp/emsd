@@ -5,7 +5,7 @@ import type {
   BatteryStrategyRecord,
   BatteryStrategyTargetMethod,
 } from "@emsd/core/client";
-import { CalendarClock, Hand, X } from "lucide-react";
+import { CalendarClock, FileText, Hand, X } from "lucide-react";
 import { usePathname, useSearchParams } from "next/navigation";
 import type { ComponentType } from "react";
 import { useEffect, useState } from "react";
@@ -13,6 +13,7 @@ import {
   setHouseStrategyAction,
   setHouseStrategyPlanAction,
 } from "../app/actions";
+import { formatLocalDayKey, resolveRelativeDayParam } from "../lib/day-utils";
 import { UI_STYLES } from "../lib/ui-colors";
 import { cn } from "../lib/utils";
 import { BatteryStrategyForm } from "./battery-strategy-form";
@@ -22,6 +23,13 @@ import { DialogPortal } from "./ui/dialog-portal";
 import { type SiteCurrentResponse, useLiveJsonSWR } from "./use-live-json-swr";
 
 const STRATEGY_REFRESH_INTERVAL_MS = 5_000;
+
+interface DaemonLogRecord {
+  id: number;
+  level: "info" | "warn" | "error" | "verbose";
+  message: string;
+  loggedAt: string;
+}
 
 interface HouseStrategyDialogProps {
   batteries: Array<{
@@ -54,10 +62,12 @@ export function HouseStrategyDialog({
   const searchParams = useSearchParams();
   const firstBattery = batteries[0];
   const manualModeActive = batteries.some((b) => b.batteryManualModeActive);
-  const [selectedMode, setSelectedMode] = useState<"manual" | "strategy">(
-    manualModeActive ? "manual" : "strategy",
-  );
+  const [selectedMode, setSelectedMode] = useState<
+    "manual" | "strategy" | "logs"
+  >(manualModeActive ? "manual" : "strategy");
   const returnPath = buildReturnPath(pathname, searchParams);
+  const selectedDay =
+    resolveRelativeDayParam(searchParams.get("day")) ?? formatLocalDayKey(new Date());
   const { data: currentData } = useLiveJsonSWR<SiteCurrentResponse>(
     `/api/site/current?siteId=${encodeURIComponent(siteId)}`,
     {
@@ -171,6 +181,12 @@ export function HouseStrategyDialog({
                           label="Automatic"
                           onClick={() => setSelectedMode("strategy")}
                         />
+                        <ModeSwitchButton
+                          active={selectedMode === "logs"}
+                          icon={FileText}
+                          label="Logs"
+                          onClick={() => setSelectedMode("logs")}
+                        />
                       </div>
                     </div>
 
@@ -205,7 +221,7 @@ export function HouseStrategyDialog({
                           strategy={strategy}
                           submitLabel="Save"
                         />
-                      ) : (
+                      ) : selectedMode === "strategy" ? (
                         <BatteryStrategyPlanForm
                           action={setHouseStrategyPlanAction}
                           batteryId="house"
@@ -217,6 +233,8 @@ export function HouseStrategyDialog({
                           strategyPlan={strategyPlan}
                           submitLabel="Save"
                         />
+                      ) : (
+                        <DaemonLogsPanel day={selectedDay} />
                       )}
                     </div>
                   </div>
@@ -228,6 +246,94 @@ export function HouseStrategyDialog({
       ) : null}
     </>
   );
+}
+
+function DaemonLogsPanel({ day }: { day: string }) {
+  const { data: logs, refreshError } = useLiveJsonSWR<DaemonLogRecord[]>(
+    `/api/daemon/logs?day=${encodeURIComponent(day)}&limit=300`,
+    {
+      failureMessage: "Daemon logs are temporarily unavailable.",
+      refreshIntervalMs: 10_000,
+    },
+  );
+  const entries = logs ? [...logs].reverse() : [];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h3 className="text-lg font-semibold text-white">Daemon logs</h3>
+          <p className="mt-1 text-sm text-slate-400">
+            Messages recorded on {day}, newest logs refresh automatically.
+          </p>
+        </div>
+        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-slate-300">
+          {entries.length} entries
+        </span>
+      </div>
+
+      {refreshError ? (
+        <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 p-4 text-sm text-amber-100">
+          {refreshError}
+        </div>
+      ) : null}
+
+      <div className="max-h-[58vh] overflow-auto rounded-2xl border border-white/10 bg-slate-950/70">
+        {entries.length === 0 ? (
+          <div className="p-6 text-sm text-slate-400">
+            No daemon logs found for this day.
+          </div>
+        ) : (
+          <div className="divide-y divide-white/8">
+            {entries.map((log) => (
+              <div
+                className="grid gap-2 px-4 py-3 text-sm md:grid-cols-[10rem_5rem_1fr]"
+                key={log.id}
+              >
+                <time className="font-mono text-xs text-slate-400">
+                  {formatLogTime(log.loggedAt)}
+                </time>
+                <span className={cn("text-xs font-semibold uppercase", getLogLevelClassName(log.level))}>
+                  {log.level}
+                </span>
+                <p className="break-words text-slate-200">{log.message}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function formatLogTime(value: string): string {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+function getLogLevelClassName(level: DaemonLogRecord["level"]): string {
+  if (level === "error") {
+    return "text-rose-300";
+  }
+
+  if (level === "warn") {
+    return "text-amber-300";
+  }
+
+  if (level === "verbose") {
+    return "text-cyan-300";
+  }
+
+  return "text-emerald-300";
 }
 
 function ModeSwitchButton({

@@ -20,6 +20,7 @@ import type {
   WeatherForecastRecord,
   WeatherForecastSourceRecord,
 } from "@emsd/core";
+import type { DaemonLogRecord } from "../../daemon/src/database";
 import { getRepoRoot as resolveRepoRoot } from "@emsd/core";
 import type { DiscoveredDevice } from "./discovery-proof";
 
@@ -48,6 +49,7 @@ export type {
   BatteryPowerSampleRecord,
   BulkDiscoveryAddResult,
   DashboardSnapshot,
+  DaemonLogRecord,
   DynamicPriceSampleRecord,
   HistoryArchive,
   LiveStatusSnapshot,
@@ -284,6 +286,15 @@ export function getDashboardSnapshot(): Promise<DashboardSnapshot> {
 
 export function getLiveStatus(): Promise<LiveStatusSnapshot> {
   return runBridge<LiveStatusSnapshot>("live-status");
+}
+
+export function getDaemonLogs(input: {
+  day?: string | null;
+  limit?: number;
+  since?: string | null;
+  until?: string | null;
+}): Promise<DaemonLogRecord[]> {
+  return runBridge<DaemonLogRecord[]>("daemon-logs-list", input);
 }
 
 export function discoverDevices(

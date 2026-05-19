@@ -199,6 +199,22 @@ interface SolarEnergyProviderControlRequestRow {
   updated_at: string;
 }
 
+export type DaemonLogLevel = "info" | "warn" | "error" | "verbose";
+
+interface DaemonLogRow {
+  id: number;
+  level: DaemonLogLevel;
+  message: string;
+  logged_at: string;
+}
+
+export interface DaemonLogRecord {
+  id: number;
+  level: DaemonLogLevel;
+  message: string;
+  loggedAt: string;
+}
+
 export interface SolarEnergyProviderControlRequestRecord {
   id: number;
   siteId: string;
@@ -475,8 +491,51 @@ export function openDaemonDatabase(databasePath = getDatabasePath()): Database {
     CREATE INDEX IF NOT EXISTS idx_solar_energy_provider_control_requests_status_requested
     ON solar_energy_provider_control_requests (status, requested_at, id);
   `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS daemon_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      level TEXT NOT NULL,
+      message TEXT NOT NULL,
+      logged_at TEXT NOT NULL
+    );
+  `);
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_daemon_logs_logged_at
+    ON daemon_logs (logged_at, id);
+  `);
 
   return db;
+}
+
+export function insertDaemonLog(
+  db: Database,
+  record: Omit<DaemonLogRecord, "id">,
+): void {
+  db.query(
+    `
+      INSERT INTO daemon_logs (level, message, logged_at)
+      VALUES (?1, ?2, ?3)
+    `,
+  ).run(record.level, record.message, record.loggedAt);
+}
+
+export function readDaemonLogs(db: Database): DaemonLogRecord[] {
+  const rows = db
+    .query<DaemonLogRow, []>(
+      `
+        SELECT id, level, message, logged_at
+        FROM daemon_logs
+        ORDER BY logged_at ASC, id ASC
+      `,
+    )
+    .all();
+
+  return rows.map((row) => ({
+    id: row.id,
+    level: row.level,
+    message: row.message,
+    loggedAt: row.logged_at,
+  }));
 }
 
 export function readSites(db: Database): SiteRecord[] {

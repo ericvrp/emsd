@@ -63,6 +63,7 @@ import {
   discoverHostDevices,
   getPreferredDiscoveryTarget,
 } from "./discover";
+import { readSelectedDaemonLogs } from "./daemon-log";
 import { logEmsError } from "./logging";
 import {
   SINGLE_BATTERY_LIMIT_ERROR,
@@ -157,6 +158,10 @@ function optionalString(value: unknown): string | null {
 
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function optionalNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function readDiscoveredDevice(value: unknown): DiscoveredDevice {
@@ -702,6 +707,24 @@ export async function runApiAction(
 
     case "live-status":
       return buildLiveStatus();
+
+    case "daemon-logs-list": {
+      const dayKey = normalizeDayKey(optionalString(input.day));
+      const limit = optionalNumber(input.limit) ?? 200;
+      const range = dayKey
+        ? getLocalDayIsoRange(dayKey)
+        : {
+            since: optionalString(input.since),
+            until: optionalString(input.until),
+          };
+
+      return readSelectedDaemonLogs({
+        level: null,
+        limit,
+        since: range.since,
+        until: range.until,
+      });
+    }
 
     case "history-get-archive": {
       const siteId = requireString(input.siteId, "siteId");
@@ -1638,6 +1661,17 @@ function resolveBatteryManualPower(
 
 function normalizeDayKey(value: string | null): string | null {
   return value !== null && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
+}
+
+function getLocalDayIsoRange(dayKey: string): { since: string; until: string } {
+  const since = new Date(`${dayKey}T00:00:00`);
+  const until = new Date(since);
+  until.setDate(until.getDate() + 1);
+
+  return {
+    since: since.toISOString(),
+    until: until.toISOString(),
+  };
 }
 
 async function readManualAutoTargetSample(

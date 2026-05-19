@@ -1,4 +1,5 @@
 import { openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import type { Database } from "bun:sqlite";
 import {
   type BatteryRecord,
   type BatteryStrategyPlanItem,
@@ -38,6 +39,8 @@ import { getWeatherForecast } from "../../ems/src/plugins/solar-forecast";
 import { formatDaemonHelpText, parseDaemonOptions } from "./daemon-options";
 import {
   completeSolarEnergyProviderControlRequest,
+  type DaemonLogLevel,
+  insertDaemonLog,
   markSolarEnergyProviderControlRequestRunning,
   openDaemonDatabase,
   queueSolarEnergyProviderControlRequest,
@@ -111,6 +114,8 @@ const DYNAMIC_PRICE_REFRESH_INTERVAL_MS = 15 * 60 * 1_000;
 const FORECAST_HOURS = 48;
 const FORECAST_PERIOD_MINUTES = 15;
 
+let daemonLogDb: Database | null = null;
+
 class DaemonStartupError extends Error {}
 
 interface BatteryControlSnapshot {
@@ -163,6 +168,7 @@ function main(): void {
   acquireDaemonLock();
 
   const db = openDaemonDatabase();
+  daemonLogDb = db;
   const batteries = readBatteries(db);
   const meters = readMeters(db);
   const solarEnergyProviders = readSolarEnergyProviders(db);
@@ -2097,7 +2103,7 @@ function logVerbose(enabled: boolean, message: string): void {
     return;
   }
 
-  console.log(`[daemon] [${formatDaemonLogTimestamp()}] ${message}`);
+  writeDaemonLog("verbose", message);
 }
 
 function logInfoWithVerboseDetails(
@@ -2110,15 +2116,43 @@ function logInfoWithVerboseDetails(
 }
 
 function logInfo(message: string): void {
-  console.log(`[daemon] [${formatDaemonLogTimestamp()}] ${message}`);
+  writeDaemonLog("info", message);
 }
 
 function logWarn(message: string): void {
-  console.warn(`[daemon] [${formatDaemonLogTimestamp()}] WARNING: ${message}`);
+  writeDaemonLog("warn", message);
 }
 
 function logError(message: string): void {
-  console.error(`[daemon] [${formatDaemonLogTimestamp()}] ${message}`);
+  writeDaemonLog("error", message);
+}
+
+function writeDaemonLog(level: DaemonLogLevel, message: string): void {
+  const loggedAt = new Date();
+  const timestamp = formatDaemonLogTimestamp(loggedAt);
+
+  if (level === "warn") {
+    console.warn(`[daemon] [${timestamp}] WARNING: ${message}`);
+  } else if (level === "error") {
+    console.error(`[daemon] [${timestamp}] ${message}`);
+  } else {
+    console.log(`[daemon] [${timestamp}] ${message}`);
+  }
+
+  if (daemonLogDb === null) {
+    return;
+  }
+
+  try {
+    insertDaemonLog(daemonLogDb, {
+      level,
+      message,
+      loggedAt: loggedAt.toISOString(),
+    });
+  } catch (error) {
+    const details = error instanceof Error ? error.message : String(error);
+    console.error(`[daemon] [${timestamp}] Failed to store daemon log: ${details}`);
+  }
 }
 
 try {
