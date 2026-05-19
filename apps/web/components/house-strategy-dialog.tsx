@@ -97,12 +97,6 @@ export function HouseStrategyDialog({
     };
   }, [isOpen]);
 
-  useEffect(() => {
-    if (isOpen) {
-      setSelectedMode(effectiveManualModeActive ? "manual" : "strategy");
-    }
-  }, [effectiveManualModeActive, isOpen]);
-
   const strategy = firstBattery?.batteryStrategy ?? {
     strategyMode: "self-consumption",
     manualPowerW: null,
@@ -128,7 +122,10 @@ export function HouseStrategyDialog({
     <>
       <Button
         aria-label={`Strategy: ${buttonLabel}`}
-        onClick={() => setIsOpen(true)}
+        onClick={() => {
+          setSelectedMode(effectiveManualModeActive ? "manual" : "strategy");
+          setIsOpen(true);
+        }}
         type="button"
         variant="ghost"
       >
@@ -278,7 +275,7 @@ function DaemonLogsPanel({ day }: { day: string }) {
         </div>
       ) : null}
 
-      <div className="max-h-[58vh] overflow-auto rounded-2xl border border-white/10 bg-slate-950/70">
+      <div className="max-h-[50vh] overflow-auto rounded-2xl border border-white/10 bg-slate-950/70">
         {entries.length === 0 ? (
           <div className="p-6 text-sm text-slate-400">
             No daemon logs found for this day.
