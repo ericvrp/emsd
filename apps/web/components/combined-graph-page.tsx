@@ -1160,9 +1160,7 @@ function GroupedLegend({
           className="w-fit max-w-full rounded-2xl border border-white/10 bg-slate-950/35 p-2"
           key={group.type}
         >
-          <p className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-300">
-            {group.label} • {group.summaryLabel}
-          </p>
+          <LegendGroupHeader group={group} />
           <div className="flex flex-wrap gap-2">
             {group.items.map((item) => (
               <LegendChip
@@ -1206,6 +1204,20 @@ function GroupedLegend({
         </div>
       ))}
     </div>
+  );
+}
+
+function LegendGroupHeader({ group }: { group: CombinedLegendGroup }) {
+  const meta = GRAPH_TYPE_META[group.type];
+  const Icon = meta.icon;
+
+  return (
+    <p className="mb-2 flex items-center gap-1.5 px-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-300">
+      <Icon aria-hidden="true" size={12} style={{ color: meta.color }} />
+      <span>
+        {group.label} • {group.summaryLabel}
+      </span>
+    </p>
   );
 }
 
@@ -1720,6 +1732,22 @@ function CombinedTooltip({
   const showGridCosts = entries.some(
     (entry) => getTooltipEntryGraphType(entry.dataKey) === "grid",
   );
+  const categories = activeTypes.flatMap((type) => {
+    const categoryEntries = entries.filter(
+      (entry) => getTooltipEntryGraphType(entry.dataKey) === type,
+    );
+
+    if (
+      categoryEntries.length === 0 &&
+      !(type === "battery" && strategyLabel) &&
+      !(type === "prices" && priceEntry) &&
+      !(type === "grid" && showGridCosts && point)
+    ) {
+      return [];
+    }
+
+    return [{ entries: categoryEntries, type }];
+  });
   if (entries.length === 0 && !strategyLabel) return null;
 
   return (
@@ -1728,22 +1756,13 @@ function CombinedTooltip({
         {formatTooltipTimestamp(label)}
       </p>
       <div className="space-y-1.5">
-        {activeTypes.map((type) => {
-          const categoryEntries = entries.filter(
-            (entry) => getTooltipEntryGraphType(entry.dataKey) === type,
-          );
-
-          if (
-            categoryEntries.length === 0 &&
-            !(type === "battery" && strategyLabel) &&
-            !(type === "prices" && priceEntry) &&
-            !(type === "grid" && showGridCosts && point)
-          ) {
-            return null;
-          }
-
+        {categories.map(({ entries: categoryEntries, type }, index) => {
           return (
             <div className="space-y-1.5" key={type}>
+              <CombinedTooltipCategoryHeader
+                separated={index > 0}
+                type={type}
+              />
               {categoryEntries.map((entry) => (
                 <div
                   className="flex items-center justify-between gap-4"
@@ -1832,6 +1851,29 @@ function CombinedTooltip({
         })}
       </div>
     </TooltipCard>
+  );
+}
+
+function CombinedTooltipCategoryHeader({
+  separated,
+  type,
+}: {
+  separated: boolean;
+  type: GraphType;
+}) {
+  const meta = GRAPH_TYPE_META[type];
+  const Icon = meta.icon;
+
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400",
+        separated ? "mt-2 border-t border-white/10 pt-2" : undefined,
+      )}
+    >
+      <Icon aria-hidden="true" size={12} style={{ color: meta.color }} />
+      <span>{meta.label}</span>
+    </div>
   );
 }
 
