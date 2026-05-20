@@ -640,9 +640,13 @@ function GridOverviewTooltip({
               )}
             />
             <TooltipDetailRow
-              label="Net Energy Earnings"
+              label={
+                point.cumulativeNetCost > 0
+                  ? "Net Energy Cost"
+                  : "Net Energy Earnings"
+              }
               value={formatCurrencyAmount(
-                -point.cumulativeNetCost,
+                Math.abs(point.cumulativeNetCost),
                 priceCurrency,
               )}
             />

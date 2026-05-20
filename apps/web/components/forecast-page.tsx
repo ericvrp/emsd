@@ -345,10 +345,10 @@ function ForecastPredictionChart({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-wrap gap-2 text-xs font-medium text-slate-300">
           <LegendChip
-            color={UI_COLORS.solarEnergy}
-            label={buildGeneratedSolarLegendLabel()}
-            onClick={() => toggle(GENERATED_SOLAR_SERIES_ID)}
-            selected={isVisible(GENERATED_SOLAR_SERIES_ID)}
+            color={UI_COLORS.forecast}
+            label={forecastLabel}
+            onClick={() => toggle(FORECAST_SERIES_ID)}
+            selected={isVisible(FORECAST_SERIES_ID)}
           />
           <LegendChip
             color={UI_COLORS.solarEnergy}
@@ -364,10 +364,10 @@ function ForecastPredictionChart({
             selected={isVisible(PREDICTED_SOLAR_SERIES_ID)}
           />
           <LegendChip
-            color={UI_COLORS.forecast}
-            label={forecastLabel}
-            onClick={() => toggle(FORECAST_SERIES_ID)}
-            selected={isVisible(FORECAST_SERIES_ID)}
+            color={UI_COLORS.solarEnergy}
+            label={buildGeneratedSolarLegendLabel()}
+            onClick={() => toggle(GENERATED_SOLAR_SERIES_ID)}
+            selected={isVisible(GENERATED_SOLAR_SERIES_ID)}
           />
         </div>
         {headerAccessory}
@@ -517,37 +517,6 @@ function ForecastPredictionChart({
                     />
                   </>
                 ) : null}
-                {isVisible(GENERATED_SOLAR_SERIES_ID) ? (
-                  <>
-                    <Line
-                      activeDot={false}
-                      dataKey="generatedCurrentValue"
-                      dot={false}
-                      isAnimationActive={false}
-                      name="Generated Wattage"
-                      stroke={UI_COLORS.solarEnergy}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2.8}
-                      type="monotone"
-                      yAxisId="predicted"
-                    />
-                    <Line
-                      activeDot={false}
-                      dataKey="generatedFutureValue"
-                      dot={false}
-                      isAnimationActive={false}
-                      name="Generated Wattage"
-                      stroke={UI_COLORS.solarEnergy}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeOpacity={0.35}
-                      strokeWidth={2.8}
-                      type="monotone"
-                      yAxisId="predicted"
-                    />
-                  </>
-                ) : null}
                 {isVisible(PREDICTED_SOLAR_SERIES_ID) ? (
                   <>
                     <Line
@@ -572,6 +541,37 @@ function ForecastPredictionChart({
                       name="Predicted Solar Wattage"
                       stroke={UI_COLORS.solarEnergy}
                       strokeDasharray="1 6"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeOpacity={0.35}
+                      strokeWidth={2.8}
+                      type="monotone"
+                      yAxisId="predicted"
+                    />
+                  </>
+                ) : null}
+                {isVisible(GENERATED_SOLAR_SERIES_ID) ? (
+                  <>
+                    <Line
+                      activeDot={false}
+                      dataKey="generatedCurrentValue"
+                      dot={false}
+                      isAnimationActive={false}
+                      name="Generated Wattage"
+                      stroke={UI_COLORS.solarEnergy}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2.8}
+                      type="monotone"
+                      yAxisId="predicted"
+                    />
+                    <Line
+                      activeDot={false}
+                      dataKey="generatedFutureValue"
+                      dot={false}
+                      isAnimationActive={false}
+                      name="Generated Wattage"
+                      stroke={UI_COLORS.solarEnergy}
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       strokeOpacity={0.35}

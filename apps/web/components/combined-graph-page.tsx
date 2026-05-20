@@ -1240,9 +1240,9 @@ function getLegendGroups(
         summaryLabel: summaries.solar,
         items: [
           {
-            seriesId: SERIES_IDS.solarGenerated,
-            color: UI_COLORS.combinedSolarPower,
-            label: "Generated",
+            seriesId: SERIES_IDS.solarForecast,
+            color: UI_COLORS.combinedSolarForecast,
+            label: "Forecast",
           },
           {
             seriesId: SERIES_IDS.solarPredicted,
@@ -1251,9 +1251,9 @@ function getLegendGroups(
             dashed: true,
           },
           {
-            seriesId: SERIES_IDS.solarForecast,
-            color: UI_COLORS.combinedSolarForecast,
-            label: "Forecast",
+            seriesId: SERIES_IDS.solarGenerated,
+            color: UI_COLORS.combinedSolarPower,
+            label: "Generated",
           },
         ],
       };
@@ -1584,12 +1584,12 @@ function renderLines(
             "price",
           )
         : null}
-      {activeTypes.includes("solar") && isVisible(SERIES_IDS.solarGenerated)
+      {activeTypes.includes("solar") && isVisible(SERIES_IDS.solarForecast)
         ? renderCurrentFutureLine(
-            "generated",
-            "Generated Solar",
-            UI_COLORS.combinedSolarPower,
-            "power",
+            "forecast",
+            "Solar Forecast",
+            UI_COLORS.combinedSolarForecast,
+            "forecast",
           )
         : null}
       {activeTypes.includes("solar") && isVisible(SERIES_IDS.solarPredicted)
@@ -1601,12 +1601,12 @@ function renderLines(
             "1 6",
           )
         : null}
-      {activeTypes.includes("solar") && isVisible(SERIES_IDS.solarForecast)
+      {activeTypes.includes("solar") && isVisible(SERIES_IDS.solarGenerated)
         ? renderCurrentFutureLine(
-            "forecast",
-            "Solar Forecast",
-            UI_COLORS.combinedSolarForecast,
-            "forecast",
+            "generated",
+            "Generated Solar",
+            UI_COLORS.combinedSolarPower,
+            "power",
           )
         : null}
       {activeTypes.includes("grid") && isVisible(SERIES_IDS.gridPower)
@@ -1718,11 +1718,7 @@ function CombinedTooltip({
     entry.dataKey?.startsWith("price"),
   );
   const showGridCosts = entries.some(
-    (entry) =>
-      activeTypes.includes("grid") &&
-      (entry.dataKey?.startsWith("grid") ||
-        entry.dataKey?.startsWith("actualSiteLoad") ||
-        entry.dataKey?.startsWith("expectedSiteLoad")),
+    (entry) => getTooltipEntryGraphType(entry.dataKey) === "grid",
   );
   if (entries.length === 0 && !strategyLabel) return null;
 
@@ -1732,85 +1728,108 @@ function CombinedTooltip({
         {formatTooltipTimestamp(label)}
       </p>
       <div className="space-y-1.5">
-        {entries.map((entry) => (
-          <div
-            className="flex items-center justify-between gap-4"
-            key={`${entry.dataKey}-${entry.name}`}
-          >
-            <span className="flex items-center gap-2 text-slate-200">
-              <TooltipMarker
-                color={entry.color ?? UI_COLORS.chartSeriesFallback}
-                strokeDasharray={
-                  entry.dataKey?.startsWith("predicted") ||
-                  entry.dataKey?.startsWith("expected")
-                    ? "1 6"
-                    : undefined
-                }
-              />
-              {formatTooltipLabel(entry.dataKey, entry.value)}
-            </span>
-            <span className="font-medium text-white">
-              {formatTooltipValue(
-                entry.value,
-                entry.dataKey,
-                entry.payload,
-                priceCurrency,
-                forecastUnitLabel,
-              )}
-            </span>
-          </div>
-        ))}
-        {strategyLabel ? (
-          <CombinedTooltipDetailRow
-            color={point?.strategyColor ?? getStrategyTooltipColor(point)}
-            label="Strategy"
-            value={
-              <span className="inline-flex items-center gap-1.5">
-                {point?.strategySource ? (
-                  <StrategySourceIcon source={point.strategySource} />
-                ) : null}
-                <span>{strategyLabel}</span>
-              </span>
-            }
-          />
-        ) : null}
-        {activeTypes.includes("prices") && priceEntry ? (
-          <CombinedTooltipDetailRow
-            color={UI_COLORS.success}
-            label="Export Price"
-            value={formatPricePerKwh(
-              computeExportPrice(priceEntry.value, exportDeduction),
-              priceCurrency,
-            )}
-          />
-        ) : null}
-        {showGridCosts && point ? (
-          <div className="mt-2 border-t border-white/10 pt-2">
-            <div className="space-y-1.5">
-              <CombinedTooltipPlainRow
-                label="Import Cost"
-                value={formatCurrencyAmount(
-                  point.cumulativeImportCost,
-                  priceCurrency,
-                )}
-              />
-              <CombinedTooltipPlainRow
-                label="Export Earnings"
-                value={formatCurrencyAmount(
-                  point.cumulativeExportEarnings,
-                  priceCurrency,
-                )}
-              />
-              <CombinedTooltipPlainRow
-                label="Net Energy Earnings"
-                value={formatCurrencyAmount(
-                  -point.cumulativeNetCost,
-                  priceCurrency,
-                )}
-              />
+        {activeTypes.map((type) => {
+          const categoryEntries = entries.filter(
+            (entry) => getTooltipEntryGraphType(entry.dataKey) === type,
+          );
+
+          if (
+            categoryEntries.length === 0 &&
+            !(type === "battery" && strategyLabel) &&
+            !(type === "prices" && priceEntry) &&
+            !(type === "grid" && showGridCosts && point)
+          ) {
+            return null;
+          }
+
+          return (
+            <div className="space-y-1.5" key={type}>
+              {categoryEntries.map((entry) => (
+                <div
+                  className="flex items-center justify-between gap-4"
+                  key={`${entry.dataKey}-${entry.name}`}
+                >
+                  <span className="flex items-center gap-2 text-slate-200">
+                    <TooltipMarker
+                      color={entry.color ?? UI_COLORS.chartSeriesFallback}
+                      strokeDasharray={
+                        entry.dataKey?.startsWith("predicted") ||
+                        entry.dataKey?.startsWith("expected")
+                          ? "1 6"
+                          : undefined
+                      }
+                    />
+                    {formatTooltipLabel(entry.dataKey, entry.value)}
+                  </span>
+                  <span className="font-medium text-white">
+                    {formatTooltipValue(
+                      entry.value,
+                      entry.dataKey,
+                      entry.payload,
+                      priceCurrency,
+                      forecastUnitLabel,
+                    )}
+                  </span>
+                </div>
+              ))}
+              {type === "battery" && strategyLabel ? (
+                <CombinedTooltipDetailRow
+                  color={point?.strategyColor ?? getStrategyTooltipColor(point)}
+                  label="Strategy"
+                  value={
+                    <span className="inline-flex items-center gap-1.5">
+                      {point?.strategySource ? (
+                        <StrategySourceIcon source={point.strategySource} />
+                      ) : null}
+                      <span>{strategyLabel}</span>
+                    </span>
+                  }
+                />
+              ) : null}
+              {type === "prices" && priceEntry ? (
+                <CombinedTooltipDetailRow
+                  color={UI_COLORS.success}
+                  label="Export Price"
+                  value={formatPricePerKwh(
+                    computeExportPrice(priceEntry.value, exportDeduction),
+                    priceCurrency,
+                  )}
+                />
+              ) : null}
+              {type === "grid" && showGridCosts && point ? (
+                <div className="mt-2 border-t border-white/10 pt-2">
+                  <div className="space-y-1.5">
+                    <CombinedTooltipPlainRow
+                      label="Import Cost"
+                      value={formatCurrencyAmount(
+                        point.cumulativeImportCost,
+                        priceCurrency,
+                      )}
+                    />
+                    <CombinedTooltipPlainRow
+                      label="Export Earnings"
+                      value={formatCurrencyAmount(
+                        point.cumulativeExportEarnings,
+                        priceCurrency,
+                      )}
+                    />
+                    <CombinedTooltipPlainRow
+                      label={
+                        point.cumulativeNetCost > 0
+                          ? "Net Energy Cost"
+                          : "Net Energy Earnings"
+                      }
+                      value={formatCurrencyAmount(
+                        Math.abs(point.cumulativeNetCost),
+                        priceCurrency,
+                      )}
+                    />
+                  </div>
+                </div>
+              ) : null}
             </div>
-          </div>
-        ) : null}
+          );
+        })}
       </div>
     </TooltipCard>
   );
@@ -2007,9 +2026,9 @@ function getSeriesIds(activeTypes: GraphType[]): string[] {
       return [SERIES_IDS.batteryPower, SERIES_IDS.batteryCharge];
     if (type === "solar")
       return [
-        SERIES_IDS.solarGenerated,
-        SERIES_IDS.solarPredicted,
         SERIES_IDS.solarForecast,
+        SERIES_IDS.solarPredicted,
+        SERIES_IDS.solarGenerated,
       ];
     if (type === "prices") return [SERIES_IDS.priceImport];
     return [

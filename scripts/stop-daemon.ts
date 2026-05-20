@@ -6,7 +6,6 @@ const repoRoot = resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
 const pidPath = resolve(repoRoot, "var/run/emsd.pid");
 
 if (!existsSync(pidPath)) {
-  console.log("EMSD daemon is not running.");
   process.exit(0);
 }
 
