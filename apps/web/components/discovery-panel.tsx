@@ -97,6 +97,20 @@ const SUPPORTED_DISCOVERY_PLUGINS: readonly SupportedPluginEntry[] = [
   },
   {
     type: "Solar",
+    plugin: "HomeWizard Smart Plug",
+    status: "incomplete",
+    notes:
+      "Discovery and log-only polling are implemented. Solar telemetry persistence and switch control are not enabled yet.",
+  },
+  {
+    type: "Solar",
+    plugin: "HomeWizard CT",
+    status: "incomplete",
+    notes:
+      "Discovery and log-only polling are implemented. Solar telemetry persistence is intentionally disabled for now.",
+  },
+  {
+    type: "Solar",
     plugin: "SolarEdge Inverter",
     status: "untested",
     notes:

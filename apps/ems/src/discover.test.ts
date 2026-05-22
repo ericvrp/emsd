@@ -128,6 +128,22 @@ test("getDiscoverySignatures exposes the discovery plugin catalog", () => {
     {
       pluginType: "solar-energy-provider",
       category: "solar-energy-provider",
+      model: "homewizard-smart-plug",
+      name: "HomeWizard Smart Plug",
+      port: 80,
+      schemes: ["http"],
+    },
+    {
+      pluginType: "solar-energy-provider",
+      category: "solar-energy-provider",
+      model: "homewizard-ct",
+      name: "HomeWizard CT",
+      port: 80,
+      schemes: ["http"],
+    },
+    {
+      pluginType: "solar-energy-provider",
+      category: "solar-energy-provider",
       model: "huawei-sun2000-modbus",
       name: "Huawei SUN2000",
       port: 6607,
@@ -414,6 +430,62 @@ test("discoverHostDevices enriches HomeWizard P1 matches with measurement detail
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("discoverHostDevices matches a HomeWizard Smart Plug as a solar provider", async () => {
+  globalThis.fetch = mockHomeWizardSolarFetch({
+    data: {
+      active_power_w: -320,
+      total_power_export_kwh: 14.2,
+      switch_state: "on",
+    },
+    ipAddress: "192.168.1.31",
+    productName: "Smart Plug",
+    productType: "HWE-SKT",
+  });
+
+  const devices = await discoverHostDevices("192.168.1.31", {
+    verbose: false,
+    host: "192.168.1.31",
+  });
+
+  expect(devices).toHaveLength(1);
+  expect(devices[0]).toMatchObject({
+    category: "solar-energy-provider",
+    model: "homewizard-smart-plug",
+    name: "HomeWizard Smart Plug",
+    ipAddress: "192.168.1.31",
+    port: 80,
+    powerW: -320,
+  });
+  expect(devices[0]?.details).toContain("capabilities energy/power/switch");
+});
+
+test("discoverHostDevices matches a HomeWizard CT as a solar provider", async () => {
+  globalThis.fetch = mockHomeWizardSolarFetch({
+    data: {
+      active_power_w: 920,
+      total_power_import_kwh: 45.1,
+    },
+    ipAddress: "192.168.1.32",
+    productName: "CT Meter",
+    productType: "HWE-CT",
+  });
+
+  const devices = await discoverHostDevices("192.168.1.32", {
+    verbose: false,
+    host: "192.168.1.32",
+  });
+
+  expect(devices).toHaveLength(1);
+  expect(devices[0]).toMatchObject({
+    category: "solar-energy-provider",
+    model: "homewizard-ct",
+    name: "HomeWizard CT",
+    ipAddress: "192.168.1.32",
+    port: 80,
+    powerW: 920,
+  });
 });
 
 test("discoverHostDevices matches a sonnen battery from the status endpoint", async () => {
@@ -1063,6 +1135,37 @@ async function startHuaweiModbusServer(port = 6607) {
   }
 
   return { port: address.port, server };
+}
+
+function mockHomeWizardSolarFetch(input: {
+  data: Record<string, unknown>;
+  ipAddress: string;
+  productName: string;
+  productType: string;
+}): typeof fetch {
+  return (async (request: string | URL | Request) => {
+    const url = String(request);
+    const baseUrl = `http://${input.ipAddress}:80`;
+
+    if (url === `${baseUrl}/api`) {
+      return new Response(
+        JSON.stringify({
+          product_name: input.productName,
+          product_type: input.productType,
+          serial: "hw123456",
+          firmware_version: "5.21",
+          api_version: "v1",
+        }),
+        { status: 200 },
+      );
+    }
+
+    if (url === `${baseUrl}/api/v1/data`) {
+      return new Response(JSON.stringify(input.data), { status: 200 });
+    }
+
+    return new Response("not found", { status: 404 });
+  }) as typeof fetch;
 }
 
 function buildModbusFrame(

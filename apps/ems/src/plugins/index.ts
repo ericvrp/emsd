@@ -7,6 +7,7 @@ import { meterPlugins } from "./meter";
 import { pricePlugins } from "./price";
 import {
   enphaseSolarEnergyProviderDiscoveryPlugin,
+  homeWizardSolarEnergyProviderDiscoveryPlugins,
   huaweiSolarEnergyProviderDiscoveryPlugins,
   solarEnergyProviderPlugins,
   solaredgeSolarEnergyProviderDiscoveryPlugin,
@@ -26,6 +27,7 @@ export const discoveryPlugins = [
   sonnenBatteryPlugin,
   indevoltBatteryPlugin,
   homeWizardBatteryPlugin,
+  ...homeWizardSolarEnergyProviderDiscoveryPlugins,
   ...huaweiSolarEnergyProviderDiscoveryPlugins,
   solaredgeSolarEnergyProviderDiscoveryPlugin,
   enphaseSolarEnergyProviderDiscoveryPlugin,

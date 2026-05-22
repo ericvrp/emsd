@@ -11,31 +11,39 @@ import {
   huaweiSolarEnergyProviderDiscoveryPlugins,
 } from "./huawei";
 import {
+  HomeWizardSolarEnergyProviderPlugin,
+  homeWizardSolarEnergyProviderDiscoveryPlugins,
+} from "./homewizard";
+import {
   SolarEdgeSolarEnergyProviderPlugin,
   solaredgeSolarEnergyProviderDiscoveryPlugin,
 } from "./solaredge";
 
 export interface SolarEnergyProviderPlugin {
-  getNormalizedInfo(): Promise<NormalizedSolarEnergyProviderInfo>;
+  getNormalizedInfo(): Promise<NormalizedSolarEnergyProviderInfo | null>;
   setProductionEnabled(
     enabled: boolean,
-  ): Promise<NormalizedSolarEnergyProviderInfo>;
+  ): Promise<NormalizedSolarEnergyProviderInfo | null>;
 }
 
 export const solarEnergyProviderDiscoveryPlugins = [
   enphaseSolarEnergyProviderDiscoveryPlugin,
+  ...homeWizardSolarEnergyProviderDiscoveryPlugins,
   ...huaweiSolarEnergyProviderDiscoveryPlugins,
   solaredgeSolarEnergyProviderDiscoveryPlugin,
 ];
 
 export {
   enphaseSolarEnergyProviderDiscoveryPlugin,
+  homeWizardSolarEnergyProviderDiscoveryPlugins,
   huaweiSolarEnergyProviderDiscoveryPlugins,
   solaredgeSolarEnergyProviderDiscoveryPlugin,
 };
 
 export const solarEnergyProviderPlugins = [
   "enphase-local",
+  "homewizard-ct",
+  "homewizard-smart-plug",
   "huawei-sun2000-modbus",
   "solaredge-local",
 ] as const;
@@ -55,6 +63,13 @@ export function createSolarEnergyProviderPlugin(
     return new HuaweiSun2000SolarEnergyProviderPlugin(provider);
   }
 
+  if (
+    provider.plugin === "homewizard-ct" ||
+    provider.plugin === "homewizard-smart-plug"
+  ) {
+    return new HomeWizardSolarEnergyProviderPlugin(provider);
+  }
+
   throw new Error(
     `Unsupported solar energy provider plugin: ${provider.plugin}`,
   );
@@ -62,14 +77,14 @@ export function createSolarEnergyProviderPlugin(
 
 export async function getSolarEnergyProviderNormalizedInfo(
   provider: SolarEnergyProviderRecord,
-): Promise<NormalizedSolarEnergyProviderInfo> {
+): Promise<NormalizedSolarEnergyProviderInfo | null> {
   return createSolarEnergyProviderPlugin(provider).getNormalizedInfo();
 }
 
 export async function setSolarEnergyProviderProductionEnabled(
   provider: SolarEnergyProviderRecord,
   enabled: boolean,
-): Promise<NormalizedSolarEnergyProviderInfo> {
+): Promise<NormalizedSolarEnergyProviderInfo | null> {
   return createSolarEnergyProviderPlugin(provider).setProductionEnabled(
     enabled,
   );

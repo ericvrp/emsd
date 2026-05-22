@@ -598,6 +598,42 @@ test("Huawei SUN2000 Modbus provider writes fixed power derate for disable", asy
   }
 });
 
+test("HomeWizard solar providers log telemetry and return no daemon sample", async () => {
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+
+    if (url === "http://192.168.1.61:80/api") {
+      return new Response(
+        JSON.stringify({
+          product_name: "Smart Plug",
+          product_type: "HWE-SKT",
+          serial: "hw-plug-1",
+          firmware_version: "5.21",
+          api_version: "v1",
+        }),
+        { status: 200 },
+      );
+    }
+
+    if (url === "http://192.168.1.61:80/api/v1/data") {
+      return new Response(
+        JSON.stringify({
+          active_power_w: -250,
+          switch_state: "on",
+          total_power_export_kwh: 8.4,
+        }),
+        { status: 200 },
+      );
+    }
+
+    throw new Error(`Unexpected URL: ${url}`);
+  }) as typeof fetch;
+
+  await expect(
+    getSolarEnergyProviderNormalizedInfo(buildHomeWizardProvider()),
+  ).resolves.toBeNull();
+});
+
 function buildProvider(ipAddress = "192.168.1.40"): SolarEnergyProviderRecord {
   return {
     id: "solar-provider-1",
@@ -609,6 +645,21 @@ function buildProvider(ipAddress = "192.168.1.40"): SolarEnergyProviderRecord {
     enabled: true,
     connected: true,
     serialNumber: "123456789012",
+    updatedAt: "2026-04-09T00:00:00.000Z",
+  };
+}
+
+function buildHomeWizardProvider(): SolarEnergyProviderRecord {
+  return {
+    id: "solar-provider-4",
+    siteId: "home",
+    name: "HomeWizard Smart Plug",
+    plugin: "homewizard-smart-plug",
+    ipAddress: "192.168.1.61",
+    port: 80,
+    enabled: true,
+    connected: true,
+    serialNumber: "hw-plug-1",
     updatedAt: "2026-04-09T00:00:00.000Z",
   };
 }
