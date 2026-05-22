@@ -1594,6 +1594,8 @@ function renderLines(
             "Import Price",
             UI_COLORS.combinedPriceImport,
             "price",
+            undefined,
+            "stepAfter",
           )
         : null}
       {activeTypes.includes("solar") && isVisible(SERIES_IDS.solarForecast)
@@ -1656,6 +1658,7 @@ function renderCurrentFutureLine(
   color: string,
   yAxisId: AxisKind,
   strokeDasharray?: string,
+  lineType: "monotone" | "stepAfter" = "monotone",
 ): ReactNode {
   const dashProps = strokeDasharray ? { strokeDasharray } : {};
 
@@ -1672,7 +1675,7 @@ function renderCurrentFutureLine(
         strokeLinecap="round"
         strokeLinejoin="round"
         strokeWidth={2.6}
-        type="monotone"
+        type={lineType}
         yAxisId={yAxisId}
       />
       <Line
@@ -1687,7 +1690,7 @@ function renderCurrentFutureLine(
         strokeLinejoin="round"
         strokeOpacity={0.35}
         strokeWidth={2.6}
-        type="monotone"
+        type={lineType}
         yAxisId={yAxisId}
       />
     </>
