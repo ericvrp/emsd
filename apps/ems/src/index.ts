@@ -1,10 +1,7 @@
 import { EMSD_NAME } from "@emsd/core";
 import { runApiCommand } from "./api";
 import { formatBatteryHelpText, runBatteryCommand } from "./battery";
-import {
-  formatDaemonLogHelpText,
-  runDaemonLogCommand,
-} from "./daemon-log";
+import { formatDaemonLogHelpText, runDaemonLogCommand } from "./daemon-log";
 import {
   formatHelpText as formatDiscoverHelpText,
   runDiscoverCommand,

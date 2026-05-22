@@ -1,5 +1,5 @@
-import { openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import type { Database } from "bun:sqlite";
+import { openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import {
   type BatteryRecord,
   type BatteryStrategyPlanItem,
@@ -38,8 +38,8 @@ import {
 import { getWeatherForecast } from "../../ems/src/plugins/solar-forecast";
 import { formatDaemonHelpText, parseDaemonOptions } from "./daemon-options";
 import {
-  completeSolarEnergyProviderControlRequest,
   type DaemonLogLevel,
+  completeSolarEnergyProviderControlRequest,
   insertDaemonLog,
   markSolarEnergyProviderControlRequestRunning,
   openDaemonDatabase,
@@ -2151,7 +2151,9 @@ function writeDaemonLog(level: DaemonLogLevel, message: string): void {
     });
   } catch (error) {
     const details = error instanceof Error ? error.message : String(error);
-    console.error(`[daemon] [${timestamp}] Failed to store daemon log: ${details}`);
+    console.error(
+      `[daemon] [${timestamp}] Failed to store daemon log: ${details}`,
+    );
   }
 }
 

@@ -12,7 +12,7 @@ It is the charging-side phase that follows built-in `Delayed-charge prep`, which
 
 Delayed charging now starts from the low-price marker only.
 
-The daemon resolves the next delayed-charging marker as the local low-price point from price selection.
+The daemon resolves the next delayed-charging marker as the local low-price marker from shared price selection. Low markers use a centered 4-hour moving-average rule, so broad or flat cheap valleys can still produce one marker.
 
 In the built-in flow, `Delayed-charge prep` may already be holding the battery in `idle` before this rule starts.
 
@@ -43,7 +43,7 @@ At the marker, the daemon computes:
 
 `effectiveFillPowerW = expectedSolarAtMarkerW - expectedHouseLoadAtMarkerW`
 
-The values are taken at the marker itself, not over a larger window.
+The values are taken at the marker itself, not over the larger price-selection window.
 
 If `effectiveFillPowerW <= 0`, delayed charging is skipped for that marker.
 

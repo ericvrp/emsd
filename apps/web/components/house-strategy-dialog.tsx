@@ -67,7 +67,8 @@ export function HouseStrategyDialog({
   >(manualModeActive ? "manual" : "strategy");
   const returnPath = buildReturnPath(pathname, searchParams);
   const selectedDay =
-    resolveRelativeDayParam(searchParams.get("day")) ?? formatLocalDayKey(new Date());
+    resolveRelativeDayParam(searchParams.get("day")) ??
+    formatLocalDayKey(new Date());
   const { data: currentData } = useLiveJsonSWR<SiteCurrentResponse>(
     `/api/site/current?siteId=${encodeURIComponent(siteId)}`,
     {
@@ -290,7 +291,12 @@ function DaemonLogsPanel({ day }: { day: string }) {
                 <time className="font-mono text-xs text-slate-400">
                   {formatLogTime(log.loggedAt)}
                 </time>
-                <span className={cn("text-xs font-semibold uppercase", getLogLevelClassName(log.level))}>
+                <span
+                  className={cn(
+                    "text-xs font-semibold uppercase",
+                    getLogLevelClassName(log.level),
+                  )}
+                >
                   {log.level}
                 </span>
                 <p className="break-words text-slate-200">{log.message}</p>

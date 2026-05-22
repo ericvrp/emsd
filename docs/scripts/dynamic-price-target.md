@@ -12,7 +12,7 @@ The goal is:
 - convert that into the stop target percentage to use for the active scheduled item
 
 For delayed-charging schedules with `targetMethod === "auto"`, the flow is:
-- resolve the upcoming delayed-charging marker as the local low-price marker
+- resolve the upcoming delayed-charging marker as the local low-price marker from the centered 4-hour moving-average price selection
 - compute the battery energy still needed to reach `100%`
 - if the marker price is above `0`, use `expectedSolarAtMarkerW - expectedHouseLoadAtMarkerW` as the effective fill power and apply `self-consumption`
 - if the marker price is `0` or below, use `battery.maximumChargePowerW` as the effective fill power and apply full charging
@@ -23,7 +23,7 @@ For delayed-charging schedules with `targetMethod === "auto"`, the flow is:
 - complete the delayed-charging item when the battery reaches `100%`, then restore the default strategy
 
 For import-shortage schedules with `targetMethod === "auto"`, the flow is:
-- resolve the upcoming import-shortage marker as the local low import-price marker used for scheduling any cheap grid top-up
+- resolve the upcoming import-shortage marker as the local low import-price marker from the centered 4-hour moving-average price selection, used for scheduling any cheap grid top-up
 - find the first same-day solar-surplus start and final same-day solar-surplus end
 - integrate expected net demand from the decision time until solar surplus starts
 - integrate expected net solar recovery from solar surplus start until final solar-surplus end
@@ -40,6 +40,7 @@ Important:
 - the delayed-charging estimator uses the marker signal only; it does not average across a larger delayed-charging window
 - the import-shortage estimator uses the low import-price marker for timing, but the SoC projection runs from the current decision time through solar-surplus start and end
 - the separate `Delayed-charge prep` built-in item is not estimated here; it has its own marker-based trigger before delayed charging becomes due
+- low/high marker selection details live in `../price-selection.md`
 
 This same estimator is used by:
 - the daemon activation path for dynamic target schedule items

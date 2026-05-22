@@ -205,7 +205,7 @@ All top-level fields except `schema`, `generatedAt`, and `summary` may be absent
 |-------|------|-------------|
 | `todayLowPriceMarkerStartsAt` | string \| null | First low-price marker for the current local day |
 | `todayLowPriceMarkerImportPrice` | number \| null | Import price at the first low-price marker |
-| `todayLowPriceMarkers` | array | All low-price markers for the current local day |
+| `todayLowPriceMarkers` | array | All centered 4-hour moving-average low-price markers for the current local day |
 | `todayHighPriceMarkerStartsAt` | string \| null | First high-price marker for the current local day |
 | `todayHighPriceMarkerImportPrice` | number \| null | Import price at the first high-price marker |
 | `todayHighPriceMarkers` | array | All high-price markers for the current local day |

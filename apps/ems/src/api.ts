@@ -57,13 +57,13 @@ import { estimateDynamicPriceTarget } from "../../daemon/src/dynamic-price-targe
 import { formatBatteryStrategyStatusSummary } from "../../daemon/src/strategy-log";
 import { getStrategyTriggerAt } from "../../daemon/src/strategy-scheduler";
 import { createBatteryPlugin } from "./battery-plugins";
+import { readSelectedDaemonLogs } from "./daemon-log";
 import {
   type DiscoveredDevice,
   discoverDevices,
   discoverHostDevices,
   getPreferredDiscoveryTarget,
 } from "./discover";
-import { readSelectedDaemonLogs } from "./daemon-log";
 import { logEmsError } from "./logging";
 import {
   SINGLE_BATTERY_LIMIT_ERROR,

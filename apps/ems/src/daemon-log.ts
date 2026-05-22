@@ -1,7 +1,10 @@
 import { Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
 import { getDatabasePath } from "@emsd/core";
-import type { DaemonLogLevel, DaemonLogRecord } from "../../daemon/src/database";
+import type {
+  DaemonLogLevel,
+  DaemonLogRecord,
+} from "../../daemon/src/database";
 import { logEmsError } from "./logging";
 
 interface DaemonLogRow {

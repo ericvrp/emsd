@@ -6,6 +6,7 @@ This folder collects product notes, operator docs, plugin guides, implementation
 
 - `../README.md`: repository overview, setup, and common commands
 - `local-api.md`: local HTTP API for Home Assistant and other LAN consumers
+- `price-selection.md`: shared low/high price marker selection behavior
 - `strategies/README.md`: built-in battery strategy overview
 - `plugins/README.md`: plugin authoring entrypoint and EMS-first integration rules
 - `plans/README.md`: active implementation plan index

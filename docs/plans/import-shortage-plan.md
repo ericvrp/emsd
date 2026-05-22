@@ -55,7 +55,7 @@ The active target calculation is based on the full projected path from the curre
 
 ## Pre-Marker Decision Timing
 
-The selected low import-price marker is a price marker used to schedule any cheap grid top-up. It is not the start of the solar projection window. The projection window starts at the daemon's current decision time and runs through the final same-day solar-surplus end.
+The selected low import-price marker is a centered 4-hour moving-average price marker used to schedule any cheap grid top-up. It is not the start of the solar projection window. The projection window starts at the daemon's current decision time and runs through the final same-day solar-surplus end.
 
 The decision is scheduled before the selected low import-price marker, using the same trigger lead-time shape as `Delayed charging` but with import-shortage-specific constants.
 
@@ -130,7 +130,7 @@ The buffer mirrors the intent of the export-surplus reserve buffer, but it must 
 
 Activation behavior:
 
-1. Select the relevant low import-price marker.
+1. Select the relevant centered moving-average low import-price marker.
 2. Find the first solar-surplus start and final solar-surplus end for that same day.
 3. Integrate expected net demand from the current decision time until solar surplus starts.
 4. Integrate expected net solar recovery from solar surplus start until final solar-surplus end.

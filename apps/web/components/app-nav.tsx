@@ -10,9 +10,7 @@ export function AppNav() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const selectedDay = searchParams.get("day");
-  const navItems = [
-    { href: "/", icon: Layers3, label: "Combined" },
-  ];
+  const navItems = [{ href: "/", icon: Layers3, label: "Combined" }];
 
   return (
     <nav

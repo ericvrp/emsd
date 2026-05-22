@@ -2,26 +2,26 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type {
-  BatteryPowerSampleRecord,
-  BatteryStrategyPlanRecord,
-  BulkDiscoveryAddResult,
-  DashboardSnapshot,
-  DynamicPriceSampleRecord,
-  DynamicPriceSnapshotRecord,
-  DynamicPriceSourceRecord,
-  HistoryArchive,
-  LiveStatusSnapshot,
-  ManagedDeviceRecord,
-  P1MeterSampleRecord,
-  SiteRecord,
-  SolarEnergyProviderSampleRecord,
-  SolarForecastSampleRecord,
-  WeatherForecastRecord,
-  WeatherForecastSourceRecord,
+import {
+  type BatteryPowerSampleRecord,
+  type BatteryStrategyPlanRecord,
+  type BulkDiscoveryAddResult,
+  type DashboardSnapshot,
+  type DynamicPriceSampleRecord,
+  type DynamicPriceSnapshotRecord,
+  type DynamicPriceSourceRecord,
+  type HistoryArchive,
+  type LiveStatusSnapshot,
+  type ManagedDeviceRecord,
+  type P1MeterSampleRecord,
+  type SiteRecord,
+  type SolarEnergyProviderSampleRecord,
+  type SolarForecastSampleRecord,
+  type WeatherForecastRecord,
+  type WeatherForecastSourceRecord,
+  getRepoRoot as resolveRepoRoot,
 } from "@emsd/core";
 import type { DaemonLogRecord } from "../../daemon/src/database";
-import { getRepoRoot as resolveRepoRoot } from "@emsd/core";
 import type { DiscoveredDevice } from "./discovery-proof";
 
 const repoRootPath = resolveRepoRoot();

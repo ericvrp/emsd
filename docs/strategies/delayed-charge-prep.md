@@ -29,7 +29,7 @@ Prep time is derived from price markers.
 
 The daemon:
 
-1. resolves the upcoming delayed-charging marker as the next low-price marker
+1. resolves the upcoming delayed-charging marker as the next centered moving-average low-price marker
 2. finds the most recent export-surplus marker before that low-price marker
 3. sets prep trigger time to one hour after that prior high-price marker
 
