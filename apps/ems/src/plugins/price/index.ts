@@ -1,31 +1,38 @@
 import type {
-  DynamicPricePointRecord,
-  DynamicPriceSnapshotRecord,
-  DynamicPriceSourceRecord,
+  PricePointRecord,
+  PriceSnapshotRecord,
+  PriceSourceRecord,
   SiteRecord,
 } from "@emsd/core";
+import { fixedImportPricePlugin } from "./fixed-import-price";
 import { tibberPricePlugin } from "./tibber";
 
-export interface DynamicPriceRequest {
+export interface PriceRequest {
   site: SiteRecord;
-  source: DynamicPriceSourceRecord;
+  source: PriceSourceRecord;
 }
 
-export interface DynamicPricePlugin {
-  fetchPrices(input: DynamicPriceRequest): Promise<DynamicPriceSnapshotRecord>;
-  id: DynamicPriceSourceRecord["provider"];
+export interface PricePlugin {
+  fetchPrices(input: PriceRequest): Promise<PriceSnapshotRecord>;
+  id: PriceSourceRecord["provider"];
   name: string;
 }
 
-export const pricePlugins: DynamicPricePlugin[] = [tibberPricePlugin];
+export type DynamicPriceRequest = PriceRequest;
+export type DynamicPricePlugin = PricePlugin;
+
+export const pricePlugins: PricePlugin[] = [
+  tibberPricePlugin,
+  fixedImportPricePlugin,
+];
 
 export function createPricePlugin(
-  provider: DynamicPriceSourceRecord["provider"] = "tibber",
-): DynamicPricePlugin {
+  provider: PriceSourceRecord["provider"] = "tibber",
+): PricePlugin {
   const plugin = pricePlugins.find((entry) => entry.id === provider);
 
   if (!plugin) {
-    throw new Error(`Unsupported dynamic price provider: ${provider}`);
+    throw new Error(`Unsupported price provider: ${provider}`);
   }
 
   return plugin;
@@ -33,7 +40,7 @@ export function createPricePlugin(
 
 export async function getDynamicPriceSnapshot(
   input: DynamicPriceRequest,
-): Promise<DynamicPriceSnapshotRecord> {
+): Promise<PriceSnapshotRecord> {
   return createPricePlugin(input.source.provider).fetchPrices(input);
 }
 
@@ -41,10 +48,10 @@ export function createDynamicPriceSnapshot(
   input: DynamicPriceRequest,
   options: {
     currency: string;
-    points: DynamicPricePointRecord[];
+    points: PricePointRecord[];
     providerLabel: string;
   },
-): DynamicPriceSnapshotRecord {
+): PriceSnapshotRecord {
   return {
     currency: options.currency,
     generatedAt: new Date().toISOString(),
@@ -54,5 +61,6 @@ export function createDynamicPriceSnapshot(
     siteId: input.site.id,
     sourceId: input.source.id,
     sourceName: input.source.name,
+    sourceUpdatedAt: input.source.updatedAt,
   };
 }

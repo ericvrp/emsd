@@ -10,6 +10,8 @@ import {
   type BatteryStrategyRuntimeRecord,
   type BatteryStrategyTargetMethod,
   type DynamicPriceSourceRecord,
+  type PriceProvider,
+  type PriceSourceConfig,
   type MeterRecord,
   type SiteRecord,
   type SolarEnergyProviderRecord,
@@ -101,6 +103,7 @@ const DYNAMIC_PRICE_SOURCE_REQUIRED_COLUMNS = [
   "home_id",
   "provider",
   "export_deduction",
+  "config_json",
   "site_id",
   "name",
   "updated_at",
@@ -171,6 +174,7 @@ interface SourceRow {
   provider: string | null;
   surface: string | null;
   export_deduction: number | null;
+  config_json: string | null;
   site_id: string;
   name: string;
   updated_at: string;
@@ -267,16 +271,18 @@ interface UpdateSiteInput {
 interface CreateSourceInput {
   id: string;
   name: string;
-  provider?: WeatherProvider | "tibber";
+  provider?: WeatherProvider | PriceProvider;
   surface?: WeatherForecastSurface;
   exportDeduction?: number | undefined;
+  config?: PriceSourceConfig | undefined;
 }
 
 interface UpdateSourceInput {
   name: string;
-  provider?: WeatherProvider | "tibber";
+  provider?: WeatherProvider | PriceProvider;
   surface?: WeatherForecastSurface;
   exportDeduction?: number | undefined;
+  config?: PriceSourceConfig | undefined;
 }
 
 export function listSites(databasePath = getDatabasePath()): SiteRecord[] {
@@ -1300,7 +1306,7 @@ export function listDynamicPriceSources(
   databasePath = getDatabasePath(),
 ): DynamicPriceSourceRecord[] {
   return listSources(
-    "dynamic_price_sources",
+    "price_sources",
     siteId,
     DYNAMIC_PRICE_SOURCE_REQUIRED_COLUMNS,
     databasePath,
@@ -1313,7 +1319,7 @@ export function createDynamicPriceSource(
   databasePath = getDatabasePath(),
 ): DynamicPriceSourceRecord {
   return createSource(
-    "dynamic_price_sources",
+    "price_sources",
     input,
     siteId,
     DYNAMIC_PRICE_SOURCE_REQUIRED_COLUMNS,
@@ -1328,7 +1334,7 @@ export function updateDynamicPriceSource(
   databasePath = getDatabasePath(),
 ): DynamicPriceSourceRecord | null {
   return updateSource(
-    "dynamic_price_sources",
+    "price_sources",
     id,
     input,
     siteId,
@@ -1343,7 +1349,7 @@ export function deleteDynamicPriceSource(
   databasePath = getDatabasePath(),
 ): DynamicPriceSourceRecord | null {
   return deleteSource(
-    "dynamic_price_sources",
+    "price_sources",
     id,
     siteId,
     DYNAMIC_PRICE_SOURCE_REQUIRED_COLUMNS,
@@ -1352,7 +1358,7 @@ export function deleteDynamicPriceSource(
 }
 
 function listSources(
-  tableName: "weather_sources" | "dynamic_price_sources",
+  tableName: "weather_sources" | "price_sources",
   siteId: string,
   requiredColumns: string[],
   databasePath: string,
@@ -1380,7 +1386,7 @@ function listSources(
 }
 
 function createSource(
-  tableName: "weather_sources" | "dynamic_price_sources",
+  tableName: "weather_sources" | "price_sources",
   input: CreateSourceInput,
   siteId: string,
   requiredColumns: string[],
@@ -1413,16 +1419,17 @@ function createSource(
     } else {
       db.query(
         `
-          INSERT INTO dynamic_price_sources (id, site_id, name, provider, home_id, export_deduction, updated_at)
-          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+          INSERT INTO price_sources (id, site_id, name, provider, home_id, export_deduction, config_json, updated_at)
+          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
         `,
       ).run(
         input.id,
         siteId,
         input.name,
-        normalizeDynamicPriceProvider(null),
+        normalizeDynamicPriceProvider(input.provider),
         null,
         input.exportDeduction ?? 0.13,
+        JSON.stringify(input.config ?? null),
         now,
       );
     }
@@ -1434,7 +1441,7 @@ function createSource(
 }
 
 function updateSource(
-  tableName: "weather_sources" | "dynamic_price_sources",
+  tableName: "weather_sources" | "price_sources",
   id: string,
   input: UpdateSourceInput,
   siteId: string,
@@ -1480,16 +1487,17 @@ function updateSource(
 
       db.query(
         `
-          UPDATE dynamic_price_sources
-          SET name = ?2, provider = ?3, home_id = ?4, export_deduction = ?5, updated_at = ?6
-          WHERE id = ?1 AND site_id = ?7
+          UPDATE price_sources
+          SET name = ?2, provider = ?3, home_id = ?4, export_deduction = ?5, config_json = ?6, updated_at = ?7
+          WHERE id = ?1 AND site_id = ?8
         `,
       ).run(
         id,
         input.name,
-        normalizeDynamicPriceProvider(existingPriceSource.provider),
+        normalizeDynamicPriceProvider(input.provider ?? existingPriceSource.provider),
         null,
         input.exportDeduction ?? existingPriceSource.exportDeduction,
+        JSON.stringify(input.config ?? existingPriceSource.config ?? null),
         new Date().toISOString(),
         siteId,
       );
@@ -1502,7 +1510,7 @@ function updateSource(
 }
 
 function deleteSource(
-  tableName: "weather_sources" | "dynamic_price_sources",
+  tableName: "weather_sources" | "price_sources",
   id: string,
   siteId: string,
   requiredColumns: string[],
@@ -1646,12 +1654,15 @@ function ensureSchema(db: Database): void {
     );
   `);
   ensureWeatherSourceColumns(db);
+  renameTableIfNeeded(db, "dynamic_price_sources", "price_sources");
   db.exec(`
-    CREATE TABLE IF NOT EXISTS dynamic_price_sources (
+    CREATE TABLE IF NOT EXISTS price_sources (
       id TEXT PRIMARY KEY,
       site_id TEXT NOT NULL,
       provider TEXT NOT NULL DEFAULT 'tibber',
       home_id TEXT,
+      export_deduction REAL NOT NULL DEFAULT 0.13,
+      config_json TEXT,
       name TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       FOREIGN KEY(site_id) REFERENCES sites(id)
@@ -1891,41 +1902,65 @@ function normalizeWeatherSurface(
 
 function normalizeDynamicPriceProvider(
   provider: string | null | undefined,
-): "tibber" {
-  void provider;
+): PriceProvider {
+  if (provider === "fixed-import-price") {
+    return provider;
+  }
+
   return "tibber";
 }
 
 function ensureDynamicPriceSourceColumns(db: Database): void {
-  if (!hasTable(db, "dynamic_price_sources")) {
+  renameTableIfNeeded(db, "dynamic_price_sources", "price_sources");
+
+  if (!hasTable(db, "price_sources")) {
     return;
   }
 
-  const columns = getTableColumns(db, "dynamic_price_sources");
+  const columns = getTableColumns(db, "price_sources");
 
   if (!columns.includes("provider")) {
     db.exec(
-      "ALTER TABLE dynamic_price_sources ADD COLUMN provider TEXT NOT NULL DEFAULT 'tibber';",
+      "ALTER TABLE price_sources ADD COLUMN provider TEXT NOT NULL DEFAULT 'tibber';",
     );
   }
 
   if (!columns.includes("home_id")) {
-    db.exec("ALTER TABLE dynamic_price_sources ADD COLUMN home_id TEXT;");
+    db.exec("ALTER TABLE price_sources ADD COLUMN home_id TEXT;");
   }
 
   if (!columns.includes("export_deduction")) {
     db.exec(
-      "ALTER TABLE dynamic_price_sources ADD COLUMN export_deduction REAL NOT NULL DEFAULT 0.13;",
+      "ALTER TABLE price_sources ADD COLUMN export_deduction REAL NOT NULL DEFAULT 0.13;",
     );
   }
 
+  if (!columns.includes("config_json")) {
+    db.exec("ALTER TABLE price_sources ADD COLUMN config_json TEXT;");
+  }
+
   db.exec(`
-    UPDATE dynamic_price_sources
+    UPDATE price_sources
     SET provider = CASE provider
       WHEN 'tibber' THEN 'tibber'
+      WHEN 'fixed-import-price' THEN 'fixed-import-price'
       ELSE 'tibber'
     END
   `);
+}
+
+function renameTableIfNeeded(db: Database, oldName: string, newName: string): void {
+  if (!hasTable(db, oldName)) {
+    return;
+  }
+
+  if (hasTable(db, newName)) {
+    throw new Error(
+      `Database contains both ${oldName} and ${newName}; refusing to merge price tables automatically.`,
+    );
+  }
+
+  db.exec(`ALTER TABLE ${oldName} RENAME TO ${newName};`);
 }
 
 function ensureBatteryStrategyHistoryColumns(db: Database): void {
@@ -2089,7 +2124,7 @@ function deleteLinkedSiteResources(db: Database, siteId: string): void {
     "meters",
     "solar_energy_providers",
     "weather_sources",
-    "dynamic_price_sources",
+    "price_sources",
   ] as const;
 
   for (const tableName of linkedTables) {
@@ -2239,21 +2274,21 @@ type SourceRecord = WeatherForecastSourceRecord | DynamicPriceSourceRecord;
 
 function readSources(
   db: Database,
-  tableName: "weather_sources" | "dynamic_price_sources",
+  tableName: "weather_sources" | "price_sources",
   siteId: string,
 ): SourceRecord[] {
   return db
     .query<SourceRow, [string]>(
       tableName === "weather_sources"
         ? `
-            SELECT id, site_id, name, provider, surface, NULL as home_id, updated_at
+            SELECT id, site_id, name, provider, surface, NULL as home_id, NULL as export_deduction, NULL as config_json, updated_at
             FROM weather_sources
             WHERE site_id = ?1
             ORDER BY name ASC, id ASC
           `
         : `
-            SELECT id, site_id, name, provider, NULL as surface, home_id, export_deduction, updated_at
-            FROM dynamic_price_sources
+            SELECT id, site_id, name, provider, NULL as surface, home_id, export_deduction, config_json, updated_at
+            FROM price_sources
             WHERE site_id = ?1
             ORDER BY name ASC, id ASC
           `,
@@ -2355,7 +2390,7 @@ function getSolarEnergyProviderById(
 
 function getSourceById(
   db: Database,
-  tableName: "weather_sources" | "dynamic_price_sources",
+  tableName: "weather_sources" | "price_sources",
   id: string,
   siteId: string,
 ): SourceRecord | null {
@@ -2363,13 +2398,13 @@ function getSourceById(
     .query<SourceRow, [string, string]>(
       tableName === "weather_sources"
         ? `
-            SELECT id, site_id, name, provider, surface, NULL as home_id, updated_at
+            SELECT id, site_id, name, provider, surface, NULL as home_id, NULL as export_deduction, NULL as config_json, updated_at
             FROM weather_sources
             WHERE id = ?1 AND site_id = ?2
           `
         : `
-            SELECT id, site_id, name, provider, NULL as surface, home_id, export_deduction, updated_at
-            FROM dynamic_price_sources
+            SELECT id, site_id, name, provider, NULL as surface, home_id, export_deduction, config_json, updated_at
+            FROM price_sources
             WHERE id = ?1 AND site_id = ?2
           `,
     )
@@ -2434,7 +2469,7 @@ function getSolarEnergyProviderByIdOrThrow(
 
 function getSourceByIdOrThrow(
   db: Database,
-  tableName: "weather_sources" | "dynamic_price_sources",
+  tableName: "weather_sources" | "price_sources",
   id: string,
   siteId: string,
 ): SourceRecord {
@@ -2538,7 +2573,7 @@ function getSolarEnergyProviderPort(
 }
 
 function mapSourceRow(
-  tableName: "weather_sources" | "dynamic_price_sources",
+  tableName: "weather_sources" | "price_sources",
   row: SourceRow,
 ): SourceRecord {
   if (tableName === "weather_sources") {
@@ -2564,6 +2599,15 @@ function mapSourceRow(
     provider: normalizeDynamicPriceProvider(row.provider),
     exportDeduction:
       typeof row.export_deduction === "number" ? row.export_deduction : 0.13,
+    config: parsePriceSourceConfig(row.config_json),
     updatedAt: row.updated_at,
   } satisfies DynamicPriceSourceRecord;
+}
+
+function parsePriceSourceConfig(value: string | null): PriceSourceConfig {
+  if (!value) {
+    return null;
+  }
+
+  return JSON.parse(value) as PriceSourceConfig;
 }

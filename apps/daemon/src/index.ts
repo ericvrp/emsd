@@ -624,7 +624,7 @@ async function refreshDynamicPrices(
 
     if (
       !forceRefresh &&
-      !shouldRefreshDynamicPrice(cachedSnapshot, new Date())
+      !shouldRefreshDynamicPrice(cachedSnapshot, source, new Date())
     ) {
       continue;
     }
@@ -632,10 +632,10 @@ async function refreshDynamicPrices(
     try {
       const snapshot = await getDynamicPriceSnapshot({ site, source });
       upsertDynamicPriceSnapshot(db, site.id, snapshot);
-      logVerbose(verbose, `refreshed dynamic price snapshot for ${site.id}`);
+      logVerbose(verbose, `refreshed price snapshot for ${site.id}`);
     } catch (error) {
       logError(
-        `dynamic price refresh failed for ${site.id}: ${error instanceof Error ? error.message : String(error)}`,
+        `price refresh failed for ${site.id}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }
@@ -660,6 +660,7 @@ function shouldRefreshWeatherForecast(
 
 function shouldRefreshDynamicPrice(
   snapshot: DynamicPriceSnapshotRecord | null,
+  source: DynamicPriceSourceRecord,
   now: Date,
 ): boolean {
   if (snapshot === null) {
@@ -669,6 +670,14 @@ function shouldRefreshDynamicPrice(
   const generatedAt = new Date(snapshot.generatedAt).getTime();
 
   if (Number.isNaN(generatedAt)) {
+    return true;
+  }
+
+  if (snapshot.provider !== source.provider) {
+    return true;
+  }
+
+  if (snapshot.sourceUpdatedAt !== source.updatedAt) {
     return true;
   }
 

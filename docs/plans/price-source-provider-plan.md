@@ -7,9 +7,9 @@ Generalize pricing from Tibber-only dynamic price sources to generic price sourc
 ## Current Status
 
 - [ ] Not started
-- [ ] Implementation in progress
-- [ ] Tests in progress
-- [ ] Ready for review
+- [x] Implementation in progress
+- [x] Tests in progress
+- [x] Ready for review
 - [ ] Shipped
 
 ## Product Requirements

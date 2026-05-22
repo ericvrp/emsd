@@ -483,27 +483,35 @@ export function requestWeatherForecastRefresh(input: { siteId: string }) {
 }
 
 export function createDynamicPriceSource(input: {
+  fixedImportPrice?: number;
   id: string;
   name: string;
-  provider?: "tibber";
+  provider?: "tibber" | "fixed-import-price";
   siteId: string;
 }) {
   return runBridge<DynamicPriceSourceRecord>("price-create", input);
 }
 
+export const createPriceSource = createDynamicPriceSource;
+
 export function updateDynamicPriceSource(input: {
+  fixedImportPrice?: number;
   id: string;
   name: string;
-  provider?: "tibber";
+  provider?: "tibber" | "fixed-import-price";
   siteId: string;
 }) {
   return runBridge<DynamicPriceSourceRecord>("price-update", input);
 }
 
-export function updateDynamicPriceSourceExportDeduction(input: {
+export const updatePriceSource = updateDynamicPriceSource;
+
+export function updatePriceSourceSettings(input: {
   exportDeduction: number;
+  fixedImportPrice?: number;
   id: string;
   name: string;
+  provider?: "tibber" | "fixed-import-price";
   siteId: string;
 }) {
   return runBridge<DynamicPriceSourceRecord>("price-update", input);
@@ -515,6 +523,8 @@ export function deleteDynamicPriceSource(input: {
 }) {
   return runBridge<DynamicPriceSourceRecord>("price-delete", input);
 }
+
+export const deletePriceSource = deleteDynamicPriceSource;
 
 export function getDynamicPriceSnapshot(input: { siteId: string }) {
   return runBridge<DynamicPriceSnapshotRecord>("price-get-snapshot", input);

@@ -23,20 +23,21 @@ import { usePathname, useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { useSWRConfig } from "swr";
 import {
-  createDynamicPriceSourceAction,
+  createPriceSourceAction,
   createSiteAction,
   createWeatherForecastSourceAction,
   deleteBatteryAction,
-  deleteDynamicPriceSourceAction,
+  deletePriceSourceAction,
   deleteMeterAction,
   deleteSiteAction,
   deleteSolarEnergyProviderAction,
   deleteWeatherForecastSourceAction,
   setSolarEnergyProviderProductionEnabledAction,
   updateBatterySettingsAction,
-  updateDynamicPriceSourceAction,
-  updateDynamicPriceSourceExportDeductionAction,
+  updatePriceSourceAction,
+  updatePriceSourceSettingsAction,
   updateSiteAction,
   updateWeatherForecastSourceAction,
 } from "../app/actions";
@@ -399,7 +400,7 @@ function SitePanel({
       site.weatherSources.map(formatWeatherSourceDeleteName),
     ),
     formatNamedBlocker(
-      "dynamic price source",
+      "price source",
       site.dynamicPriceSources.map((source) => source.name),
     ),
   ].filter((value): value is string => value !== null);
@@ -1036,19 +1037,19 @@ function SourceList({
     createWeatherForecastSourceAction,
   );
   const createPriceSourceFormAction = useFormActionToast(
-    createDynamicPriceSourceAction,
+    createPriceSourceAction,
   );
   const updateWeatherSourceFormAction = useFormActionToast(
     updateWeatherForecastSourceAction,
   );
   const updatePriceSourceFormAction = useFormActionToast(
-    updateDynamicPriceSourceAction,
+    updatePriceSourceAction,
   );
   const deleteWeatherSourceFormAction = useFormActionToast(
     deleteWeatherForecastSourceAction,
   );
   const deletePriceSourceFormAction = useFormActionToast(
-    deleteDynamicPriceSourceAction,
+    deletePriceSourceAction,
   );
 
   return (
@@ -1072,9 +1073,6 @@ function SourceList({
             />
           </>
         ) : null}
-        {kind === "price" ? (
-          <input type="hidden" name="provider" value="tibber" />
-        ) : null}
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="block space-y-2">
             <span className="text-sm font-medium text-slate-300">
@@ -1095,6 +1093,7 @@ function SourceList({
             />
           </label>
         </div>
+        {kind === "price" ? <PriceProviderFields /> : null}
         {kind === "weather" ? (
           <p className="text-xs text-slate-500">
             Weather sources default to `open-meteo` using the current site GPS
@@ -1102,8 +1101,8 @@ function SourceList({
           </p>
         ) : kind === "price" ? (
           <p className="text-xs text-slate-500">
-            Dynamic price sources currently use `tibber` and read prices with
-            `TIBBER_ACCESS_TOKEN`, plus optional `TIBBER_HOME_ID`.
+            Price sources can use Tibber or a fixed import price. Tibber reads
+            prices with `TIBBER_ACCESS_TOKEN`, plus optional `TIBBER_HOME_ID`.
           </p>
         ) : null}
         <SubmitButton className={primaryButtonClass}>
@@ -1148,7 +1147,9 @@ function SourceList({
                 <input type="hidden" name="siteId" value={site.id} />
                 <input type="hidden" name="sourceId" value={record.id} />
                 {kind === "price" ? (
-                  <input type="hidden" name="provider" value="tibber" />
+                  <PriceProviderFields
+                    source={record as DynamicPriceSourceRecord}
+                  />
                 ) : null}
                 <label className="block space-y-2">
                   <span className="text-sm font-medium text-slate-300">
@@ -1205,10 +1206,60 @@ function SourceList({
         <p className="mt-3 text-sm leading-6 text-slate-400">
           {kind === "weather"
             ? "No named solar forecast sources configured yet. Open-Meteo is used as the default forecast provider for this site."
-            : "No dynamic price sources configured yet."}
+            : "No price sources configured yet."}
         </p>
       )}
     </>
+  );
+}
+
+function PriceProviderFields({
+  source,
+}: {
+  source?: DynamicPriceSourceRecord;
+}) {
+  const [provider, setProvider] = useState(
+    source?.provider ?? "tibber",
+  );
+  const fixedPrice =
+    source?.provider === "fixed-import-price"
+      ? source.config?.slots[0]?.importPrice
+      : undefined;
+
+  return (
+    <div className="space-y-3">
+      <label className="block space-y-2">
+        <span className="text-sm font-medium text-slate-300">Provider</span>
+        <select
+          className="w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400/50"
+          name="provider"
+          onChange={(event) =>
+            setProvider(event.currentTarget.value as typeof provider)
+          }
+          value={provider}
+        >
+          <option value="tibber">Tibber</option>
+          <option value="fixed-import-price">Fixed import price</option>
+        </select>
+      </label>
+      {provider === "fixed-import-price" ? (
+        <label className="block space-y-2">
+          <span className="text-sm font-medium text-slate-300">
+            Fixed import price (EUR/kWh)
+          </span>
+          <input
+            className="w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400/50"
+            defaultValue={(fixedPrice ?? 0.3).toFixed(3)}
+            inputMode="decimal"
+            lang="en-US"
+            min={0}
+            name="fixedImportPrice"
+            step="0.001"
+            type="number"
+          />
+        </label>
+      ) : null}
+    </div>
   );
 }
 
@@ -1219,8 +1270,31 @@ function PriceProviderPanel({
   site: SiteSnapshot;
   returnPath: string;
 }) {
+  const { mutate } = useSWRConfig();
   const updateExportDeductionFormAction = useFormActionToast(
-    updateDynamicPriceSourceExportDeductionAction,
+    updatePriceSourceSettingsAction,
+    {
+      onSuccess: () => {
+        const encodedSiteId = encodeURIComponent(site.id);
+
+        void mutate(
+          (key) =>
+            typeof key === "string" &&
+            key.startsWith(`/api/history/archive?`) &&
+            key.includes(`siteId=${encodedSiteId}`),
+          undefined,
+          { revalidate: true },
+        );
+        void mutate(
+          (key) =>
+            typeof key === "string" &&
+            key.startsWith(`/api/prices/graph?`) &&
+            key.includes(`siteId=${encodedSiteId}`),
+          undefined,
+          { revalidate: true },
+        );
+      },
+    },
   );
 
   return (
@@ -1231,7 +1305,7 @@ function PriceProviderPanel({
           Price Provider
         </p>
         <h2 className="mt-2 text-2xl font-semibold text-white">
-          Dynamic price provider settings
+          Price provider settings
         </h2>
         <p className="mt-2 text-sm leading-6 text-slate-400">
           Manage export price deduction for your normalized price provider.
@@ -1239,7 +1313,7 @@ function PriceProviderPanel({
       </div>
       {site.dynamicPriceSources.length === 0 ? (
         <p className="text-sm leading-6 text-slate-400">
-          No dynamic price sources configured yet.
+          No price sources configured yet.
         </p>
       ) : (
         <div className="grid gap-3">
@@ -1248,44 +1322,34 @@ function PriceProviderPanel({
               key={source.id}
               className="rounded-[1.4rem] border border-white/10 bg-white/5 p-4 ring-1 ring-violet-300/5"
             >
-              <div className="min-w-0">
-                <h4 className="truncate text-base font-semibold text-white">
-                  {source.name}
-                </h4>
-                <p className="mt-1 truncate text-xs text-slate-400">
-                  {source.id}
-                </p>
-                <p className="mt-1 text-xs uppercase tracking-[0.14em] text-violet-300/80">
-                  {source.provider}
-                </p>
-              </div>
               <form
                 action={updateExportDeductionFormAction}
-                className="mt-4 space-y-3"
+                className="space-y-3"
               >
                 <input type="hidden" name="returnPath" value={returnPath} />
                 <input type="hidden" name="siteId" value={site.id} />
                 <input type="hidden" name="sourceId" value={source.id} />
                 <input type="hidden" name="name" value={source.name} />
+                <PriceProviderFields source={source} />
                 <label className="block space-y-2">
                   <span className="text-sm font-medium text-slate-300">
-                    Export deduction ({source.provider} computes export price as
-                    import price minus this value)
+                    Export deduction (export price is import price minus this
+                    value)
                   </span>
                   <div className="flex items-center gap-2">
                     <input
                       className="w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400/50"
-                      defaultValue={source.exportDeduction}
+                      defaultValue={source.exportDeduction.toFixed(3)}
                       inputMode="decimal"
                       lang="en-US"
                       max={10}
                       min={0}
                       name="exportDeduction"
-                      step="any"
+                      step="0.001"
                       type="number"
                     />
                     <span className="text-sm text-slate-400">
-                      {source.provider === "tibber" ? "EUR/kWh" : "unit/kWh"}
+                      EUR/kWh
                     </span>
                   </div>
                 </label>

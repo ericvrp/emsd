@@ -41,8 +41,10 @@ test("price commands add, list, update, and remove site price sources", async ()
       siteId: "home",
       name: "ENTSO-E",
     });
-    expect(output[2]).toContain("SOURCE ID | NAME | PROVIDER | UPDATED AT");
-    expect(output[2]).toContain("entsoe | ENTSO-E | tibber |");
+    expect(output[2]).toContain(
+      "SOURCE ID | NAME | PROVIDER | EXPORT DEDUCTION | FIXED IMPORT | UPDATED AT",
+    );
+    expect(output[2]).toContain("entsoe | ENTSO-E | tibber | 0.130 | - |");
     expect(JSON.parse(output[3] ?? "{}")).toMatchObject({
       name: "ENTSO-E Day Ahead",
       provider: "tibber",

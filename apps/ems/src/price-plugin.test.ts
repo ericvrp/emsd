@@ -149,6 +149,43 @@ test("Tibber price plugin prefers TIBBER_HOME_ID when set", async () => {
   ]);
 });
 
+test("fixed import price plugin generates today and tomorrow quarter-hour prices", async () => {
+  const snapshot = await getDynamicPriceSnapshot({
+    site: buildSite(),
+    source: {
+      id: "fixed-main",
+      siteId: "home",
+      name: "Fixed",
+      provider: "fixed-import-price",
+      exportDeduction: 0.13,
+      config: {
+        currency: "EUR",
+        slots: [
+          {
+            importPrice: 0.3,
+            startTime: null,
+            endTime: null,
+            isoWeekdays: null,
+          },
+        ],
+      },
+      updatedAt: "2026-04-07T00:00:00.000Z",
+    },
+  });
+
+  expect(snapshot.provider).toBe("fixed-import-price");
+  expect(snapshot.providerLabel).toBe("Fixed import price");
+  expect(snapshot.points).toHaveLength(192);
+  expect(snapshot.points[0]).toMatchObject({
+    currency: "EUR",
+    importPrice: 0.3,
+  });
+  expect(snapshot.points.at(-1)).toMatchObject({
+    currency: "EUR",
+    importPrice: 0.3,
+  });
+});
+
 function buildSite(): SiteRecord {
   return {
     id: "home",

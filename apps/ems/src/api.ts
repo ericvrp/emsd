@@ -18,6 +18,7 @@ import {
   type MeterRecord,
   type NormalizedBatteryInfo,
   type NormalizedSolarEnergyProviderInfo,
+  type PriceProvider,
   type SiteRecord,
   type SolarEnergyProviderRecord,
   type WeatherForecastRecord,
@@ -98,6 +99,7 @@ import {
   updateWeatherForecastSource,
 } from "./managed-site-store";
 import { getDynamicPriceSnapshot } from "./plugins/price";
+import { createFixedImportPriceConfig } from "./plugins/price/fixed-import-price";
 import { getSolarEnergyProviderNormalizedInfo } from "./plugins/solar-energy-provider";
 import { getWeatherForecast } from "./plugins/solar-forecast";
 
@@ -162,6 +164,40 @@ function optionalString(value: unknown): string | null {
 
 function optionalNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function requirePriceProvider(value: unknown): PriceProvider {
+  if (value === undefined || value === null) {
+    return "tibber";
+  }
+
+  if (value === "tibber" || value === "fixed-import-price") {
+    return value;
+  }
+
+  throw new Error(`Unsupported price provider: ${String(value)}`);
+}
+
+function readPriceSourceConfig(input: Record<string, unknown>) {
+  const provider = requirePriceProvider(input.provider);
+
+  if (provider !== "fixed-import-price") {
+    return null;
+  }
+
+  if (input.config && typeof input.config === "object") {
+    return input.config as ReturnType<typeof createFixedImportPriceConfig>;
+  }
+
+  const fixedImportPrice = optionalNumber(input.fixedImportPrice);
+
+  if (fixedImportPrice === null) {
+    throw new Error(
+      "Fixed import price provider requires fixedImportPrice or config.",
+    );
+  }
+
+  return createFixedImportPriceConfig(fixedImportPrice);
 }
 
 function readDiscoveredDevice(value: unknown): DiscoveredDevice {
@@ -1363,11 +1399,12 @@ export async function runApiAction(
         {
           id: requireString(input.id, "id"),
           name: requireString(input.name, "name"),
-          provider: "tibber",
+          provider: requirePriceProvider(input.provider),
           exportDeduction:
             typeof input.exportDeduction === "number"
               ? input.exportDeduction
               : undefined,
+          config: readPriceSourceConfig(input),
         },
         requireString(input.siteId, "siteId"),
       );
@@ -1377,11 +1414,12 @@ export async function runApiAction(
         requireString(input.id, "id"),
         {
           name: requireString(input.name, "name"),
-          provider: "tibber",
+          provider: requirePriceProvider(input.provider),
           exportDeduction:
             typeof input.exportDeduction === "number"
               ? input.exportDeduction
               : undefined,
+          config: readPriceSourceConfig(input),
         },
         requireString(input.siteId, "siteId"),
       );

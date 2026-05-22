@@ -1,4 +1,4 @@
-import type { DynamicPriceSourceRecord } from "@emsd/core";
+import type { DynamicPriceSourceRecord, PriceProvider } from "@emsd/core";
 import { logEmsError } from "./logging";
 import {
   createDynamicPriceSource,
@@ -6,22 +6,24 @@ import {
   listDynamicPriceSources,
   updateDynamicPriceSource,
 } from "./managed-site-store";
+import { createFixedImportPriceConfig } from "./plugins/price/fixed-import-price";
 
 export function formatPriceHelpText(): string {
   return [
     "Usage:",
     "  price list --site-id <site-id>",
     "  price ls --site-id <site-id>",
-    "  price add <source-id> <name> --site-id <site-id> [--provider tibber]",
-    "  price create <source-id> <name> --site-id <site-id> [--provider tibber]",
-    "  price update <source-id> <name> --site-id <site-id> [--provider tibber]",
-    "  price edit <source-id> <name> --site-id <site-id> [--provider tibber]",
+    "  price add <source-id> <name> --site-id <site-id> [--provider tibber|fixed-import-price] [--fixed-import-price <price>] [--export-deduction <price>]",
+    "  price create <source-id> <name> --site-id <site-id> [--provider tibber|fixed-import-price] [--fixed-import-price <price>] [--export-deduction <price>]",
+    "  price update <source-id> <name> --site-id <site-id> [--provider tibber|fixed-import-price] [--fixed-import-price <price>] [--export-deduction <price>]",
+    "  price edit <source-id> <name> --site-id <site-id> [--provider tibber|fixed-import-price] [--fixed-import-price <price>] [--export-deduction <price>]",
     "  price remove <source-id> --site-id <site-id>",
     "  price delete <source-id> --site-id <site-id>",
     "  price rm <source-id> --site-id <site-id>",
     "",
     "Supported providers:",
     "  tibber (default)",
+    "  fixed-import-price",
   ].join("\n");
 }
 
@@ -30,10 +32,17 @@ export function formatPriceList(sources: DynamicPriceSourceRecord[]): string {
     return "No dynamic price sources configured for the selected site.";
   }
 
-  const header = ["SOURCE ID", "NAME", "PROVIDER", "UPDATED AT"].join(" | ");
+  const header = ["SOURCE ID", "NAME", "PROVIDER", "EXPORT DEDUCTION", "FIXED IMPORT", "UPDATED AT"].join(" | ");
   const separator = "-".repeat(header.length);
   const rows = sources.map((source) =>
-    [source.id, source.name, source.provider, source.updatedAt].join(" | "),
+    [
+      source.id,
+      source.name,
+      source.provider,
+      source.exportDeduction.toFixed(3),
+      formatFixedImportPrice(source),
+      source.updatedAt,
+    ].join(" | "),
   );
 
   return [header, separator, ...rows].join("\n");
@@ -72,6 +81,8 @@ export async function runPriceCommand(args: string[] = []): Promise<number> {
               id: sourceId,
               name: options.name,
               provider: options.provider,
+              exportDeduction: options.exportDeduction,
+              config: options.config,
             },
             options.siteId,
           ),
@@ -92,7 +103,12 @@ export async function runPriceCommand(args: string[] = []): Promise<number> {
 
       const source = updateDynamicPriceSource(
         sourceId,
-        { name: options.name, provider: options.provider },
+        {
+          name: options.name,
+          provider: options.provider,
+          exportDeduction: options.exportDeduction,
+          config: options.config,
+        },
         options.siteId,
       );
 
@@ -134,9 +150,11 @@ function parseNamedSourceOptions(
   args: string[],
   action: string,
 ): {
-  provider: "tibber";
+  provider: PriceProvider;
   siteId: string;
   name: string;
+  exportDeduction?: number;
+  config?: ReturnType<typeof createFixedImportPriceConfig>;
 } {
   const siteOptionIndex = args.indexOf("--site-id");
 
@@ -150,14 +168,33 @@ function parseNamedSourceOptions(
     throw new Error(`Missing dynamic price source name for ${action}`);
   }
 
-  return {
+  const provider = parseProviderOption(args.slice(siteOptionIndex + 2));
+  const fixedImportPrice = parseNumberOption(args, "--fixed-import-price");
+
+  if (provider === "fixed-import-price" && fixedImportPrice === undefined) {
+    throw new Error("Missing required option for fixed price source: --fixed-import-price <price>");
+  }
+
+  const parsed = {
     name,
-    provider: parseProviderOption(args.slice(siteOptionIndex + 2)),
+    provider,
     siteId: parseSiteOptions(args.slice(siteOptionIndex)).siteId,
   };
+  const withConfig =
+    provider === "fixed-import-price"
+      ? {
+          ...parsed,
+          config: createFixedImportPriceConfig(fixedImportPrice as number),
+        }
+      : parsed;
+  const exportDeduction = parseNumberOption(args, "--export-deduction");
+
+  return exportDeduction === undefined
+    ? withConfig
+    : { ...withConfig, exportDeduction };
 }
 
-function parseProviderOption(args: string[]): "tibber" {
+function parseProviderOption(args: string[]): PriceProvider {
   for (let index = 0; index < args.length; index += 1) {
     if (args[index] !== "--provider") {
       continue;
@@ -169,14 +206,44 @@ function parseProviderOption(args: string[]): "tibber" {
       throw new Error("Missing value for --provider");
     }
 
-    if (provider !== "tibber") {
-      throw new Error(`Unsupported dynamic price provider: ${provider}`);
+    if (provider !== "tibber" && provider !== "fixed-import-price") {
+      throw new Error(`Unsupported price provider: ${provider}`);
     }
 
     return provider;
   }
 
   return "tibber";
+}
+
+function parseNumberOption(args: string[], optionName: string): number | undefined {
+  const optionIndex = args.indexOf(optionName);
+
+  if (optionIndex === -1) {
+    return undefined;
+  }
+
+  const rawValue = args[optionIndex + 1];
+
+  if (!rawValue) {
+    throw new Error(`Missing value for ${optionName}`);
+  }
+
+  const value = Number(rawValue);
+
+  if (!Number.isFinite(value)) {
+    throw new Error(`Invalid numeric value for ${optionName}: ${rawValue}`);
+  }
+
+  return value;
+}
+
+function formatFixedImportPrice(source: DynamicPriceSourceRecord): string {
+  if (source.provider !== "fixed-import-price" || !source.config) {
+    return "-";
+  }
+
+  return source.config.slots[0]?.importPrice.toFixed(3) ?? "-";
 }
 
 function parseSiteOptions(args: string[]): { siteId: string } {

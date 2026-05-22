@@ -16,13 +16,13 @@ import {
 import {
   addAllFromDiscovery,
   createBatteryFromDiscovery,
-  createDynamicPriceSource,
+  createPriceSource,
   createMeterFromDiscovery,
   createSite,
   createSolarEnergyProviderFromDiscovery,
   createWeatherForecastSource,
   deleteBattery,
-  deleteDynamicPriceSource,
+  deletePriceSource,
   deleteMeter,
   deleteSite,
   deleteSolarEnergyProvider,
@@ -37,8 +37,8 @@ import {
   setHouseStrategyPlan,
   setMeterEnabled,
   setSolarEnergyProviderProductionEnabled,
-  updateDynamicPriceSource,
-  updateDynamicPriceSourceExportDeduction,
+  updatePriceSource,
+  updatePriceSourceSettings,
   updateSite,
   updateWeatherForecastSource,
 } from "../lib/ems-bridge";
@@ -93,7 +93,7 @@ async function ensureDefaultDynamicPriceSource(
     return false;
   }
 
-  await createDynamicPriceSource({
+  await createPriceSource({
     id: `price-${siteId}`,
     name: "Tibber dynamic price",
     provider: "tibber",
@@ -128,6 +128,43 @@ function optionalStringValue(formData: FormData, key: string): string | null {
 
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function optionalNumberValue(formData: FormData, key: string): number | undefined {
+  const rawValue = optionalStringValue(formData, key);
+
+  if (rawValue === null) {
+    return undefined;
+  }
+
+  const value = Number(rawValue);
+
+  if (!Number.isFinite(value)) {
+    throw new Error(`Invalid numeric field: ${key}`);
+  }
+
+  return value;
+}
+
+function priceProviderValue(formData: FormData): "tibber" | "fixed-import-price" {
+  const provider = optionalStringValue(formData, "provider") ?? "tibber";
+
+  if (provider === "tibber" || provider === "fixed-import-price") {
+    return provider;
+  }
+
+  throw new Error(`Unsupported price provider: ${provider}`);
+}
+
+function withOptionalFixedImportPrice<T extends object>(
+  formData: FormData,
+  input: T,
+): T & { fixedImportPrice?: number } {
+  const fixedImportPrice = optionalNumberValue(formData, "fixedImportPrice");
+
+  return fixedImportPrice === undefined
+    ? input
+    : { ...input, fixedImportPrice };
 }
 
 function readDiscoveredDevice(
@@ -677,7 +714,7 @@ export async function deleteWeatherForecastSourceAction(
   );
 }
 
-export async function createDynamicPriceSourceAction(
+export async function createPriceSourceAction(
   formData: FormData,
 ): Promise<ActionResult> {
   const siteId = stringValue(formData, "siteId");
@@ -686,15 +723,17 @@ export async function createDynamicPriceSourceAction(
   return runAction(
     async () => {
       const sourceId = stringValue(formData, "sourceId");
-      await createDynamicPriceSource({
-        id: sourceId,
-        name: stringValue(formData, "name"),
-        provider: "tibber",
-        siteId,
-      });
+      await createPriceSource(
+        withOptionalFixedImportPrice(formData, {
+          id: sourceId,
+          name: stringValue(formData, "name"),
+          provider: priceProviderValue(formData),
+          siteId,
+        }),
+      );
       await requestDynamicPriceSnapshotRefresh({ siteId });
       return {
-        notice: `Added price source ${sourceId}. Data will refresh shortly.`,
+        notice: `Added price source ${sourceId}. Prices refreshed.`,
         path: returnPath,
         tab: "pricing",
       };
@@ -704,7 +743,7 @@ export async function createDynamicPriceSourceAction(
   );
 }
 
-export async function updateDynamicPriceSourceAction(
+export async function updatePriceSourceAction(
   formData: FormData,
 ): Promise<ActionResult> {
   const siteId = stringValue(formData, "siteId");
@@ -713,15 +752,17 @@ export async function updateDynamicPriceSourceAction(
   return runAction(
     async () => {
       const sourceId = stringValue(formData, "sourceId");
-      await updateDynamicPriceSource({
-        id: sourceId,
-        name: stringValue(formData, "name"),
-        provider: "tibber",
-        siteId,
-      });
+      await updatePriceSource(
+        withOptionalFixedImportPrice(formData, {
+          id: sourceId,
+          name: stringValue(formData, "name"),
+          provider: priceProviderValue(formData),
+          siteId,
+        }),
+      );
       await requestDynamicPriceSnapshotRefresh({ siteId });
       return {
-        notice: `Updated price source ${sourceId}. Data will refresh shortly.`,
+        notice: `Updated price source ${sourceId}. Prices refreshed.`,
         path: returnPath,
         tab: "pricing",
       };
@@ -731,7 +772,7 @@ export async function updateDynamicPriceSourceAction(
   );
 }
 
-export async function deleteDynamicPriceSourceAction(
+export async function deletePriceSourceAction(
   formData: FormData,
 ): Promise<ActionResult> {
   const siteId = stringValue(formData, "siteId");
@@ -740,7 +781,7 @@ export async function deleteDynamicPriceSourceAction(
   return runAction(
     async () => {
       const sourceId = stringValue(formData, "sourceId");
-      await deleteDynamicPriceSource({ id: sourceId, siteId });
+      await deletePriceSource({ id: sourceId, siteId });
       return {
         notice: `Deleted price source ${sourceId}.`,
         path: returnPath,
@@ -752,7 +793,7 @@ export async function deleteDynamicPriceSourceAction(
   );
 }
 
-export async function updateDynamicPriceSourceExportDeductionAction(
+export async function updatePriceSourceSettingsAction(
   formData: FormData,
 ): Promise<ActionResult> {
   const siteId = stringValue(formData, "siteId");
@@ -763,14 +804,18 @@ export async function updateDynamicPriceSourceExportDeductionAction(
       const sourceId = stringValue(formData, "sourceId");
       const name = stringValue(formData, "name");
       const exportDeduction = Number(stringValue(formData, "exportDeduction"));
-      await updateDynamicPriceSourceExportDeduction({
-        exportDeduction,
-        id: sourceId,
-        name,
-        siteId,
-      });
+      await updatePriceSourceSettings(
+        withOptionalFixedImportPrice(formData, {
+          exportDeduction,
+          id: sourceId,
+          name,
+          provider: priceProviderValue(formData),
+          siteId,
+        }),
+      );
+      await requestDynamicPriceSnapshotRefresh({ siteId });
       return {
-        notice: `Updated export deduction for price source ${sourceId}.`,
+        notice: `Updated price source ${sourceId}. Prices refreshed.`,
         path: returnPath,
         tab: "price-provider",
       };

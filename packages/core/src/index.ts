@@ -169,31 +169,53 @@ export interface WeatherForecastRecord {
   unitLabel: string;
 }
 
-export interface DynamicPriceSourceRecord {
+export type PriceProvider = "tibber" | "fixed-import-price";
+
+export interface FixedImportPriceSlot {
+  importPrice: number;
+  startTime: string | null;
+  endTime: string | null;
+  isoWeekdays: number[] | null;
+}
+
+export interface FixedImportPriceConfig {
+  currency: "EUR";
+  slots: FixedImportPriceSlot[];
+}
+
+export type PriceSourceConfig = FixedImportPriceConfig | null;
+
+export interface PriceSourceRecord {
   id: string;
   siteId: string;
   name: string;
-  provider: "tibber";
+  provider: PriceProvider;
   exportDeduction: number;
+  config?: PriceSourceConfig;
   updatedAt: string;
 }
 
-export interface DynamicPricePointRecord {
+export interface PricePointRecord {
   currency: string;
   importPrice: number;
   startsAt: string;
 }
 
-export interface DynamicPriceSnapshotRecord {
+export interface PriceSnapshotRecord {
   currency: string;
   generatedAt: string;
-  points: DynamicPricePointRecord[];
-  provider: "tibber";
+  points: PricePointRecord[];
+  provider: PriceProvider;
   providerLabel: string;
   siteId: string;
   sourceId: string | null;
   sourceName: string;
+  sourceUpdatedAt?: string | null;
 }
+
+export type DynamicPriceSourceRecord = PriceSourceRecord;
+export type DynamicPricePointRecord = PricePointRecord;
+export type DynamicPriceSnapshotRecord = PriceSnapshotRecord;
 
 export interface DiscoverReport {
   schema: "emsd.discover.report.v1";
@@ -1265,13 +1287,15 @@ export interface ManagedDeviceStatusRecord extends ManagedDeviceRecord {
   telemetry: ManagedDeviceTelemetryRecord | null;
 }
 
-export interface DynamicPriceSampleRecord {
+export interface PriceSampleRecord {
   siteId: string;
   periodStart: string;
   generatedAt: string;
   currency: string;
   importPrice: number;
 }
+
+export type DynamicPriceSampleRecord = PriceSampleRecord;
 
 export interface SolarForecastSampleRecord {
   siteId: string;

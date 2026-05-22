@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { Database } from "bun:sqlite";
 import { existsSync, rmSync } from "node:fs";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -27,6 +28,44 @@ import {
   upsertManagedDeviceTelemetry,
   upsertWeatherForecast,
 } from "./database";
+
+test("openDaemonDatabase migrates dynamic price tables to generic price tables", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "emsd-daemon-price-migration-"));
+  const databasePath = join(tempDir, "emsd.sqlite");
+  const oldDb = new Database(databasePath);
+
+  oldDb.exec(`
+    CREATE TABLE sites (id TEXT PRIMARY KEY, name TEXT NOT NULL, location TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+    INSERT INTO sites (id, name, location, created_at, updated_at) VALUES ('home', 'Home', '', '2026-04-07T00:00:00.000Z', '2026-04-07T00:00:00.000Z');
+    CREATE TABLE dynamic_price_sources (id TEXT PRIMARY KEY, site_id TEXT NOT NULL, provider TEXT NOT NULL DEFAULT 'tibber', home_id TEXT, export_deduction REAL NOT NULL DEFAULT 0.13, name TEXT NOT NULL, updated_at TEXT NOT NULL);
+    INSERT INTO dynamic_price_sources (id, site_id, provider, home_id, export_deduction, name, updated_at) VALUES ('price-main', 'home', 'tibber', NULL, 0.13, 'Tibber', '2026-04-07T00:00:00.000Z');
+    CREATE TABLE dynamic_price_snapshots (site_id TEXT PRIMARY KEY, generated_at TEXT NOT NULL, price_json TEXT NOT NULL);
+    INSERT INTO dynamic_price_snapshots (site_id, generated_at, price_json) VALUES ('home', '2026-04-07T01:00:00.000Z', '{"generatedAt":"2026-04-07T01:00:00.000Z"}');
+    CREATE TABLE dynamic_price_samples (site_id TEXT NOT NULL, period_start TEXT NOT NULL, generated_at TEXT NOT NULL, currency TEXT NOT NULL, import_price REAL NOT NULL, PRIMARY KEY(site_id, period_start));
+    INSERT INTO dynamic_price_samples (site_id, period_start, generated_at, currency, import_price) VALUES ('home', '2026-04-07T00:00:00.000Z', '2026-04-07T01:00:00.000Z', 'EUR', 0.25);
+  `);
+  oldDb.close();
+
+  const db = openDaemonDatabase(databasePath);
+  const sourceCount = db
+    .query<{ count: number }, []>("SELECT COUNT(*) as count FROM price_sources")
+    .get()?.count;
+  const sampleCount = db
+    .query<{ count: number }, []>("SELECT COUNT(*) as count FROM price_samples")
+    .get()?.count;
+  const oldTableCount = db
+    .query<{ count: number }, []>(
+      "SELECT COUNT(*) as count FROM sqlite_master WHERE type = 'table' AND name IN ('dynamic_price_sources', 'dynamic_price_snapshots', 'dynamic_price_samples')",
+    )
+    .get()?.count;
+
+  db.close();
+  rmSync(tempDir, { recursive: true, force: true });
+
+  expect(sourceCount).toBe(1);
+  expect(sampleCount).toBe(1);
+  expect(oldTableCount).toBe(0);
+});
 
 test("openDaemonDatabase creates the SQLite file and empty managed tables", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "emsd-daemon-test-"));

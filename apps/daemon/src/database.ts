@@ -8,6 +8,7 @@ import {
   type DynamicPriceSampleRecord,
   type DynamicPriceSnapshotRecord,
   type DynamicPriceSourceRecord,
+  type PriceSourceConfig,
   type ManagedDeviceTelemetryRecord,
   type MeterRecord,
   type P1MeterSampleRecord,
@@ -111,6 +112,7 @@ interface DynamicPriceSourceRow {
   id: string;
   provider: DynamicPriceSourceRecord["provider"];
   export_deduction: number | null;
+  config_json: string | null;
   site_id: string;
   name: string;
   updated_at: string;
@@ -321,19 +323,22 @@ export function openDaemonDatabase(databasePath = getDatabasePath()): Database {
     );
   `);
   ensureWeatherSourceColumns(db);
+  renameTableIfNeeded(db, "dynamic_price_sources", "price_sources");
   db.exec(`
-    CREATE TABLE IF NOT EXISTS dynamic_price_sources (
+    CREATE TABLE IF NOT EXISTS price_sources (
       id TEXT PRIMARY KEY,
       site_id TEXT NOT NULL,
       provider TEXT NOT NULL DEFAULT 'tibber',
       home_id TEXT,
       export_deduction REAL NOT NULL DEFAULT 0.13,
+      config_json TEXT,
       name TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       FOREIGN KEY(site_id) REFERENCES sites(id)
     );
   `);
   ensureDynamicPriceSourceColumns(db);
+  renameTableIfNeeded(db, "dynamic_price_snapshots", "price_snapshots");
   db.exec(`
     CREATE TABLE IF NOT EXISTS device_telemetry (
       device_id TEXT PRIMARY KEY,
@@ -350,6 +355,7 @@ export function openDaemonDatabase(databasePath = getDatabasePath()): Database {
     );
   `);
   ensureManagedDeviceTelemetryColumns(db);
+  renameTableIfNeeded(db, "dynamic_price_samples", "price_samples");
   db.exec(`
     CREATE TABLE IF NOT EXISTS weather_forecasts (
       site_id TEXT PRIMARY KEY,
@@ -359,7 +365,7 @@ export function openDaemonDatabase(databasePath = getDatabasePath()): Database {
     );
   `);
   db.exec(`
-    CREATE TABLE IF NOT EXISTS dynamic_price_snapshots (
+    CREATE TABLE IF NOT EXISTS price_snapshots (
       site_id TEXT PRIMARY KEY,
       generated_at TEXT NOT NULL,
       price_json TEXT NOT NULL,
@@ -367,7 +373,7 @@ export function openDaemonDatabase(databasePath = getDatabasePath()): Database {
     );
   `);
   db.exec(`
-    CREATE TABLE IF NOT EXISTS dynamic_price_samples (
+    CREATE TABLE IF NOT EXISTS price_samples (
       site_id TEXT NOT NULL,
       period_start TEXT NOT NULL,
       generated_at TEXT NOT NULL,
@@ -378,8 +384,8 @@ export function openDaemonDatabase(databasePath = getDatabasePath()): Database {
     );
   `);
   db.exec(`
-    CREATE INDEX IF NOT EXISTS idx_dynamic_price_samples_site_period
-    ON dynamic_price_samples (site_id, period_start);
+    CREATE INDEX IF NOT EXISTS idx_price_samples_site_period
+    ON price_samples (site_id, period_start);
   `);
   db.exec(`
     CREATE TABLE IF NOT EXISTS solar_forecast_samples (
@@ -587,8 +593,8 @@ export function readDynamicPriceSources(
   const rows = db
     .query<DynamicPriceSourceRow, []>(
       `
-        SELECT id, site_id, name, provider, home_id, export_deduction, updated_at
-        FROM dynamic_price_sources
+        SELECT id, site_id, name, provider, home_id, export_deduction, config_json, updated_at
+        FROM price_sources
         ORDER BY name ASC, id ASC
       `,
     )
@@ -601,6 +607,7 @@ export function readDynamicPriceSources(
     provider: row.provider,
     exportDeduction:
       typeof row.export_deduction === "number" ? row.export_deduction : 0.13,
+    config: parsePriceSourceConfig(row.config_json),
     updatedAt: row.updated_at,
   }));
 }
@@ -714,7 +721,7 @@ export function readDynamicPriceSnapshot(
     .query<DynamicPriceSnapshotRow, [string]>(
       `
         SELECT site_id, generated_at, price_json
-        FROM dynamic_price_snapshots
+        FROM price_snapshots
         WHERE site_id = ?1
       `,
     )
@@ -736,7 +743,7 @@ export function readDynamicPriceSamples(
     .query<DynamicPriceSampleRow, [string]>(
       `
         SELECT site_id, period_start, generated_at, currency, import_price
-        FROM dynamic_price_samples
+        FROM price_samples
         WHERE site_id = ?1
         ORDER BY period_start ASC
       `,
@@ -759,7 +766,7 @@ export function upsertDynamicPriceSnapshot(
 ): void {
   db.query(
     `
-      INSERT INTO dynamic_price_snapshots (site_id, generated_at, price_json)
+      INSERT INTO price_snapshots (site_id, generated_at, price_json)
       VALUES (?1, ?2, ?3)
       ON CONFLICT(site_id) DO UPDATE SET
         generated_at = excluded.generated_at,
@@ -769,7 +776,7 @@ export function upsertDynamicPriceSnapshot(
 
   const insertSample = db.query(
     `
-      INSERT INTO dynamic_price_samples (
+      INSERT INTO price_samples (
         site_id,
         period_start,
         generated_at,
@@ -794,7 +801,7 @@ export function upsertDynamicPriceSnapshot(
       );
     }
 
-    deleteExpiredSamples(db, "dynamic_price_samples");
+    deleteExpiredSamples(db, "price_samples");
   })();
 }
 
@@ -930,34 +937,77 @@ function ensureSolarEnergyProviderColumns(db: Database): void {
 }
 
 function ensureDynamicPriceSourceColumns(db: Database): void {
+  renameTableIfNeeded(db, "dynamic_price_sources", "price_sources");
+  renameTableIfNeeded(db, "dynamic_price_snapshots", "price_snapshots");
+  renameTableIfNeeded(db, "dynamic_price_samples", "price_samples");
+
   const columns = db
-    .query<{ name: string }, []>("PRAGMA table_info(dynamic_price_sources)")
+    .query<{ name: string }, []>("PRAGMA table_info(price_sources)")
     .all()
     .map((column) => column.name);
 
   if (!columns.includes("provider")) {
     db.exec(
-      "ALTER TABLE dynamic_price_sources ADD COLUMN provider TEXT NOT NULL DEFAULT 'tibber';",
+      "ALTER TABLE price_sources ADD COLUMN provider TEXT NOT NULL DEFAULT 'tibber';",
     );
   }
 
   if (!columns.includes("home_id")) {
-    db.exec("ALTER TABLE dynamic_price_sources ADD COLUMN home_id TEXT;");
+    db.exec("ALTER TABLE price_sources ADD COLUMN home_id TEXT;");
   }
 
   if (!columns.includes("export_deduction")) {
     db.exec(
-      "ALTER TABLE dynamic_price_sources ADD COLUMN export_deduction REAL NOT NULL DEFAULT 0.13;",
+      "ALTER TABLE price_sources ADD COLUMN export_deduction REAL NOT NULL DEFAULT 0.13;",
     );
   }
 
+  if (!columns.includes("config_json")) {
+    db.exec("ALTER TABLE price_sources ADD COLUMN config_json TEXT;");
+  }
+
   db.exec(`
-    UPDATE dynamic_price_sources
+    UPDATE price_sources
     SET provider = CASE provider
       WHEN 'tibber' THEN 'tibber'
+      WHEN 'fixed-import-price' THEN 'fixed-import-price'
       ELSE 'tibber'
     END
   `);
+}
+
+function renameTableIfNeeded(db: Database, oldName: string, newName: string): void {
+  const oldExists = hasTable(db, oldName);
+
+  if (!oldExists) {
+    return;
+  }
+
+  if (hasTable(db, newName)) {
+    throw new Error(
+      `Database contains both ${oldName} and ${newName}; refusing to merge price tables automatically.`,
+    );
+  }
+
+  db.exec(`ALTER TABLE ${oldName} RENAME TO ${newName};`);
+}
+
+function hasTable(db: Database, tableName: string): boolean {
+  const row = db
+    .query<{ name: string }, [string]>(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?1",
+    )
+    .get(tableName);
+
+  return Boolean(row);
+}
+
+function parsePriceSourceConfig(value: string | null): PriceSourceConfig {
+  if (!value) {
+    return null;
+  }
+
+  return JSON.parse(value) as PriceSourceConfig;
 }
 
 function ensureSolarEnergyProviderSampleColumns(db: Database): void {

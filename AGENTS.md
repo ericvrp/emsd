@@ -101,6 +101,7 @@
 - The EMS command app currently supports managed battery and meter commands for the default site.
 - The EMS command app now also supports `battery strategy-plan get` and `battery strategy-plan set --file <path>` for house-wide schedule testing.
 - The EMS command app supports solar energy provider plugins (Enphase and SolarEdge) for reading solar production data.
+- The EMS command app supports Tibber and fixed import price providers for price sources.
 - The web app currently exposes live battery status, managed device settings, battery strategy schedule editing, and a temporary battery `Now Mode` manual override.
 - Battery strategy schedules are persisted as a full array on each battery record.
 - The first strategy schedule item acts as the default fallback strategy.
