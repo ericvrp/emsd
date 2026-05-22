@@ -15,6 +15,7 @@ import {
   parseDiscoverCommandOptions,
   runDiscoverCommand,
 } from "./discover";
+import { isShellyPlug } from "./plugins/shelly-local";
 
 const originalFetch = globalThis.fetch;
 const originalSkipPortPrecheck = process.env.EMSD_SKIP_DISCOVERY_PORT_PRECHECK;
@@ -156,6 +157,14 @@ test("getDiscoverySignatures exposes the discovery plugin catalog", () => {
       name: "Huawei SUN2000",
       port: 502,
       transport: "modbus",
+    },
+    {
+      pluginType: "solar-energy-provider",
+      category: "solar-energy-provider",
+      model: "shelly-plug",
+      name: "Shelly Plug",
+      port: 80,
+      schemes: ["http"],
     },
     {
       pluginType: "solar-energy-provider",
@@ -486,6 +495,75 @@ test("discoverHostDevices matches a HomeWizard CT as a solar provider", async ()
     port: 80,
     powerW: 920,
   });
+});
+
+test("discoverHostDevices matches a Shelly Plug as a solar provider", async () => {
+  globalThis.fetch = mockShellyPlugFetch({
+    ipAddress: "192.168.1.33",
+    model: "SNPL-00112EU",
+    name: "Shelly Plug S",
+    output: true,
+    powerW: 145,
+  });
+
+  const devices = await discoverHostDevices("192.168.1.33", {
+    verbose: false,
+    host: "192.168.1.33",
+  });
+
+  expect(devices).toHaveLength(1);
+  expect(devices[0]).toMatchObject({
+    category: "solar-energy-provider",
+    model: "shelly-plug",
+    name: "Shelly Plug",
+    ipAddress: "192.168.1.33",
+    port: 80,
+    powerW: 145,
+  });
+  expect(devices[0]?.details).toContain("model SNPL-00112EU");
+  expect(devices[0]?.details).toContain("switch on");
+});
+
+test("isShellyPlug matches app, model, and switch power capability variants", () => {
+  expect(
+    isShellyPlug({
+      app: "PlusPlugS",
+      capabilities: [],
+      firmwareVersion: null,
+      generation: 2,
+      id: null,
+      model: "SNSW-001P16EU",
+      name: null,
+      outputEnabled: null,
+      powerW: null,
+    }),
+  ).toBe(true);
+  expect(
+    isShellyPlug({
+      app: "PlugSG3",
+      capabilities: [],
+      firmwareVersion: null,
+      generation: 3,
+      id: null,
+      model: "S3PL-00112EU",
+      name: null,
+      outputEnabled: null,
+      powerW: null,
+    }),
+  ).toBe(true);
+  expect(
+    isShellyPlug({
+      app: null,
+      capabilities: ["power", "switch"],
+      firmwareVersion: null,
+      generation: 2,
+      id: null,
+      model: "SNSW-001P16EU",
+      name: "Solar panel switch",
+      outputEnabled: true,
+      powerW: 75,
+    }),
+  ).toBe(true);
 });
 
 test("discoverHostDevices matches a sonnen battery from the status endpoint", async () => {
@@ -1162,6 +1240,48 @@ function mockHomeWizardSolarFetch(input: {
 
     if (url === `${baseUrl}/api/v1/data`) {
       return new Response(JSON.stringify(input.data), { status: 200 });
+    }
+
+    return new Response("not found", { status: 404 });
+  }) as typeof fetch;
+}
+
+function mockShellyPlugFetch(input: {
+  app?: string | null;
+  ipAddress: string;
+  model: string;
+  name: string | null;
+  output: boolean;
+  powerW: number;
+}): typeof fetch {
+  return (async (request: string | URL | Request) => {
+    const url = String(request);
+    const baseUrl = `http://${input.ipAddress}:80`;
+
+    if (url === `${baseUrl}/rpc/Shelly.GetDeviceInfo`) {
+      return new Response(
+        JSON.stringify({
+          id: "shellyplug-abc123",
+          app: input.app ?? "PlusPlugS",
+          model: input.model,
+          name: input.name,
+          gen: 2,
+          fw_id: "20260501-123456",
+        }),
+        { status: 200 },
+      );
+    }
+
+    if (url === `${baseUrl}/rpc/Switch.GetStatus?id=0`) {
+      return new Response(
+        JSON.stringify({
+          id: 0,
+          output: input.output,
+          apower: input.powerW,
+          aenergy: { total: 1200 },
+        }),
+        { status: 200 },
+      );
     }
 
     return new Response("not found", { status: 404 });

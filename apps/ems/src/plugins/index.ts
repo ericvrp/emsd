@@ -9,6 +9,7 @@ import {
   enphaseSolarEnergyProviderDiscoveryPlugin,
   homeWizardSolarEnergyProviderDiscoveryPlugins,
   huaweiSolarEnergyProviderDiscoveryPlugins,
+  shellySolarEnergyProviderDiscoveryPlugin,
   solarEnergyProviderPlugins,
   solaredgeSolarEnergyProviderDiscoveryPlugin,
 } from "./solar-energy-provider";
@@ -29,6 +30,7 @@ export const discoveryPlugins = [
   homeWizardBatteryPlugin,
   ...homeWizardSolarEnergyProviderDiscoveryPlugins,
   ...huaweiSolarEnergyProviderDiscoveryPlugins,
+  shellySolarEnergyProviderDiscoveryPlugin,
   solaredgeSolarEnergyProviderDiscoveryPlugin,
   enphaseSolarEnergyProviderDiscoveryPlugin,
 ];

@@ -599,6 +599,12 @@ test("Huawei SUN2000 Modbus provider writes fixed power derate for disable", asy
 });
 
 test("HomeWizard solar providers log telemetry and return no daemon sample", async () => {
+  const originalError = console.error;
+  const errors: string[] = [];
+
+  console.error = (...args: unknown[]) => {
+    errors.push(args.map(String).join(" "));
+  };
   globalThis.fetch = (async (input: string | URL | Request) => {
     const url = String(input);
 
@@ -629,9 +635,111 @@ test("HomeWizard solar providers log telemetry and return no daemon sample", asy
     throw new Error(`Unexpected URL: ${url}`);
   }) as typeof fetch;
 
-  await expect(
-    getSolarEnergyProviderNormalizedInfo(buildHomeWizardProvider()),
-  ).resolves.toBeNull();
+  try {
+    await expect(
+      getSolarEnergyProviderNormalizedInfo(buildHomeWizardProvider()),
+    ).resolves.toBeNull();
+  } finally {
+    console.error = originalError;
+  }
+
+  expect(errors.join("\n")).toContain("solarPower=250 W");
+  expect(errors.join("\n")).not.toContain("power=-250 W");
+});
+
+test("Shelly solar providers log telemetry and return no daemon sample", async () => {
+  const originalError = console.error;
+  const errors: string[] = [];
+
+  console.error = (...args: unknown[]) => {
+    errors.push(args.map(String).join(" "));
+  };
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+
+    if (url === "http://192.168.1.62:80/rpc/Shelly.GetDeviceInfo") {
+      return new Response(
+        JSON.stringify({
+          id: "shellyplug-1",
+          model: "SNPL-00112EU",
+          name: "Shelly Plug S",
+          gen: 2,
+          fw_id: "20260501-123456",
+        }),
+        { status: 200 },
+      );
+    }
+
+    if (url === "http://192.168.1.62:80/rpc/Switch.GetStatus?id=0") {
+      return new Response(
+        JSON.stringify({
+          id: 0,
+          output: true,
+          apower: -180,
+          aenergy: { total: 1200 },
+        }),
+        { status: 200 },
+      );
+    }
+
+    throw new Error(`Unexpected URL: ${url}`);
+  }) as typeof fetch;
+
+  try {
+    await expect(
+      getSolarEnergyProviderNormalizedInfo(buildShellyProvider()),
+    ).resolves.toBeNull();
+  } finally {
+    console.error = originalError;
+  }
+
+  expect(errors.join("\n")).toContain("solarPower=180 W");
+  expect(errors.join("\n")).not.toContain("power=-180 W");
+});
+
+test("HomeWizard CT solar provider inverts and floors logged telemetry", async () => {
+  const originalError = console.error;
+  const errors: string[] = [];
+
+  console.error = (...args: unknown[]) => {
+    errors.push(args.map(String).join(" "));
+  };
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+
+    if (url === "http://192.168.1.63:80/api") {
+      return new Response(
+        JSON.stringify({
+          product_name: "Energy Meter",
+          product_type: "HWE-CT",
+          serial: "hw-ct-1",
+        }),
+        { status: 200 },
+      );
+    }
+
+    if (url === "http://192.168.1.63:80/api/v1/data") {
+      return new Response(
+        JSON.stringify({
+          active_power_w: 125,
+        }),
+        { status: 200 },
+      );
+    }
+
+    throw new Error(`Unexpected URL: ${url}`);
+  }) as typeof fetch;
+
+  try {
+    await expect(
+      getSolarEnergyProviderNormalizedInfo(buildHomeWizardCtProvider()),
+    ).resolves.toBeNull();
+  } finally {
+    console.error = originalError;
+  }
+
+  expect(errors.join("\n")).toContain("solarPower=0 W");
+  expect(errors.join("\n")).not.toContain("power=125 W");
 });
 
 function buildProvider(ipAddress = "192.168.1.40"): SolarEnergyProviderRecord {
@@ -660,6 +768,36 @@ function buildHomeWizardProvider(): SolarEnergyProviderRecord {
     enabled: true,
     connected: true,
     serialNumber: "hw-plug-1",
+    updatedAt: "2026-04-09T00:00:00.000Z",
+  };
+}
+
+function buildHomeWizardCtProvider(): SolarEnergyProviderRecord {
+  return {
+    id: "solar-provider-6",
+    siteId: "home",
+    name: "HomeWizard CT",
+    plugin: "homewizard-ct",
+    ipAddress: "192.168.1.63",
+    port: 80,
+    enabled: true,
+    connected: true,
+    serialNumber: "hw-ct-1",
+    updatedAt: "2026-04-09T00:00:00.000Z",
+  };
+}
+
+function buildShellyProvider(): SolarEnergyProviderRecord {
+  return {
+    id: "solar-provider-5",
+    siteId: "home",
+    name: "Shelly Plug",
+    plugin: "shelly-plug",
+    ipAddress: "192.168.1.62",
+    port: 80,
+    enabled: true,
+    connected: true,
+    serialNumber: "shellyplug-1",
     updatedAt: "2026-04-09T00:00:00.000Z",
   };
 }

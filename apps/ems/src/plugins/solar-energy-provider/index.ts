@@ -18,6 +18,10 @@ import {
   SolarEdgeSolarEnergyProviderPlugin,
   solaredgeSolarEnergyProviderDiscoveryPlugin,
 } from "./solaredge";
+import {
+  ShellySolarEnergyProviderPlugin,
+  shellySolarEnergyProviderDiscoveryPlugin,
+} from "./shelly";
 
 export interface SolarEnergyProviderPlugin {
   getNormalizedInfo(): Promise<NormalizedSolarEnergyProviderInfo | null>;
@@ -30,6 +34,7 @@ export const solarEnergyProviderDiscoveryPlugins = [
   enphaseSolarEnergyProviderDiscoveryPlugin,
   ...homeWizardSolarEnergyProviderDiscoveryPlugins,
   ...huaweiSolarEnergyProviderDiscoveryPlugins,
+  shellySolarEnergyProviderDiscoveryPlugin,
   solaredgeSolarEnergyProviderDiscoveryPlugin,
 ];
 
@@ -37,6 +42,7 @@ export {
   enphaseSolarEnergyProviderDiscoveryPlugin,
   homeWizardSolarEnergyProviderDiscoveryPlugins,
   huaweiSolarEnergyProviderDiscoveryPlugins,
+  shellySolarEnergyProviderDiscoveryPlugin,
   solaredgeSolarEnergyProviderDiscoveryPlugin,
 };
 
@@ -45,6 +51,7 @@ export const solarEnergyProviderPlugins = [
   "homewizard-ct",
   "homewizard-smart-plug",
   "huawei-sun2000-modbus",
+  "shelly-plug",
   "solaredge-local",
 ] as const;
 
@@ -68,6 +75,10 @@ export function createSolarEnergyProviderPlugin(
     provider.plugin === "homewizard-smart-plug"
   ) {
     return new HomeWizardSolarEnergyProviderPlugin(provider);
+  }
+
+  if (provider.plugin === "shelly-plug") {
+    return new ShellySolarEnergyProviderPlugin(provider);
   }
 
   throw new Error(

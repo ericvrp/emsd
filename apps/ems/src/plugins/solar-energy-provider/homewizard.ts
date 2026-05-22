@@ -95,6 +95,7 @@ function createHomeWizardDiscoveryPlugin(input: {
 }
 
 function formatHomeWizardLogDetails(snapshot: HomeWizardLocalSnapshot): string {
+  const solarPowerW = normalizeInvertedSolarPowerW(snapshot.powerW);
   const capabilities =
     snapshot.capabilities.length > 0
       ? snapshot.capabilities.join(", ")
@@ -105,10 +106,14 @@ function formatHomeWizardLogDetails(snapshot: HomeWizardLocalSnapshot): string {
 
   return [
     product ? `product=${product}` : null,
-    snapshot.powerW !== null ? `power=${Math.round(snapshot.powerW)} W` : null,
+    solarPowerW !== null ? `solarPower=${Math.round(solarPowerW)} W` : null,
     `capabilities=${capabilities}`,
     snapshot.serial ? `serial=${snapshot.serial}` : null,
   ]
     .filter((part): part is string => part !== null)
     .join(", ");
+}
+
+function normalizeInvertedSolarPowerW(powerW: number | null): number | null {
+  return powerW === null ? null : Math.max(0, -powerW);
 }
