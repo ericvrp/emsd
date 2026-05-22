@@ -29,10 +29,10 @@ export const DELAYED_CHARGING_MIN_SITE_SOLAR_POWER_W = 500;
 export const DELAYED_CHARGING_TARGET_FLOOR_BUFFER_PERCENT = 10;
 
 /** Fixed backup reserve margin used by live dynamic price targeting. */
-export const DYNAMIC_PRICE_TARGET_BACKUP_RESERVE_MARGIN_PERCENT = 1;
+export const DYNAMIC_PRICE_TARGET_BACKUP_RESERVE_MARGIN_PERCENT = 2;
 
 /**
  * Target buffer percentage per hour until target time.
  * For export-surplus windows: hoursUntilTarget * this value, rounded to nearest whole percent.
  */
-export const DYNAMIC_PRICE_TARGET_BUFFER_PERCENT_PER_HOUR = 0.2;
+export const DYNAMIC_PRICE_TARGET_BUFFER_PERCENT_PER_HOUR = 0.25;
