@@ -2,12 +2,10 @@ import type {
   NormalizedSolarEnergyProviderInfo,
   SolarEnergyProviderRecord,
 } from "@emsd/core";
-import { logEmsInfo } from "../../logging";
 import {
   fetchShellyLocalSnapshot,
   formatShellyDetails,
   isShellyPlug,
-  type ShellyLocalSnapshot,
 } from "../shelly-local";
 import type { DiscoveryPlugin } from "../types";
 
@@ -20,12 +18,13 @@ export class ShellySolarEnergyProviderPlugin {
 
   async getNormalizedInfo(): Promise<NormalizedSolarEnergyProviderInfo | null> {
     const snapshot = await fetchShellyLocalSnapshot(this.provider.ipAddress);
+    const currentPowerW = normalizeInvertedSolarPowerW(snapshot.powerW);
 
-    logEmsInfo(
-      `Shelly solar provider ${this.provider.id} (${this.provider.plugin}) at ${this.provider.ipAddress}: ${formatShellyLogDetails(snapshot)}`,
-    );
-
-    return null;
+    return {
+      currentPowerW,
+      productionControlStatus: "unavailable",
+      status: currentPowerW === null ? "offline" : "connected",
+    };
   }
 
   async setProductionEnabled(): Promise<NormalizedSolarEnergyProviderInfo | null> {
@@ -65,29 +64,6 @@ export const shellySolarEnergyProviderDiscoveryPlugin: DiscoveryPlugin = {
     };
   },
 };
-
-function formatShellyLogDetails(snapshot: ShellyLocalSnapshot): string {
-  const solarPowerW = normalizeInvertedSolarPowerW(snapshot.powerW);
-  const capabilities =
-    snapshot.capabilities.length > 0
-      ? snapshot.capabilities.join(", ")
-      : "none reported";
-  const product = [snapshot.name, snapshot.model]
-    .filter((value): value is string => value !== null)
-    .join(" / ");
-
-  return [
-    product ? `product=${product}` : null,
-    solarPowerW !== null ? `solarPower=${Math.round(solarPowerW)} W` : null,
-    snapshot.outputEnabled !== null
-      ? `switch=${snapshot.outputEnabled ? "on" : "off"}`
-      : null,
-    `capabilities=${capabilities}`,
-    snapshot.id ? `id=${snapshot.id}` : null,
-  ]
-    .filter((part): part is string => part !== null)
-    .join(", ");
-}
 
 function normalizeInvertedSolarPowerW(powerW: number | null): number | null {
   return powerW === null ? null : Math.max(0, -powerW);

@@ -6,6 +6,7 @@ import {
   BatteryStrategyBuiltinItemKey,
   BatteryStrategyTriggerKind,
   formatBatteryStrategyBuiltinItemLabel,
+  isBatteryStrategyPriceTrigger,
 } from "./battery-strategy-shared";
 
 export * from "./cli-args";
@@ -20,6 +21,10 @@ export * from "./price-selection";
 export * from "./solar-surplus";
 export * from "./solar-prediction";
 export * from "./solar-prediction-smoothing";
+import {
+  PRICE_SELECTION_WINDOW_MS,
+  findPriceSelections,
+} from "./price-selection";
 
 export const EMSD_NAME = "EMSD";
 
@@ -80,6 +85,7 @@ export interface BatteryStrategyRuntimeRecord {
   activeObservedAt: string | null;
   activeStartSocPercent: number | null;
   lastTriggeredAtByItemId: Record<string, string>;
+  lastTriggeredRecordedAtByItemId?: Record<string, string>;
   lastPlanAcknowledgedAt?: string | null;
   manualTargetMethod?: BatteryStrategyTargetMethod | null;
   manualTargetDurationMinutes?: number | null;
@@ -408,6 +414,7 @@ export function createBatteryStrategyRuntime(): BatteryStrategyRuntimeRecord {
     activeObservedAt: null,
     activeStartSocPercent: null,
     lastTriggeredAtByItemId: {},
+    lastTriggeredRecordedAtByItemId: {},
     lastPlanAcknowledgedAt: null,
     manualTargetMethod: null,
     manualTargetDurationMinutes: null,
@@ -461,17 +468,24 @@ export function acknowledgePendingBatteryStrategyPlan(
 export function createBatteryStrategyRuntimeForPlanApply(
   plan: BatteryStrategyPlanRecord,
   now: Date,
+  dynamicPriceSamples: DynamicPriceSampleRecord[] = [],
 ): BatteryStrategyRuntimeRecord {
   const lastTriggeredAtByItemId: Record<string, string> = {};
+  const lastTriggeredRecordedAtByItemId: Record<string, string> = {};
 
   for (const item of plan.slice(1)) {
-    const triggerAt = getBatteryStrategyPlanTriggerAt(item, now);
+    const triggerAt = getBatteryStrategyPlanTriggerAt(
+      item,
+      now,
+      dynamicPriceSamples,
+    );
 
     if (triggerAt === null || triggerAt.getTime() >= now.getTime()) {
       continue;
     }
 
     lastTriggeredAtByItemId[item.id] = triggerAt.toISOString();
+    lastTriggeredRecordedAtByItemId[item.id] = now.toISOString();
   }
 
   return {
@@ -486,6 +500,7 @@ export function createBatteryStrategyRuntimeForPlanApply(
     activeObservedAt: null,
     activeStartSocPercent: null,
     lastTriggeredAtByItemId,
+    lastTriggeredRecordedAtByItemId,
     lastPlanAcknowledgedAt: null,
     manualTargetMethod: null,
     manualTargetDurationMinutes: null,
@@ -865,24 +880,87 @@ function normalizeBatteryStrategyPlanItem(
 function getBatteryStrategyPlanTriggerAt(
   item: BatteryStrategyPlanItem,
   now: Date,
+  dynamicPriceSamples: DynamicPriceSampleRecord[] = [],
 ): Date | null {
   if (
-    item.kind !== "daily" ||
-    item.triggerKind !== BatteryStrategyTriggerKind.DailyTime ||
-    !isDailyStartTime(item.startTime)
+    item.kind === "daily" &&
+    item.triggerKind === BatteryStrategyTriggerKind.DailyTime &&
+    isDailyStartTime(item.startTime)
   ) {
-    return null;
+    const [hoursPart, minutesPart] = item.startTime.split(":");
+    const triggerAt = new Date(now);
+    triggerAt.setHours(
+      Number(hoursPart ?? "0"),
+      Number(minutesPart ?? "0"),
+      0,
+      0,
+    );
+    return triggerAt;
   }
 
-  const [hoursPart, minutesPart] = item.startTime.split(":");
-  const triggerAt = new Date(now);
-  triggerAt.setHours(
-    Number(hoursPart ?? "0"),
-    Number(minutesPart ?? "0"),
-    0,
-    0,
+  if (
+    item.kind === "daily" &&
+    isBatteryStrategyPriceTrigger(item.triggerKind)
+  ) {
+    return getBatteryStrategyPlanTriggerAtForPrice(
+      item.triggerKind,
+      now,
+      dynamicPriceSamples,
+    );
+  }
+
+  return null;
+}
+
+function getBatteryStrategyPlanTriggerAtForPrice(
+  triggerKind: BatteryStrategyTriggerKind,
+  now: Date,
+  dynamicPriceSamples: DynamicPriceSampleRecord[],
+): Date | null {
+  const today = formatLocalDate(now);
+
+  const selections = findPriceSelections(
+    dynamicPriceSamples.map((sample) => ({
+      periodStart: sample.periodStart,
+      value: sample.importPrice,
+    })),
+    PRICE_SELECTION_WINDOW_MS,
   );
-  return triggerAt;
+
+  const isLowPrice =
+    triggerKind === BatteryStrategyTriggerKind.DelayedCharging ||
+    triggerKind === BatteryStrategyTriggerKind.ImportShortage;
+
+  const markerPeriodStarts = isLowPrice
+    ? selections.lowest.map((point) => point.periodStart)
+    : selections.highest.map((point) => point.periodStart);
+
+  const markers = markerPeriodStarts
+    .map((periodStart) => new Date(periodStart))
+    .filter(
+      (markerAt) =>
+        !Number.isNaN(markerAt.getTime()) &&
+        formatLocalDate(markerAt) === today,
+    )
+    .sort((left, right) => left.getTime() - right.getTime());
+
+  for (const markerAt of markers) {
+    if (markerAt.getTime() < now.getTime()) {
+      return markerAt;
+    }
+  }
+
+  for (const markerAt of markers) {
+    if (markerAt.getTime() >= now.getTime()) {
+      return null;
+    }
+  }
+
+  return null;
+}
+
+function formatLocalDate(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
 export function parseBatteryStrategyRuntimeJson(
@@ -920,6 +998,16 @@ function normalizeBatteryStrategyRuntime(
           Object.entries(candidate.lastTriggeredAtByItemId).filter(
             ([itemId, triggeredAt]) =>
               typeof itemId === "string" && typeof triggeredAt === "string",
+          ),
+        )
+      : {};
+  const lastTriggeredRecordedAtByItemId =
+    candidate.lastTriggeredRecordedAtByItemId &&
+    typeof candidate.lastTriggeredRecordedAtByItemId === "object"
+      ? Object.fromEntries(
+          Object.entries(candidate.lastTriggeredRecordedAtByItemId).filter(
+            ([itemId, recordedAt]) =>
+              typeof itemId === "string" && typeof recordedAt === "string",
           ),
         )
       : {};
@@ -977,6 +1065,7 @@ function normalizeBatteryStrategyRuntime(
         ? candidate.activeStartSocPercent
         : null,
     lastTriggeredAtByItemId,
+    lastTriggeredRecordedAtByItemId,
     lastPlanAcknowledgedAt:
       typeof candidate.lastPlanAcknowledgedAt === "string" &&
       candidate.lastPlanAcknowledgedAt.length > 0
@@ -1285,6 +1374,16 @@ export interface ManagedDeviceTelemetryRecord {
 
 export interface ManagedDeviceStatusRecord extends ManagedDeviceRecord {
   telemetry: ManagedDeviceTelemetryRecord | null;
+}
+
+export type DaemonLogLevel = "info" | "warn" | "error" | "verbose";
+
+export interface DaemonLogRecord {
+  category: string;
+  id: number;
+  level: DaemonLogLevel;
+  message: string;
+  loggedAt: string;
 }
 
 export interface PriceSampleRecord {

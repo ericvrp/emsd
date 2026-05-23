@@ -598,13 +598,7 @@ test("Huawei SUN2000 Modbus provider writes fixed power derate for disable", asy
   }
 });
 
-test("HomeWizard solar providers log telemetry and return no daemon sample", async () => {
-  const originalError = console.error;
-  const errors: string[] = [];
-
-  console.error = (...args: unknown[]) => {
-    errors.push(args.map(String).join(" "));
-  };
+test("HomeWizard solar providers return normalized samples", async () => {
   globalThis.fetch = (async (input: string | URL | Request) => {
     const url = String(input);
 
@@ -635,25 +629,16 @@ test("HomeWizard solar providers log telemetry and return no daemon sample", asy
     throw new Error(`Unexpected URL: ${url}`);
   }) as typeof fetch;
 
-  try {
-    await expect(
-      getSolarEnergyProviderNormalizedInfo(buildHomeWizardProvider()),
-    ).resolves.toBeNull();
-  } finally {
-    console.error = originalError;
-  }
-
-  expect(errors.join("\n")).toContain("solarPower=250 W");
-  expect(errors.join("\n")).not.toContain("power=-250 W");
+  await expect(
+    getSolarEnergyProviderNormalizedInfo(buildHomeWizardProvider()),
+  ).resolves.toEqual({
+    currentPowerW: 250,
+    productionControlStatus: "unavailable",
+    status: "connected",
+  });
 });
 
-test("Shelly solar providers log telemetry and return no daemon sample", async () => {
-  const originalError = console.error;
-  const errors: string[] = [];
-
-  console.error = (...args: unknown[]) => {
-    errors.push(args.map(String).join(" "));
-  };
+test("Shelly solar providers return normalized samples", async () => {
   globalThis.fetch = (async (input: string | URL | Request) => {
     const url = String(input);
 
@@ -685,25 +670,16 @@ test("Shelly solar providers log telemetry and return no daemon sample", async (
     throw new Error(`Unexpected URL: ${url}`);
   }) as typeof fetch;
 
-  try {
-    await expect(
-      getSolarEnergyProviderNormalizedInfo(buildShellyProvider()),
-    ).resolves.toBeNull();
-  } finally {
-    console.error = originalError;
-  }
-
-  expect(errors.join("\n")).toContain("solarPower=180 W");
-  expect(errors.join("\n")).not.toContain("power=-180 W");
+  await expect(
+    getSolarEnergyProviderNormalizedInfo(buildShellyProvider()),
+  ).resolves.toEqual({
+    currentPowerW: 180,
+    productionControlStatus: "unavailable",
+    status: "connected",
+  });
 });
 
-test("HomeWizard CT solar provider inverts and floors logged telemetry", async () => {
-  const originalError = console.error;
-  const errors: string[] = [];
-
-  console.error = (...args: unknown[]) => {
-    errors.push(args.map(String).join(" "));
-  };
+test("HomeWizard CT solar provider inverts and floors telemetry", async () => {
   globalThis.fetch = (async (input: string | URL | Request) => {
     const url = String(input);
 
@@ -730,16 +706,13 @@ test("HomeWizard CT solar provider inverts and floors logged telemetry", async (
     throw new Error(`Unexpected URL: ${url}`);
   }) as typeof fetch;
 
-  try {
-    await expect(
-      getSolarEnergyProviderNormalizedInfo(buildHomeWizardCtProvider()),
-    ).resolves.toBeNull();
-  } finally {
-    console.error = originalError;
-  }
-
-  expect(errors.join("\n")).toContain("solarPower=0 W");
-  expect(errors.join("\n")).not.toContain("power=125 W");
+  await expect(
+    getSolarEnergyProviderNormalizedInfo(buildHomeWizardCtProvider()),
+  ).resolves.toEqual({
+    currentPowerW: 0,
+    productionControlStatus: "unavailable",
+    status: "connected",
+  });
 });
 
 function buildProvider(ipAddress = "192.168.1.40"): SolarEnergyProviderRecord {

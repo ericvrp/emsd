@@ -10,9 +10,9 @@ import {
   type BatteryStrategyRuntimeRecord,
   type BatteryStrategyTargetMethod,
   type DynamicPriceSourceRecord,
+  type MeterRecord,
   type PriceProvider,
   type PriceSourceConfig,
-  type MeterRecord,
   type SiteRecord,
   type SolarEnergyProviderRecord,
   type WeatherForecastSourceRecord,
@@ -1494,7 +1494,9 @@ function updateSource(
       ).run(
         id,
         input.name,
-        normalizeDynamicPriceProvider(input.provider ?? existingPriceSource.provider),
+        normalizeDynamicPriceProvider(
+          input.provider ?? existingPriceSource.provider,
+        ),
         null,
         input.exportDeduction ?? existingPriceSource.exportDeduction,
         JSON.stringify(input.config ?? existingPriceSource.config ?? null),
@@ -1949,7 +1951,11 @@ function ensureDynamicPriceSourceColumns(db: Database): void {
   `);
 }
 
-function renameTableIfNeeded(db: Database, oldName: string, newName: string): void {
+function renameTableIfNeeded(
+  db: Database,
+  oldName: string,
+  newName: string,
+): void {
   if (!hasTable(db, oldName)) {
     return;
   }

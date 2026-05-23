@@ -1,5 +1,5 @@
-import { expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
+import { expect, test } from "bun:test";
 import { existsSync, rmSync } from "node:fs";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -92,11 +92,13 @@ test("daemon logs can be inserted and read back", () => {
   const db = openDaemonDatabase(databasePath);
 
   insertDaemonLog(db, {
+    category: "generic",
     level: "info",
     message: "daemon started",
     loggedAt: "2026-05-19T12:00:00.000Z",
   });
   insertDaemonLog(db, {
+    category: "generic",
     level: "warn",
     message: "battery offline",
     loggedAt: "2026-05-19T12:01:00.000Z",
@@ -108,12 +110,14 @@ test("daemon logs can be inserted and read back", () => {
 
   expect(logs).toEqual([
     {
+      category: "generic",
       id: 1,
       level: "info",
       message: "daemon started",
       loggedAt: "2026-05-19T12:00:00.000Z",
     },
     {
+      category: "generic",
       id: 2,
       level: "warn",
       message: "battery offline",

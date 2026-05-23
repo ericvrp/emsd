@@ -47,9 +47,9 @@ test("evening auto discharge targets tomorrow morning and keeps a reserve above 
   expect(targetTime.getDate()).toBe(new Date("2026-04-20T08:30:00").getDate());
   expect(targetTime.getHours()).toBe(8);
   expect(targetTime.getMinutes()).toBe(30);
-  // 10% minimum + 1% backup margin + round(12.08 hours * 0.2%/hour) = 13%
-  expect(estimate.estimatedReservePercentAtTargetTime).toBe(13);
-  expect(estimate.estimatedTargetPercent).toBeGreaterThan(13);
+  // 10% minimum + 2% backup margin + round(12.08 hours * 0.25%/hour) = 15%
+  expect(estimate.estimatedReservePercentAtTargetTime).toBe(15);
+  expect(estimate.estimatedTargetPercent).toBeGreaterThan(15);
   expect(estimate.estimatedRemainingEnergyWh).toBeGreaterThan(0);
   expect(estimate.resolvedManualState).toBe("discharging");
   expect(estimate.skipReason).toBeNull();
@@ -90,7 +90,7 @@ test("evening export-surplus ignores same-day solar blips and targets next-morni
   expect(estimate.estimatedTargetPercent).toBeGreaterThan(
     estimate.estimatedReservePercentAtTargetTime,
   );
-  expect(estimate.estimatedReservePercentAtTargetTime).toBe(14);
+  expect(estimate.estimatedReservePercentAtTargetTime).toBe(15);
 });
 
 test("export-surplus is skipped when the next morning high-price marker is higher", () => {

@@ -9,6 +9,7 @@ import {
   type BulkDiscoveryAddResult,
   DEFAULT_SOLAR_PREDICTION_SMOOTHING_MODE,
   type DashboardSnapshot,
+  type DynamicPriceSampleRecord,
   type DynamicPriceSnapshotRecord,
   type HistoryArchive,
   type LiveStatusSnapshot,
@@ -56,7 +57,7 @@ import {
 } from "../../daemon/src/database";
 import { estimateDynamicPriceTarget } from "../../daemon/src/dynamic-price-target";
 import { formatBatteryStrategyStatusSummary } from "../../daemon/src/strategy-log";
-import { getStrategyTriggerAt } from "../../daemon/src/strategy-scheduler";
+
 import { createBatteryPlugin } from "./battery-plugins";
 import { readSelectedDaemonLogs } from "./daemon-log";
 import {
@@ -702,33 +703,13 @@ function clampNullableManualTargetSoc(
 function createBatteryStrategyRuntimeForPlanSave(input: {
   now: Date;
   plan: BatteryStrategyPlanRecord;
-  dynamicPriceSamples: ReturnType<typeof readDynamicPriceSamples>;
+  dynamicPriceSamples?: DynamicPriceSampleRecord[];
 }) {
   const runtime = createBatteryStrategyRuntimeForPlanApply(
     input.plan,
     input.now,
+    input.dynamicPriceSamples ?? [],
   );
-
-  for (const item of input.plan.slice(1)) {
-    if (
-      !item.enabled ||
-      item.triggerKind === BatteryStrategyTriggerKind.DailyTime
-    ) {
-      continue;
-    }
-
-    const triggerAt = getStrategyTriggerAt({
-      item,
-      now: input.now,
-      dynamicPriceSamples: input.dynamicPriceSamples,
-    });
-
-    if (triggerAt === null || triggerAt.getTime() >= input.now.getTime()) {
-      continue;
-    }
-
-    runtime.lastTriggeredAtByItemId[item.id] = triggerAt.toISOString();
-  }
 
   return runtime;
 }
@@ -1115,12 +1096,19 @@ export async function runApiAction(
         value: strategyPlan,
       });
       const db = openDaemonDatabase();
+      let dynamicPriceSamples: DynamicPriceSampleRecord[] = [];
+
+      try {
+        dynamicPriceSamples = readDynamicPriceSamples(db, siteId);
+      } finally {
+        db.close();
+      }
+
       const strategyRuntime = createBatteryStrategyRuntimeForPlanSave({
         now,
         plan: normalizedPlan,
-        dynamicPriceSamples: readDynamicPriceSamples(db, siteId),
+        dynamicPriceSamples,
       });
-      db.close();
 
       const updated = setHouseStrategyPlan(
         {

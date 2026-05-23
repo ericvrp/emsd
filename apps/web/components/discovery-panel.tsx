@@ -98,23 +98,23 @@ const SUPPORTED_DISCOVERY_PLUGINS: readonly SupportedPluginEntry[] = [
   {
     type: "Solar",
     plugin: "HomeWizard Smart Plug",
-    status: "incomplete",
+    status: "working",
     notes:
-      "Discovery and log-only polling are implemented. Solar telemetry persistence and switch control are not enabled yet.",
+      "Discovery and telemetry are implemented. Production control is unavailable.",
   },
   {
     type: "Solar",
     plugin: "HomeWizard CT",
-    status: "incomplete",
+    status: "working",
     notes:
-      "Discovery and log-only polling are implemented. Solar telemetry persistence is intentionally disabled for now.",
+      "Discovery and telemetry are implemented. Production control is unavailable.",
   },
   {
     type: "Solar",
     plugin: "Shelly Plug",
-    status: "incomplete",
+    status: "working",
     notes:
-      "Discovery and log-only polling are implemented. Solar telemetry persistence and switch control are not enabled yet.",
+      "Discovery and telemetry are implemented. Production control is unavailable.",
   },
   {
     type: "Solar",

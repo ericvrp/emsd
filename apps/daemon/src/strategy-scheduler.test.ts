@@ -1023,10 +1023,13 @@ test("getDelayedChargePrepSkipReason blocks prep when the paired delayed chargin
         lastTriggeredAtByItemId: {
           "delayed-charging-1": "2026-04-09T14:00:00.000Z",
         },
+        lastTriggeredRecordedAtByItemId: {
+          "delayed-charging-1": "2026-04-09T13:46:00.000Z",
+        },
       },
     }),
   ).toBe(
-    "skipped: delayed charging item delayed-charging-1 already triggered for 2026-04-09T14:00:00.000Z while evaluating delayed-charge prep item prep-1",
+    `skipped: delayed charging item delayed-charging-1 was already marked triggered at ${formatDaemonLogTimestamp(new Date("2026-04-09T13:46:00.000Z"))} for marker ${formatDaemonLogTimestamp(new Date("2026-04-09T14:00:00.000Z"))} while evaluating delayed-charge prep item prep-1`,
   );
 });
 

@@ -5,13 +5,15 @@ import {
   type BatteryStrategyHistoryRecord,
   type BatteryStrategyRecord,
   type BatteryStrategyRuntimeRecord,
+  type DaemonLogLevel,
+  type DaemonLogRecord,
   type DynamicPriceSampleRecord,
   type DynamicPriceSnapshotRecord,
   type DynamicPriceSourceRecord,
-  type PriceSourceConfig,
   type ManagedDeviceTelemetryRecord,
   type MeterRecord,
   type P1MeterSampleRecord,
+  type PriceSourceConfig,
   type SiteRecord,
   type SolarEnergyProviderRecord,
   type SolarEnergyProviderSampleRecord,
@@ -201,20 +203,14 @@ interface SolarEnergyProviderControlRequestRow {
   updated_at: string;
 }
 
-export type DaemonLogLevel = "info" | "warn" | "error" | "verbose";
+export type { DaemonLogLevel, DaemonLogRecord };
 
 interface DaemonLogRow {
+  category: string;
   id: number;
   level: DaemonLogLevel;
   message: string;
   logged_at: string;
-}
-
-export interface DaemonLogRecord {
-  id: number;
-  level: DaemonLogLevel;
-  message: string;
-  loggedAt: string;
 }
 
 export interface SolarEnergyProviderControlRequestRecord {
@@ -500,11 +496,13 @@ export function openDaemonDatabase(databasePath = getDatabasePath()): Database {
   db.exec(`
     CREATE TABLE IF NOT EXISTS daemon_logs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      category TEXT NOT NULL DEFAULT 'generic',
       level TEXT NOT NULL,
       message TEXT NOT NULL,
       logged_at TEXT NOT NULL
     );
   `);
+  ensureDaemonLogColumns(db);
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_daemon_logs_logged_at
     ON daemon_logs (logged_at, id);
@@ -519,17 +517,17 @@ export function insertDaemonLog(
 ): void {
   db.query(
     `
-      INSERT INTO daemon_logs (level, message, logged_at)
-      VALUES (?1, ?2, ?3)
+      INSERT INTO daemon_logs (category, level, message, logged_at)
+      VALUES (?1, ?2, ?3, ?4)
     `,
-  ).run(record.level, record.message, record.loggedAt);
+  ).run(record.category, record.level, record.message, record.loggedAt);
 }
 
 export function readDaemonLogs(db: Database): DaemonLogRecord[] {
   const rows = db
     .query<DaemonLogRow, []>(
       `
-        SELECT id, level, message, logged_at
+        SELECT id, category, level, message, logged_at
         FROM daemon_logs
         ORDER BY logged_at ASC, id ASC
       `,
@@ -537,6 +535,7 @@ export function readDaemonLogs(db: Database): DaemonLogRecord[] {
     .all();
 
   return rows.map((row) => ({
+    category: row.category,
     id: row.id,
     level: row.level,
     message: row.message,
@@ -858,6 +857,19 @@ function ensureSiteColumns(db: Database): void {
   }
 }
 
+function ensureDaemonLogColumns(db: Database): void {
+  const columns = db
+    .query<{ name: string }, []>("PRAGMA table_info(daemon_logs)")
+    .all()
+    .map((column) => column.name);
+
+  if (!columns.includes("category")) {
+    db.exec(
+      "ALTER TABLE daemon_logs ADD COLUMN category TEXT NOT NULL DEFAULT 'generic';",
+    );
+  }
+}
+
 function ensureWeatherSourceColumns(db: Database): void {
   const columns = db
     .query<{ name: string }, []>("PRAGMA table_info(weather_sources)")
@@ -976,7 +988,11 @@ function ensureDynamicPriceSourceColumns(db: Database): void {
   `);
 }
 
-function renameTableIfNeeded(db: Database, oldName: string, newName: string): void {
+function renameTableIfNeeded(
+  db: Database,
+  oldName: string,
+  newName: string,
+): void {
   const oldExists = hasTable(db, oldName);
 
   if (!oldExists) {

@@ -16,14 +16,14 @@ import {
 import {
   addAllFromDiscovery,
   createBatteryFromDiscovery,
-  createPriceSource,
   createMeterFromDiscovery,
+  createPriceSource,
   createSite,
   createSolarEnergyProviderFromDiscovery,
   createWeatherForecastSource,
   deleteBattery,
-  deletePriceSource,
   deleteMeter,
+  deletePriceSource,
   deleteSite,
   deleteSolarEnergyProvider,
   deleteWeatherForecastSource,
@@ -130,7 +130,10 @@ function optionalStringValue(formData: FormData, key: string): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function optionalNumberValue(formData: FormData, key: string): number | undefined {
+function optionalNumberValue(
+  formData: FormData,
+  key: string,
+): number | undefined {
   const rawValue = optionalStringValue(formData, key);
 
   if (rawValue === null) {
@@ -146,7 +149,9 @@ function optionalNumberValue(formData: FormData, key: string): number | undefine
   return value;
 }
 
-function priceProviderValue(formData: FormData): "tibber" | "fixed-import-price" {
+function priceProviderValue(
+  formData: FormData,
+): "tibber" | "fixed-import-price" {
   const provider = optionalStringValue(formData, "provider") ?? "tibber";
 
   if (provider === "tibber" || provider === "fixed-import-price") {

@@ -19,14 +19,20 @@ import {
 
 test("parseArgs accepts --strategy for built-in dynamic price strategies", () => {
   expect(
-    parseArgs(["--strategy=export-surplus,delayed-charging,import-shortage"])
-      .strategyTriggerKinds,
-  ).toEqual(["export-surplus", "delayed-charging", "import-shortage"]);
+    parseArgs([
+      "--strategy=export-surplus,delayed-charging-prep,delayed-charging,import-shortage",
+    ]).strategyTriggerKinds,
+  ).toEqual([
+    "export-surplus",
+    "delayed-charge-prep",
+    "delayed-charging",
+    "import-shortage",
+  ]);
 });
 
 test("parseArgs rejects unknown strategy names", () => {
   expect(() => parseArgs(["--strategy=high"])).toThrow(
-    "--strategy only accepts 'export-surplus', 'delayed-charging', and 'import-shortage'; received: high.",
+    "--strategy only accepts 'export-surplus', 'delayed-charge-prep' (or 'delayed-charging-prep'), 'delayed-charging', and 'import-shortage'; received: high.",
   );
 });
 
@@ -335,9 +341,60 @@ test("buildEstimateSummaryRows keeps export-surplus output strategy-specific", (
     { label: "Predicted Solar", value: "300 W" },
     { label: "Expected Load", value: "200 W" },
     { label: "Solar Surplus", value: "+100 W" },
-    { label: "Discharge Target", value: "discharge to 57%" },
+    { label: "Target", value: "discharge to 57%" },
     { label: "Reserve At Target", value: "18%" },
   ]);
+});
+
+test("buildEstimateSummaryRows explains delayed-charge-prep markers", () => {
+  const referenceTime = createReplayTime("2026-04-21", "08:00");
+  const rows = buildEstimateSummaryRows({
+    action: "charging",
+    battery: {
+      id: "battery-1",
+      minimumDischargePercent: 10,
+      name: "Battery 1",
+    } as never,
+    batteryId: "battery-1",
+    candidateDays: [],
+    capacityWh: 6000,
+    dynamicPriceTargetEstimate: {
+      ...createEstimate(),
+      resolvedManualState: "idle",
+    },
+    dynamicPriceSamples: createDynamicPriceSamples([
+      [createReplayTime("2026-04-21", "05:00").toISOString(), 0.2],
+      [createReplayTime("2026-04-21", "06:00").toISOString(), 0.2],
+      [createReplayTime("2026-04-21", "07:00").toISOString(), 0.3],
+      [createReplayTime("2026-04-21", "08:00").toISOString(), 0.2],
+      [createReplayTime("2026-04-21", "09:00").toISOString(), 0.2],
+      [createReplayTime("2026-04-21", "10:00").toISOString(), 0.2],
+      [createReplayTime("2026-04-21", "11:00").toISOString(), 0.2],
+      [createReplayTime("2026-04-21", "12:00").toISOString(), 0.1],
+      [createReplayTime("2026-04-21", "13:00").toISOString(), 0.2],
+      [createReplayTime("2026-04-21", "14:00").toISOString(), 0.2],
+      [createReplayTime("2026-04-21", "15:00").toISOString(), 0.2],
+      [createReplayTime("2026-04-21", "16:00").toISOString(), 0.2],
+    ]),
+    minimumSolarSurplusWOverride: 50,
+    normalizedImportExportSpread: 0.13,
+    referenceTime,
+    reserveTargetPercent: 12,
+    selectedMarkerTime: createReplayTime("2026-04-21", "08:00"),
+    siteId: "site-1",
+    siteName: "Home",
+    strategyTriggerKind: "delayed-charge-prep",
+    verboseBlocks: new Set(),
+  });
+
+  expect(rows).toContainEqual({
+    label: "Prep Trigger",
+    value: "2026-04-21 08:00",
+  });
+  expect(rows).toContainEqual({
+    label: "Paired Low Price Marker",
+    value: "2026-04-21 11:00 at 0.200 EUR/kWh",
+  });
 });
 
 test("buildEstimateSummaryRows keeps import-shortage output concise and strategy-specific", () => {

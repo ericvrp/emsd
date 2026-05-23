@@ -29,8 +29,8 @@ import {
   createSiteAction,
   createWeatherForecastSourceAction,
   deleteBatteryAction,
-  deletePriceSourceAction,
   deleteMeterAction,
+  deletePriceSourceAction,
   deleteSiteAction,
   deleteSolarEnergyProviderAction,
   deleteWeatherForecastSourceAction,
@@ -1218,9 +1218,7 @@ function PriceProviderFields({
 }: {
   source?: DynamicPriceSourceRecord;
 }) {
-  const [provider, setProvider] = useState(
-    source?.provider ?? "tibber",
-  );
+  const [provider, setProvider] = useState(source?.provider ?? "tibber");
   const fixedPrice =
     source?.provider === "fixed-import-price"
       ? source.config?.slots[0]?.importPrice
@@ -1280,7 +1278,7 @@ function PriceProviderPanel({
         void mutate(
           (key) =>
             typeof key === "string" &&
-            key.startsWith(`/api/history/archive?`) &&
+            key.startsWith("/api/history/archive?") &&
             key.includes(`siteId=${encodedSiteId}`),
           undefined,
           { revalidate: true },
@@ -1288,7 +1286,7 @@ function PriceProviderPanel({
         void mutate(
           (key) =>
             typeof key === "string" &&
-            key.startsWith(`/api/prices/graph?`) &&
+            key.startsWith("/api/prices/graph?") &&
             key.includes(`siteId=${encodedSiteId}`),
           undefined,
           { revalidate: true },
@@ -1348,9 +1346,7 @@ function PriceProviderPanel({
                       step="0.001"
                       type="number"
                     />
-                    <span className="text-sm text-slate-400">
-                      EUR/kWh
-                    </span>
+                    <span className="text-sm text-slate-400">EUR/kWh</span>
                   </div>
                 </label>
                 <div className="flex flex-wrap gap-2">

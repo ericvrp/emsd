@@ -7,21 +7,21 @@ import {
   enphaseSolarEnergyProviderDiscoveryPlugin,
 } from "./enphase";
 import {
-  HuaweiSun2000SolarEnergyProviderPlugin,
-  huaweiSolarEnergyProviderDiscoveryPlugins,
-} from "./huawei";
-import {
   HomeWizardSolarEnergyProviderPlugin,
   homeWizardSolarEnergyProviderDiscoveryPlugins,
 } from "./homewizard";
 import {
-  SolarEdgeSolarEnergyProviderPlugin,
-  solaredgeSolarEnergyProviderDiscoveryPlugin,
-} from "./solaredge";
+  HuaweiSun2000SolarEnergyProviderPlugin,
+  huaweiSolarEnergyProviderDiscoveryPlugins,
+} from "./huawei";
 import {
   ShellySolarEnergyProviderPlugin,
   shellySolarEnergyProviderDiscoveryPlugin,
 } from "./shelly";
+import {
+  SolarEdgeSolarEnergyProviderPlugin,
+  solaredgeSolarEnergyProviderDiscoveryPlugin,
+} from "./solaredge";
 
 export interface SolarEnergyProviderPlugin {
   getNormalizedInfo(): Promise<NormalizedSolarEnergyProviderInfo | null>;

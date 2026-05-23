@@ -32,7 +32,14 @@ export function formatPriceList(sources: DynamicPriceSourceRecord[]): string {
     return "No dynamic price sources configured for the selected site.";
   }
 
-  const header = ["SOURCE ID", "NAME", "PROVIDER", "EXPORT DEDUCTION", "FIXED IMPORT", "UPDATED AT"].join(" | ");
+  const header = [
+    "SOURCE ID",
+    "NAME",
+    "PROVIDER",
+    "EXPORT DEDUCTION",
+    "FIXED IMPORT",
+    "UPDATED AT",
+  ].join(" | ");
   const separator = "-".repeat(header.length);
   const rows = sources.map((source) =>
     [
@@ -172,7 +179,9 @@ function parseNamedSourceOptions(
   const fixedImportPrice = parseNumberOption(args, "--fixed-import-price");
 
   if (provider === "fixed-import-price" && fixedImportPrice === undefined) {
-    throw new Error("Missing required option for fixed price source: --fixed-import-price <price>");
+    throw new Error(
+      "Missing required option for fixed price source: --fixed-import-price <price>",
+    );
   }
 
   const parsed = {
@@ -216,7 +225,10 @@ function parseProviderOption(args: string[]): PriceProvider {
   return "tibber";
 }
 
-function parseNumberOption(args: string[], optionName: string): number | undefined {
+function parseNumberOption(
+  args: string[],
+  optionName: string,
+): number | undefined {
   const optionIndex = args.indexOf(optionName);
 
   if (optionIndex === -1) {

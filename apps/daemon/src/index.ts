@@ -4,6 +4,7 @@ import {
   type BatteryRecord,
   type BatteryStrategyPlanItem,
   BatteryStrategyTriggerKind,
+  type DaemonLogLevel,
   type DynamicPriceSnapshotRecord,
   type DynamicPriceSourceRecord,
   EMSD_NAME,
@@ -38,7 +39,6 @@ import {
 import { getWeatherForecast } from "../../ems/src/plugins/solar-forecast";
 import { formatDaemonHelpText, parseDaemonOptions } from "./daemon-options";
 import {
-  type DaemonLogLevel,
   completeSolarEnergyProviderControlRequest,
   insertDaemonLog,
   markSolarEnergyProviderControlRequestRunning,
@@ -1115,6 +1115,10 @@ async function runScheduledStrategy(
             ...runtime.lastTriggeredAtByItemId,
             [item.id]: runtimeTriggerAt.toISOString(),
           },
+          lastTriggeredRecordedAtByItemId: {
+            ...runtime.lastTriggeredRecordedAtByItemId,
+            [item.id]: now.toISOString(),
+          },
         };
         updateBatteryStrategyRuntime(db, {
           batteryId: battery.id,
@@ -1145,6 +1149,10 @@ async function runScheduledStrategy(
             ...runtime.lastTriggeredAtByItemId,
             [item.id]: runtimeTriggerAt.toISOString(),
           },
+          lastTriggeredRecordedAtByItemId: {
+            ...runtime.lastTriggeredRecordedAtByItemId,
+            [item.id]: now.toISOString(),
+          },
         };
         updateBatteryStrategyRuntime(db, {
           batteryId: battery.id,
@@ -1171,6 +1179,10 @@ async function runScheduledStrategy(
             lastTriggeredAtByItemId: {
               ...runtime.lastTriggeredAtByItemId,
               [item.id]: runtimeTriggerAt.toISOString(),
+            },
+            lastTriggeredRecordedAtByItemId: {
+              ...runtime.lastTriggeredRecordedAtByItemId,
+              [item.id]: now.toISOString(),
             },
           };
           updateBatteryStrategyRuntime(db, {
@@ -1201,6 +1213,10 @@ async function runScheduledStrategy(
           lastTriggeredAtByItemId: {
             ...runtime.lastTriggeredAtByItemId,
             [item.id]: runtimeTriggerAt.toISOString(),
+          },
+          lastTriggeredRecordedAtByItemId: {
+            ...runtime.lastTriggeredRecordedAtByItemId,
+            [item.id]: now.toISOString(),
           },
         };
         updateBatteryStrategyRuntime(db, {
@@ -1386,6 +1402,10 @@ async function runScheduledStrategy(
               ...runtime.lastTriggeredAtByItemId,
               [prepCandidate.item.id]: prepCandidate.triggerAt.toISOString(),
             },
+            lastTriggeredRecordedAtByItemId: {
+              ...runtime.lastTriggeredRecordedAtByItemId,
+              [prepCandidate.item.id]: appliedAt.toISOString(),
+            },
           },
           appliedAt,
         );
@@ -1566,6 +1586,10 @@ async function runScheduledStrategy(
         }),
         [item.id]: runtimeTriggerAt.toISOString(),
       },
+      lastTriggeredRecordedAtByItemId: {
+        ...runtime.lastTriggeredRecordedAtByItemId,
+        [item.id]: now.toISOString(),
+      },
     },
     now,
   );
@@ -1726,7 +1750,7 @@ async function runIndependentSolarProductionControlStrategy(
     logInfoWithVerboseDetails(
       verbose,
       `queued solar production ${decision.desiredEnabled ? "enable" : "disable"} for ${provider.id} because export price is ${decision.exportPrice.toFixed(3)}`,
-      `queued independent solar production control for ${provider.id}: importPrice=${decision.importPrice.toFixed(3)} exportPrice=${decision.exportPrice.toFixed(3)} triggerAt=${decision.triggerAt.toISOString()}`,
+      `queued independent solar production control for ${provider.id}: importPrice=${decision.importPrice.toFixed(3)} exportPrice=${decision.exportPrice.toFixed(3)} triggerAt=${formatDaemonLogTimestamp(decision.triggerAt)}`,
     );
   }
 
@@ -1742,6 +1766,10 @@ async function runIndependentSolarProductionControlStrategy(
       lastTriggeredAtByItemId: {
         ...battery.strategyRuntime.lastTriggeredAtByItemId,
         [item.id]: decision.triggerAt.toISOString(),
+      },
+      lastTriggeredRecordedAtByItemId: {
+        ...battery.strategyRuntime.lastTriggeredRecordedAtByItemId,
+        [item.id]: now.toISOString(),
       },
     },
   });
@@ -1915,6 +1943,10 @@ async function restoreFallbackStrategy(
       lastTriggeredAtByItemId: {
         ...battery.strategyRuntime.lastTriggeredAtByItemId,
         [completedItemId]: completedRuntimeTriggeredAt,
+      },
+      lastTriggeredRecordedAtByItemId: {
+        ...battery.strategyRuntime.lastTriggeredRecordedAtByItemId,
+        [completedItemId]: appliedAt.toISOString(),
       },
     },
     appliedAt,
@@ -2139,13 +2171,15 @@ function logError(message: string): void {
 function writeDaemonLog(level: DaemonLogLevel, message: string): void {
   const loggedAt = new Date();
   const timestamp = formatDaemonLogTimestamp(loggedAt);
+  const category = inferDaemonLogCategory(message);
+  const storedMessage = `[${category}] ${message}`;
 
   if (level === "warn") {
-    console.warn(`[daemon] [${timestamp}] WARNING: ${message}`);
+    console.warn(`[daemon] [${timestamp}] WARNING: ${storedMessage}`);
   } else if (level === "error") {
-    console.error(`[daemon] [${timestamp}] ${message}`);
+    console.error(`[daemon] [${timestamp}] ${storedMessage}`);
   } else {
-    console.log(`[daemon] [${timestamp}] ${message}`);
+    console.log(`[daemon] [${timestamp}] ${storedMessage}`);
   }
 
   if (daemonLogDb === null) {
@@ -2154,8 +2188,9 @@ function writeDaemonLog(level: DaemonLogLevel, message: string): void {
 
   try {
     insertDaemonLog(daemonLogDb, {
+      category,
       level,
-      message,
+      message: storedMessage,
       loggedAt: loggedAt.toISOString(),
     });
   } catch (error) {
@@ -2164,6 +2199,48 @@ function writeDaemonLog(level: DaemonLogLevel, message: string): void {
       `[daemon] [${timestamp}] Failed to store daemon log: ${details}`,
     );
   }
+}
+
+function inferDaemonLogCategory(message: string): string {
+  const normalized = message.toLowerCase();
+
+  if (normalized.includes("delayed-charge prep")) {
+    return "delayed charge prep";
+  }
+
+  if (normalized.includes("delayed charging")) {
+    return "delayed charging";
+  }
+
+  if (
+    normalized.includes("export surplus") ||
+    normalized.includes("solar production control")
+  ) {
+    return "export surplus";
+  }
+
+  if (normalized.includes("import shortage")) {
+    return "import shortage";
+  }
+
+  if (
+    normalized.includes("manual strategy") ||
+    normalized.includes("manual override")
+  ) {
+    return "manual";
+  }
+
+  if (
+    normalized.includes("strategy item") ||
+    normalized.includes("strategy plan") ||
+    normalized.includes("scheduled automation") ||
+    normalized.includes("default strategy") ||
+    normalized.includes("active strategy")
+  ) {
+    return "strategy";
+  }
+
+  return "generic";
 }
 
 try {

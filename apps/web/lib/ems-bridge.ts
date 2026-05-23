@@ -6,6 +6,7 @@ import {
   type BatteryPowerSampleRecord,
   type BatteryStrategyPlanRecord,
   type BulkDiscoveryAddResult,
+  type DaemonLogRecord,
   type DashboardSnapshot,
   type DynamicPriceSampleRecord,
   type DynamicPriceSnapshotRecord,
@@ -21,7 +22,6 @@ import {
   type WeatherForecastSourceRecord,
   getRepoRoot as resolveRepoRoot,
 } from "@emsd/core";
-import type { DaemonLogRecord } from "../../daemon/src/database";
 import type { DiscoveredDevice } from "./discovery-proof";
 
 const repoRootPath = resolveRepoRoot();

@@ -87,21 +87,22 @@ export function formatHomeWizardDetails(
   return details.length > 0 ? details.join(", ") : "HomeWizard local API";
 }
 
-export function isHomeWizardSmartPlug(snapshot: HomeWizardLocalSnapshot): boolean {
-  return matchesHomeWizardDevice(snapshot, ["smart plug", "socket", "plug"], [
-    "HWE-SKT",
-    "HWE-SOCKET",
-    "HWE-PLUG",
-  ]);
+export function isHomeWizardSmartPlug(
+  snapshot: HomeWizardLocalSnapshot,
+): boolean {
+  return matchesHomeWizardDevice(
+    snapshot,
+    ["smart plug", "socket", "plug"],
+    ["HWE-SKT", "HWE-SOCKET", "HWE-PLUG"],
+  );
 }
 
 export function isHomeWizardCt(snapshot: HomeWizardLocalSnapshot): boolean {
-  return matchesHomeWizardDevice(snapshot, ["ct", "kwh meter", "energy meter"], [
-    "HWE-CT",
-    "HWE-KWH",
-    "HWE-KWH1",
-    "HWE-KWH3",
-  ]);
+  return matchesHomeWizardDevice(
+    snapshot,
+    ["ct", "kwh meter", "energy meter"],
+    ["HWE-CT", "HWE-KWH", "HWE-KWH1", "HWE-KWH3"],
+  );
 }
 
 async function fetchHomeWizardJson(
@@ -132,7 +133,9 @@ async function fetchHomeWizardJson(
   return parseJsonObject(await response.text());
 }
 
-function parseHomeWizardPowerW(data: Record<string, unknown> | null): number | null {
+function parseHomeWizardPowerW(
+  data: Record<string, unknown> | null,
+): number | null {
   return (
     parseNullableNumber(data?.active_power_w) ??
     parseNullableNumber(data?.active_power_l1_w) ??
@@ -184,6 +187,8 @@ function matchesHomeWizardDevice(
 
   return (
     productNameParts.some((part) => productName.includes(part)) ||
-    productTypes.some((type) => productType === type || productType.startsWith(`${type}-`))
+    productTypes.some(
+      (type) => productType === type || productType.startsWith(`${type}-`),
+    )
   );
 }

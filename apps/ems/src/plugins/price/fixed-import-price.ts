@@ -39,9 +39,7 @@ export function createFixedImportPriceConfig(
   };
 }
 
-function parseFixedImportPriceConfig(
-  config: unknown,
-): FixedImportPriceConfig {
+function parseFixedImportPriceConfig(config: unknown): FixedImportPriceConfig {
   if (!config || typeof config !== "object") {
     throw new Error("Fixed import price provider requires config_json.");
   }
@@ -68,8 +66,7 @@ function parseFixedImportPriceConfig(
       slot.isoWeekdays !== null &&
       (!Array.isArray(slot.isoWeekdays) ||
         slot.isoWeekdays.some(
-          (weekday) =>
-            !Number.isInteger(weekday) || weekday < 1 || weekday > 7,
+          (weekday) => !Number.isInteger(weekday) || weekday < 1 || weekday > 7,
         ))
     ) {
       throw new Error("Fixed import price weekdays must be ISO weekdays 1-7.");
@@ -97,7 +94,9 @@ function createFixedPricePoints(
   const points: PricePointRecord[] = [];
 
   for (let index = 0; index < (24 * 60 * 2) / PERIOD_MINUTES; index += 1) {
-    const startsAt = new Date(start.getTime() + index * PERIOD_MINUTES * 60_000);
+    const startsAt = new Date(
+      start.getTime() + index * PERIOD_MINUTES * 60_000,
+    );
     const slot = config.slots.find((entry) => matchesSlot(entry, startsAt));
 
     if (!slot) {

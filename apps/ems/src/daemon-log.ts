@@ -1,13 +1,14 @@
 import { Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
-import { getDatabasePath } from "@emsd/core";
-import type {
-  DaemonLogLevel,
-  DaemonLogRecord,
-} from "../../daemon/src/database";
+import {
+  type DaemonLogLevel,
+  type DaemonLogRecord,
+  getDatabasePath,
+} from "@emsd/core";
 import { logEmsError } from "./logging";
 
 interface DaemonLogRow {
+  category: string;
   id: number;
   level: DaemonLogLevel;
   message: string;
@@ -46,10 +47,15 @@ export function formatDaemonLogs(logs: DaemonLogRecord[]): string {
     return "No daemon logs found.";
   }
 
-  const header = ["LOGGED AT", "LEVEL", "MESSAGE"].join(" | ");
+  const header = ["LOGGED AT", "LEVEL", "CATEGORY", "MESSAGE"].join(" | ");
   const separator = "-".repeat(header.length);
   const rows = logs.map((log) =>
-    [log.loggedAt, log.level.toUpperCase(), log.message].join(" | "),
+    [
+      formatDaemonLogTimestamp(log.loggedAt),
+      log.level.toUpperCase(),
+      log.category,
+      log.message,
+    ].join(" | "),
   );
 
   return [header, separator, ...rows].join("\n");
@@ -98,6 +104,10 @@ export function readSelectedDaemonLogs(
       return [];
     }
 
+    const hasCategory = hasDaemonLogColumn(db, "category");
+    const categorySelection = hasCategory
+      ? "category"
+      : "'generic' AS category";
     const where: string[] = [];
     const params: (number | string)[] = [];
 
@@ -121,7 +131,7 @@ export function readSelectedDaemonLogs(
     const rows = db
       .query<DaemonLogRow, (number | string)[]>(
         `
-          SELECT id, level, message, logged_at
+          SELECT id, ${categorySelection}, level, message, logged_at
           FROM daemon_logs
           ${where.length > 0 ? `WHERE ${where.join(" AND ")}` : ""}
           ORDER BY logged_at DESC, id DESC
@@ -131,6 +141,7 @@ export function readSelectedDaemonLogs(
       .all(...params);
 
     return rows.reverse().map((row) => ({
+      category: row.category,
       id: row.id,
       level: row.level,
       message: row.message,
@@ -234,6 +245,25 @@ function parseIsoTimestamp(optionName: string, value: string): string {
   return date.toISOString();
 }
 
+function formatDaemonLogTimestamp(value: string): string {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return [
+    [date.getFullYear(), pad(date.getMonth() + 1), pad(date.getDate())].join(
+      "-",
+    ),
+    [date.getHours(), date.getMinutes(), date.getSeconds()].map(pad).join(":"),
+  ].join(" ");
+}
+
+function pad(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
 function hasDaemonLogTable(db: Database): boolean {
   const row = db
     .query<{ name: string }, [string]>(
@@ -246,4 +276,11 @@ function hasDaemonLogTable(db: Database): boolean {
     .get("daemon_logs");
 
   return row !== null;
+}
+
+function hasDaemonLogColumn(db: Database, name: string): boolean {
+  return db
+    .query<{ name: string }, []>("PRAGMA table_info(daemon_logs)")
+    .all()
+    .some((column) => column.name === name);
 }

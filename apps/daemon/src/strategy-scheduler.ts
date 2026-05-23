@@ -32,11 +32,28 @@ export function isItemAlreadyTriggeredToday(input: {
   triggerAt: Date;
 }): boolean {
   const lastTriggeredAt = input.runtime.lastTriggeredAtByItemId[input.itemId];
+  const recordedAt =
+    input.runtime.lastTriggeredRecordedAtByItemId?.[input.itemId];
 
-  return (
-    typeof lastTriggeredAt === "string" &&
-    new Date(lastTriggeredAt).getTime() >= input.triggerAt.getTime()
-  );
+  if (typeof lastTriggeredAt !== "string") {
+    return false;
+  }
+
+  if (!recordedAt) {
+    return new Date(lastTriggeredAt).getTime() >= input.triggerAt.getTime();
+  }
+
+  const recordedDate = new Date(recordedAt);
+  const triggerDate = input.triggerAt;
+
+  if (
+    !Number.isNaN(recordedDate.getTime()) &&
+    formatLocalDate(recordedDate) !== formatLocalDate(triggerDate)
+  ) {
+    return false;
+  }
+
+  return new Date(lastTriggeredAt).getTime() >= input.triggerAt.getTime();
 }
 
 export function getStrategyRuntimeTriggerAt(input: {
@@ -1020,6 +1037,11 @@ export function getDelayedChargePrepSkipReason(input: {
     return `skipped: invalid delayed charging marker ${input.delayedChargingMarkerTime} for delayed-charge prep item ${input.prepItemId}`;
   }
 
+  const delayedChargingLastTriggeredRecordedAt =
+    input.runtime.lastTriggeredRecordedAtByItemId?.[
+      input.delayedChargingItemId
+    ];
+
   if (
     isItemAlreadyTriggeredToday({
       runtime: input.runtime,
@@ -1027,11 +1049,20 @@ export function getDelayedChargePrepSkipReason(input: {
       triggerAt: delayedChargingMarkerAt,
     })
   ) {
-    return `skipped: delayed charging item ${input.delayedChargingItemId} already triggered for ${delayedChargingMarkerAt.toISOString()} while evaluating delayed-charge prep item ${input.prepItemId}`;
+    const lastTriggeredAt =
+      typeof delayedChargingLastTriggeredRecordedAt === "string"
+        ? new Date(delayedChargingLastTriggeredRecordedAt)
+        : null;
+    const lastTriggeredLabel =
+      lastTriggeredAt !== null && !Number.isNaN(lastTriggeredAt.getTime())
+        ? formatDaemonLogTimestamp(lastTriggeredAt)
+        : "an unknown time";
+
+    return `skipped: delayed charging item ${input.delayedChargingItemId} was already marked triggered at ${lastTriggeredLabel} for marker ${formatDaemonLogTimestamp(delayedChargingMarkerAt)} while evaluating delayed-charge prep item ${input.prepItemId}`;
   }
 
   if (input.now.getTime() >= delayedChargingTriggerAt.getTime()) {
-    return `skipped: delayed charging start ${input.delayedChargingStartTime} is already due for delayed-charge prep item ${input.prepItemId}`;
+    return `skipped: delayed charging start ${formatDaemonLogTimestamp(delayedChargingTriggerAt)} is already due for delayed-charge prep item ${input.prepItemId}`;
   }
 
   return null;

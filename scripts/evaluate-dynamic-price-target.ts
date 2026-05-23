@@ -68,6 +68,7 @@ interface EvaluationOptions extends ScriptOptions {
 
 type StrategyTriggerKind =
   | BatteryStrategyTriggerKind.ExportSurplus
+  | BatteryStrategyTriggerKind.DelayedChargePrep
   | BatteryStrategyTriggerKind.DelayedCharging
   | BatteryStrategyTriggerKind.ImportShortage;
 
@@ -324,6 +325,7 @@ function printHelp(): void {
       "",
       "Usage:",
       "  bun run dynamic-price-target:evaluate",
+      "  bun run dynamic-price-target:evaluate -- --strategy=delayed-charge-prep",
       "  bun run dynamic-price-target:evaluate -- --strategy=delayed-charging",
       "  bun run dynamic-price-target:evaluate -- --strategy=import-shortage",
       "  bun run dynamic-price-target:evaluate -- --strategy=export-surplus,delayed-charging,import-shortage",
@@ -410,6 +412,7 @@ function createEvaluationOptions(
   return {
     ...options,
     action:
+      strategyTriggerKind === BatteryStrategyTriggerKind.DelayedChargePrep ||
       strategyTriggerKind === BatteryStrategyTriggerKind.DelayedCharging ||
       strategyTriggerKind === BatteryStrategyTriggerKind.ImportShortage
         ? "charging"
@@ -662,6 +665,9 @@ function createSyntheticPlanItem(input: {
   powerW: number;
   strategyTriggerKind: StrategyTriggerKind;
 }): BatteryStrategyPlanItem {
+  const isDelayedChargePrep =
+    input.strategyTriggerKind === BatteryStrategyTriggerKind.DelayedChargePrep;
+
   return {
     enabled: true,
     id: "synthetic-auto-target",
@@ -671,8 +677,8 @@ function createSyntheticPlanItem(input: {
       input.action === "discharging"
         ? input.battery.minimumDischargePercent
         : null,
-    manualPowerW: input.powerW,
-    manualState: input.action,
+    manualPowerW: isDelayedChargePrep ? null : input.powerW,
+    manualState: isDelayedChargePrep ? "idle" : input.action,
     manualTargetSoc:
       input.action === "charging" ? 100 : input.battery.minimumDischargePercent,
     startTime: null,
@@ -1020,6 +1026,10 @@ export function buildEstimateSummaryRows(
           },
         ]
       : [];
+  const delayedChargePrepRows =
+    input.strategyTriggerKind === BatteryStrategyTriggerKind.DelayedChargePrep
+      ? buildDelayedChargePrepRows(input)
+      : [];
 
   if (input.dynamicPriceTargetEstimate.skipReason) {
     if (
@@ -1099,6 +1109,7 @@ export function buildEstimateSummaryRows(
 
   return [
     ...contextRows,
+    ...delayedChargePrepRows,
     { label: "Action", value: actionLabel },
     ...highPriceMarkerRows,
     {
@@ -1131,7 +1142,7 @@ export function buildEstimateSummaryRows(
       ),
     },
     {
-      label: "Discharge Target",
+      label: "Target",
       value: `${actionLabel} to ${currentTargetPercent}%`,
     },
     {
@@ -1144,13 +1155,18 @@ export function buildEstimateSummaryRows(
 function buildEvaluationContextRows(
   input: EvaluationContext,
 ): Array<{ label: string; value: string }> {
+  const selectedMarkerLabel =
+    input.strategyTriggerKind === BatteryStrategyTriggerKind.DelayedChargePrep
+      ? "Prep Trigger"
+      : "Selected Marker";
+
   return [
     {
       label: "Evaluated At",
       value: formatReferenceMoment(input.referenceTime),
     },
     {
-      label: "Selected Marker",
+      label: selectedMarkerLabel,
       value:
         input.selectedMarkerTime === null ||
         input.selectedMarkerTime === undefined
@@ -1158,6 +1174,116 @@ function buildEvaluationContextRows(
           : formatTargetTime(input.selectedMarkerTime.toISOString()),
     },
   ];
+}
+
+function buildDelayedChargePrepRows(
+  input: EvaluationContext,
+): Array<{ label: string; value: string }> {
+  const markers = resolveDelayedChargePrepMarkerDetails(input);
+
+  if (markers === null) {
+    return [
+      {
+        label: "Paired Low Price Marker",
+        value: "not available",
+      },
+      {
+        label: "Prep Basis",
+        value:
+          "no earlier high-price marker was available for the next low-price marker",
+      },
+    ];
+  }
+
+  return [
+    {
+      label: "Paired Low Price Marker",
+      value: `${formatTargetTime(markers.lowPriceMarkerAt.toISOString())} at ${formatPrice(markers.lowImportPrice)}`,
+    },
+    {
+      label: "Prior High Price Marker",
+      value: `${formatTargetTime(markers.priorHighPriceMarkerAt.toISOString())} at ${formatPrice(markers.highImportPrice)} import, ${formatPrice(markers.highExportPrice)} export`,
+    },
+    {
+      label: "Prep Basis",
+      value:
+        "prep starts 1 hour after the prior high-price marker, before the paired low-price marker",
+    },
+  ];
+}
+
+function resolveDelayedChargePrepMarkerDetails(input: EvaluationContext): {
+  highExportPrice: number | null;
+  highImportPrice: number | null;
+  lowImportPrice: number | null;
+  lowPriceMarkerAt: Date;
+  priorHighPriceMarkerAt: Date;
+} | null {
+  const selections = findPriceSelections(
+    (input.dynamicPriceSamples ?? []).map((sample) => ({
+      periodStart: sample.periodStart,
+      value: sample.importPrice,
+    })),
+    PRICE_SELECTION_WINDOW_MS,
+  );
+  const referenceMs = input.referenceTime.getTime();
+  const lowPriceMarkerAt =
+    selections.lowest
+      .map((point) => new Date(point.periodStart))
+      .filter(
+        (markerAt) =>
+          !Number.isNaN(markerAt.getTime()) &&
+          markerAt.getTime() >= referenceMs,
+      )
+      .sort((left, right) => left.getTime() - right.getTime())[0] ?? null;
+
+  if (lowPriceMarkerAt === null) {
+    return null;
+  }
+
+  const priorHighPriceMarkerAt =
+    selections.highest
+      .map((point) => new Date(point.periodStart))
+      .filter(
+        (markerAt) =>
+          !Number.isNaN(markerAt.getTime()) &&
+          markerAt.getTime() < lowPriceMarkerAt.getTime(),
+      )
+      .sort((left, right) => right.getTime() - left.getTime())[0] ?? null;
+
+  if (priorHighPriceMarkerAt === null) {
+    return null;
+  }
+
+  return {
+    highExportPrice: resolveHighPriceMarkerExportPrice(
+      input,
+      priorHighPriceMarkerAt,
+    ),
+    highImportPrice: resolveImportPriceAt(input, priorHighPriceMarkerAt),
+    lowImportPrice: resolveImportPriceAt(input, lowPriceMarkerAt),
+    lowPriceMarkerAt,
+    priorHighPriceMarkerAt,
+  };
+}
+
+function resolveImportPriceAt(
+  input: EvaluationContext,
+  markerAt: Date,
+): number | null {
+  const markerMs = markerAt.getTime();
+
+  for (const sample of input.dynamicPriceSamples ?? []) {
+    const sampleMs = new Date(sample.periodStart).getTime();
+
+    if (Number.isNaN(sampleMs) || sampleMs !== markerMs) {
+      continue;
+    }
+
+    return sample.importPrice;
+  }
+
+  return null;
 }
 
 function buildImportShortageDecisionRows(
@@ -1592,7 +1718,11 @@ function formatResolvedActionLabel(
     return "self-consumption";
   }
 
-  return estimate.resolvedManualState === "charging" ? "charge" : "discharge";
+  if (estimate.resolvedManualState === "charging") {
+    return "charge";
+  }
+
+  return estimate.resolvedManualState === "idle" ? "hold" : "discharge";
 }
 
 function formatStrategyTriggerKindLabel(
@@ -1628,25 +1758,31 @@ function parseStrategyTriggerKinds(
 ): StrategyTriggerKind[] {
   if (!value) {
     throw new Error(
-      "--strategy requires a comma-separated list of 'export-surplus', 'delayed-charging', and/or 'import-shortage'.",
+      "--strategy requires a comma-separated list of 'export-surplus', 'delayed-charge-prep' (or 'delayed-charging-prep'), 'delayed-charging', and/or 'import-shortage'.",
     );
   }
 
   const entries = value
     .split(",")
     .map((entry) => entry.trim())
+    .map((entry) =>
+      entry === "delayed-charging-prep"
+        ? BatteryStrategyTriggerKind.DelayedChargePrep
+        : entry,
+    )
     .filter((entry) => entry.length > 0);
 
   const invalidEntries = entries.filter(
     (entry) =>
       entry !== BatteryStrategyTriggerKind.ExportSurplus &&
+      entry !== BatteryStrategyTriggerKind.DelayedChargePrep &&
       entry !== BatteryStrategyTriggerKind.DelayedCharging &&
       entry !== BatteryStrategyTriggerKind.ImportShortage,
   );
 
   if (invalidEntries.length > 0) {
     throw new Error(
-      `--strategy only accepts 'export-surplus', 'delayed-charging', and 'import-shortage'; received: ${invalidEntries.join(", ")}.`,
+      `--strategy only accepts 'export-surplus', 'delayed-charge-prep' (or 'delayed-charging-prep'), 'delayed-charging', and 'import-shortage'; received: ${invalidEntries.join(", ")}.`,
     );
   }
 
@@ -1654,7 +1790,7 @@ function parseStrategyTriggerKinds(
 
   if (strategyTriggerKinds.length === 0) {
     throw new Error(
-      "--strategy must contain one or more of: export-surplus, delayed-charging, import-shortage.",
+      "--strategy must contain one or more of: export-surplus, delayed-charge-prep, delayed-charging, import-shortage.",
     );
   }
 

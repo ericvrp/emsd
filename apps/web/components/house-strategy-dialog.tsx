@@ -25,6 +25,7 @@ import { type SiteCurrentResponse, useLiveJsonSWR } from "./use-live-json-swr";
 const STRATEGY_REFRESH_INTERVAL_MS = 5_000;
 
 interface DaemonLogRecord {
+  category: string;
   id: number;
   level: "info" | "warn" | "error" | "verbose";
   message: string;
@@ -285,7 +286,7 @@ function DaemonLogsPanel({ day }: { day: string }) {
           <div className="divide-y divide-white/8">
             {entries.map((log) => (
               <div
-                className="grid gap-2 px-4 py-3 text-sm md:grid-cols-[10rem_5rem_1fr]"
+                className="grid gap-2 px-4 py-3 text-sm md:grid-cols-[10rem_5rem_9rem_1fr]"
                 key={log.id}
               >
                 <time className="font-mono text-xs text-slate-400">
@@ -298,6 +299,9 @@ function DaemonLogsPanel({ day }: { day: string }) {
                   )}
                 >
                   {log.level}
+                </span>
+                <span className="text-xs font-semibold uppercase text-slate-300">
+                  {log.category}
                 </span>
                 <p className="break-words text-slate-200">{log.message}</p>
               </div>

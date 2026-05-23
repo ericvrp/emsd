@@ -18,16 +18,19 @@ test("daemon logs command lists a filtered selection", async () => {
 
   const db = openDaemonDatabase(process.env.EMSD_DB_PATH);
   insertDaemonLog(db, {
+    category: "generic",
     level: "info",
     message: "daemon started",
     loggedAt: "2026-05-19T10:00:00.000Z",
   });
   insertDaemonLog(db, {
+    category: "generic",
     level: "warn",
     message: "battery offline",
     loggedAt: "2026-05-19T10:05:00.000Z",
   });
   insertDaemonLog(db, {
+    category: "generic",
     level: "error",
     message: "poll failed",
     loggedAt: "2026-05-19T10:10:00.000Z",
@@ -39,10 +42,8 @@ test("daemon logs command lists a filtered selection", async () => {
       runEms(["daemon", "logs", "--level", "warn", "--limit", "1"]),
     ).resolves.toBe(0);
 
-    expect(output[0]).toContain("LOGGED AT | LEVEL | MESSAGE");
-    expect(output[0]).toContain(
-      "2026-05-19T10:05:00.000Z | WARN | battery offline",
-    );
+    expect(output[0]).toContain("LOGGED AT | LEVEL | CATEGORY | MESSAGE");
+    expect(output[0]).toContain("WARN | generic | battery offline");
     expect(output[0]).not.toContain("daemon started");
     expect(output[0]).not.toContain("poll failed");
   } finally {

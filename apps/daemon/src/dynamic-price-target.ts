@@ -743,7 +743,7 @@ export function formatDelayedChargingLowPriceMarkerSkipReason(
       ? "unknown"
       : String(Math.round(eligibility.predictedSolarW));
 
-  return `skipped: low-price marker ${eligibility.lowPriceMarkerTime.toISOString()} needs expected solar above expected house load, but predicted solar is ${predictedSolarText}W and expected house load is ${Math.round(eligibility.expectedHouseLoadW)}W`;
+  return `skipped: low-price marker ${formatDaemonLogTimestamp(eligibility.lowPriceMarkerTime)} needs expected solar above expected house load, but predicted solar is ${predictedSolarText}W and expected house load is ${Math.round(eligibility.expectedHouseLoadW)}W`;
 }
 
 export function estimateImportShortage(input: {

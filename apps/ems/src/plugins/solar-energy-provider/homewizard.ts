@@ -2,13 +2,12 @@ import type {
   NormalizedSolarEnergyProviderInfo,
   SolarEnergyProviderRecord,
 } from "@emsd/core";
-import { logEmsInfo } from "../../logging";
 import {
+  type HomeWizardLocalSnapshot,
   fetchHomeWizardLocalSnapshot,
   formatHomeWizardDetails,
   isHomeWizardCt,
   isHomeWizardSmartPlug,
-  type HomeWizardLocalSnapshot,
 } from "../homewizard-local";
 import type { DiscoveryPlugin } from "../types";
 
@@ -24,14 +23,16 @@ export class HomeWizardSolarEnergyProviderPlugin {
   constructor(private readonly provider: SolarEnergyProviderRecord) {}
 
   async getNormalizedInfo(): Promise<NormalizedSolarEnergyProviderInfo | null> {
-    const snapshot = await fetchHomeWizardLocalSnapshot(this.provider.ipAddress);
-    const details = formatHomeWizardLogDetails(snapshot);
-
-    logEmsInfo(
-      `HomeWizard solar provider ${this.provider.id} (${this.provider.plugin}) at ${this.provider.ipAddress}: ${details}`,
+    const snapshot = await fetchHomeWizardLocalSnapshot(
+      this.provider.ipAddress,
     );
+    const currentPowerW = normalizeInvertedSolarPowerW(snapshot.powerW);
 
-    return null;
+    return {
+      currentPowerW,
+      productionControlStatus: "unavailable",
+      status: currentPowerW === null ? "offline" : "connected",
+    };
   }
 
   async setProductionEnabled(): Promise<NormalizedSolarEnergyProviderInfo | null> {
@@ -41,20 +42,21 @@ export class HomeWizardSolarEnergyProviderPlugin {
   }
 }
 
-export const homeWizardSolarEnergyProviderDiscoveryPlugins: DiscoveryPlugin[] = [
-  createHomeWizardDiscoveryPlugin({
-    kind: "smart-plug",
-    model: HOMEWIZARD_SMART_PLUG_MODEL,
-    name: HOMEWIZARD_SMART_PLUG_NAME,
-    matches: isHomeWizardSmartPlug,
-  }),
-  createHomeWizardDiscoveryPlugin({
-    kind: "ct",
-    model: HOMEWIZARD_CT_MODEL,
-    name: HOMEWIZARD_CT_NAME,
-    matches: isHomeWizardCt,
-  }),
-];
+export const homeWizardSolarEnergyProviderDiscoveryPlugins: DiscoveryPlugin[] =
+  [
+    createHomeWizardDiscoveryPlugin({
+      kind: "smart-plug",
+      model: HOMEWIZARD_SMART_PLUG_MODEL,
+      name: HOMEWIZARD_SMART_PLUG_NAME,
+      matches: isHomeWizardSmartPlug,
+    }),
+    createHomeWizardDiscoveryPlugin({
+      kind: "ct",
+      model: HOMEWIZARD_CT_MODEL,
+      name: HOMEWIZARD_CT_NAME,
+      matches: isHomeWizardCt,
+    }),
+  ];
 
 function createHomeWizardDiscoveryPlugin(input: {
   kind: HomeWizardSolarKind;
@@ -92,26 +94,6 @@ function createHomeWizardDiscoveryPlugin(input: {
       };
     },
   };
-}
-
-function formatHomeWizardLogDetails(snapshot: HomeWizardLocalSnapshot): string {
-  const solarPowerW = normalizeInvertedSolarPowerW(snapshot.powerW);
-  const capabilities =
-    snapshot.capabilities.length > 0
-      ? snapshot.capabilities.join(", ")
-      : "none reported";
-  const product = [snapshot.productName, snapshot.productType]
-    .filter((value): value is string => value !== null)
-    .join(" / ");
-
-  return [
-    product ? `product=${product}` : null,
-    solarPowerW !== null ? `solarPower=${Math.round(solarPowerW)} W` : null,
-    `capabilities=${capabilities}`,
-    snapshot.serial ? `serial=${snapshot.serial}` : null,
-  ]
-    .filter((part): part is string => part !== null)
-    .join(", ");
 }
 
 function normalizeInvertedSolarPowerW(powerW: number | null): number | null {
