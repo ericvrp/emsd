@@ -479,6 +479,7 @@ test("dynamic price samples are stored per 15-minute period and trimmed to 30 da
 
   upsertDynamicPriceSnapshot(db, "main-house", {
     currency: "EUR",
+    exportDeduction: 0.13,
     generatedAt,
     points: [
       {

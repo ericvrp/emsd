@@ -113,9 +113,25 @@ export const LOCAL_API_ENTITY_OPTIONS: EntityOption[] = [
         deviceClass: "",
         jsonAttributesPath: "$.summary",
         jsonAttributes: [
+          "currentExportPrice",
+          "currentImportPriceReduction",
           "currentImportPriceCurrency",
           "currentImportPriceStartsAt",
         ],
+      },
+      {
+        id: "export_price_now",
+        label: "Export Price",
+        template: "{{ value_json.summary.currentExportPrice }}",
+        unit: "EUR/kWh",
+        deviceClass: "",
+      },
+      {
+        id: "import_price_reduction",
+        label: "Import Price Reduction",
+        template: "{{ value_json.summary.currentImportPriceReduction }}",
+        unit: "EUR/kWh",
+        deviceClass: "",
       },
       {
         id: "price_currency",
@@ -144,8 +160,8 @@ export const LOCAL_API_ENTITY_OPTIONS: EntityOption[] = [
   },
   {
     id: "ems_negative_price_now",
-    label: "Import Price Is Negative",
-    template: "{{ value_json.summary.currentImportPriceIsNegative }}",
+    label: "Export Price Is Negative",
+    template: "{{ value_json.summary.currentExportPriceIsNegative }}",
     unit: "",
     deviceClass: "",
     binary: true,

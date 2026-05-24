@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { HistoryArchive } from "@emsd/core";
-import { computeDerivedMarkers } from "./local-current";
+import { computeDerivedMarkers, computePricing } from "./local-current";
 
 test("computeDerivedMarkers returns today's price and solar surplus markers", () => {
   const now = new Date(2026, 3, 19, 10, 0, 0);
@@ -56,6 +56,38 @@ test("computeDerivedMarkers returns today's price and solar surplus markers", ()
   expect(markers.solarSurplusEndAt).toBe(localIso(13));
 });
 
+test("computePricing exposes export price and import-to-export reduction", () => {
+  const pricing = computePricing(
+    {
+      currency: "EUR",
+      exportDeduction: 0.13,
+      generatedAt: localIso(0),
+      points: [dynamicPriceSample(9, 0.1), dynamicPriceSample(10, 0.2)],
+      provider: "tibber",
+      providerLabel: "Tibber",
+      siteId: "home",
+      sourceId: "price-source",
+      sourceName: "Tibber",
+    },
+    new Date(localIso(9)),
+  );
+
+  expect(pricing.current).toEqual({
+    startsAt: localIso(9),
+    importPrice: 0.1,
+    exportPrice: -0.03,
+    importPriceReduction: 0.13,
+    currency: "EUR",
+  });
+  expect(pricing.upcoming[0]).toEqual({
+    startsAt: localIso(10),
+    importPrice: 0.2,
+    exportPrice: 0.07,
+    importPriceReduction: 0.13,
+    currency: "EUR",
+  });
+});
+
 function localIso(hour: number): string {
   return new Date(2026, 3, 19, hour, 0, 0).toISOString();
 }
@@ -64,6 +96,7 @@ function dynamicPriceSample(hour: number, importPrice: number) {
   return {
     siteId: "home",
     periodStart: localIso(hour),
+    startsAt: localIso(hour),
     generatedAt: localIso(0),
     currency: "EUR",
     importPrice,

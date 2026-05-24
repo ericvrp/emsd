@@ -15,6 +15,7 @@ import {
   getLiveStatus,
   getWeatherForecast,
 } from "./ems-bridge";
+import { computeExportPrice } from "./price-format";
 
 const DYNAMIC_PRICE_CACHE_TTL_MS = 5 * 60 * 1000;
 const WEATHER_FORECAST_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -56,9 +57,11 @@ export interface LocalApiCurrentResponse {
 
 export interface LocalApiSummary {
   currentImportPrice: number | null;
+  currentExportPrice: number | null;
+  currentImportPriceReduction: number | null;
   currentImportPriceCurrency: string | null;
   currentImportPriceStartsAt: string | null;
-  currentImportPriceIsNegative: boolean;
+  currentExportPriceIsNegative: boolean;
   currentForecastSolarPowerW: number | null;
   totalBatterySocPercent: number | null;
   totalBatteryPowerW: number | null;
@@ -100,11 +103,15 @@ export interface LocalApiPricing {
   current: {
     startsAt: string;
     importPrice: number;
+    exportPrice: number;
+    importPriceReduction: number;
     currency: string;
   } | null;
   upcoming: Array<{
     startsAt: string;
     importPrice: number;
+    exportPrice: number;
+    importPriceReduction: number;
     currency: string;
   }>;
 }
@@ -421,7 +428,7 @@ function selectCurrentForecastPoint(
   return -1;
 }
 
-function computePricing(
+export function computePricing(
   snapshot: DynamicPriceSnapshotRecord | null,
   now: Date,
 ): LocalApiPricing {
@@ -437,10 +444,13 @@ function computePricing(
     sortedPoints.map((p) => ({ startsAt: p.startsAt })),
     now,
   );
+  const exportDeduction = snapshot.exportDeduction ?? 0.13;
 
   let current: {
     startsAt: string;
     importPrice: number;
+    exportPrice: number;
+    importPriceReduction: number;
     currency: string;
   } | null = null;
 
@@ -450,6 +460,8 @@ function computePricing(
       current = {
         startsAt: point.startsAt,
         importPrice: point.importPrice,
+        exportPrice: computeExportPrice(point.importPrice, exportDeduction),
+        importPriceReduction: exportDeduction,
         currency: point.currency,
       };
     }
@@ -458,6 +470,8 @@ function computePricing(
   const upcoming = sortedPoints.slice(currentIndex + 1).map((point) => ({
     startsAt: point.startsAt,
     importPrice: point.importPrice,
+    exportPrice: computeExportPrice(point.importPrice, exportDeduction),
+    importPriceReduction: exportDeduction,
     currency: point.currency,
   }));
 
@@ -743,10 +757,10 @@ export async function buildLocalApiCurrent(
     ? computeSolarForecast(forecast, now)
     : null;
 
-  let currentImportPriceIsNegative = false;
+  let currentExportPriceIsNegative = false;
 
-  if (pricing?.current && pricing.current.importPrice < 0) {
-    currentImportPriceIsNegative = true;
+  if (pricing?.current && pricing.current.exportPrice < 0) {
+    currentExportPriceIsNegative = true;
   }
 
   const needBasic = !exclude || !exclude.has("ems_basic");
@@ -781,12 +795,15 @@ export async function buildLocalApiCurrent(
 
   if (!exclude || !exclude.has("ems_price_now")) {
     summary.currentImportPrice = pricing?.current?.importPrice ?? null;
+    summary.currentExportPrice = pricing?.current?.exportPrice ?? null;
+    summary.currentImportPriceReduction =
+      pricing?.current?.importPriceReduction ?? null;
     summary.currentImportPriceCurrency = pricing?.current?.currency ?? null;
     summary.currentImportPriceStartsAt = pricing?.current?.startsAt ?? null;
   }
 
   if (!exclude || !exclude.has("ems_negative_price_now")) {
-    summary.currentImportPriceIsNegative = currentImportPriceIsNegative;
+    summary.currentExportPriceIsNegative = currentExportPriceIsNegative;
   }
 
   if (needBatteryInfo) {

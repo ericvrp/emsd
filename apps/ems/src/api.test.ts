@@ -470,6 +470,7 @@ test("api history archive returns stored battery, price, and forecast data", asy
 
       upsertDynamicPriceSnapshot(db, "home", {
         currency: "EUR",
+        exportDeduction: 0.13,
         generatedAt: "2026-04-09T08:00:00.000Z",
         points: [
           {
@@ -1397,6 +1398,7 @@ test("house-strategy-plan-set marks past same-day export-surplus markers as alre
     try {
       upsertDynamicPriceSnapshot(db, "home", {
         currency: "EUR",
+        exportDeduction: 0.13,
         generatedAt: "2026-04-18T09:50:00.000Z",
         points: [
           {

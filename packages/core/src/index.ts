@@ -209,6 +209,7 @@ export interface PricePointRecord {
 
 export interface PriceSnapshotRecord {
   currency: string;
+  exportDeduction: number;
   generatedAt: string;
   points: PricePointRecord[];
   provider: PriceProvider;

@@ -54,6 +54,7 @@ export function createDynamicPriceSnapshot(
 ): PriceSnapshotRecord {
   return {
     currency: options.currency,
+    exportDeduction: input.source.exportDeduction,
     generatedAt: new Date().toISOString(),
     points: options.points,
     provider: input.source.provider,

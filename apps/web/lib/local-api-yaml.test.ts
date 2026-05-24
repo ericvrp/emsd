@@ -20,13 +20,17 @@ test("generateLocalApiYaml includes all available entity categories", () => {
   expect(yaml).toContain('name: "EMS Daemon Running"');
   expect(yaml).toContain('name: "EMS Site Name"');
   expect(yaml).toContain('name: "EMS Import Price"');
+  expect(yaml).toContain('name: "EMS Export Price"');
+  expect(yaml).toContain('name: "EMS Import Price Reduction"');
+  expect(yaml).toContain("- currentExportPrice");
+  expect(yaml).toContain("- currentImportPriceReduction");
   expect(yaml).toContain("- currentImportPriceCurrency");
   expect(yaml).toContain("- currentImportPriceStartsAt");
   expect(yaml).toContain('name: "EMS Import Price Currency"');
   expect(yaml).toContain('name: "EMS Import Price Starts At"');
   expect(yaml).toContain('name: "EMS Upcoming Prices"');
   expect(yaml).toContain("- upcoming");
-  expect(yaml).toContain('name: "EMS Import Price Is Negative"');
+  expect(yaml).toContain('name: "EMS Export Price Is Negative"');
   expect(yaml).toContain('name: "EMS Battery SOC"');
   expect(yaml).toContain('name: "EMS Battery Strategy"');
   expect(yaml).toContain('name: "EMS Battery Devices"');
