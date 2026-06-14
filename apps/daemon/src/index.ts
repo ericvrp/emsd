@@ -73,6 +73,7 @@ import {
   estimateDynamicPriceTarget,
   estimateImportShortageDynamicTarget,
   formatImportShortageDynamicTargetForLog,
+  resolveCurrentExpectedSolarSurplus,
 } from "./dynamic-price-target";
 import { resolveEffectiveSolarProductionControlStatus } from "./solar-production-control";
 import {
@@ -976,7 +977,7 @@ async function runScheduledStrategy(
     const delayedChargingEstimate =
       getDynamicPriceTargetEstimate(delayedChargingItem);
 
-    return getDelayedChargePrepSkipReason({
+    const skipReason = getDelayedChargePrepSkipReason({
       delayedChargingItemId: delayedChargingItem.id,
       delayedChargingMarkerTime: delayedChargingEstimate?.targetTime ?? null,
       delayedChargingSkipReason: delayedChargingEstimate?.skipReason ?? null,
@@ -986,6 +987,18 @@ async function runScheduledStrategy(
       prepItemId: item.id,
       runtime,
     });
+
+    if (skipReason !== null) {
+      return skipReason;
+    }
+
+    return resolveCurrentExpectedSolarSurplus({
+      batteryPowerSamples: getBatteryPowerSamples(),
+      now,
+      p1MeterSamples: getP1MeterSamples(),
+      solarEnergyProviderSamples: getSolarEnergyProviderSamples(),
+      solarForecastSamples: getSolarForecastSamples(),
+    }).skipReason;
   };
 
   const resolveScheduledActivationCandidate = (

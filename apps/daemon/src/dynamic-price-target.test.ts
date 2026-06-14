@@ -14,6 +14,7 @@ import {
   estimateDynamicPriceTarget,
   estimateImportShortage,
   estimateImportShortageDynamicTarget,
+  resolveCurrentExpectedSolarSurplus,
   resolveDelayedChargingLowPriceMarkerEligibility,
 } from "./dynamic-price-target";
 
@@ -125,6 +126,50 @@ test("export-surplus is not skipped when there is no next high-price marker", ()
   });
 
   expect(estimate.skipReason).toBeNull();
+});
+
+test("current expected solar surplus blocks delayed-charge prep when house load needs power", () => {
+  const now = new Date("2026-04-19T20:30:00.000Z");
+  const history = createOvernightUsageHistory();
+
+  const surplus = resolveCurrentExpectedSolarSurplus({
+    batteryPowerSamples: history.batteryPowerSamples,
+    now,
+    p1MeterSamples: history.p1MeterSamples,
+    solarEnergyProviderSamples: history.solarEnergyProviderSamples,
+    solarForecastSamples: createZeroSolarForecastSamples(
+      "2026-04-19T20:30:00.000Z",
+      "2026-04-19T21:00:00.000Z",
+    ),
+  });
+
+  expect(surplus.eligible).toBe(false);
+  expect(surplus.predictedSolarW).toBe(0);
+  expect(surplus.expectedHouseLoadW).toBeGreaterThan(0);
+  expect(surplus.skipReason).toContain(
+    "delayed-charge prep needs current expected solar above expected house load",
+  );
+});
+
+test("current expected solar surplus allows delayed-charge prep when solar covers house load", () => {
+  const now = new Date("2026-04-19T20:30:00.000Z");
+  const history = createOvernightUsageHistory();
+
+  const surplus = resolveCurrentExpectedSolarSurplus({
+    batteryPowerSamples: history.batteryPowerSamples,
+    now,
+    p1MeterSamples: history.p1MeterSamples,
+    solarEnergyProviderSamples: history.solarEnergyProviderSamples,
+    solarForecastSamples: createSolarForecastSamples({
+      end: "2026-04-19T21:00:00.000Z",
+      start: "2026-04-19T20:30:00.000Z",
+      value: 700,
+    }),
+  });
+
+  expect(surplus.eligible).toBe(true);
+  expect(surplus.skipReason).toBeNull();
+  expect(surplus.surplusW).toBeGreaterThan(surplus.minimumSolarSurplusW);
 });
 
 test("export-surplus is not skipped when the next morning high-price marker is not higher", () => {
@@ -858,14 +903,22 @@ function createZeroSolarForecastSamples(
   start: string,
   end: string,
 ): SolarForecastSampleRecord[] {
-  return createPeriodRange(start, end).map((periodStart) => ({
+  return createSolarForecastSamples({ end, start, value: 0 });
+}
+
+function createSolarForecastSamples(input: {
+  end: string;
+  start: string;
+  value: number;
+}): SolarForecastSampleRecord[] {
+  return createPeriodRange(input.start, input.end).map((periodStart) => ({
     airTempC: null,
     cloudOpacityPercent: null,
     generatedAt: "2026-04-19T20:20:00.000Z",
-    ghiWm2: 0,
+    ghiWm2: input.value,
     periodStart,
     siteId: "site-1",
-    value: 0,
+    value: input.value,
   }));
 }
 

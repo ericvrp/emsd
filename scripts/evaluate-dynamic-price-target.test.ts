@@ -376,6 +376,16 @@ test("buildEstimateSummaryRows explains delayed-charge-prep markers", () => {
       [createReplayTime("2026-04-21", "15:00").toISOString(), 0.2],
       [createReplayTime("2026-04-21", "16:00").toISOString(), 0.2],
     ]),
+    currentExpectedSolarSurplus: {
+      eligible: false,
+      expectedHouseLoadW: 500,
+      minimumSolarSurplusW: 50,
+      periodStart: createReplayTime("2026-04-21", "08:00").toISOString(),
+      predictedSolarW: 0,
+      skipReason:
+        "skipped: delayed-charge prep needs current expected solar above expected house load by 50W, but predicted solar is 0W and expected house load is 500W",
+      surplusW: -500,
+    },
     minimumSolarSurplusWOverride: 50,
     normalizedImportExportSpread: 0.13,
     referenceTime,
@@ -394,6 +404,15 @@ test("buildEstimateSummaryRows explains delayed-charge-prep markers", () => {
   expect(rows).toContainEqual({
     label: "Paired Low Price Marker",
     value: "2026-04-21 11:00 at 0.200 EUR/kWh",
+  });
+  expect(rows).toContainEqual({
+    label: "Prep Status",
+    value: "blocked",
+  });
+  expect(rows).toContainEqual({
+    label: "Prep Block Reason",
+    value:
+      "skipped: delayed-charge prep needs current expected solar above expected house load by 50W, but predicted solar is 0W and expected house load is 500W",
   });
 });
 

@@ -153,6 +153,16 @@ export interface DelayedChargingLowPriceMarkerEligibility {
   predictedSolarW: number | null;
 }
 
+export interface CurrentExpectedSolarSurplus {
+  eligible: boolean;
+  expectedHouseLoadW: number | null;
+  minimumSolarSurplusW: number;
+  periodStart: string | null;
+  predictedSolarW: number | null;
+  skipReason: string | null;
+  surplusW: number | null;
+}
+
 export interface ImportShortageEstimate {
   availability: "full" | "partial" | "unavailable";
   chargeStartTime: string | null;
@@ -729,6 +739,112 @@ export function resolveDelayedChargingLowPriceMarkerEligibility(input: {
     predictedSeries,
     solarForecastSamples: input.solarForecastSamples,
   });
+}
+
+export function resolveCurrentExpectedSolarSurplus(input: {
+  batteryPowerSamples: BatteryPowerSampleRecord[];
+  minimumSolarSurplusWOverride?: number;
+  now: Date;
+  p1MeterSamples: P1MeterSampleRecord[];
+  solarEnergyProviderSamples: SolarEnergyProviderSampleRecord[];
+  solarForecastSamples: SolarForecastSampleRecord[];
+}): CurrentExpectedSolarSurplus {
+  const minimumSolarSurplusW =
+    input.minimumSolarSurplusWOverride ?? MIN_SOLAR_SURPLUS_W;
+  const predictedSeries = buildPredictedSolarSeriesWithForecastFallback(
+    input.solarForecastSamples,
+    input.solarEnergyProviderSamples,
+  );
+  const historySeries = buildHouseLoadHistorySeries({
+    batteryPowerSamples: input.batteryPowerSamples,
+    p1MeterSamples: input.p1MeterSamples,
+    solarEnergyProviderSamples: input.solarEnergyProviderSamples,
+  });
+  const sharedLoadProfile = buildExpectedSiteLoadProfile(
+    historySeries,
+    input.now,
+  );
+  const loadProfile: LoadProfile = {
+    expectedLoadBySlot: sharedLoadProfile.expectedLoadBySlot,
+    fallbackLoadW: sharedLoadProfile.fallbackLoadW,
+    historicalPeriodsUsed: sharedLoadProfile.historicalPeriodsUsed,
+    sameWeekdayPeriodsUsed: sharedLoadProfile.sameWeekdayPeriodsUsed,
+  };
+  const currentPredictedPoint = getPredictedPointAtOrBefore(
+    predictedSeries,
+    input.now,
+  );
+  const predictedSolarW =
+    typeof currentPredictedPoint?.value === "number"
+      ? Math.max(0, currentPredictedPoint.value)
+      : null;
+  const expectedHouseLoadW =
+    loadProfile.expectedLoadBySlot.size === 0
+      ? null
+      : resolveExpectedSiteLoadW(input.now, loadProfile);
+  const surplusW =
+    predictedSolarW === null || expectedHouseLoadW === null
+      ? null
+      : predictedSolarW - Math.max(0, expectedHouseLoadW);
+  const eligible =
+    surplusW !== null && surplusW > Math.max(0, minimumSolarSurplusW);
+
+  return {
+    eligible,
+    expectedHouseLoadW,
+    minimumSolarSurplusW,
+    periodStart: currentPredictedPoint?.periodStart ?? null,
+    predictedSolarW,
+    skipReason: eligible
+      ? null
+      : formatCurrentExpectedSolarSurplusSkipReason({
+          expectedHouseLoadW,
+          minimumSolarSurplusW,
+          predictedSolarW,
+        }),
+    surplusW,
+  };
+}
+
+function getPredictedPointAtOrBefore(
+  predictedSeries: PredictedPoint[],
+  now: Date,
+): PredictedPoint | null {
+  let currentPoint: PredictedPoint | null = null;
+
+  for (const point of predictedSeries) {
+    const pointAt = new Date(point.periodStart);
+
+    if (Number.isNaN(pointAt.getTime())) {
+      continue;
+    }
+
+    if (pointAt.getTime() <= now.getTime()) {
+      currentPoint = point;
+      continue;
+    }
+
+    break;
+  }
+
+  return currentPoint;
+}
+
+function formatCurrentExpectedSolarSurplusSkipReason(input: {
+  expectedHouseLoadW: number | null;
+  minimumSolarSurplusW: number;
+  predictedSolarW: number | null;
+}): string {
+  const predictedSolarText =
+    input.predictedSolarW === null
+      ? "unknown"
+      : String(Math.round(input.predictedSolarW));
+  const expectedLoadText =
+    input.expectedHouseLoadW === null
+      ? "unknown"
+      : String(Math.round(input.expectedHouseLoadW));
+
+  return `skipped: delayed-charge prep needs current expected solar above expected house load by ${Math.round(input.minimumSolarSurplusW)}W, but predicted solar is ${predictedSolarText}W and expected house load is ${expectedLoadText}W`;
 }
 
 export function formatDelayedChargingLowPriceMarkerSkipReason(

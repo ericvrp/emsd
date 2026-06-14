@@ -11,9 +11,11 @@ import {
   readSolarForecastSamples,
 } from "../apps/daemon/src/database";
 import {
+  type CurrentExpectedSolarSurplus,
   type DynamicPriceTargetEstimate,
   estimateDynamicPriceTarget,
   estimateImportShortageDynamicTarget,
+  resolveCurrentExpectedSolarSurplus,
 } from "../apps/daemon/src/dynamic-price-target";
 import { getStrategyTriggerAt } from "../apps/daemon/src/strategy-scheduler";
 import type {
@@ -106,6 +108,7 @@ interface EvaluationContext {
   candidateDays: string[];
   dynamicPriceTargetEstimate: DynamicPriceTargetEstimate;
   dynamicPriceSamples?: ReturnType<typeof readDynamicPriceSamples>;
+  currentExpectedSolarSurplus?: CurrentExpectedSolarSurplus | null;
   minimumSolarSurplusWOverride: number;
   normalizedImportExportSpread?: number | null;
   reserveTargetPercent: number;
@@ -600,6 +603,18 @@ function evaluateSite(
       battery.minimumDischargePercent,
       options.backupReserveMargin,
     );
+    const currentExpectedSolarSurplus =
+      options.strategyTriggerKind ===
+      BatteryStrategyTriggerKind.DelayedChargePrep
+        ? resolveCurrentExpectedSolarSurplus({
+            batteryPowerSamples,
+            minimumSolarSurplusWOverride: options.minimumSolarSurplusWOverride,
+            now: referenceTime,
+            p1MeterSamples,
+            solarEnergyProviderSamples,
+            solarForecastSamples,
+          })
+        : null;
 
     measureProfile(profileRows, `print summary ${battery.id}`, () =>
       printCurrentEstimateSummary({
@@ -610,6 +625,7 @@ function evaluateSite(
         candidateDays,
         dynamicPriceTargetEstimate,
         dynamicPriceSamples,
+        currentExpectedSolarSurplus,
         minimumSolarSurplusWOverride: options.minimumSolarSurplusWOverride,
         normalizedImportExportSpread,
         strategyTriggerKind: options.strategyTriggerKind,
@@ -1030,6 +1046,10 @@ export function buildEstimateSummaryRows(
     input.strategyTriggerKind === BatteryStrategyTriggerKind.DelayedChargePrep
       ? buildDelayedChargePrepRows(input)
       : [];
+  const delayedChargePrepSurplusRows =
+    input.strategyTriggerKind === BatteryStrategyTriggerKind.DelayedChargePrep
+      ? buildDelayedChargePrepCurrentSurplusRows(input)
+      : [];
 
   if (input.dynamicPriceTargetEstimate.skipReason) {
     if (
@@ -1107,9 +1127,15 @@ export function buildEstimateSummaryRows(
     ];
   }
 
+  const recoveryLabel =
+    input.strategyTriggerKind === BatteryStrategyTriggerKind.DelayedChargePrep
+      ? "Recovery "
+      : "";
+
   return [
     ...contextRows,
     ...delayedChargePrepRows,
+    ...delayedChargePrepSurplusRows,
     { label: "Action", value: actionLabel },
     ...highPriceMarkerRows,
     {
@@ -1117,21 +1143,21 @@ export function buildEstimateSummaryRows(
       value: formatTargetTime(input.dynamicPriceTargetEstimate.targetTime),
     },
     {
-      label: "Predicted Solar",
+      label: `${recoveryLabel}Predicted Solar`,
       value: formatW(
         input.dynamicPriceTargetEstimate.targetTimeSignal?.predictedSolarW ??
           null,
       ),
     },
     {
-      label: "Expected Load",
+      label: `${recoveryLabel}Expected Load`,
       value: formatW(
         input.dynamicPriceTargetEstimate.targetTimeSignal?.expectedHouseLoadW ??
           null,
       ),
     },
     {
-      label: "Solar Surplus",
+      label: `${recoveryLabel}Solar Surplus`,
       value: formatSignedW(
         getSolarSurplusW(
           input.dynamicPriceTargetEstimate.targetTimeSignal?.predictedSolarW ??
@@ -1149,6 +1175,41 @@ export function buildEstimateSummaryRows(
       label: "Reserve At Target",
       value: `${reserveAtTargetPercent}%`,
     },
+  ];
+}
+
+function buildDelayedChargePrepCurrentSurplusRows(
+  input: EvaluationContext,
+): Array<{ label: string; value: string }> {
+  const currentSurplus = input.currentExpectedSolarSurplus;
+
+  if (!currentSurplus) {
+    return [];
+  }
+
+  return [
+    {
+      label: "Current Predicted Solar",
+      value: formatW(currentSurplus.predictedSolarW),
+    },
+    {
+      label: "Current Expected Load",
+      value: formatW(currentSurplus.expectedHouseLoadW),
+    },
+    {
+      label: "Current Solar Surplus",
+      value: formatSignedW(currentSurplus.surplusW),
+    },
+    {
+      label: "Prep Gate",
+      value: `${formatW(currentSurplus.predictedSolarW)} > ${formatW(currentSurplus.expectedHouseLoadW)} + ${formatW(currentSurplus.minimumSolarSurplusW)}`,
+    },
+    ...(currentSurplus.skipReason === null
+      ? [{ label: "Prep Status", value: "allowed" }]
+      : [
+          { label: "Prep Status", value: "blocked" },
+          { label: "Prep Block Reason", value: currentSurplus.skipReason },
+        ]),
   ];
 }
 
